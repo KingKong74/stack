@@ -7,7 +7,7 @@ import {
   openTerminal,
   getTermUsagePrefs, setTermUsagePrefs, type TermUsagePrefs,
   getTermViewPrefs, setTermViewPrefs, type TermViewPrefs, type TermPaneCount,
-  type TermLayout, LAYOUT_PANES, LAYOUT_META, autoLayout,
+  type TermLayout, LAYOUT_PANES, LAYOUT_META,
   createAutopilotSchedule,
   getAutopilotJobs, resumeAutopilotJob, hangupAutopilotJob, type AutopilotJob,
   getTerminalUsage, type TerminalUsageData,
@@ -152,11 +152,11 @@ type Handle = { sendText: (s: string) => void; reconnect: () => void; focus: () 
 
 // Mounted once by App and never unmounted (#137): sessions, sockets and
 // scrollback survive navigation. `visible` = the #/terminal route is showing;
-// away from it the component renders as the floating dock (#139) — minimised
-// to a bottom-right chip by default, expandable to a small floating panel.
-export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible = true, onAlive }: {
+// away from it the component renders NOTHING (#492 dropped the floating dock
+// and its corner chip — a terminal pane docked over whatever screen you had
+// navigated to, and the running-sessions pill already says a session is live).
+export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible = true }: {
   initialCwd?: string; initialAttach?: string; initialBrief?: boolean; visible?: boolean;
-  onAlive?: (liveCount: number) => void;
 }) {
   const [cwd, setCwd] = useState(initialCwd);
   // The seg control starts on the device's preferred session kind (Settings →
@@ -172,9 +172,6 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   const [active, setActive] = useState(0);
   const nextId = useRef(1);
   const handles = useRef(new Map<number, Handle>());
-  // The dock state while away from #/terminal: chip (default on navigate) or
-  // the expanded float. Re-minimises each time the user navigates away.
-  const [dock, setDock] = useState<'min' | 'float'>('min');
   // #305 — full screen. The pane grid is sized by a magic `calc(100vh - 210px)`
   // that has to guess at the chrome above it; in full screen it stops guessing
   // and simply takes what is left of a viewport with nothing else in it. The
@@ -207,12 +204,6 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   // A session opened away from #/terminal must never strand the screen
   // full-screen over the rest of the app.
   useEffect(() => { if (!visible && full) setFull(false); }, [visible, full]);
-  const prevVisible = useRef(visible);
-  useEffect(() => {
-    if (prevVisible.current && !visible) setDock('min');
-    prevVisible.current = visible;
-  }, [visible]);
-
   // The copy receipt. xterm draws to a canvas, so a copy leaves nothing on the
   // page to look at — without a mark, a working copy and a failed one look
   // identical, which is how "I can't copy from the terminal" survives a fix.
@@ -286,6 +277,10 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
       return [...s, { id, cwd: cwdKey, cmd, status: 'connecting', note: '', tmux: name }];
     });
     setActive(id);
+    // …and it goes into the shape that is already on screen. See
+    // `showWhenOpened` below: the row does not exist yet, so this is a note to
+    // the next render rather than a placement.
+    showWhenOpened.current = id;
     return id;
   };
   // The screen comes BACK the way it was left. Every tab this device had open
@@ -465,12 +460,9 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
     else openSession(initialCwd, initialBrief ? 'claude' : getTermSessionPrefs().autoStart);
   }, [visible, initialCwd, initialAttach]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Liveness, reported up to App: quiets the global presence pill while the
-  // dock owns the corner, and decides whether the dock shows at all.
   const liveCount = sessions.filter((s) => s.status === 'live' || s.status === 'connecting').length;
-  useEffect(() => { onAlive?.(liveCount); }, [liveCount, onAlive]);
 
-  // Any full/float/hidden transition changes the holder's size out from under
+  // Any full/hidden transition changes the holder's size out from under
   // xterm — the sessions' own resize listeners refit on this. Also fires on
   // wide-mode toggle (#136) and on collapsing the cockpit rail, which changes
   // the canvas width by the rail's whole width.
@@ -480,7 +472,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   // dependency says out loud which layout changes are expected to reflow.
   useEffect(() => {
     window.dispatchEvent(new Event('resize'));
-  }, [visible, dock, full, viewPrefs.layout, viewPrefs.railOpen]);
+  }, [visible, full, viewPrefs.layout, viewPrefs.railOpen]);
 
   // #491 — CLOSING A PANE NO LONGER ADJUSTS THE SHAPE HERE. It used to
   // decrement the stored pane count, which was this screen's second opinion
@@ -807,38 +799,21 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   // lasts as long as the screen is open.
   const layout = viewPrefs.layout;
 
-  // #491 — THE LAYOUT FOLLOWS THE SESSIONS. Opening a third terminal used to
-  // leave it off screen until you ALSO pressed a layout button, and closing
-  // one left the grid holding a shape for a session that had gone — the screen
-  // asked to be told twice what the session count already says. So opening or
-  // closing one steps the layout to the shape that fits it: one, side by side,
-  // three up, 2×2, six up (`autoLayout`, store.ts).
+  // THE LAYOUT IS THE OWNER'S, AND NOTHING ELSE MOVES IT (owner's call).
   //
-  // It fires on a CHANGE in the count, never on the count itself, and that is
-  // the whole reason the switcher still works: choosing Single with three
-  // sessions open is a deliberate call to look at one of them, and a rule that
-  // re-read the count every render would undo it on the next frame. A hand-
-  // picked shape stands until the set of sessions actually moves under it.
+  // #491 had the shape follow the session count — a third session stepped you
+  // from Side by side into 3-up on its own. It is gone, and the reason is what
+  // the fit could not know: which of the shapes that seat N sessions you meant
+  // to be in. Four sessions fit the 2×2 and they fit Focus, and a ladder that
+  // walks you into the 2×2 every time a session opens takes Focus away from
+  // you repeatedly and silently — you press it, open a terminal, and you are
+  // somewhere else. The count is a fact about sessions; the shape is a
+  // judgement about which one you are working in, and only a person has it.
   //
-  // An EMPTY screen keeps whatever shape it had. There is nothing to fit, and
-  // the alternative — snapping to single on the last close — would silently
-  // undo a choice the moment you ended a session.
-  const fittedTo = useRef<number | null>(null);
-  useEffect(() => {
-    const n = sessions.length;
-    if (fittedTo.current === n) return;
-    fittedTo.current = n;
-    if (n === 0) return;
-    const want = autoLayout(n);
-    // A layout the count is ALREADY happy with is left alone, whatever its
-    // shape: four sessions in the hand-picked Focus must not be re-fitted into
-    // the 2×2 just because both hold four. The ladder decides only when the
-    // shape on screen cannot seat them.
-    if (LAYOUT_PANES[viewPrefs.layout] === LAYOUT_PANES[want]) return;
-    if (want !== viewPrefs.layout) {
-      saveViewPrefs({ layout: want, panes: Math.min(4, LAYOUT_PANES[want]) as TermPaneCount });
-    }
-  }, [sessions.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  // WHAT REPLACES IT is the block below: a new session goes into the view you
+  // are already in, taking a free pane or the first one. So opening a terminal
+  // still puts it in front of you — it just does not rearrange the screen to
+  // do it.
 
   const [slots, setSlots] = useState<(number | null)[]>([]);
 
@@ -928,8 +903,11 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
     ? `1 session waiting on you — ${labelOf(waiting[0]) || waiting[0].cwd || 'unnamed'}`
     : `${waiting.length} sessions waiting on you`;
 
-  /** Put a session on screen in the first pane, whatever it takes. */
-  const focusInSlot = (id: number) => {
+  /** Put a session in the FIRST pane, swapping out whatever is there, and make
+   *  it the one taking keystrokes. The layout is untouched: a rail click and
+   *  the attention pill are both "show me this one", not "reshape the screen".
+   */
+  const showInLead = (id: number) => {
     const next = slotsFor(layout, sessions, slots).slice();
     const from = next.indexOf(id);
     if (from === 0) { setActive(id); return; }
@@ -939,47 +917,77 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
     setActive(id);
   };
 
-  // Asking for N terminals is asking for N terminals. The pane control used to
-  // set a number and stop, so choosing 4 with one session open left one pane
-  // and three holes — the grid clamps to what exists — even while claude was
-  // still running on the host in sessions nobody was attached to. So the
-  // choice FILLS the screen: jump into those first (that is where the work
-  // already is, and re-attaching costs nothing), newest survivors before ones
-  // a client holds elsewhere (attaching to those only mirrors them), then open
-  // fresh sessions in the active tab's directory for whatever is still short.
-  const [filling, setFilling] = useState(false);
-  const chooseLayout = async (lay: TermLayout) => {
-    // The pane COUNT rides along so a device that later loads an older build
-    // lands on the nearest shape rather than on the default.
-    const n = LAYOUT_PANES[lay];
-    saveViewPrefs({ layout: lay, panes: Math.min(4, n) as TermPaneCount });
-    // The fit is now up to date by construction: a hand-picked layout fills
-    // itself to N sessions below, and recording N here stops that fill being
-    // read back as a change somebody made and re-fitted a second time.
-    fittedTo.current = Math.max(sessions.length, n);
-    const liveNow = sessions.filter((s) => s.status === 'live' || s.status === 'connecting');
-    let need = n - liveNow.length;
-    if (need <= 0 || filling) return;
-    setFilling(true);
-    try {
-      const held = new Set(liveNow.map((s) => s.tmux).filter((t): t is string => !!t));
-      // Fetched fresh rather than read off the strip: the cached list is as old
-      // as the last push, and this is the moment it matters.
-      const pool = (await getDetachedSessions().catch(() => detached))
-        .filter((d) => !held.has(d.name))
-        .sort((a, b) => (a.attached ? 1 : 0) - (b.attached ? 1 : 0) || b.created - a.created);
-      const take = pool.slice(0, need);
-      for (const d of take) { held.add(d.name); openSession(d.cwd, 'claude', d.name); }
-      need -= take.length;
-      if (take.length) setDetached((l) => l.filter((x) => !held.has(x.name)));
-      const dir = (sessions.find((s) => s.id === active)?.cwd ?? cwd).trim();
-      for (let i = 0; i < need; i++) openSession(dir, getTermSessionPrefs().autoStart);
-    } finally {
-      setFilling(false);
-      void refreshDetached();
+  /** The pane's ⤢ — BRING THIS ONE TO THE FOCUS VIEW.
+   *
+   *  It used to move the session into slot 0 and leave the layout alone, on
+   *  the reasoning that a shape somebody picked is not a thing a focus press
+   *  should undo. That was wrong in the one way that mattered: in the 2×2 and
+   *  the 6-up, EVERY PANE IS THE SAME SIZE, so slot 0 is not a focus position
+   *  and the button did its work invisibly. Pressing it looked like pressing a
+   *  dead control — which is exactly what it was reported as.
+   *
+   *  So it now does what its name says: switches to Focus and puts this
+   *  session in the big pane. That gives it one meaning from every shape
+   *  rather than a real effect in two of them and none in the rest. Sessions
+   *  that Focus cannot seat are not closed or detached — every session stays
+   *  mounted whatever is on screen — so 6-up brings them all back.
+   */
+  const focusPane = (id: number) => {
+    const next = slotsFor('focus', sessions, slots).slice();
+    const from = next.indexOf(id);
+    if (from > 0) next[from] = next[0];
+    next[0] = id;
+    setSlots(next);
+    setActive(id);
+    if (layout !== 'focus') {
+      saveViewPrefs({ layout: 'focus', panes: Math.min(4, LAYOUT_PANES.focus) as TermPaneCount });
     }
   };
 
+  // A NEW SESSION LANDS IN THE VIEW YOU ARE ALREADY IN (owner's call).
+  //
+  // `slotsFor` already fills a FREE pane with whoever is unplaced, so most of
+  // the time this does nothing. It is here for the case that has no free pane:
+  // opening a fourth terminal in Side by side used to leave it running on the
+  // host, live, focused, and drawn nowhere — the screen's own answer being to
+  // grow itself, which is the behaviour that just went. It takes the first
+  // pane instead, which is where you were about to look anyway.
+  //
+  // Keyed off the id rather than the count so it fires once, for the session
+  // that was actually opened, and never re-runs on an unrelated change. It has
+  // to wait for a render because `openSession` adds to `sessions` through a
+  // functional update — the row does not exist yet when the ref is set.
+  const showWhenOpened = useRef<number | null>(null);
+  useEffect(() => {
+    const id = showWhenOpened.current;
+    if (id == null) return;
+    if (!sessions.some((x) => x.id === id)) return; // not landed yet
+    showWhenOpened.current = null;
+    if (slotsFor(layout, sessions, slots).includes(id)) return; // a free pane took it
+    showInLead(id);
+  }, [sessions]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // A LAYOUT BUTTON CHANGES THE SHAPE AND NOTHING ELSE (owner's call).
+  //
+  // It used to FILL what it opened: pressing Focus with one session running
+  // attached to whatever detached sessions the host had, newest first, and
+  // then started fresh ones for any pane still empty — on the reasoning that
+  // asking for N terminals is asking for N terminals. It is gone, and the
+  // reason is what it did rather than what it meant. Pressing a shape is a
+  // question about the screen; it was answered by reaching onto the HOST and
+  // attaching to work somebody else — or you, yesterday, in another window —
+  // had left running. Nothing said which sessions it had taken, and the panes
+  // it filled looked exactly like panes you had opened. A control that starts
+  // and joins real processes has to be a control you pressed for that.
+  //
+  // An empty pane is now just an empty pane, and + New session is the only
+  // thing on this screen that starts one. Resuming a detached session is still
+  // one click, on its own row in the rail, where it says what it is resuming.
+  const chooseLayout = (lay: TermLayout) => {
+    // The pane COUNT rides along so a device that later loads an older build
+    // lands on the nearest shape rather than on the default.
+    saveViewPrefs({ layout: lay, panes: Math.min(4, LAYOUT_PANES[lay]) as TermPaneCount });
+  };
 
   // A roadmap brief handed over by the board's ⌨ To terminal (one-shot).
   // Pasted bracketed so multi-line briefs land in claude/bash as one block —
@@ -1176,24 +1184,9 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   }, [gateway]);
 
 
-  const dockLabel = activeSess
-    ? `${activeSess.cmd === 'claude' ? 'claude' : 'shell'}${activeSess.cwd ? ` · ${activeSess.cwd}` : ''}`
-    : 'terminal';
-  const floatOpen = !visible && dock === 'float' && liveCount > 0;
-
   return (
     <>
-    <div className={`term-screen${visible ? (full ? ' term-fullscreen' : '') : floatOpen ? ' term-float' : ' term-hidden'}`}>
-      {floatOpen && (
-        <div className="term-float-head">
-          <span className={`dot ${activeSess?.status || 'closed'}`} />
-          <span className="tf-label">{dockLabel}{liveCount > 1 ? ` · ${liveCount} sessions` : ''}</span>
-          <span className="tf-actions">
-            <button onClick={() => setDock('min')} aria-label="Minimise" title="Minimise to the corner chip">–</button>
-            <button onClick={() => go.terminal()} aria-label="Open full screen" title="Open the full Terminal screen">⤢</button>
-          </span>
-        </div>
-      )}
+    <div className={`term-screen${visible ? (full ? ' term-fullscreen' : '') : ' term-hidden'}`}>
       {/* #316 — the review quick link is the rail's `review ↗`, not a second
           button up here: one entrance per screen. */}
       {/* THE CRUMB NAMES THE PROJECT WHEN THERE IS ONE. A terminal is opened
@@ -1344,13 +1337,13 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
           <div className="term-attn">
             {waiting.length > 0 && (
               <button className="ta-pill" title="Jump to the first session waiting on an answer"
-                onClick={() => { const w = waiting[0]; if (w) focusInSlot(w.id); }}>
+                onClick={() => { const w = waiting[0]; if (w) showInLead(w.id); }}>
                 <span className="d" />{attentionLabel}
               </button>
             )}
             <span className="ta-say">
               {shownIds.length} of {sessions.length} session{sessions.length === 1 ? '' : 's'} shown
-              {sessions.length > shownIds.length ? ' · click a rail row to bring it into the first pane' : ' · ⤢ on a pane brings it to the front'}
+              {sessions.length > shownIds.length ? ' · click a rail row to bring it into the first pane' : ' · ⤢ on a pane brings it to the focus view'}
             </span>
           </div>
         )}
@@ -1552,9 +1545,9 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                       request to undo it. */}
                   {paneCount > 1 && (
                     <button className="pane-btn"
-                      title="Bring this session to the first pane"
-                      onClick={(e) => { e.stopPropagation(); focusInSlot(s.id); }}
-                      aria-label="Move to the first pane">⤢</button>
+                      title="Focus this session — the Focus shape, with this one in the big pane"
+                      onClick={(e) => { e.stopPropagation(); focusPane(s.id); }}
+                      aria-label="Bring this session to the focus view">⤢</button>
                   )}
                   <button className="pane-btn"
                     title={s.tmux
@@ -1564,6 +1557,15 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                     aria-label="Close pane">×</button>
                 </div>
                 <TermSession sess={s} visible={shown} focused={shown && s.id === active}
+                  /* FOCUS'S SMALL PANES GET A SMALLER FACE. They are a third of
+                     the width and a fraction of the height, so at the shared
+                     14px they hold a dozen wrapped lines and are genuinely
+                     hard to read — the complaint that prompted this. 11px is
+                     not decoration: it is what puts a useful number of ROWS in
+                     a short pane, which is the only thing that makes one worth
+                     glancing at. The big pane keeps the full size, since that
+                     is the one you are working in. */
+                  fontSize={layout === 'focus' && slot !== 0 ? 11 : undefined}
                   onStatus={(st, note) => setStatus(s.id, st, note)}
                   onUsage={setUsage}
                   onTmux={(name) => noteTmux(s.id, s.cwd, name)}
@@ -1578,8 +1580,24 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
             {sessions.length === 0 && (
               <div className="term-holder gitbash term-empty">
                 <span>No session open.</span>
-                <span className="dim">Resume one above, or start a new one with + New session.</span>
+                <span className="dim">Resume one from the rail, or start a new one with + New session.</span>
               </div>
+            )}
+            {/* THE SHAPE'S EMPTY PANES, drawn as empty rather than left as a
+                hole in the grid. A shape with more panes than sessions is now
+                an ordinary state — nothing fills it for you — so the screen has
+                to say that is what you are looking at, or a 2×2 holding one
+                terminal reads as three panes that failed to load. */}
+            {sessions.length > 0 && Array.from(
+              { length: Math.max(0, LAYOUT_PANES[layout] - shownIds.length) },
+              (_, i) => (
+                <div key={`empty-${i}`} className="term-pane empty"
+                  style={{ order: shownIds.length + i }}>
+                  <div className="term-holder gitbash term-empty">
+                    <span className="dim">Empty pane</span>
+                  </div>
+                </div>
+              ),
             )}
           </div>
         </div>{/* /term-col */}
@@ -1682,7 +1700,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                                 title={onScreen
                                   ? 'Click to bring this session into the first pane'
                                   : 'Not on screen — click to bring it into the first pane'}
-                                onClick={() => { if (renaming !== x.id) focusInSlot(x.id); }}>
+                                onClick={() => { if (renaming !== x.id) showInLead(x.id); }}>
                                 <span className={`dot ${x.status}`} />
                                 {renaming === x.id ? (
                                   <input className="tcg-edit" autoFocus value={draft}
@@ -2021,21 +2039,13 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
         onCancel={() => setEndAllAsk(false)}
       />
     )}
-    {/* the minimised dock chip (#139) — the default whenever the user
-        navigates away with sessions still running; click to expand */}
-    {!visible && dock === 'min' && liveCount > 0 && (
-      <button className="term-mini" onClick={() => setDock('float')}
-        title="A terminal session is running — expand it here, or open the full screen from its header">
-        <span className="dot" /> {liveCount > 1 ? `${liveCount} terminal sessions` : dockLabel} ▴
-      </button>
-    )}
     </>
   );
 }
 
 // One tab: an xterm instance + its websocket, kept mounted (hidden when
 // inactive) so the scrollback survives tab switches.
-function TermSession({ sess, visible, focused, onStatus, onUsage, onTmux, onSid, onExit, onOutput, onCopied, register }: {
+function TermSession({ sess, visible, focused, fontSize, onStatus, onUsage, onTmux, onSid, onExit, onOutput, onCopied, register }: {
   sess: { id: number; cwd: string; cmd: 'shell' | 'claude'; tmux?: string };
   // Rendered on screen at all (it may be one of several panes)...
   visible: boolean;
@@ -2043,6 +2053,9 @@ function TermSession({ sess, visible, focused, onStatus, onUsage, onTmux, onSid,
   // same thing: stealing focus for every visible pane would make the last one
   // mounted swallow your typing.
   focused: boolean;
+  // Override the shared face size for this pane — Focus's small panes only.
+  // Undefined means the size every other terminal uses.
+  fontSize?: number;
   onStatus: (s: Status, note: string) => void;
   onUsage: (u: TermUsage) => void;
   onTmux: (name: string) => void;
@@ -2094,7 +2107,7 @@ function TermSession({ sess, visible, focused, onStatus, onUsage, onTmux, onSid,
   };
 
   useEffect(() => {
-    const term = new XTerm(TERM_OPTIONS);
+    const term = new XTerm({ ...TERM_OPTIONS, fontSize: fontSize ?? TERM_OPTIONS.fontSize });
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.loadAddon(new WebLinksAddon());
@@ -2274,6 +2287,25 @@ function TermSession({ sess, visible, focused, onStatus, onUsage, onTmux, onSid,
       term.dispose();
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // A PANE CHANGES SIZE WITHOUT BEING REMOUNTED. Pressing ⤢ moves a session
+  // from a small Focus pane into the big one and back, and the session must
+  // survive that with its socket and its scrollback — so the face size cannot
+  // live only in the constructor. Setting it reflows the grid, which changes
+  // how many ROWS fit, so the pty has to be told the new size in the same
+  // breath or the program inside keeps drawing to the old one.
+  useEffect(() => {
+    const term = termRef.current;
+    if (!term) return;
+    const want = fontSize ?? TERM_OPTIONS.fontSize;
+    if (term.options.fontSize === want) return;
+    term.options.fontSize = want;
+    safeFit();
+    const ws = wsRef.current;
+    if (ws?.readyState === WebSocket.OPEN && term.cols >= 2 && term.rows >= 2) {
+      ws.send(JSON.stringify({ t: 'resize', cols: term.cols, rows: term.rows }));
+    }
+  }, [fontSize]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Refit when this pane becomes visible (it may have been hidden at 0×0).
   useEffect(() => {

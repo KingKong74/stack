@@ -1437,23 +1437,130 @@ a.tab { display: inline-block; }
 .show-summary { font-size: 13.5px; line-height: 1.65; color: var(--body); white-space: pre-wrap; }
 .show-foot { margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--line-2); font-size: 12px; color: var(--faint); text-align: center; }
 
-/* ---------- token gate (first-load screen) ---------- */
+/* ---------- the landing page + the token gate (first-load screen) ----------
+   Claude Design "Stack Project Logo Design" (ac7ecb0c), artboard "Stack
+   Landing v2". The layout is the design's verbatim; components/TokenGate.tsx
+   carries the two notes about it that are decisions rather than details.
+
+   `.gate` IS STILL A CENTRING WRAPPER and screens/Showcase.tsx still uses it
+   for its "Nothing here" card, so it and `.gate-card`/`-title`/`-sub` stay
+   block-level with margins between them. The landing does NOT use `.gate` —
+   it scrolls, so its gate section is `.land-gate` and only the card is shared.
+   Restyle the card and you restyle a showcase error; that is intended (one
+   card), but check both. */
 .gate { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
-.gate-card { width: 100%; max-width: 380px; background: var(--card); border: 1px solid var(--line-2); border-radius: 18px; padding: 30px 28px; box-shadow: 0 18px 50px rgba(0, 0, 0, 0.4); }
+
+.land { display: flex; flex-direction: column; align-items: center; background: var(--surface-canvas); color: var(--text-primary); font: var(--type-body); overflow-x: hidden; }
+.land-band, .land-nav { width: 100%; box-sizing: border-box; max-width: 1120px; padding-inline: clamp(20px, 6vw, 80px); }
+
+.land-nav { display: flex; align-items: center; justify-content: space-between; gap: var(--space-5); padding-block: var(--space-5); }
+.land-navlink { background: none; border: none; padding: 0; font: var(--type-label); color: var(--text-secondary); white-space: nowrap; cursor: pointer; transition: var(--transition-control); }
+.land-navlink:hover { color: var(--text-primary); }
+
+/* The landing keeps its wordmark on a phone. The global rule above (720px)
+   drops `.brandmark .word` because the TOPBAR is fighting a crumb and a
+   searchbox for the same row; the landing's nav has two things in it and its
+   gate card has the whole card, so on both the word has the room and the
+   brand is the point. */
+@media (max-width: 720px) {
+  .land .brandmark .word { display: revert; }
+}
+
+/* Hero. The two glows are decoration behind the type — pointer-events off, and
+   they are the reason the hero's own children are positioned. */
+.land-hero { position: relative; width: 100%; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-7); text-align: center; min-height: min(82vh, 800px); padding: var(--space-10) clamp(20px, 6vw, 80px); }
+.land-hero > *:not(.land-glow) { position: relative; }
+.land-glow { position: absolute; top: 8%; left: 50%; transform: translateX(-50%); width: min(820px, 130%); height: 440px; border-radius: 50%; background: radial-gradient(closest-side, var(--blue-tint), transparent 78%); filter: blur(18px); pointer-events: none; }
+.land-glow.lime { top: 16%; width: min(340px, 78%); height: 200px; filter: none; background: radial-gradient(closest-side, var(--lime-tint), transparent 72%); }
+
+.land-heromark { display: flex; flex-direction: column; align-items: center; gap: 18px; }
+.land-heromark svg { filter: drop-shadow(0 12px 34px var(--scrim)); }
+.land-eyebrow { font: var(--type-eyebrow); letter-spacing: var(--tracking-caps); text-transform: uppercase; color: var(--text-tertiary); white-space: nowrap; }
+.land-eyebrow.accent { color: var(--text-accent); white-space: normal; }
+
+.land-h1 { font: var(--weight-semibold) clamp(38px, 8vw, 76px)/1.04 var(--font-sans); letter-spacing: -0.04em; margin: 0; max-width: 15em; text-wrap: balance; }
+.land-lede { font: var(--weight-regular) clamp(16px, 2.2vw, 20px)/1.55 var(--font-sans); color: var(--text-secondary); margin: 0; max-width: 48ch; text-wrap: pretty; }
+
+.land-hero-pills { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: var(--space-4); font: var(--weight-medium) var(--text-xs)/1 var(--font-mono); color: var(--text-tertiary); }
+.land-pill { display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; border-radius: var(--radius-pill); padding: 6px 11px; }
+.land-pill i { width: 6px; height: 6px; border-radius: 50%; flex: none; }
+.land-pill.info { background: var(--status-info-bg); color: var(--status-info-fg); }
+.land-pill.info i { background: var(--blue-500); }
+.land-pill.ok { background: var(--status-success-bg); color: var(--status-success-fg); }
+.land-pill.ok i { background: var(--lime-500); }
+.land-pill-plain { white-space: nowrap; }
+
+/* Every band below the hero is ruled off from the one above it. */
+.land-band { padding-block: var(--space-10); border-top: 1px solid var(--border-subtle); display: flex; flex-direction: column; gap: var(--space-8); }
+.land-band-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--space-4); }
+.land-band-note { font: var(--type-caption); font-family: var(--font-mono); color: var(--text-tertiary); white-space: nowrap; }
+
+.land-nouns { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr)); gap: var(--space-6); }
+.land-noun { display: flex; flex-direction: column; gap: var(--space-4); background: var(--surface-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: var(--space-6); }
+.land-noun-n { font: var(--weight-medium) var(--text-xs)/1 var(--font-mono); color: var(--text-link); }
+.land-noun-n.accent { color: var(--text-accent); }
+.land-noun h2 { font: var(--type-heading); margin: 0; }
+.land-noun p { font: var(--type-body-sm); color: var(--text-secondary); margin: 0; text-wrap: pretty; }
+
+/* The console mock. Illustrative — see the note in TokenGate.tsx. */
+.land-mockband { border-top: none; gap: var(--space-5); padding-block: var(--space-9) var(--space-10); }
+.land-mock { display: flex; flex-direction: column; gap: var(--space-6); background: var(--surface-sunken); border: 1px solid var(--border-subtle); border-radius: var(--radius-2xl); padding: clamp(16px, 3vw, 32px); }
+.land-mock-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(290px, 100%), 1fr)); gap: var(--space-6); }
+.land-mock-pane { display: flex; flex-direction: column; gap: var(--space-4); background: var(--surface-raised); border: 1px solid var(--border-subtle); border-radius: var(--radius-xl); padding: var(--space-6); }
+.land-mock-runs { display: flex; flex-direction: column; gap: var(--space-4); background: var(--surface-card); border: 1px solid var(--border-default); border-radius: var(--radius-xl); padding: var(--space-6); box-shadow: var(--shadow-md); }
+.land-mock-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); }
+.land-mock-head .t { font: var(--type-label); color: var(--text-primary); white-space: nowrap; }
+.land-mock-head .n { font: var(--weight-medium) var(--text-2xs)/1 var(--font-mono); color: var(--text-tertiary); white-space: nowrap; }
+
+.land-mock-task { display: flex; flex-direction: column; gap: var(--space-4); background: var(--surface-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: var(--space-5); }
+.land-mock-task.queued { opacity: .72; }
+.land-mock-task .t { font: var(--type-body-sm); color: var(--text-primary); }
+.land-mock-task .m { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
+.land-mock-task .id { font: var(--weight-medium) var(--text-2xs)/1 var(--font-mono); color: var(--text-link); white-space: nowrap; }
+.land-mock-task .area { font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-tertiary); white-space: nowrap; }
+.land-mock-task .tag { font: var(--type-label); border-radius: var(--radius-sm); padding: 2px 8px; white-space: nowrap; }
+.land-mock-task .tag.info, .land-pipeline .step.info { background: var(--status-info-bg); color: var(--status-info-fg); }
+.land-mock-task .tag.ok, .land-pipeline .step.ok { background: var(--status-success-bg); color: var(--status-success-fg); }
+.land-mock-task .tag.neutral, .land-pipeline .step.neutral { background: var(--status-neutral-bg); color: var(--status-neutral-fg); }
+
+.land-run { display: flex; flex-direction: column; gap: var(--space-3); }
+.land-run-top { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); font: var(--weight-medium) var(--text-xs)/1 var(--font-mono); color: var(--text-primary); white-space: nowrap; }
+.land-run-top .n { color: var(--text-tertiary); }
+.land-run-top .done { color: var(--text-accent); }
+.land-run-track { height: 6px; border-radius: var(--radius-pill); background: var(--surface-overlay); overflow: hidden; }
+.land-run-fill { height: 100%; }
+
+.land-mock-log { display: flex; flex-direction: column; gap: var(--space-3); background: var(--surface-sunken); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: var(--space-5); font: var(--type-code); color: var(--text-secondary); }
+.land-mock-log .dim { color: var(--text-tertiary); }
+.land-mock-log .ok { color: var(--text-accent); }
+.land-mock-foot { display: flex; align-items: center; gap: var(--space-4); border-top: 1px solid var(--border-subtle); padding-top: var(--space-5); }
+.land-mock-foot .btn { font: var(--type-label); color: var(--white); background: var(--action-primary); border-radius: var(--radius-md); padding: 9px 16px; white-space: nowrap; }
+.land-mock-foot .lnk { font: var(--type-body-sm); color: var(--text-secondary); white-space: nowrap; }
+
+.land-pipeline { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-4); background: var(--surface-raised); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: var(--space-5); font: var(--weight-medium) var(--text-xs)/1 var(--font-mono); }
+.land-pipeline .dim { color: var(--text-tertiary); }
+.land-pipeline .step { border-radius: var(--radius-sm); padding: 4px 9px; white-space: nowrap; }
+
+.land-oneliners { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr)); gap: var(--space-7); }
+.land-oneliners h3 { font: var(--type-heading); margin: 0 0 var(--space-3); }
+.land-oneliners p { font: var(--type-body-sm); color: var(--text-secondary); margin: 0; text-wrap: pretty; }
+
+.land-gate { width: 100%; box-sizing: border-box; display: flex; justify-content: center; padding: var(--space-10) clamp(20px, 6vw, 80px) var(--space-11); border-top: 1px solid var(--border-subtle); background: var(--surface-sunken); }
+
+.gate-card { width: 100%; max-width: 420px; background: var(--card); border: 1px solid var(--border-default); border-radius: var(--radius-xl); padding: clamp(20px, 4vw, 32px); box-shadow: var(--shadow-lg); }
+.gate-card .brandmark { margin-bottom: 18px; }
 .gate-title { font-family: var(--disp); font-size: 20px; font-weight: 600; margin-bottom: 6px; }
 .gate-sub { font-size: 13px; line-height: 1.55; color: var(--muted); margin-bottom: 18px; }
-.gate .field-input { margin-bottom: 12px; }
+.gate .field-input, .gate-card .field-input { margin-bottom: 12px; }
 .gate-error { font-size: 12.5px; color: var(--critical-text); margin-bottom: 12px; }
 .gate-btn { width: 100%; justify-content: center; }
 .gate-btn:disabled { opacity: .55; cursor: default; }
-.gate-hero { width: 100%; max-width: 420px; display: flex; flex-direction: column; align-items: center; }
-.gate-hero .gate-card { width: 100%; max-width: none; }
-.gate-tag { font-size: 13.5px; line-height: 1.6; color: var(--muted); text-align: center; margin-bottom: 22px; }
+.gate-foot { font: var(--type-caption); color: var(--text-tertiary); margin-top: 12px; text-align: center; }
 .gate-help-toggle { display: block; margin: 12px auto 0; background: none; border: none; padding: 0; font: inherit; font-size: 12.5px; color: var(--accent-text); cursor: pointer; }
 .gate-help-toggle:hover { color: var(--accent-text-hover); }
 .gate-help { margin-top: 12px; padding: 12px 14px; background: var(--panel); border: 1px solid var(--line-2); border-radius: 10px; font-size: 12.5px; line-height: 1.6; color: var(--body); }
 .gate-help .mono { font-size: 11.5px; }
-.gate-link { margin-top: 18px; background: none; border: none; padding: 0; font: inherit; font-size: 13px; color: var(--muted); cursor: pointer; }
+.gate-link { display: block; margin: 18px auto 0; background: none; border: none; padding: 0; font: inherit; font-size: 13px; color: var(--muted); cursor: pointer; }
 .gate-link:hover { color: var(--ink); }
 .pcard .meta > * + * { margin-top: 0; }
 
@@ -2313,9 +2420,15 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
 }
 /* Focus: one across the top, the rest small beneath. `1 / -1` spans whatever
    the column count is, so this does not need to know it. */
+/* The bottom row was 1fr against 2.4 — under 30% of the height for three
+   terminals, which at the shared face size is a dozen wrapped lines each and
+   not worth glancing at. 2fr gives them a third of the canvas, and the pane
+   itself drops to an 11px face (Terminal.tsx passes it), so the extra height
+   buys ROWS rather than the same content drawn larger. Both halves are needed:
+   height alone still wraps, a smaller face alone is still four lines tall. */
 .term-grid.lay-focus {
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  grid-template-rows: minmax(0, 2.4fr) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 2fr) minmax(0, 1fr);
 }
 .term-grid.lay-focus .term-pane.lead { grid-column: 1 / -1; }
 /* Six-up and focus put a terminal in a third of the width — same trade as the
@@ -2344,6 +2457,16 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
 /* An off-screen pane is HIDDEN, never unmounted — its socket and scrollback
    have to survive, the same reason the whole screen never unmounts. */
 .term-pane.off { display: none; }
+/* AN EMPTY PANE IN A SHAPE WITH MORE PANES THAN SESSIONS. Since a layout button
+   stopped filling itself with sessions, that is an ordinary state rather than a
+   transient one, and the cell has to read as deliberately empty — an unfilled
+   grid cell and a terminal that failed to paint look identical otherwise. It
+   carries no title bar, so unlike a real pane it keeps all four corners. */
+.term-pane.empty .term-holder,
+.term-pane.empty .term-holder.gitbash {
+  background: var(--surface); border: 1px dashed var(--line-3); border-radius: 14px;
+}
+.term-pane.empty .term-empty { color: var(--fainter); font-size: 11px; }
 /* Inside a pane the holder gives up its own fixed height to the grid cell. */
 /* .gitbash sets its own fixed height further down at equal specificity, so
    this has to name it too or source order would win and every pane would be a
@@ -2472,53 +2595,12 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
 .td-bulk .btn-repo.sm, .td-bulk .btn-cancel.sm { padding: 3px 9px; font-size: 11.5px; }
 .td-killlist { margin: 8px 0 0; padding-left: 18px; font-size: 12.5px; line-height: 1.7; }
 .td-x:hover { color: var(--critical-text); }
-.term-float .term-detached { display: none; }
-/* #137/#139 — the persistent terminal dock. The whole screen stays mounted;
-   these classes re-layout the SAME DOM as hidden, or as a floating panel. */
+/* #137 — the persistent terminal dock. The whole screen stays mounted; away
+   from #/terminal it is simply HIDDEN — the same DOM, no floating panel and no
+   corner chip (#492 took both: the running-sessions pill already says a
+   session is alive, and the pane it drew sat on top of whatever screen you had
+   navigated to). */
 .term-screen.term-hidden { display: none; }
-.term-screen.term-float {
-  position: fixed; right: 18px; bottom: 18px; z-index: 60;
-  width: min(560px, calc(100vw - 36px));
-  background: var(--card); border: 1px solid var(--line-3); border-radius: 14px;
-  box-shadow: var(--shadow-lg); overflow: hidden;
-}
-.term-float .topbar, .term-float .term-cockpit { display: none; }
-/* 25b — the tabs live in the head bar now, and the floating dock still needs
-   them: keep the bar, hide everything on it except the tab strip. */
-.term-float .term-bar { margin: 0; padding: 6px 8px 0; gap: 6px; }
-.term-float .page.term-page { padding: 0; max-width: none; margin: 0; }
-.term-float .term-layout { display: block; }
-/* The floating dock is a 300px chip — a grid of terminals has no business in
-   it. Collapse to a single pane there whatever the screen's pane count is,
-   and drop the pane title: the dock's own head already names the session. */
-.term-float .term-grid { display: block; height: auto; min-height: 0; }
-.term-float .term-pane:not(.focused) { display: none; }
-.term-float .term-pane-title { display: none; }
-.term-float .term-pane .term-holder,
-.term-float .term-pane .term-holder.gitbash { height: 300px; flex: none; border-radius: 0; }
-.term-float .term-holder { height: 300px; min-height: 0; border-radius: 0; }
-.term-float-head {
-  display: flex; align-items: center; gap: 8px; padding: 8px 12px;
-  background: var(--panel); border-bottom: 1px solid var(--line-2);
-  font-size: 12.5px; font-weight: 600; color: var(--ink);
-}
-.term-float-head .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); flex: none; }
-.term-float-head .dot.live { background: var(--green); }
-.term-float-head .dot.connecting { background: var(--building); }
-.term-float-head .tf-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: 11.5px; }
-.term-float-head .tf-actions { display: flex; gap: 2px; }
-.term-float-head .tf-actions button { color: var(--muted); font-size: 14px; line-height: 1; padding: 2px 7px; border-radius: 6px; }
-.term-float-head .tf-actions button:hover { color: var(--ink); background: var(--card); }
-/* the minimised chip — same corner + look as the presence pill it replaces */
-.term-mini {
-  position: fixed; right: 18px; bottom: 18px; z-index: 40;
-  display: inline-flex; align-items: center; gap: 8px;
-  background: var(--card); border: 1px solid var(--line-2); border-radius: 999px;
-  padding: 8px 14px; font-size: 12.5px; font-weight: 600; color: var(--ink);
-  box-shadow: var(--shadow-md); cursor: pointer;
-}
-.term-mini:hover { border-color: var(--green); }
-.term-mini .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); flex: none; }
 /* A phone has no room for a 260px column beside a terminal, so the rail lies
    DOWN across the top — still flush, still the first thing, just on the other
    axis. `column`, not `column-reverse`: reversing flips what `order: -1` means
@@ -2594,103 +2676,6 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
 }
 @media (max-width: 720px) { .spm { min-width: 0; } .spm-agenda { flex-direction: column; } }
 
-/* ---- the corner ＋ (quick add) ---- */
-/* The recipe library used to sit here. What you actually reach for from every
-   screen is somewhere to PUT a decision — a roadmap item — so the corner holds
-   a composer instead of a library.
-   Glass, not paint (BUG-8, and it still applies): a launcher fixed to the
-   corner of a column that runs full-bleed to 32px of the edge WILL sit on top
-   of something, so it stays translucent and blurred, and below 1200px it drops
-   the label for its glyph alone. The right-hand corners are spoken for (the
-   to-top button, the terminal dock). */
-.quick-dock {
-  position: fixed; bottom: 28px; left: 24px; z-index: 50;
-  display: inline-flex; align-items: center; gap: 6px;
-  background: color-mix(in srgb, var(--surface) 72%, transparent);
-  -webkit-backdrop-filter: blur(7px); backdrop-filter: blur(7px);
-  border: 1px solid var(--keyline); border-radius: 999px;
-  padding: 7px 14px; font-size: 12px; font-weight: 600; color: var(--muted);
-  box-shadow: var(--shadow-md);
-  opacity: 0.92; cursor: pointer; transition: opacity 0.15s, border-color 0.15s, color 0.15s;
-}
-/* Hovered or open, it is being USED — no longer chrome to see past. */
-.quick-dock:hover, .quick-dock.on { background: var(--surface); opacity: 1; border-color: var(--accent-soft); color: var(--ink); }
-/* An ASCII plus, sized up a little so it reads as the ＋ the copy calls it:
-   the body font has no U+FF0B and drew a tofu box in its place. */
-.quick-dock .glyph { font-size: 16px; font-weight: 500; color: var(--accent-text); line-height: 1; }
-.quick-dock.on { background: var(--accent-tint); border-color: var(--accent-tint-border); }
-/* 1200, not 620: the label is only affordable where the page has room to
-   spare beside it, and below --page-max it never has. */
-@media (max-width: 1200px) { .quick-dock .label { display: none; } .quick-dock { padding: 9px 11px; } }
-
-.quick-scrim { position: fixed; inset: 0; z-index: 55; background: var(--scrim); animation: fade 0.12s ease; }
-/* A composer, not a library: narrow enough to read as a note you are writing,
-   and anchored to the button it came out of rather than centred like a modal —
-   what you were looking at is often what you are writing about. */
-.quick-sheet {
-  position: fixed; z-index: 56; left: 24px; bottom: 76px;
-  width: min(420px, calc(100vw - 48px)); max-height: calc(100vh - 108px); overflow-y: auto;
-  display: flex; flex-direction: column; gap: 10px;
-  padding: 16px 16px 14px;
-  background: var(--paper); border: 1px solid var(--keyline); border-radius: 14px;
-  box-shadow: var(--shadow-lg);
-  animation: fade 0.12s ease;
-}
-@media (max-width: 620px) {
-  .quick-sheet { left: 12px; width: calc(100vw - 24px); bottom: 68px; max-height: calc(100vh - 92px); padding: 14px; }
-}
-
-.qa-head { display: flex; align-items: center; gap: 10px; }
-/* The ＋ had a two-way segmented control (item / thought) until the Workbench
-   cull took the second destination. A one-entry segmented control is not a
-   control, so what is left is a plain title. */
-.qa-title { flex: 1; font-size: 13px; font-weight: 600; color: var(--ink); }
-.qa-close { font-size: 18px; line-height: 1; color: var(--muted); background: none; border: none; cursor: pointer; padding: 0 2px; }
-.qa-close:hover { color: var(--ink); }
-
-/* The target is shown even with one project: a quick-add whose destination is
-   implicit is one that files into the wrong app exactly once. */
-.qa-project { display: flex; align-items: center; gap: 8px; }
-.qa-project .cap { font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em; color: var(--muted); }
-.qa-project select { flex: 1; min-width: 0; padding: 6px 8px; border-radius: 7px; border: 1px solid var(--line-3); background: var(--card); color: var(--ink); font: inherit; font-size: 12.5px; }
-.qa-quiet { font-size: 12px; color: var(--muted); }
-
-.qa-input, .qa-area {
-  width: 100%; padding: 9px 11px; border-radius: 8px;
-  border: 1px solid var(--line-3); background: var(--card); color: var(--ink);
-  font: inherit; font-size: 13px; line-height: 1.55; resize: vertical;
-}
-.qa-input:focus, .qa-area:focus { outline: none; border-color: var(--accent); }
-.qa-area.tall { min-height: 118px; }
-
-.qa-priorities { display: flex; gap: 6px; }
-.qa-pri { flex: 1; padding: 5px 8px; border-radius: 20px; border: 1px solid var(--line-3); background: transparent; font-size: 11px; font-weight: 500; color: var(--muted); cursor: pointer; }
-.qa-pri:hover { border-color: var(--accent); }
-.qa-pri.on { background: var(--accent-tint); }
-
-.qa-hint { font-size: 11px; line-height: 1.6; color: var(--muted); }
-.qa-hint.grow { flex: 1; min-width: 0; }
-
-/* The ✧ row sits UNDER its field, not in a label above it: this composer has
-   no labels, and a button floating over a bare textarea reads as chrome. */
-.qa-tools { display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-top: -2px; }
-.qa-tools .gemini-btn { flex: none; }
-
-/* An area is a LANE, so the assist's suggestion is shown where it can be
-   dropped rather than applied out of sight. */
-.qa-chiprow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.qa-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 6px 3px 9px; border-radius: 20px; background: var(--accent-tint); border: 1px solid var(--accent-tint-border); font-size: 11px; font-weight: 500; color: var(--accent-text-hover); }
-.qa-chip .x { background: none; border: none; padding: 0 2px; font-size: 13px; line-height: 1; color: var(--accent-text-hover); opacity: 0.7; cursor: pointer; }
-.qa-chip .x:hover { opacity: 1; }
-.qa-err { font-size: 12px; color: var(--critical-text); }
-/* A save with no way to what it made reads as a press that went nowhere. */
-.qa-filed { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 8px; background: var(--accent-tint); border: 1px solid var(--accent-tint-border); font-size: 12px; color: var(--ink); }
-.qa-link { background: none; border: none; padding: 0; font: inherit; font-size: 12px; font-weight: 500; color: var(--accent-text-hover); cursor: pointer; }
-.qa-link:hover { text-decoration: underline; }
-
-.qa-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 2px; }
-.qa-kbd { font-family: var(--mono); font-size: 10px; color: var(--muted); }
-.qa-foot .btn-accent:disabled { opacity: 0.45; cursor: default; }
 /* The window track: day (or week) ticks for rhythm, a shaded region for what
    the window excludes, and a grip you can grab anywhere along the bar. */
 .psky-scrub .track {
@@ -2703,8 +2688,8 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
    Mission Control/Terminal strip all go, because none of them is Mission
    Control itself. What survives is the room strip below (`.mc14-tabs`) — it
    is Mission Control's OWN navigation, not page chrome, and the way out has
-   to stay where the way in was. The corner docks (quick add, to-top, terminal
-   presence) are siblings outside this tree entirely, so they fold via a
+   to stay where the way in was. The corner docks (to-top, terminal presence)
+   are siblings outside this tree entirely, so they fold via a
    `data-mc-full` flag on <body> instead of a descendant selector.
    z-index 40 matches `.term-fullscreen` and is deliberate: it clears the
    page and stays UNDER `.overlay` (50), so a modal opened from Mission
@@ -2722,7 +2707,7 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
    have to be paired with `width: auto` or they just shift the pill left
    instead of widening it. */
 .mc-fullscreen { position: fixed; inset: 0; z-index: 40; overflow-y: auto; background: var(--bg); }
-body[data-mc-full] .quick-dock, body[data-mc-full] .totop, body[data-mc-full] .term-presence { display: none; }
+body[data-mc-full] .totop, body[data-mc-full] .term-presence { display: none; }
 @media (max-width: 1000px) { .mc14-cols, .mc14-cols.rail-slim { grid-template-columns: 1fr; } }
 @media (prefers-reduced-motion: reduce) { .mc14-cols { transition: none; } }
 @media (max-width: 800px) { .mc14-toprow { flex-direction: column; } }
