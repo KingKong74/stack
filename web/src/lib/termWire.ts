@@ -41,3 +41,57 @@ export const GIT_BASH_THEME = {
   brightYellow: '#ffff40', brightBlue: '#6060ff', brightMagenta: '#ff40ff',
   brightCyan: '#40ffff', brightWhite: '#ffffff',
 };
+
+// The rest of the git-bash box: the font and the handful of constructor
+// options that decide how it FEELS rather than what it says.
+//
+// The font stack is the part that had a real bug in it. It led with Consolas
+// and then `'Courier New'`, so every client without Consolas — which is every
+// Linux and most Macs — landed on Courier New: a thin, wide, metrically
+// unrelated face that makes box-drawing characters (claude's own frames, tmux's
+// borders, every progress bar) fail to join up. That is most of what "the
+// terminal looks buggy" actually was. The order now runs the mintty faces
+// first, then each platform's real terminal face, and `ui-monospace` — which
+// resolves to SF Mono / Cascadia / the system's own — ahead of the Courier
+// fallback that should only ever be the last resort.
+export const TERM_FONT =
+  "Consolas, 'Lucida Console', 'Cascadia Mono', 'DejaVu Sans Mono', 'Liberation Mono', ui-monospace, Menlo, monospace";
+
+// Shared xterm constructor options. Every one of these is a decision:
+//
+//  • `scrollback` MATCHES TMUX'S history-limit (20000, set in
+//    terminal/tmux-session.mjs). They are two different buffers holding the
+//    same output and a mismatch shows: xterm's default of 1000 meant a shell
+//    tab lost its history a screenful later than the claude tab beside it, for
+//    no reason anyone could see.
+//  • `minimumContrastRatio: 1` turns OFF xterm's automatic recolouring. The
+//    palette comment above says a terminal that recolours what a program
+//    prints is lying about its output; xterm will quietly do exactly that to
+//    dim text unless it is told not to.
+//  • `fastScrollModifier: 'shift'` — shift-scroll jumps a page. It is also the
+//    modifier that bypasses tmux mouse reporting, so the same gesture that
+//    selects text is the one that scrolls fast, which is what mintty does.
+//  • `allowProposedApi` is what the renderer addons need to attach at all.
+export const TERM_OPTIONS = {
+  cursorBlink: true,
+  fontSize: 14,
+  fontFamily: TERM_FONT,
+  theme: GIT_BASH_THEME,
+  scrollback: 20000,
+  minimumContrastRatio: 1,
+  drawBoldTextInBrightColors: true,
+  fastScrollModifier: 'shift' as const,
+  scrollSensitivity: 3,
+  allowProposedApi: true,
+  // A URL is a link. xterm underlines what it recognises either way; without
+  // this the underline is a lie the user clicks at.
+  linkHandler: {
+    activate: (_e: MouseEvent, uri: string) => {
+      // Only ever http(s), and only ever a new tab with no opener: the text
+      // came off a pty, which is to say from whatever a program decided to
+      // print, and `javascript:` in a terminal is somebody else's script.
+      if (!/^https?:\/\//i.test(uri)) return;
+      window.open(uri, '_blank', 'noopener,noreferrer');
+    },
+  },
+};

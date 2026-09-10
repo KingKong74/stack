@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Terminal as XTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
+import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
 import {
   openTerminal,
@@ -26,7 +27,10 @@ import { useAutoRefresh } from '../lib/autoRefresh';
 import { wireTermClipboard } from '../lib/termClipboard';
 // The wire codec and the palette are shared with the tab agents' consoles
 // (#379) — see lib/termWire.ts for why those three and nothing else.
-import { b64encode, b64decode, GIT_BASH_THEME } from '../lib/termWire';
+import { b64encode, b64decode, TERM_OPTIONS } from '../lib/termWire';
+// How the box is painted (WebGL, with the DOM renderer as the fallback the
+// browser can force on us at any moment) — lib/termRenderer says why.
+import { attachRenderer } from '../lib/termRenderer';
 // #380 — a tab agent's console is an ordinary session on this screen in every
 // way except its name, which is the only evidence here of what it is: this
 // screen has no project payload and no agent state to read. Titling one
@@ -213,9 +217,11 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   // identical, which is how "I can't copy from the terminal" survives a fix.
   const [copied, setCopied] = useState<{ id: number; label: string } | null>(null);
   const copiedTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const noteCopied = (id: number, text: string) => {
-    const lines = text.split('\n').length;
-    setCopied({ id, label: lines > 1 ? `copied ${lines} lines` : `copied ${text.length} chars` });
+  // The label is composed by the clipboard layer, not here: it is the only
+  // thing that knows whether a gesture copied, pasted, or was refused by the
+  // browser, and a receipt that says "copied" for a refusal is worse than none.
+  const noteCopied = (id: number, label: string) => {
+    setCopied({ id, label });
     clearTimeout(copiedTimer.current);
     copiedTimer.current = setTimeout(() => setCopied(null), 1600);
   };
@@ -1625,7 +1631,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                   onSid={(sid) => setSessions((cur) => cur.map((x) => (x.id === s.id ? { ...x, sid } : x)))}
                   onOutput={(bytes) => noteOutput(s.id, bytes)}
                   onExit={(name) => noteTmuxEnded(s.cwd, name)}
-                  onCopied={(text) => noteCopied(s.id, text)}
+                  onCopied={(label) => noteCopied(s.id, label)}
                   register={(h) => { if (h) handles.current.set(s.id, h); else handles.current.delete(s.id); }} />
               </div>
               );
@@ -1998,9 +2004,10 @@ function TermSession({ sess, visible, focused, onStatus, onUsage, onTmux, onSid,
   onSid: (sid: string) => void;
   onOutput: (bytes: number) => void;
   onExit: (tmuxName: string | null) => void;
-  // Something reached the clipboard. With a canvas and no browser selection to
-  // look at, "did that copy?" is otherwise unanswerable — so the pane says so.
-  onCopied: (text: string) => void;
+  // A finished clipboard gesture, already worded — "copied 12 lines",
+  // "paste needs ⌃V here". With a canvas and no browser selection to look at,
+  // "did that work?" is otherwise unanswerable, so the pane says so.
+  onCopied: (label: string) => void;
   register: (h: Handle | null) => void;
 }) {
   const holderRef = useRef<HTMLDivElement>(null);
@@ -2016,18 +2023,44 @@ function TermSession({ sess, visible, focused, onStatus, onUsage, onTmux, onSid,
   // The relay's id for this session, learned from its first frame.
   const sidRef = useRef<string | null>(null);
 
+  // Refit, and only when refitting can mean anything.
+  //
+  // FitAddon divides the holder's box by the size of one cell. A pane that is
+  // hidden (`display: none` — how every inactive pane is kept alive) measures
+  // 0x0, so the division yields a degenerate grid, and the addon happily
+  // applies it: the session gets resized to something like 2x2 cells, the
+  // program inside reflows to fit, and when the pane comes back the screen is
+  // a column of wrapped fragments. That is the "it came back scrambled" bug,
+  // and this guard is the whole fix — a terminal nobody can see does not need
+  // a size, and the visibility effect refits it the moment it can.
+  //
+  // The try/catch is the second half: fit() reads live layout and throws if
+  // the element is mid-teardown, and an exception on the resize path takes the
+  // React tree down with it.
+  const safeFit = () => {
+    const el = holderRef.current;
+    const fit = fitRef.current;
+    if (!el || !fit) return;
+    if (el.clientWidth < 2 || el.clientHeight < 2) return;
+    try { fit.fit(); } catch { /* mid-teardown; the next observation refits */ }
+  };
+
   useEffect(() => {
-    const term = new XTerm({
-      cursorBlink: true,
-      fontSize: 14,
-      fontFamily: "Consolas, 'Courier New', ui-monospace, Menlo, monospace",
-      theme: GIT_BASH_THEME,
-    });
+    const term = new XTerm(TERM_OPTIONS);
     const fit = new FitAddon();
     term.loadAddon(fit);
-    if (holderRef.current) { term.open(holderRef.current); fit.fit(); }
+    term.loadAddon(new WebLinksAddon());
+    // The renderer attaches AFTER open(): it needs the element to get a GL
+    // context from, and loading it before there is one is the documented way
+    // to end up silently on the DOM renderer.
+    let detachRenderer = () => {};
     termRef.current = term;
     fitRef.current = fit;
+    if (holderRef.current) {
+      term.open(holderRef.current);
+      detachRenderer = attachRenderer(term, (why) => console.info(`[term ${sess.id}] ${why}`));
+      safeFit();
+    }
     // Copy/paste (see lib/termClipboard): a released selection copies itself,
     // ⌃⇧C copies explicitly, ⌃V pastes through the browser's own handler, and
     // OSC 52 carries a tmux copy-mode selection — the plain mouse drag inside
@@ -2037,7 +2070,7 @@ function TermSession({ sess, visible, focused, onStatus, onUsage, onTmux, onSid,
     const connect = () => {
       wsRef.current?.close();
       onStatus('connecting', '');
-      fit.fit();
+      safeFit();
       const ws = openTerminal({
         cwd: sess.cwd, cmd: sess.cmd, cols: term.cols, rows: term.rows,
         tmuxSession: sess.cmd === 'claude' && tmuxRef.current ? tmuxRef.current : undefined,
@@ -2133,11 +2166,25 @@ function TermSession({ sess, visible, focused, onStatus, onUsage, onTmux, onSid,
     // never chatter at the host.
     let sentCols = 0;
     let sentRows = 0;
+    // The fit is deferred to the next animation frame rather than run inside
+    // the observer callback. Fitting mutates the very element being observed,
+    // and a synchronous mutation there is what produces the browser's
+    // "ResizeObserver loop completed with undelivered notifications" — which
+    // is not cosmetic: the loop is dropped notifications, i.e. a resize that
+    // silently never happened. One frame of delay costs nothing and the
+    // observer sees a settled box.
+    let fitPending = false;
     const onResize = () => {
-      fit.fit();
+      if (!fitPending) {
+        fitPending = true;
+        requestAnimationFrame(() => { fitPending = false; safeFit(); });
+      }
       clearTimeout(resizeTimer);
       resizeTimer = setTimeout(() => {
         const ws = wsRef.current;
+        // A hidden pane measures nothing and fits to nothing — telling the pty
+        // about that grid is how a backgrounded session reflows to 2 columns.
+        if (term.cols < 2 || term.rows < 2) return;
         if (term.cols === sentCols && term.rows === sentRows) return;
         if (ws?.readyState === WebSocket.OPEN) {
           ws.send(JSON.stringify({ t: 'resize', cols: term.cols, rows: term.rows }));
@@ -2177,6 +2224,8 @@ function TermSession({ sess, visible, focused, onStatus, onUsage, onTmux, onSid,
       data.dispose();
       unwireClipboard();
       wsRef.current?.close();
+      // The renderer holds a GL context and must go FIRST — see termRenderer.
+      detachRenderer();
       term.dispose();
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -2187,9 +2236,11 @@ function TermSession({ sess, visible, focused, onStatus, onUsage, onTmux, onSid,
     const term = termRef.current;
     const fit = fitRef.current;
     if (!term || !fit) return;
-    fit.fit();
+    safeFit();
     const ws = wsRef.current;
-    if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ t: 'resize', cols: term.cols, rows: term.rows }));
+    if (ws?.readyState === WebSocket.OPEN && term.cols >= 2 && term.rows >= 2) {
+      ws.send(JSON.stringify({ t: 'resize', cols: term.cols, rows: term.rows }));
+    }
     if (focused) term.focus();
   }, [visible, focused]);
 

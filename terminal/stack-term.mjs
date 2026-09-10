@@ -434,19 +434,67 @@ function pushUsage(ws) {
 // and track total byte size to implement the 256KB cap.
 const sessions = new Map();
 
-// ---- output buffering helper ----
-// Sends text to the browser as an 'out' frame, buffering when the uplink is down.
-function sendOutText(sid, sess, text) {
-  const b64 = Buffer.from(text).toString('base64');
+// ---- output buffering + coalescing ----
+//
+// Every byte a session produces leaves here, and it leaves as a JSON frame
+// carrying base64 — which costs about 1.4x the bytes plus a parse at both
+// ends. A pty hands us whatever the kernel had ready, so a repainting TUI
+// (claude's own spinner, a build's progress bar) arrives as dozens of tiny
+// reads a frame, each of which was becoming its own websocket message. The
+// browser already merges what it receives into one write per animation frame
+// (#135); this is the same idea one hop earlier, where the per-frame cost is
+// actually paid.
+//
+// IDLE OUTPUT IS NEVER DELAYED, and that is the part worth keeping. A plain
+// timer would add its full window to every keystroke echo — the one latency a
+// terminal must not have. So the rule is: if nothing has been sent for at
+// least the window, send NOW; only a second chunk arriving inside the window
+// starts gathering, which is by definition a burst. Typing pays nothing; a
+// screenful of output pays one frame instead of thirty.
+//
+// Order is why both output paths go through here rather than only the hot one.
+// The daemon's own prompts (the model switch) are written with sendOutText,
+// and a direct send from there would overtake pty output still sitting in the
+// pending buffer — the prompt would print above the text it is answering.
+const OUT_COALESCE_MS = 6;
+
+// Hand a frame to the uplink, or to the reconnect buffer when it is down.
+function shipOut(sid, sess, b64) {
   if (uplink && uplink.readyState === WebSocket.OPEN) {
     uplink.send(JSON.stringify({ t: 'out', sid, data: b64 }));
-  } else {
-    sess.outBuf.bytes += b64.length;
-    sess.outBuf.chunks.push(b64);
-    while (sess.outBuf.bytes > OUT_BUF_CAP && sess.outBuf.chunks.length > 0) {
-      sess.outBuf.bytes -= sess.outBuf.chunks.shift().length;
-    }
+    return;
   }
+  sess.outBuf.bytes += b64.length;
+  sess.outBuf.chunks.push(b64);
+  while (sess.outBuf.bytes > OUT_BUF_CAP && sess.outBuf.chunks.length > 0) {
+    sess.outBuf.bytes -= sess.outBuf.chunks.shift().length;
+  }
+}
+
+// Send whatever has gathered. Safe to call at any time, including with nothing
+// pending — the exit path leans on that.
+function flushOut(sid, sess) {
+  if (sess.outTimer) { clearTimeout(sess.outTimer); sess.outTimer = null; }
+  const pend = sess.outPend;
+  if (!pend || pend.length === 0) return;
+  sess.outPend = null;
+  sess.outLast = Date.now();
+  shipOut(sid, sess, pend.toString('base64'));
+}
+
+// The one door out. Takes a Buffer; text callers go through sendOutText.
+function emitOut(sid, sess, buf) {
+  if (!buf || buf.length === 0) return;
+  sess.outPend = sess.outPend ? Buffer.concat([sess.outPend, buf]) : buf;
+  if (sess.outTimer) return; // already gathering this burst
+  const since = Date.now() - (sess.outLast || 0);
+  if (since >= OUT_COALESCE_MS) { flushOut(sid, sess); return; }
+  sess.outTimer = setTimeout(() => flushOut(sid, sess), OUT_COALESCE_MS - since);
+}
+
+// Sends text to the browser as an 'out' frame, buffering when the uplink is down.
+function sendOutText(sid, sess, text) {
+  emitOut(sid, sess, Buffer.from(text));
 }
 
 // PTY size bounds (#218: #186): resize requests are clamped to what the shim
@@ -515,22 +563,17 @@ function wireChild(sid, sess, child) {
       if (!sess.hitLimit && LIMIT_RE.test(plainTail)) sess.hitLimit = true;
       if (noteLimit(plainTail)) pushUsage(null);
     }
-    const b64 = d.toString('base64');
-    if (uplink && uplink.readyState === WebSocket.OPEN) {
-      uplink.send(JSON.stringify({ t: 'out', sid, data: b64 }));
-    } else {
-      sess.outBuf.bytes += b64.length;
-      sess.outBuf.chunks.push(b64);
-      while (sess.outBuf.bytes > OUT_BUF_CAP && sess.outBuf.chunks.length > 0) {
-        sess.outBuf.bytes -= sess.outBuf.chunks.shift().length;
-      }
-    }
+    emitOut(sid, sess, d);
   };
   child.stdout.on('data', out);
   child.stderr.on('data', out);
 
   child.on('exit', (code) => {
     clearInterval(sess.idleTimer);
+    // The last words before the exit frame. Without this the tail of a session
+    // — a stack trace, a shell's goodbye — sits in the pending buffer while
+    // the browser is told the session ended, and is then dropped.
+    flushOut(sid, sess);
     // If a Claude session (not already on a provider) hit a usage limit, offer
     // the model-switch prompt instead of immediately ending the session.
     if (sess.cmd === 'claude' && !sess.provider && sess.hitLimit) {
@@ -810,6 +853,11 @@ function startSession(msg) {
 
   const sess = {
     outBuf: { chunks: [], bytes: 0 },
+    // The coalescer's state (see emitOut): bytes gathered but not yet framed,
+    // the timer that will frame them, and when a frame last went out.
+    outPend: null,
+    outTimer: null,
+    outLast: 0,
     cwd,
     tmuxSession, // non-null when the claude session runs inside tmux (#171)
     cmd: msg.cmd === 'claude' ? 'claude' : 'shell',

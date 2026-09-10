@@ -25,6 +25,13 @@ import type { Terminal as XTerm } from '@xterm/xterm';
 // ⌃⇧V / ⌘V handlers return false WITHOUT preventing the default, so the native
 // paste event reaches xterm's own handler — bracketed-paste aware, and needing
 // no clipboard-READ permission (which Firefox does not grant at all).
+//
+// RIGHT-CLICK is the mintty gesture, added because ⌃⇧C/⌃V is not what anyone's
+// hands do: copy when there is a selection, paste when there is not, and the
+// context menu suppressed because a terminal has no use for one. Shift keeps
+// the real menu. Its paste half is the ONE path here that asks to read the
+// clipboard, so it is the one path that can be refused — and when it is, the
+// pane says so and names ⌃V rather than leaving a dead button.
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || '');
 
@@ -67,13 +74,25 @@ export async function copyText(text: string): Promise<boolean> {
 }
 
 // Wire copy/paste into one xterm instance. Returns a disposer for the effect
-// that created the terminal. onCopy fires for anything that actually reached
-// the clipboard, so a pane can say so — with a canvas and no visible browser
-// selection, "did that copy?" is otherwise unanswerable.
-export function wireTermClipboard(term: XTerm, onCopy?: (text: string) => void): () => void {
+// that created the terminal.
+//
+// `notice` is how the pane says what happened. With a canvas and no browser
+// selection to look at, a copy that worked and one the browser refused are
+// indistinguishable — and a paste the browser refused is worse, because the
+// user's next keystroke goes into a session they think already has the text.
+// Everything below that can fail reports through it.
+export function wireTermClipboard(
+  term: XTerm,
+  notice?: (label: string) => void,
+): () => void {
   const copy = async (text: string) => {
     if (!text) return;
-    if (await copyText(text)) onCopy?.(text);
+    if (await copyText(text)) {
+      const lines = text.split('\n').length;
+      notice?.(lines > 1 ? `copied ${lines} lines` : `copied ${text.length} chars`);
+    } else {
+      notice?.('copy blocked by the browser');
+    }
   };
 
   // 1. A finished selection copies itself. The gesture people actually make.
@@ -81,16 +100,59 @@ export function wireTermClipboard(term: XTerm, onCopy?: (text: string) => void):
   //    page must not re-copy a selection this pane happens to still hold.
   let dragging = false;
   const el = term.element;
-  const onDown = () => { dragging = true; };
-  const onUp = () => {
-    if (!dragging) return;
+  const onDown = (ev: MouseEvent) => { if (ev.button === 0) dragging = true; };
+  const onUp = (ev: MouseEvent) => {
+    if (!dragging || ev.button !== 0) return;
     dragging = false;
     if (term.hasSelection()) void copy(term.getSelection());
   };
   el?.addEventListener('mousedown', onDown);
   window.addEventListener('mouseup', onUp);
 
-  // 2. The keyboard. ⌃⇧C / ⌘C copy; ⌃C copies only when there is something to
+  // 2. RIGHT-CLICK: copy if something is selected, otherwise paste. The mintty
+  //    /Windows-Terminal gesture, and the one the owner asked for — with a
+  //    terminal there is no other use for a context menu, so the menu is
+  //    suppressed and the button does the useful thing instead.
+  //
+  //    The copy half needs no permission (writing the clipboard is free after
+  //    a user gesture). The PASTE half needs clipboard-READ, which Chrome
+  //    prompts for once and Firefox does not grant at all — so it is offered,
+  //    and when it is refused the pane SAYS so and names ⌃V, which always
+  //    works because it rides the browser's own paste event. A right-click
+  //    that quietly did nothing would read as the terminal being broken.
+  const onContext = (ev: MouseEvent) => {
+    // Shift-right-click is the escape hatch to the browser's real menu
+    // (inspect, save) — the same convention every terminal emulator uses.
+    if (ev.shiftKey) return;
+    ev.preventDefault();
+    if (term.hasSelection()) {
+      const text = term.getSelection();
+      term.clearSelection();
+      void copy(text);
+      return;
+    }
+    void (async () => {
+      let text = '';
+      try { text = (await navigator.clipboard?.readText?.()) || ''; }
+      catch { notice?.('paste needs ⌃V here'); return; }
+      if (!text) { notice?.('clipboard is empty'); return; }
+      // term.paste, not term.input: it wraps the text in bracketed-paste
+      // markers when the program asked for them, which is what stops a
+      // multi-line paste being run line by line as it arrives.
+      term.paste(text);
+      const lines = text.split('\n').length;
+      notice?.(lines > 1 ? `pasted ${lines} lines` : `pasted ${text.length} chars`);
+    })();
+  };
+  el?.addEventListener('contextmenu', onContext);
+
+  // 3. MIDDLE-CLICK is left alone on purpose. On X11 it pastes the PRIMARY
+  //    selection, which a browser cannot read; intercepting it to paste the
+  //    clipboard instead would make the same button do two different things
+  //    depending on which window you are in. Better to not answer than to
+  //    answer wrongly.
+
+  // 4. The keyboard. ⌃⇧C / ⌘C copy; ⌃C copies only when there is something to
   //    copy and then gets out of the way; paste falls through to the browser.
   term.attachCustomKeyEventHandler((ev) => {
     if (ev.type !== 'keydown') return true;
@@ -109,7 +171,7 @@ export function wireTermClipboard(term: XTerm, onCopy?: (text: string) => void):
     return true;
   });
 
-  // 3. OSC 52 — the host asking the terminal to set the clipboard. This is how
+  // 5. OSC 52 — the host asking the terminal to set the clipboard. This is how
   //    a tmux copy-mode selection (i.e. an ordinary mouse drag in a claude
   //    session) reaches the browser at all.
   const osc = term.parser.registerOscHandler(52, (payload) => {
@@ -132,6 +194,7 @@ export function wireTermClipboard(term: XTerm, onCopy?: (text: string) => void):
 
   return () => {
     el?.removeEventListener('mousedown', onDown);
+    el?.removeEventListener('contextmenu', onContext);
     window.removeEventListener('mouseup', onUp);
     osc.dispose();
   };
