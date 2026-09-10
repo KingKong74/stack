@@ -594,41 +594,46 @@ export function setTermUsagePrefs(p: TermUsagePrefs) {
 export const TERM_PANE_CHOICES = [1, 2, 3, 4] as const;
 export type TermPaneCount = (typeof TERM_PANE_CHOICES)[number];
 
-// #491 — THREE LAYOUTS, AND THE SCREEN CHOOSES BETWEEN THEM ITSELF. It was
-// five shapes (columns/grid/six/focus), which asked the owner to say twice
-// what one number already says: how many sessions are on screen. The answer
-// is the count, so the layouts are ONE PER COUNT — one, two, three — and
-// `autoLayout` below is the only thing that has to decide.
+// THE LAYOUTS — SEVEN SHAPES, AND THE SCREEN PICKS ONE ITSELF (#487, #491).
+//
+// #487 drew five from the Mission Control design, because two of them are
+// asymmetric and a pane COUNT cannot express "one big one with the rest
+// stacked beside it". #491 added the two the count-shaped ladder was missing
+// (a plain two-up, and a three-up whose narrow pane sticks to the LEFT) and
+// made the screen fit itself to how many sessions are open. Both halves are
+// kept: `autoLayout` is the ladder the screen climbs on its own, and the other
+// shapes are there to be ASKED for — a hand-picked one stands until the set of
+// sessions actually moves under it.
 //
 // The count each one wants is derived here and nowhere else, so a layout and
-// the number of panes it draws can never disagree. A fourth session and
-// beyond stays in the rail: three terminals is where a 1440px window stops
-// giving each one enough columns to read.
-export const TERM_LAYOUTS = ['single', 'split', 'trio'] as const;
+// the number of panes it draws can never disagree. `focus` and `grid` both
+// want four: they differ in SHAPE, not in how many sessions are on screen.
+export const TERM_LAYOUTS = ['single', 'split', 'trio', 'columns', 'grid', 'six', 'focus'] as const;
 export type TermLayout = (typeof TERM_LAYOUTS)[number];
 export const LAYOUT_PANES: Record<TermLayout, number> = {
-  single: 1, split: 2, trio: 3,
+  single: 1, split: 2, trio: 3, columns: 3, grid: 4, six: 6, focus: 4,
 };
 export const LAYOUT_META: { key: TermLayout; icon: string; name: string; hint: string }[] = [
   { key: 'single', icon: '▢', name: 'Single', hint: 'One terminal, the whole canvas' },
   { key: 'split', icon: '◫', name: 'Side by side', hint: 'Two equal terminals' },
-  { key: 'trio', icon: '▥', name: 'Three up', hint: 'A narrow third down the left, the other two where they were' },
+  { key: 'trio', icon: '◧', name: 'Three up', hint: 'A narrow third down the left, the other two where they were' },
+  { key: 'columns', icon: '▥', name: 'Main + stack', hint: 'One wide terminal, two stacked beside it' },
+  { key: 'grid', icon: '▦', name: '2×2', hint: 'Four equal terminals' },
+  { key: 'six', icon: '⊞', name: '6 up', hint: 'Six terminals, three across' },
+  { key: 'focus', icon: '▣', name: 'Focus', hint: 'One across the top, three small beneath' },
 ];
-/** THE LAYOUT A SESSION COUNT ASKS FOR — the whole of the auto-fit rule, in
- *  one place, because the screen and the stored preference must never answer
- *  it differently. Four sessions and up still draw the trio: the extras are
- *  in the rail, which is the honest alternative to three unreadable panes. */
+/** THE LADDER THE SCREEN CLIMBS ON ITS OWN — the layout a session count asks
+ *  for, in one place, because the screen and the stored preference must never
+ *  answer it differently. One rung per count up to six, and every rung is the
+ *  SYMMETRIC shape for that number: an auto-fit must never hand somebody an
+ *  asymmetric layout they did not choose, so `columns` and `focus` are reached
+ *  only by pressing them. Seven sessions and up hold at six-up, with the rest
+ *  in the rail — that is the honest alternative to panes too narrow to read. */
 export const autoLayout = (n: number): TermLayout =>
-  (n <= 1 ? 'single' : n === 2 ? 'split' : 'trio');
+  (n <= 1 ? 'single' : n === 2 ? 'split' : n === 3 ? 'trio' : n === 4 ? 'grid' : 'six');
 /** The nearest layout to a stored pane COUNT — what a device upgrading from
  *  the 1–4 control lands on, so nobody's screen silently changes shape. */
 export const layoutForPanes = (n: number): TermLayout => autoLayout(n);
-/** A layout stored by the five-shape build (#487–#490). Read rather than
- *  discarded, so a device that had chosen the four-up comes back on the
- *  nearest thing that still exists instead of on the default. */
-const LEGACY_LAYOUTS: Record<string, TermLayout> = {
-  columns: 'trio', grid: 'trio', six: 'trio', focus: 'trio', wide: 'split',
-};
 // #489 — `railSeg` and `railStyle` ARE GONE FROM THIS TYPE. The rail has one
 // job now (the sessions list), so there is no segment to remember and no second
 // reading of a queue it no longer draws. The stored KEY is untouched and the
@@ -655,8 +660,7 @@ export function getTermViewPrefs(): TermViewPrefs {
     // A stored layout wins; otherwise the device's old pane count decides the
     // nearest shape, so nobody's screen changes under them on first load.
     layout: TERM_LAYOUTS.includes(p?.layout) ? p.layout as TermLayout
-      : LEGACY_LAYOUTS[p?.layout]
-      ?? layoutForPanes(TERM_PANE_CHOICES.includes(p?.panes) ? p.panes : 1),
+      : layoutForPanes(TERM_PANE_CHOICES.includes(p?.panes) ? p.panes : 1),
   }));
 }
 export function setTermViewPrefs(p: TermViewPrefs) {

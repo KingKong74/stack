@@ -810,7 +810,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   // one left the grid holding a shape for a session that had gone — the screen
   // asked to be told twice what the session count already says. So opening or
   // closing one steps the layout to the shape that fits it: one, side by side,
-  // three up.
+  // three up, 2×2, six up (`autoLayout`, store.ts).
   //
   // It fires on a CHANGE in the count, never on the count itself, and that is
   // the whole reason the switcher still works: choosing Single with three
@@ -828,8 +828,13 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
     fittedTo.current = n;
     if (n === 0) return;
     const want = autoLayout(n);
+    // A layout the count is ALREADY happy with is left alone, whatever its
+    // shape: four sessions in the hand-picked Focus must not be re-fitted into
+    // the 2×2 just because both hold four. The ladder decides only when the
+    // shape on screen cannot seat them.
+    if (LAYOUT_PANES[viewPrefs.layout] === LAYOUT_PANES[want]) return;
     if (want !== viewPrefs.layout) {
-      saveViewPrefs({ layout: want, panes: LAYOUT_PANES[want] as TermPaneCount });
+      saveViewPrefs({ layout: want, panes: Math.min(4, LAYOUT_PANES[want]) as TermPaneCount });
     }
   }, [sessions.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -987,7 +992,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
     // The pane COUNT rides along so a device that later loads an older build
     // lands on the nearest shape rather than on the default.
     const n = LAYOUT_PANES[lay];
-    saveViewPrefs({ layout: lay, panes: n as TermPaneCount });
+    saveViewPrefs({ layout: lay, panes: Math.min(4, n) as TermPaneCount });
     // The fit is now up to date by construction: a hand-picked layout fills
     // itself to N sessions below, and recording N here stops that fill being
     // read back as a change somebody made and re-fitted a second time.
@@ -1349,13 +1354,14 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
           {/* How many terminals are on screen at once — this replaced the
               wide-mode toggle. Panes are filled from the active tab onwards,
               so picking a tab puts it top-left and its neighbours beside it. */}
-          {/* #491 — THE LAYOUT SWITCHER IS THREE SHAPES, one per session
-              count, and the screen picks between them itself as sessions come
-              and go. It is still HERE because the auto-fit answers "how many
-              are open" and not "how many do I want to look at": pressing one
-              says the second thing, and it holds until the set of sessions
-              changes. Picking one still FILLS it — empty panes take the
-              sessions already running on the host before any new one is
+          {/* THE LAYOUT SWITCHER — seven shapes (#487, #491). The screen
+              already picks a symmetric one per session count as sessions come
+              and go, so this is HERE for the other question: the auto-fit
+              answers "how many are open", and pressing a shape says "this is
+              how I want to look at them" — including the two asymmetric ones
+              the ladder will never choose for you. It holds until the set of
+              sessions changes. Picking one still FILLS it — empty panes take
+              the sessions already running on the host before any new one is
               spawned, so a bigger shape does not strand claude sessions
               nobody is watching. */}
           <span className="seg-control sm term-panes" role="tablist" aria-label="Terminal layout">
@@ -1509,14 +1515,16 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
               // unmounting one would drop its socket and its scrollback, which
               // is the whole reason this component never unmounts either. Off
               // -screen panes are hidden, not destroyed.
-              // #491 — `lead` WENT WITH THE ASYMMETRIC LAYOUTS THAT READ IT.
-              // It marked slot 0 for the old columns/focus shapes, which gave
-              // that pane a tall or wide cell; the trio's odd cell is the
-              // THIRD pane, not the first, and it is placed by `data-slot`.
-              // A class nothing styles is a trap for whoever adds a shape next.
+              // `lead` marks the FIRST pane on screen, which Main + stack
+              // gives the tall left column to and Focus the full-width top
+              // row. It has to be a class rather than :first-child, because
+              // off-screen panes stay in the DOM (they keep their sockets) and
+              // would win that selector while invisible. The TRIO is the one
+              // shape that does not read it: its odd cell is the THIRD pane,
+              // not the first, so it places by `data-slot` instead.
               return (
               <div key={s.id}
-                className={`term-pane${shown ? '' : ' off'}${s.id === active ? ' focused' : ''}${overSlot === slot && shown ? ' dropping' : ''}`}
+                className={`term-pane${shown ? '' : ' off'}${s.id === active ? ' focused' : ''}${shown && slot === 0 ? ' lead' : ''}${overSlot === slot && shown ? ' dropping' : ''}`}
                 style={shown ? { order: slot } : undefined}
                 data-slot={shown ? slot : undefined}
                 onDragOver={shown ? (e) => { e.preventDefault(); if (overSlot !== slot) setOverSlot(slot); } : undefined}

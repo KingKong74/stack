@@ -2265,14 +2265,19 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
    the canvas exceeded its share: the "slightly over" overflow. minmax(0, 1fr)
    removes the floor and makes the shares exact. */
 
-/* ---- #491 · THREE SHAPES, ONE PER SESSION COUNT ----
-   It was five (single/columns/2×2/six/focus) and a separate `p{n}` pane-count
-   family underneath them, which is two rules deciding one thing: the p3 rule
-   below gave the LEAD pane a tall left column, and the trio wants the narrow
-   one there instead — a pair that would have fought, silently, in whichever
-   order the file happens to be in. So the count classes are gone from the
-   grid's geometry (`p{n}` is still on the element, and is what the trio's
-   fallbacks read while a chosen shape is still filling itself).
+/* ---- THE SHAPES (#487, #491) ----
+   Seven of them, in two groups: the three below are the ladder the screen
+   climbs on its own as sessions open and close (store.ts's `autoLayout`), and
+   the four further down are the ones you press for — including the two
+   asymmetric shapes an auto-fit must never hand you unasked.
+
+   WHAT WENT: the separate `p{n}` pane-count family that used to sit under
+   them, which was two rules deciding one thing — its p3 gave the LEAD pane a
+   tall left column, and the trio wants the NARROW one there instead, a pair
+   that would have fought silently in whichever order the file happened to be
+   in. `p{n}` is still on the element, and is now read by nothing but the
+   trio's own fallbacks, below, for the moment a chosen shape is still filling
+   itself with sessions.
 
    Panes are placed by `order`, set inline from the slot index, so a drag
    rearranges them without any pane changing which grid AREA it belongs to —
@@ -2313,6 +2318,43 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
    the canvas it labels. */
 .term-grid.lay-trio .term-pane[data-slot="2"] .term-pane-title { font-size: 10px; padding: 5px 7px; }
 .term-grid.lay-trio .term-pane[data-slot="2"] .term-pane-title .where { display: none; }
+
+/* ---- THE FOUR SHAPES YOU ASK FOR (#487) ----
+   The ladder above is what the screen climbs on its own, and every rung of it
+   is symmetric on purpose. These are the ones you PRESS: two asymmetric, two
+   simply bigger than the ladder's own top. They read `lead` — slot 0 — which
+   is set as a class rather than matched with :first-child, because off-screen
+   panes stay in the DOM holding their sockets and would win that selector
+   while invisible. */
+/* Main + stack: one wide pane down the left, the rest stacked beside it. The
+   1.7fr is the design's own ratio — enough that the main pane reads as the
+   one you are working in rather than as the widest of three. */
+.term-grid.lay-columns {
+  grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr);
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+}
+.term-grid.lay-columns .term-pane.lead { grid-row: 1 / 3; }
+.term-grid.lay-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+}
+.term-grid.lay-six {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+}
+/* Focus: one across the top, the rest small beneath. `1 / -1` spans whatever
+   the column count is, so this does not need to know it. */
+.term-grid.lay-focus {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-rows: minmax(0, 2.4fr) minmax(0, 1fr);
+}
+.term-grid.lay-focus .term-pane.lead { grid-column: 1 / -1; }
+/* Six-up and focus put a terminal in a third of the width — same trade as the
+   trio's narrow column above, and the same answer. */
+.term-grid.lay-six .term-pane-title,
+.term-grid.lay-focus .term-pane:not(.lead) .term-pane-title { font-size: 10px; padding: 5px 7px; }
+.term-grid.lay-six .term-pane-title .where,
+.term-grid.lay-focus .term-pane:not(.lead) .term-pane-title .where { display: none; }
 
 /* THE DROP TARGET. It lights the pane that will take the card BEFORE anything
    moves — a drag with no target says only that something is being dragged. */
@@ -2396,14 +2438,18 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
 /* Multi-pane on a narrow screen stacks: three terminals abreast on a phone is
    three unusable terminals. */
 @media (max-width: 900px) {
-  .term-grid.lay-split, .term-grid.lay-trio,
+  .term-grid.lay-split, .term-grid.lay-trio, .term-grid.lay-columns,
+  .term-grid.lay-grid, .term-grid.lay-six, .term-grid.lay-focus,
   .term-grid.lay-trio.p1, .term-grid.lay-trio.p2 {
     grid-template-columns: minmax(0, 1fr); grid-template-rows: none;
   }
-  /* Stacked in one column there is no left edge to stick to, so the panes go
-     back to slot order — the narrow third would otherwise jump to the TOP of
-     the stack, above the session you were reading. */
+  /* Stacked in one column there is no left edge to stick to and no wide cell
+     to give anybody, so every pane goes back to plain slot order — the trio's
+     narrow third would otherwise jump to the TOP of the stack, above the
+     session you were reading, and a tall lead would just be a double-height
+     pane. */
   .term-grid.lay-trio .term-pane[data-slot] { grid-column: 1; grid-row: auto; }
+  .term-grid .term-pane.lead { grid-row: auto; grid-column: auto; }
 }
 /* 25b — the head bar's spacer + the real lane count (#277) */
 .term-bar-gap { flex: 1; }
