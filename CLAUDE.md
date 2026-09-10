@@ -13,7 +13,7 @@ it lives in that file's header and this file keeps only the pointer and the cros
 seven rooms (`/api/control`, `/api/review`, `/api/merge`) · **Polaris** (Futures tab, galaxy,
 `futures`) · the **instructions tree** (managed CLAUDE.md library + host sync) · the **Workbench**
 (canvas tab, `/api/…/workbench`, `workbench_*`, the Drafter, and `notes` — its only reader — with
-the table, route, ⌘K scope and the ＋'s composer; the ＋ is roadmap-only now) · the Roadmap
+the table, route, ⌘K scope and the ＋'s composer; the ＋ files board items only) · the Roadmap
 **Timeline** (#428) and **strip** (Scope/Tiers/Parked/Arrange, `lib/curatorTasks.ts`) · the **TAB
 AGENTS' CONSOLES** (#379/#380, `console_off` kept in the DB) and the **Auditor** with them. THEN THE
 SCREENS: every project tab became a kit mockup (#443–#451), Mission Control too (#470), the board's
@@ -49,10 +49,10 @@ scripts/   Host-side CLI + automation. templates/ the portable agent manual.
 - **FOR YOU IS THREE ROUTE KEYS ON ONE SCREEN** (#436) — `overview`, `activity`, `auto`, switched
   by a strip that WRITES the key; never collapse them into state.
 - `lib/route.ts` — hash router. `go.detail(slug, tab, highlight)` deep-links and **the TAB decides
-  what `hl` means**. The BOARD honours one (#453 — every card carries `data-hl`); every other tab is
-  a mockup and ignores its own rather than 404ing, as do the legacy spellings (`futures`, `notes` →
-  Overview). `#/control` lands on `ControlMock.tsx`, the kit's Mission Control mockup (#470).
-- `screens/` — `ls` is the index. The recipe library (`/api/tips`) has no screen and no way in.
+  what `hl` means**. The BOARD and ROADMAP honour one (#453/#472 — their cards carry `data-hl`);
+  every other tab is a mockup and ignores its own rather than 404ing, as do the legacy spellings
+  (`futures`, `notes` → Overview). `#/control` is `ControlMock.tsx`, the kit's mockup (#470).
+- The recipe library (`/api/tips`) has a route, a table and no screen at all.
 - `lib/brief.ts` — the resume brief + the `DIRECTIVES` catalogue (keys mirror `SESSION_DEFAULTS`).
 - `lib/termClipboard.ts` — the terminal's copy/paste; its header says why ⌃C, ⌃V and OSC 52 each
   behave unlike a native terminal. Don't "simplify" any of the three.
@@ -123,8 +123,8 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
   word and a decision. The board's card picker is its only browser writer.
 - **`bucket` vs `tier`** — bucket is how NECESSARY; `tier` (#227, S/A/B/C, NULL = unranked) is how
   much the owner wants it NEXT and is the **primary sort of the run queue** (bucket then `position`
-  tiebreak, unranked last). **NOTHING IN A BROWSER WRITES `tier`** since #469 took it off the item
-  modal, its only surface — and **agents must never change it** either.
+  tiebreak, unranked last). #469 took it off the item modal; the ROADMAP tab's Ready/Thinking
+  columns are its writer now (#472), and it has no other. **Agents must never change it.**
 - **`risk`** (low/normal/high, #212) is how much DAMAGE a wrong build does — not difficulty, not the
   desire `tier` expresses; a `low` item whose run lands green auto-queues its own merge.
   **`risk_source` is who decided** (#262): `human` = a hand-set write, `auto` = the plan-time
@@ -141,38 +141,42 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
   `defaultLen` in `lib/plan.ts` is the ONE place the two units may meet. **NOTHING EDITS OR
   READS THESE** — #428 took the Timeline, their only editor, and #451 the Plans tab.
   (`estimate` excepted, just: the board DRAWS it on a card; nothing writes it.)
-- **ONLY THE BOARD'S KANBAN READS OR WRITES ANYTHING** (#443–#470). `IdeasMock`, `ForYouMock` (3
-  panes), `QualityMock`, `PlansMock`, `ControlMock` (7 tabs) and the two blocks at the foot of
-  `Board.tsx` (Backlog, Development) are the kit's screens on the kit's rows; each header says what
-  its cull cost, and `Board.tsx`'s carries the decisions where the kit's picture and this data
-  disagreed. **UNREACHABLE FROM A BROWSER; `./stack` and the API are the way in**: a **verdict**
-  (the board says one came from the auto path and cannot reverse it), **labels**, the **⎇ claim**,
-  **tier** and **risk** (#469), **running/adding/editing/deleting a CHECK, filing a bug and moving
-  its status** (#450 — the deck still keeps or deletes an extracted bug), and **the stored
-  schedule** (#451). **ON THE CARD MENU** (#453): park/unpark, archive, delete (tombstoning a
-  `hook` fingerprint) and the **sign-off** releasing a held `hook`/`fly` row. A mockup's nav badge
-  counts the MOCKUP, the board's its real open cards: either way the number and the screen behind
-  it have to agree. `server/test/plan-lanes.test.mjs` pins the catch-all lane the board owes for
-  #428's unlocking of rename and delete.
+- **THE BOARD DRAWS COMMITTED WORK; ROADMAP DRAWS IDEAS** (#472), and **`isIdea` in `lib/plan.ts`
+  is the ONE line between them** — a row on both is acted on twice, a row on neither has silently
+  vanished. Not committed = a **HELD** row (`hook`/`fly` nobody signed off) or a **CHILD** row
+  (`parent_id` — an idea under a feature). **Promoting is one write with one meaning**:
+  `reviewed: true` + `parentId: null`, and nothing else moves a row across. There is deliberately
+  **no free-floating capture on Roadmap** — a manual row is never held, so it is committed work by
+  definition and the board's own composer is where it goes; ＋ on a board item is how an idea is
+  filed. Roadmap's three columns are `tier`/`skipped` (Ready/Thinking/Parked), which is **the only
+  writer of `tier` in any browser** since #469.
+- **THE REST ARE MOCKUPS AND SAY SO ON THE RAIL** (#443–#472). `ForYouMock` (3 panes),
+  `QualityMock`, `PlansMock`, `ControlMock` (7 tabs) and the two blocks at the foot of `Board.tsx`
+  (Backlog, Development) draw the kit's rows; each wears a **Mock chip** in the nav, because these
+  screens look exactly like the real thing — that was the point of porting them. **UNREACHABLE FROM
+  A BROWSER; `./stack` and the API are the way in**: a **verdict**, **labels**, the **⎇ claim**,
+  **risk** (#469), **running/adding/editing/deleting a CHECK, filing a bug and moving its status**
+  (#450 — the deck still keeps or deletes an extracted bug), and **the stored schedule** (#451).
+  A wired row's badge is its real count and a mockup's counts the MOCKUP: either way the number and
+  the screen behind it must agree. `server/test/plan-lanes.test.mjs` pins the board's catch-all lane.
 - **The board order IS the run queue.** `position` is the bucket tiebreak and still PATCHable, but
   **nothing in the client writes it** — and the kanban has no within-column drag on purpose, because
-  `position` is scoped to the BUCKET and its columns cut across all four. `queueOrder` in
-  `lib/plan.ts` is the client twin of the runner's sort: **tier, then bucket, then PAYLOAD ORDER** —
-  a stable sort over arrays the server already ordered, since `position` is not on the served row.
-- **`claimed_by` is the branch claim** (#277 — called a "lane" until the rename; the `lane/` git ref
-  prefix is unchanged, naming branches already on origin). Claim before starting; a terminal tab's
-  claim is `term:<name>`. It is the don't-re-pick marker, injected by SessionStart as "Branch claims —
+  `position` is scoped to the BUCKET and its columns cut across it. `queueOrder` in `lib/plan.ts` is
+  the client twin of the runner's sort: **tier, then bucket, then PAYLOAD ORDER** — a stable sort
+  over arrays the server already ordered, since `position` is not on the served row.
+- **`claimed_by` is the branch claim** (#277 — a "lane" until the rename; the `lane/` git ref prefix
+  is unchanged, naming branches already on origin). Claim before starting; a terminal tab's claim is
+  `term:<name>`. It is the don't-re-pick marker, injected by SessionStart as "Branch claims —
   respect these", and stays until a human merges and ticks.
 - **Three gates decide who runs, and merging any two is where they get confused** (#267 + #335).
   `CLAIM_NEXT_SQL` in `routes/autopilot.js` carries all three in one WHERE: the **fleet cap** (`$1`,
-  `autopilotWorkers`, tunable), the **per-project serialisation** (fixed) and the **area lane** (`$2`,
-  fixed). Per-project cannot become a knob — every job runs against the one checkout at
+  `autopilotWorkers`, tunable), the **per-project serialisation** (fixed) and the **area lane**
+  (`$2`, fixed). Per-project cannot become a knob — every job runs against the one checkout at
   `$STACK_AUTOPILOT_ROOT/<slug>`, where two runners moving refs fight over git's ref locks — so
   widening concurrency widens the fleet cap, never the other two. The host lockfile is per-project
   (`~/.stack/autopilot-<slug>.lock`) and the runner and the dispatcher's kill path must spell it with
-  the same sanitiser — diverge and the kill clears the wrong file, leaving a live lock blocking that
-  project for hours. `heldByArea` reports only LANE holds: a job waiting on the cap is not held by an
-  area.
+  the same sanitiser, or the kill clears the wrong file and a live lock blocks that project for
+  hours. `heldByArea` reports only LANE holds: a job waiting on the cap is not held by an area.
 - **An area lane is `(project, area)`, and untagged is never a lane** (#267): an area with an OPEN
   claimed item admits no second worker, because two branches in one area collide at merge time. The
   pure rule is `server/src/lanes.js`, MIRRORED in two runtimes that cannot import it —
@@ -182,16 +186,15 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
   includes the project. A worker never blocks itself. A skipped job always logs why: a lane delay
   must never be a silence. The board GROUPS BY AREA (#469), each section saying whether its lane is
   held — the only fact about an area a screen has shown.
-- **"Approved for the auto runner" is `source NOT IN ('hook','fly') OR reviewed_at IS NOT NULL`** (#359,
-  widened by #381), with no column of its own — an `approved` flag would be a second, drifting truth.
-  TWO origins need a human's sign-off: `hook` (the extractor read it off a push) and `fly` (a live
-  session opened it for its own ad-hoc work). **A manual item is NEVER held**, because blocking
-  hand-written work is the failure mode this must not have. Written out THREE times (`server/src/`,
-  `scripts/lib/`, `web/src/lib/approval.*`) since no package can import another. An unattended
-  enqueue **drops a held item silently**; Run now / `POST /start` **refuses out loud and names it**,
-  since a silent drop under a button looks like the press did nothing. The board's card menu is the
-  only browser surface that can un-hold one (#453). Not the **verdict** queue below: this gates what
-  may RUN, that queues what was BUILT.
+- **"Approved for the auto runner" is `source NOT IN ('hook','fly') OR reviewed_at IS NOT NULL`**
+  (#359, widened by #381), with no column of its own — an `approved` flag would be a second,
+  drifting truth. TWO origins need a human's sign-off: `hook` (read off a push) and `fly` (a live
+  session's own ad-hoc work). **A manual item is NEVER held**, because blocking hand-written work is
+  the failure mode this must not have. Written THREE times (`server/src/`, `scripts/lib/`,
+  `web/src/lib/approval.*`) since no package can import another. An unattended enqueue **drops a
+  held item silently**; Run now / `POST /start` **refuses out loud and names it**. Roadmap's Promote
+  is the only browser surface that un-holds one (#472). Not the **verdict** queue below: this gates
+  what may RUN, that queues what was BUILT.
 - **Branch names are `<kind>/<id>-<summary>`** (#363; feat · fix · ui · refactor · perf · test · docs ·
   chore). `scripts/lib/lane.mjs` is the canonical namer AND parser; `web/src/lib/branch.ts` is its
   client twin, kept in step by discipline, not a shared test. **The old flat `auto/item-N-<slug>`
@@ -202,12 +205,12 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
   against it. ALWAYS write one.
 - **"Built" is BUILT-or-ticked, not ticked** (#374). Nothing in Stack ticks an item, so `done = true`
   drew an empty queue over a full night's work. The predicate is `done` **OR** (`built_note`
-  non-empty **AND** `claimed_by` non-empty). **Both halves are load-bearing**: un-ticking clears
+  non-empty **AND** `claimed_by` non-empty), and **both halves are load-bearing**: un-ticking clears
   `claimed_by` and keeps `built_note`, so `built_note` alone re-queues rejected changes and
-  `claimed_by` alone queues items at claim time. `isBuilt` in `web/src/lib/plan.ts` is its ONLY
-  client definition (#440) and the board's In Review column is what draws it. Approving does NOT
-  tick (the merge job does, with a human verdict stored). **Anything acting on a built change shares
-  the predicate**; a path that opens `if (!item.done) 400` refuses the whole night's work.
+  `claimed_by` alone queues items at claim time. `isBuilt` in `lib/plan.ts` is its only client
+  definition (#440); the board's In Review column draws it. Approving does NOT tick (the merge job
+  does). **Anything acting on a built change shares the predicate**; a path opening
+  `if (!item.done) 400` refuses the whole night's work.
 - **`verdict_source` / `verdict_at` / `verdict_evidence` (#263, owner-sanctioned)** — the one place a
   machine may verdict instead of the human, and only while it is **positive evidence**, **reversible**
   and **visible**; drop one and it is not sanctioned. The gate is one pure function,
@@ -216,13 +219,13 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
   `verdict_source` to 'human' and wipes the other two in one statement, so ⎌ undo needs no route. **THE "VISIBLE" LEG IS STILL A DEBT, NOT A DESIGN.** The board says a verdict came from the
   auto path and that is the whole of it: no screen reads `verdict_evidence` or lets anyone give or
   reverse a verdict. What surfaces a change next owes the evidence AND a way to disagree.
-- **Un-ticking clears `review_tag` and `claimed_by`** (unless the same PATCH sets them), so a sent-back
-  item re-enters play fresh. Ticking clears `review_tags`, `refine_note` and `review_shelved` — each
-  verify round starts unannotated.
+- **Un-ticking clears `review_tag` and `claimed_by`** (unless the same PATCH sets them), so a
+  sent-back item re-enters play fresh. Ticking clears `review_tags`, `refine_note` and
+  `review_shelved`: each verify round starts unannotated.
 - **A refine round is never machine-closed** (#274): no auto-merge (#212), no auto-verdict (#263) —
   closing it on a green run discards the judgement the send-back asked for. It continues the item's
-  OWN branch (`scripts/lib/refine.mjs`), and `refine_note` surviving until the tick is what makes
-  "is this an unclosed round" answerable.
+  OWN branch (`scripts/lib/refine.mjs`), and `refine_note` surviving to the tick is what makes "is
+  this an unclosed round" answerable.
 - **`agent_profiles` holds only OVERRIDES.** The built-ins (`executor`, `reviewer`) live in
   `server/src/agent-profiles.js` and are never seeded, so a fresh database spawns identically to a
   customised one — and DELETE on a builtin RESETS it, because the spawn path needs `executor`.
@@ -238,25 +241,24 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
   served, tested, fetched by nothing.)
 - **A subagent's usage is NOT in the parent transcript — it has its own**, at
   `<transcript-dir>/<session-id>/subagents/agent-*.jsonl` with a `.meta.json` naming the `agentType`.
-  The parent records only the Agent call and never sets `isSidechain`, so globbing top-level `*.jsonl`
-  concludes — wrongly — that subagent spend is unrecoverable; it is routinely the LARGER half.
-  `agents_recorded` is what `agent_usage` prices, so a lost transcript reads as unpriced, not free;
-  neither counts every delegation, so `agent_calls` is the MAX of the two.
+  The parent records only the Agent call and never sets `isSidechain`, so globbing top-level
+  `*.jsonl` concludes — wrongly — that subagent spend is unrecoverable; it is routinely the LARGER
+  half. `agents_recorded` is what `agent_usage` prices, so a lost transcript reads as unpriced, not
+  free; neither counts every delegation, so `agent_calls` is the MAX.
 - **A plan night is the advisor working, not idle.** `planned` commits nothing by design, so it can
   never be `landed`: it is its own bucket in `pulse.js` and sits out the land rate while keeping its
   spend and role attribution. Folding it back in scores the advisor as having failed to land runs
   nobody asked it to land.
 - **An empty second-model read means NO PASS RAN, not "nothing found".** A NULL `review_verdict` /
-  `architect_verdict` renders as NO REVIEW, never green. Same rule anywhere an agent's opinion is
-  stored.
+  `architect_verdict` renders as NO REVIEW, never green — anywhere an agent's opinion is stored.
 - **`autopilot_jobs.branch` is a real column; a merge job's branch still round-trips through free-text
   `detail`** (#243) — three places re-parse it, so merge's contract was left alone. The `advise` lane
   matches on the column; its `advice` NULL means NO PASS RAN, never "no conflicts".
 - **A night's outcomes partition across FOUR buckets** — `landed` / `failed` (failed + limit) /
   `planned` / `noCommits` — from five outcome values, always summing to the run count. `debrief.js`
   is culled; `pulse.js` spells the same partition out and says why — read that one.
-- **Deleting a `source='hook'` bug or roadmap item tombstones its fingerprint** so the next push
-  won't re-create it — what Dismiss means, and why it has no undo.
+- **Deleting a `source='hook'` bug or roadmap item tombstones its fingerprint**, so the next push
+  cannot re-create it. That is what Dismiss means and why it has no undo.
 - **`DELETE /api/projects/:slug` is SOFT** — stamps `deleted_at`, clears the share link, keeps every
   row; deleted projects vanish from live queries and their collections 404. `/purge` is the real
   cascade, valid only on binned projects.
@@ -272,10 +274,10 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
   `~/.stack/worktrees/<key>`, inside the $HOME cwd jail the terminal daemon enforces — move the root
   outside $HOME and browser access breaks silently.
 - **A repo's CLAUDE.md is the repo's.** Stack used to write each from its own copy every five
-  minutes; the sync was authoritative by design, so a stale DB copy silently reverted this very file
-  for several sessions running, each filed as a mystery blocker. That surface is culled and
-  nothing writes a CLAUDE.md now — if something starts to, it needs an off switch before a schedule.
-  `ControlMock`'s Context tab draws that surface again, inert; read its header before wiring it.
+  minutes, authoritatively — so a stale DB copy silently reverted THIS file for several sessions
+  running, each filed as a mystery blocker. Nothing writes a CLAUDE.md now; if something starts to,
+  it needs an off switch before a schedule. `ControlMock`'s Context tab draws that surface again,
+  inert — read its header first.
 - **A branch's four-valued merge state (#363) is derived, never stored**, in `web/src/lib/branch.ts` —
   its header carries the guesses that cost the first cut its correctness. The one to hold in mind
   everywhere: **`unprobed` is not `clean`**, the same NO PASS RAN rule as a NULL `review_verdict`.
@@ -293,14 +295,14 @@ The ones a session gets wrong by guessing. Everything else, read off `schema.sql
   (`parseAgentJson`, fence-tolerant). **Gemini is not gone**: the per-push review note, check
   assertions, labelling and triage are still Gemini, still key-gated.
 - **AN AGENT'S BINDING IS CODE, NOT DATA (#361, #375).** `src/agents.js` is the registry. An agent's
-  `ops` list is CLOSED and is now the WHOLE of what one is (the `console` half went with the
-  consoles); `agent_configs` holds only what the owner tunes (enabled, model, guidance, `ops_off`),
-  never which surface or which ops, because those ARE the restriction. A route binds once
-  (`agentClient('curator')`) and that client THROWS on another agent's op; that throw, not a comment, stops one tab's route running another's,
-  and an unregistered op cannot run at all. An op MOVES with its surface: **one surface, one switch**,
-  both ways — the cull took the agents whose surfaces went, since an agent with nothing to govern is
-  a switch that governs nothing. **A missing config row means ON**, as with `readSettings()`. An op's `backend` may be `'gemini'`, so a surface with two backends still has ONE switch;
-  only readiness and the refusal differ, and the refusal must NAME the missing backend.
+  `ops` list is CLOSED and is the WHOLE of what one is; `agent_configs` holds only what the owner
+  tunes (enabled, model, guidance, `ops_off`), never which surface or which ops, because those ARE
+  the restriction. A route binds once (`agentClient('curator')`) and that client THROWS on another
+  agent's op — that throw, not a comment, is what stops one route running another's, and an
+  unregistered op cannot run at all. An op MOVES with its surface: **one surface, one switch**, both
+  ways. **A missing config row means ON**, as with `readSettings()`. An op's `backend` may be
+  `'gemini'`, so a surface with two backends still has ONE switch; only readiness and the refusal
+  differ, and the refusal must NAME the missing backend.
 - **AN AGENT ANNOTATES A VERDICT; IT NEVER GIVES ONE (#375).** The contract, from the agent that
   proved it and went with its room, generalises to whatever reads a change next: answer with a CALL
   (approve / look / send-back) drawn in the accent, never in a verdict tone; carry **`blind[]`**
@@ -446,14 +448,14 @@ One file per surface in `server/src/routes/` — `ls` is the index. All behind b
 - **A CAPPED PROMPT MUST STATE ITS OWN CAP, on the right axis** (#239, #364) — the rule is in
   `prompts.js`'s header and covers any list, and host-side material trimmed before it reaches a
   model: one that silently saw a tenth of a diff answers confidently about the other nine.
-- Status vocabulary is `live | building | paused | archived`; the old `active` migrates to `live`.
+- Status vocabulary: `live | building | paused | archived`; the old `active` migrates to `live`.
 - The web Dockerfile is multi-stage (Vite build → nginx): SPA fallback, `/api` proxied to
   `server:4000`, `/term*` with upgrade headers; in local dev Vite proxies `/api`. **Host-side agent
   ops run far longer than a web request** — nginx's `/api` read timeout and each op's own timeout
   must both clear `claude -p` (a 60s cut made a 240s agent read unreachable, silently, for weeks),
   and Cloudflare cuts at ~100s regardless.
-- Both closure counts in `totals` lean on `updated_at`, the only stamp either table carries — read
-  as MOVEMENT, not a ledger.
+- Both closure counts in `totals` lean on `updated_at`, the only stamp either table carries — so
+  read them as MOVEMENT, not a ledger.
 - **`autopilot.js`'s `JOB_SELECT` names its columns on purpose** (#243) — a `SELECT j.*` ships the
   kilobyte `advice` text on every job poll AND leaves `adviceReady` false forever.
 - `stack-autopilot.mjs` still inlines its own `git worktree add/remove` rather than calling

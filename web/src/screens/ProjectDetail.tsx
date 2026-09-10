@@ -17,12 +17,12 @@ import { QualityMock, QUALITY_ATTENTION } from '../detail/QualityMock';
 import { ForYouMock, AUTO_IDEA_COUNT } from '../detail/ForYouMock';
 import { PlansMock } from '../detail/PlansMock';
 import { Board } from '../detail/Board';
-import { IdeasMock } from '../detail/IdeasMock';
+import { Roadmap } from '../detail/Roadmap';
 import { TabStrip } from '../components/TabStrip';
 import { Modal } from '../components/Modal';
 import { RoadmapModal, type RoadmapFields } from '../components/RoadmapModal';
 import { useAutoRefresh } from '../lib/autoRefresh';
-import { newItemSched, flatRoadmap } from '../lib/plan';
+import { newItemSched, flatRoadmap, isIdea } from '../lib/plan';
 import { PRIORITY_DEFAULT } from '../lib/ui';
 
 // #278 — Bugs and Audit are one tab now: Quality. They were halves of one loop
@@ -267,6 +267,11 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
   // anywhere on the screen. The ORDER matters too: `queueOrder` uses payload
   // order as its last sort key, and this is the payload's order.
   const allRoadmap = useMemo(() => flatRoadmap(roadmap), [roadmap]);
+  // #472 — the rows the BOARD deliberately does not draw: held hook/fly items
+  // and child ideas. `isIdea` is the one line between the two screens, so the
+  // rail's two counts partition the board rather than overlapping.
+  const ideaRows = useMemo(
+    () => allRoadmap.filter((i) => !i.archived && isIdea(i)), [allRoadmap]);
   // THE PROJECT-SCOPED REVIEW QUEUE IS GONE with the tab that drew it. It was
   // every 'hook' and 'fly' row no human had signed off — held from the
   // overnight runner by `lib/approval.ts` until someone kept one — and
@@ -274,11 +279,12 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
   // Nothing filters for them now; the holding is unchanged and only the
   // browser's way out of it went (ForYouMock's header).
 
-  // THE BOARD ROW CARRIES A REAL COUNT AGAIN, and ROADMAP still carries none.
-  // The rule is unchanged — a row's number and the screen behind it must agree
-  // or one of them is lying — and the board is wired, so its badge is the open
-  // cards it actually draws. IdeasMock is still the kit's sample rows and can
-  // show no honest number, so the honest badge there is none.
+  // BOTH WIRED ROWS CARRY A REAL COUNT, and every mock row carries a MOCK CHIP
+  // (#472). The rule behind both is one rule: a row's number and the screen
+  // behind it must agree, or one of them is lying — so a wired screen gets its
+  // real count and a mockup gets a chip saying the rows behind it are the
+  // console kit's, not this project's. Quality keeps its number BECAUSE it
+  // wears the chip: the count comes from the mockup and now says so.
   //
   // QUALITY'S BADGE IS THE SAME RULE, ANSWERED THE OTHER WAY. It used to be red
   // checks plus serious open bugs (#278); its screen is a mockup now, so the
@@ -445,7 +451,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
         // which half to read first. Its KEY is still `overview`, so every deep
         // link, legacy spelling and `hl` target resolves as before.
         {
-          key: 'overview', label: 'For you', icon: NavIcons.inbox,
+          key: 'overview', label: 'For you', icon: NavIcons.inbox, mock: true,
           menu: placeMenu(hrefTo.detail(slug, 'overview'), 'overview'), onClick: () => setTab('overview'),
         },
         { key: 'soon:starred', label: 'Starred', icon: NavIcons.star, soon: true },
@@ -459,23 +465,28 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
           // THE BOARD'S BADGE IS REAL AGAIN. The rule it obeys is the one #444
           // and #450 stated from the other side — a row's number and the screen
           // behind it have to agree — and the board is wired now, so the number
-          // is what it draws: open, un-archived cards. Roadmap keeps no badge,
-          // because IdeasMock still cannot show one honestly.
+          // is what it draws: open, un-archived COMMITTED cards — #472 moved
+          // held rows and child ideas to Roadmap, and the two counts partition.
           key: 'roadmap', label: project.name, icon: NavIcons.board,
           count: allRoadmap.filter((i) => !i.done && !i.archived).length,
           menuLabel: `${project.name} board`,
           menu: placeMenu(hrefTo.detail(slug, 'roadmap'), 'board'), onClick: () => setTab('roadmap'),
         },
         {
+          // #472 — Roadmap is the IDEA surface and is wired, so it carries a
+          // real count: the rows the board deliberately does not draw. Not in
+          // the critical tone — an idea nobody has signed off is a queue, not
+          // an alarm.
           key: 'ideas', label: 'Roadmap', icon: NavIcons.map,
+          count: ideaRows.length,
           menu: placeMenu(hrefTo.detail(slug, 'ideas'), 'ideas'), onClick: () => setTab('ideas'),
         },
         {
-          key: 'plans', label: 'Plans', icon: NavIcons.route,
+          key: 'plans', label: 'Plans', icon: NavIcons.route, mock: true,
           menu: placeMenu(hrefTo.detail(slug, 'plans'), 'plans'), onClick: () => setTab('plans'),
         },
         {
-          key: 'quality', label: 'Quality', icon: NavIcons.check, count: QUALITY_ATTENTION, bad: true,
+          key: 'quality', label: 'Quality', icon: NavIcons.check, count: QUALITY_ATTENTION, bad: true, mock: true,
           menu: placeMenu(hrefTo.detail(slug, 'quality'), 'quality'), onClick: () => setTab('quality'),
         },
       ],
@@ -506,7 +517,12 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
         onSearch={onOpenSearch}
         actions={
           <>
-            <button className="btn-repo" onClick={go.control} title="Mission Control — every project's automation">Mission Control</button>
+            {/* #472 — a mockup, and this button is the only way in, so the
+                chip goes on the button rather than only in the tooltip. */}
+            <button className="btn-repo" onClick={go.control}
+              title="Mission Control — the console kit's mockup; it reads and writes nothing">
+              Mission Control <span className="con-navsoon mock">Mock</span>
+            </button>
             <a className="btn-repo" href={hrefTo.terminal(slug)} title={`Open a terminal in ~/${slug}`} aria-label="Terminal">⌨</a>
           </>
         } />
@@ -628,13 +644,22 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
             `risk_source`. Its two sibling tabs, Backlog and Development, are
             still mockups; Board.tsx's header lists the eight decisions the
             wiring made and the one thing no browser can still do — give a
-            verdict. ROADMAP IS STILL A MOCKUP (IdeasMock) and reads nothing. */}
+            verdict. Roadmap is wired too (#472) and draws what this does not. */}
         {tab === 'roadmap' && (
           <Board slug={slug} projectName={project.name} items={allRoadmap}
             onRefresh={reread} highlightId={highlightId}
             onEdit={(it) => setRoadModal({ open: true, title: it.title, note: it.note, editing: it })} />
         )}
-        {tab === 'ideas' && <IdeasMock />}
+        {/* ROADMAP IS THE IDEA SURFACE and is wired (#472) — the rows the
+            board deliberately does not draw: held hook/fly items and the child
+            ideas filed under something already on the board. It takes the same
+            flattened payload the board does, so `isIdea` partitions ONE list
+            across the two screens rather than each fetching its own. */}
+        {tab === 'ideas' && (
+          <Roadmap slug={slug} projectName={project.name} items={allRoadmap}
+            onRefresh={reread} highlightId={highlightId}
+            onEdit={(it) => setRoadModal({ open: true, title: it.title, note: it.note, editing: it })} />
+        )}
         {/* PLANS IS A MOCKUP TOO at the owner's request, and it was the LAST
             project tab that read anything — the kit's own PlansScreen, all six
             sub-views, on the kit's own rows. Its one prop is a navigation

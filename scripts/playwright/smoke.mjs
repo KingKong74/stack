@@ -190,31 +190,47 @@ const ROADMAP_PANELS = [
   },
 ];
 
-// The Roadmap capture screen is a mockup too (IdeasMock.tsx). Two presses: a
-// card opening to show where it was captured, and the area scope narrowing the
-// screen to one area.
+// THE ROADMAP TAB IS WIRED NOW (#472, detail/Roadmap.tsx) — the idea surface:
+// held hook/fly rows the board deliberately does not draw, plus the child
+// ideas filed under something already on it.
 //
-// The card press names the SECOND column because the first column's top card
-// is open at first paint — pressing that one would prove nothing, and
-// expecting `.im-card.open` anywhere would pass before the click. Every
-// section now carries its own three columns, so `.im-col:nth-child(2)` matches
-// one per section and `.first()` takes the first section's Thinking column.
+// READ-ONLY, on the same terms as the board's presses. Each one OPENS
+// something: a card's actions, the composer for an idea under a board item, a
+// scope. None commits — the tier picker inside an open card is pressed by
+// nobody, and the composer is opened and never submitted.
+//
+// The card press names the SECOND column (Thinking) and scopes it with
+// `:has(.im-card)`, so it finds one wherever the first idea happens to sit.
+// An EMPTY Roadmap reports both card presses as `control-missing`, which is the
+// honest answer: with no idea on screen there is no idea control to test. It
+// fills itself — every `/checkpoint` carrying `next_steps` files hook rows here,
+// and every `fly` card a session opens lands here until it is promoted.
 //
 // The scope press has no new element to point at — narrowing HIDES sections
 // rather than adding one — so it is judged on the count line changing, which
 // is `expectTextChangeIn`'s whole purpose. That line reads "N ideas · M ready
-// in this scope", and M is what moves.
+// in this scope", and M is what moves. It runs LAST, because narrowing to one
+// area can hide the rows the presses above need.
 const IDEAS_PANELS = [
   {
     id: 'ideas-expand',
-    label: 'Roadmap capture — card expands',
-    click: '.im-col:nth-child(2) .im-card',
-    expect: '.im-col:nth-child(2) .im-card.open .im-acts',
+    label: 'Roadmap — an idea opens its actions',
+    click: '.im-col:has(.im-card) .im-card',
+    expect: '.im-card.open .im-acts',
+  },
+  {
+    // #472 — ＋ on a board item opens the composer whose row is born under it.
+    // The only way to file an idea on this screen, and the half of the ask
+    // that was "see what we are working on and add ideas into it".
+    id: 'ideas-add',
+    label: 'Roadmap — an idea under a board item',
+    click: '.rm-under .rm-work .add',
+    expect: '.rm-composer textarea',
   },
   {
     id: 'ideas-scope',
-    label: 'Roadmap capture — area scope',
-    click: '.im-chip:nth-child(3)',
+    label: 'Roadmap — area scope',
+    click: '.im-bar .im-chip:last-of-type',
     expectTextChangeIn: '.im-lede',
   },
 ];

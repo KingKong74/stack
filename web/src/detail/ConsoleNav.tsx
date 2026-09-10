@@ -27,6 +27,13 @@ import { MoreMenu, type MenuOption } from '../components/MoreMenu';
 // button, because a row that takes a click and then does nothing reads as a
 // broken app. It says "Soon" on its face rather than only in a tooltip.
 //
+// A `mock` row is the OPPOSITE CASE and wears the same chip for the same
+// reason (#472): the screen behind it is really there and really opens, it just
+// draws the console kit's sample rows rather than this project's. Saying so on
+// the row's face is the only thing that stops a mockup being read as data —
+// every one of these screens looks exactly like the real thing, which was the
+// point of porting them. The chip comes off when a screen is wired.
+//
 // THE ⋯ IS A SIBLING OF THE ROW, never inside it: the row is itself a button
 // or an anchor, and a button nested in either is invalid and unreachable by
 // keyboard. Its slot is reserved in the row's padding whether or not it is
@@ -48,6 +55,12 @@ export type NavSection = {
     bad?: boolean;
     /** Announced but not built yet: shown, tagged, and inert. */
     soon?: boolean;
+    /** #472 — the screen behind this row is still one of the console kit's
+     *  MOCKUPS: it draws the kit's own sample rows and reads and writes
+     *  nothing. The row is a real link (unlike `soon`) because the screen is
+     *  really there; the chip is what stops it being mistaken for this
+     *  project's data. It comes off the moment a screen is wired. */
+    mock?: boolean;
     /** What the row's ⋯ offers. Absent or empty draws no ⋯ at all. */
     menu?: MenuOption[];
     /** What the ⋯ is CALLED, when the row's own label is not unique on its own
@@ -102,6 +115,9 @@ export function ConsoleNav({ sections, active, footer }: {
                     {it.icon && <span className="con-navico">{it.icon}</span>}
                     <span className="con-navlabel">{it.label}</span>
                     {it.soon ? <span className="con-navsoon">Soon</span> : null}
+                    {it.mock ? (
+                      <span className="con-navsoon mock" title="A mockup — the console kit's own sample rows. It reads and writes nothing.">Mock</span>
+                    ) : null}
                     {it.count ? (
                       <span className={`con-navcount${it.bad ? ' bad' : ''}`}>{it.count}</span>
                     ) : null}

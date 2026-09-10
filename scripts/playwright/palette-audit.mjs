@@ -120,7 +120,12 @@ const SCREENS = [
   { slug: 'board-dev', hash: '#/p/{slug}/roadmap', press: ['.km-tabs .k-tab:nth-child(3)'] },
   { slug: 'activity', hash: '#/p/{slug}/activity' },
   { slug: 'auto', hash: '#/p/{slug}/auto' },
+  // #472 — Roadmap is wired: real ideas, an area section with its lane line,
+  // the "on the board" strip, and an OPEN card, which is the only place the
+  // tier picker and the four actions paint at all.
   { slug: 'ideas', hash: '#/p/{slug}/ideas' },
+  { slug: 'ideas-open', hash: '#/p/{slug}/ideas', press: ['.im-col:has(.im-card) .im-card'] },
+  { slug: 'ideas-compose', hash: '#/p/{slug}/ideas', press: ['.rm-under .rm-work .add'] },
   // Plans is six sub-views behind one strip and first paint reaches ONE of
   // them, so each of the other five is walked as its own row. Nearly every row
   // on this screen lightens — a timeline row on hover, an area row when it is

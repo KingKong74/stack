@@ -41,7 +41,7 @@
 //  6a. THE COLUMNS ARE GROUPED BY AREA, in the Roadmap tab's own furniture
 //     (#469, owner's request). Scope chips across the top, one section per area
 //     with the four columns nested inside it. `.im-chip` / `.im-section` /
-//     `.im-sechead` are SHARED with detail/IdeasMock.tsx rather than copied as
+//     `.im-sechead` are SHARED with detail/Roadmap.tsx rather than copied as
 //     `.km-*`: the ask was that the two screens look alike, and two
 //     stylesheets for one look is exactly how they stop.
 //     Two things the kit's version could not know. An area here is
@@ -100,9 +100,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { KitIcon } from './kit/KitIcon';
 import type { BoardArea, BoardList, Priority, RoadmapItem } from '../types';
-import { listKeyOf, queueOrder } from '../lib/plan';
+import { listKeyOf, queueOrder, isIdea } from '../lib/plan';
 import { PRIORITY_META, PRIORITY_DEFAULT, priorityMeta } from '../lib/ui';
-import { isHeld } from '../lib/approval';
 import {
   getBoardShape, createList, patchList, deleteList,
   createRoadmapItem, patchRoadmapItem, deleteRoadmapItem,
@@ -203,6 +202,10 @@ export function Board({ slug, projectName, items, onRefresh, onEdit, highlightId
     const needle = query.trim().toLowerCase();
     return rows
       .filter((it) => !it.archived)
+      // #472 — THE BOARD DRAWS COMMITTED WORK. A held row and a child idea both
+      // belong to the Roadmap tab; `isIdea` in lib/plan.ts is the one line
+      // between the two screens, so neither can claim a row the other draws.
+      .filter((it) => !isIdea(it))
       .filter((it) => (hideParked ? !it.skipped : true))
       .filter((it) => !needle
         || it.title.toLowerCase().includes(needle)
@@ -212,13 +215,13 @@ export function Board({ slug, projectName, items, onRefresh, onEdit, highlightId
 
   // ---- the columns, grouped into AREA SECTIONS ------------------------------
   //
-  // The shape is the Roadmap tab's (detail/IdeasMock.tsx): a row of scope chips,
+  // The shape is the Roadmap tab's (detail/Roadmap.tsx): a row of scope chips,
   // then one section per area with the columns nested inside it. It reads the
   // same because it IS the same furniture — `.im-chip`, `.im-section` and
   // `.im-sechead` are shared rather than copied as `.km-*`, since two
   // stylesheets for one look is how two screens stop matching.
   //
-  // WHAT IT DOES NOT COPY IS THE KIT'S IDEA OF AN AREA. IdeasMock's six labels
+  // WHAT IT DOES NOT COPY IS THE KIT'S IDEA OF AN AREA. The kit's six labels
   // are a filing gesture; here `area` is `roadmap_items.area` and (project,
   // area) IS THE OVERNIGHT LANE (#267) — an area with an open claimed item
   // admits no second worker. So each header says whether its lane is HELD and
@@ -291,7 +294,19 @@ export function Board({ slug, projectName, items, onRefresh, onEdit, highlightId
     return out;
   }, [visible, areas]);
 
-  const onBoard = rows.filter((it) => !it.archived);
+  // How many ideas hang off each item. Counted off `rows`, never `visible`: a
+  // child is by definition not on the board, so counting the drawn set would
+  // report zero for everything.
+  const ideaCount = useMemo(() => {
+    const m = new Map<number, number>();
+    for (const it of rows) {
+      if (it.archived || it.parentId === null) continue;
+      m.set(it.parentId, (m.get(it.parentId) || 0) + 1);
+    }
+    return m;
+  }, [rows]);
+
+  const onBoard = rows.filter((it) => !it.archived && !isIdea(it));
   const shown = sections.reduce((n, sec) => n + sec.count, 0);
   const parked = onBoard.filter((it) => it.skipped).length;
 
@@ -320,8 +335,6 @@ export function Board({ slug, projectName, items, onRefresh, onEdit, highlightId
 
   const park = (it: RoadmapItem) =>
     guard(async () => { wrote(await patchRoadmapItem(slug, it.id, { skipped: !it.skipped })); });
-  const signOff = (it: RoadmapItem) =>
-    guard(async () => { wrote(await patchRoadmapItem(slug, it.id, { reviewed: true })); });
   const archive = (it: RoadmapItem) =>
     guard(async () => { wrote(await patchRoadmapItem(slug, it.id, { archived: true })); });
   const derive = (it: RoadmapItem) =>
@@ -520,7 +533,7 @@ export function Board({ slug, projectName, items, onRefresh, onEdit, highlightId
                         onDelete={() => { setMenu(null); dropCol(col.key); }} />
 
                       {col.items.map((it) => (
-                        <IssueCard key={it.id} item={it}
+                        <IssueCard key={it.id} item={it} ideas={ideaCount.get(it.id) || 0}
                           selected={selected === it.id}
                           onSelect={() => setSelected(it.id)}
                           dragging={dragId === it.id}
@@ -537,7 +550,6 @@ export function Board({ slug, projectName, items, onRefresh, onEdit, highlightId
                           onMenu={(e) => { e.stopPropagation(); closeAll(); setCardMenu(cardMenu === it.id ? null : it.id); }}
                           onEdit={() => { setCardMenu(null); onEdit(it); }}
                           onPark={() => { setCardMenu(null); park(it); }}
-                          onSignOff={() => { setCardMenu(null); signOff(it); }}
                           onArchive={() => { setCardMenu(null); archive(it); }}
                           onDerive={() => { setCardMenu(null); derive(it); }}
                           onDelete={() => { setCardMenu(null); remove(it); }} />
@@ -579,7 +591,7 @@ export function Board({ slug, projectName, items, onRefresh, onEdit, highlightId
   );
 }
 
-// The Roadmap tab's own chip (`.im-chip`), with one substitution: IdeasMock
+// The Roadmap tab's own chip (`.im-chip`), with one substitution: the kit
 // gives each of its six invented areas an ICON, and a real area has no icon —
 // it has a `dot`, chosen by the owner from the board's closed palette. So the
 // dot is what identifies it, and "All areas" and untagged carry none.
@@ -678,23 +690,24 @@ function ColumnHead({ col, first, last, open, onMenu, onRename, onMove, onDelete
 }
 
 function IssueCard({
-  item, selected, onSelect, dragging, onDragStart, onDragEnd,
+  item, ideas, selected, onSelect, dragging, onDragStart, onDragEnd,
   editing, onOpenInline, onInline, onCancelInline,
   priOpen, onPri, onPick, menuOpen, onMenu,
-  onEdit, onPark, onSignOff, onArchive, onDerive, onDelete,
+  onEdit, onPark, onArchive, onDerive, onDelete,
 }: {
   item: RoadmapItem;
+  /** How many `parent_id` children this item has — its ideas, on the Roadmap tab. */
+  ideas: number;
   selected: boolean; onSelect: () => void;
   dragging: boolean; onDragStart: () => void; onDragEnd: () => void;
   editing: boolean; onOpenInline: () => void;
   onInline: (title: string) => void; onCancelInline: () => void;
   priOpen: boolean; onPri: (e: React.MouseEvent) => void; onPick: (v: Priority) => void;
   menuOpen: boolean; onMenu: (e: React.MouseEvent) => void;
-  onEdit: () => void; onPark: () => void; onSignOff: () => void;
+  onEdit: () => void; onPark: () => void;
   onArchive: () => void; onDerive: () => void; onDelete: () => void;
 }) {
   const pri = priorityMeta(item.bucket);
-  const held = isHeld(item);
   const [confirming, setConfirming] = useState(false);
   useEffect(() => { if (!menuOpen) setConfirming(false); }, [menuOpen]);
 
@@ -711,16 +724,19 @@ function IssueCard({
         : <span className="t" title="Double-click to rename">{item.title}</span>}
 
       <div className="km-cardmeta">
-        {/* HELD IS THE ONE DISTINCTION WORTH AN ICON. The kit's two kinds are
-            task and idea; the equivalent here is whether a human has signed the
-            row off for the runner (`lib/approval.ts`), because that is the only
-            thing about a card that changes what the night may do with it. */}
-        <span className="kind" style={{ color: held ? 'var(--lime-500)' : 'var(--blue-400)' }}
-          title={held
-            ? `Held from the overnight runner — nobody has signed off this ${item.source} item`
-            : 'Approved for the overnight runner'}>
-          <KitIcon name={held ? 'bookmark' : 'circle-check'} size={13} />
+        {/* THIS SLOT HELD THE APPROVAL ICON until #472 took every held row off
+            the board — with nothing held left to draw, the distinction it made
+            is one this screen can no longer show. It says whether the item has
+            IDEAS under it instead: `parent_id` children live on the Roadmap tab,
+            and a card that gives no sign of them is a feature whose notes are on
+            a screen you had no reason to open. */}
+        <span className="kind" style={{ color: ideas ? 'var(--lime-500)' : 'var(--blue-400)' }}
+          title={ideas
+            ? `${ideas} idea${ideas === 1 ? '' : 's'} under this on the Roadmap tab`
+            : 'No ideas filed under this'}>
+          <KitIcon name={ideas ? 'bookmark' : 'circle-check'} size={13} />
         </span>
+        {ideas > 0 && <span className="pts" title="Ideas filed under this item">{ideas}</span>}
         <span className="id">#{item.id}</span>
         {item.estimate !== null && <span className="pts" title="Estimate, in weeks">{item.estimate}w</span>}
         {item.tier && <span className="pts" title="Desire tier — set in the item modal">{item.tier}</span>}
@@ -787,12 +803,10 @@ function IssueCard({
       {menuOpen && (
         <div className="km-menu card" role="menu" onClick={(e) => e.stopPropagation()}>
           <button className="km-menuitem" onClick={onEdit}>Edit item…</button>
-          {held && (
-            <button className="km-menuitem" onClick={onSignOff}
-              title="Release this item to the overnight runner (#359). Only a human can.">
-              Sign off for the runner
-            </button>
-          )}
+          {/* SIGN OFF LIVES ON THE ROADMAP TAB NOW (#472). It was here because
+              held rows were on the board; they are not, so the button had
+              nothing left it could act on. It is "Promote to board" over
+              there, which is the same write plus a detach. */}
           <button className="km-menuitem" onClick={onPark}>{item.skipped ? 'Unpark' : 'Park'}</button>
           {item.listKey && (
             <button className="km-menuitem" onClick={onDerive}

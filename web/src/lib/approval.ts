@@ -11,13 +11,12 @@ import type { RoadmapItem } from '../types';
 // NEVER held, because blocking hand-written work is the failure mode this
 // feature must not have.
 //
-// NOTHING IN THIS CLIENT CALLS IT AT THE MOMENT. Its caller was the Roadmap
-// tab, which sorted a held row into Thinking and drew it a HELD chip; that tab
-// is a mockup now (detail/IdeasMock.tsx). Deleting this file would leave the
-// rule written twice instead of three times — and the three exist because none
-// of the packages can import another, not because three surfaces wanted it. It
-// stays, `scripts/approval.test.mjs` keeps it honest, and the next client that
-// has to know whether a row may run reads it rather than writing a fourth.
+// THE ROADMAP TAB IS ITS CALLER AGAIN (#472, via `isIdea` in lib/plan.ts).
+// A held row is not merely flagged there — it is the whole reason the tab
+// exists: an unsigned `hook` or `fly` row is an IDEA, so it is drawn on Roadmap
+// and kept off the board, and Promote is what signs it off. The rule is written
+// three times (`server/src/`, `scripts/lib/`, here) because none of the three
+// packages can import another; `scripts/approval.test.mjs` keeps them honest.
 
 const NEEDS_SIGNOFF = new Set(['hook', 'fly']);
 

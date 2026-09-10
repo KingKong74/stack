@@ -39,6 +39,7 @@
 //     rather than pinning a now-line to an edge it is nowhere near.
 
 import type { Roadmap, RoadmapItem, SchedSpan } from '../types';
+import { isHeld } from './approval';
 
 // --- units -----------------------------------------------------------------
 
@@ -1006,6 +1007,32 @@ export function listKeyOf(it: RoadmapItem): string {
  * a `position` field added here without one being served would silently sort
  * every row on 0.
  */
+/**
+ * THE ONE LINE BETWEEN THE TWO SURFACES (#472), and it lives here so the board
+ * and the Roadmap tab cannot disagree about where a row belongs. A row on both
+ * is a row you act on twice; a row on neither is work that has silently
+ * vanished, which is the worse of the two and the reason this is one function.
+ *
+ * THE BOARD DRAWS COMMITTED WORK. Roadmap draws what is not committed yet, and
+ * exactly two things are not:
+ *
+ *  • A HELD row — `hook` (the extractor read it off a push) or `fly` (a live
+ *    session opened it for its own work) that nobody has signed off. #359 already
+ *    keeps these out of the overnight runner; #472 keeps them off the board for
+ *    the same reason, which is that nobody has said yes to them yet.
+ *  • A CHILD row (`parentId` set) — an idea hanging off a feature. It is a note
+ *    about work, not the work, and the board is the work.
+ *
+ * PROMOTING IS THEREFORE ONE WRITE WITH ONE MEANING: `reviewed: true` and
+ * `parentId: null` together say "this is committed work now", and it moves
+ * across. Nothing else moves a row between the two screens.
+ *
+ * `archived` is neither surface's — it is off the board and recoverable, and
+ * `isIdea` deliberately says nothing about it so a caller cannot forget which
+ * question it is asking.
+ */
+export const isIdea = (it: RoadmapItem): boolean => it.parentId !== null || isHeld(it);
+
 /**
  * EVERY ROADMAP ROW, IN THE PAYLOAD'S OWN ORDER — the one place the client
  * spells the five priority keys, and the reason `queueOrder` below can use
