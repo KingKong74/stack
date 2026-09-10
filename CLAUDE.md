@@ -16,17 +16,16 @@ own: `routes/ingest.js`, `prompts.js`, `routes/checks.js`, `routes/worktrees.js`
 `components/Brandmark.tsx`, `detail/Board.tsx`, `detail/Roadmap.tsx`, `detail/Plans.tsx` and `components/RoadmapModal.tsx`. **Adding a rule here
 that belongs in one of those is how this file got to 40 KB.**
 
-**GONE, so you don't go looking** (owner's calls, with what went with each): **Mission Control**'s
+**GONE, so you don't go looking** (owner's calls, and what went with each): **Mission Control**'s
 seven rooms (`/api/control`, `/api/review`, `/api/merge`) · **Polaris** (Futures tab, galaxy,
 `futures`) · the **instructions tree** (managed CLAUDE.md library + host sync) · the **Workbench**
-(canvas tab, `/api/…/workbench`, `workbench_*`, the Drafter, and `notes` — its only reader — with
-the table, route, ⌘K scope and the ＋'s composer) · the **three corner docks** (#492 — the ＋, the
-terminal's chip and float panel, and the running-sessions pill; `/term-status` has no
-watcher) · the Roadmap
-**Timeline** (#428) and **strip** (Scope/Tiers/Parked/Arrange, `lib/curatorTasks.ts`) · the **TAB
-AGENTS' CONSOLES** (#379/#380, `console_off` kept in the DB) and the **Auditor** with them. THEN THE
-SCREENS: every project tab became a kit mockup (#443–#451), Mission Control too (#470), the board's
-kanban is wired back (#453) and the item modal lost Priority/Tier/Risk/Branch (#469).
+(canvas tab, `/api/…/workbench`, `workbench_*`, the Drafter, and `notes` — its only reader, with
+its table, route and ⌘K scope) · the **three corner docks** (#492 — the ＋, the terminal's
+chip/float, the sessions pill; `/term-status` unwatched) · the Roadmap **Timeline** (#428) and
+**strip** (Scope/Tiers/Parked/Arrange, `lib/curatorTasks.ts`) · the **TAB AGENTS' CONSOLES**
+(#379/#380, `console_off` kept in the DB) and the **Auditor**. THEN THE SCREENS:
+every project tab became a kit mockup (#443–#451), Mission Control too (#470), the board's kanban is
+wired back (#453) and the item modal lost Priority/Tier/Risk/Branch (#469).
 
 Two things that leaves: the **CURATOR is the only agent**, and only its `assist` op has a caller
 (`arrange`, `allocate`, `cleanup`, `titler` are registered and unsurfaced). Rules that outlived
@@ -403,7 +402,7 @@ also documents the self-describing ones). The ones whose meaning isn't obvious f
 | `autopilotWorkers` | the FLEET-WIDE cap on concurrent jobs (0 = unlimited, default 3, clamped 1–8); per-project serialisation is separate and NOT tunable |
 | `autopilotExecutorModel` / `autopilotAdvisorModel` | #153, **inverted by #285**: the ADVISOR runs the session (main loop, plans, delegates, verifies, commits) and the EXECUTOR is exposed to it as a subagent with the write tools. Advisor unset = single-model on the executor |
 | `assistFields` / `assistGuidance` | what ✧ Fill-from-note may fill, and the owner's standing steer. Assist never overrides a value the human set. **branch/risk are dead toggles** — #469 took them off the modal, so the route still answers them and nothing can land them. `tier` went with its column (#477); `priority` went with the corner ＋ (#492) |
-| `termIdleHours` | the idle-session reaper's threshold (0 = never); the host does the killing and fails SAFE |
+| `termIdleHours` | the idle reaper's threshold (0 = never); the host kills, fails SAFE, and **it switches BOTH reapers** — this and the daemon's 1-min unused sweep |
 | `accessPinSet` | PIN sign-in available; PATCH takes write-only `accessPin` ('' disables). Any change signs out every PIN-connected device |
 
 ## Routes

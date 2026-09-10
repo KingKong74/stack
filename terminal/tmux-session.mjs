@@ -147,6 +147,32 @@ export function setKeep(name, keep) {
   return { ok: false, error: (r.stderr || '').trim() || 'tmux refused the option' };
 }
 
+// THE FRESH MARK — "the daemon made this one and nobody has been near it".
+//
+// Same trick as the keep pin above and for the same reason: it is a tmux user
+// option ON THE SESSION, so it cannot drift from the thing it describes and it
+// dies exactly when the session does. A daemon restart does not lose it, which
+// matters — the sessions this exists to clean up outlive the process that made
+// them.
+//
+// It is set once, when the daemon CREATES a session (never when it re-attaches
+// to one), and comes off as soon as somebody has actually had the session on
+// screen — the daemon clears it for a browser that held one past the fuse, and
+// `reapFreshSessions` below clears it for anyone else it finds attached. What
+// is left carrying the mark is the set of sessions opened and then orphaned
+// without a soul ever looking at them: a page load that adopted nothing, a
+// probe, a tab closed a second after it opened.
+//
+// A session the daemon did not create never carries it and is therefore never
+// a candidate — an ssh + `tmux new -s stack-term-…` by hand is out of reach by
+// construction, which is the fail-safe direction for something that kills.
+export function markFresh(name) {
+  spawnSync('tmux', ['set-option', '-t', `=${name}:`, '@stack-fresh', '1'], { stdio: 'ignore' });
+}
+export function clearFresh(name) {
+  spawnSync('tmux', ['set-option', '-t', `=${name}:`, '-u', '@stack-fresh'], { stdio: 'ignore' });
+}
+
 // List every stack-term-* tmux session on the host — the web daemon's own and
 // any started by hand (ssh + `stack term`), with whether a client is attached
 // anywhere. Only stack-term-* names: autopilot/test sessions are not the
@@ -155,13 +181,13 @@ export function setKeep(name, keep) {
 export function listStackSessions() {
   const r = spawnSync(
     'tmux',
-    ['list-sessions', '-F', '#{session_name}\t#{session_attached}\t#{session_created}\t#{session_path}\t#{session_activity}\t#{@stack-keep}'],
+    ['list-sessions', '-F', '#{session_name}\t#{session_attached}\t#{session_created}\t#{session_path}\t#{session_activity}\t#{@stack-keep}\t#{@stack-fresh}'],
     { encoding: 'utf8' },
   );
   if (r.status !== 0) return []; // no server running = no sessions
   const out = [];
   for (const line of r.stdout.split('\n')) {
-    const [name, attached, created, path, activity, keep] = line.split('\t');
+    const [name, attached, created, path, activity, keep, fresh] = line.split('\t');
     // One strict pattern (#218: #199) instead of the old two-step
     // validName() + startsWith() pair, whose rules could drift apart.
     if (typeof name !== 'string' || !/^stack-term-[A-Za-z0-9_-]{1,64}$/.test(name)) continue;
@@ -176,6 +202,9 @@ export function listStackSessions() {
       activity: (parseInt(activity, 10) || 0) * 1000,
       // #292 — the keep pin, read straight off the session that carries it.
       keep: keep === '1',
+      // The fresh mark — see markFresh above. Nobody has ever been seen
+      // attached to this session since the daemon created it.
+      fresh: fresh === '1',
     });
   }
   return out;
@@ -241,6 +270,57 @@ export function reapDeadSessions() {
     if (attached !== '0' || dead !== '1') continue;
     killSession(name);
     reaped.push(name);
+  }
+  return reaped;
+}
+
+// Reap sessions NOBODY EVER LOOKED AT — the short fuse, in minutes.
+//
+// The problem: sessions pile up on the host that nobody ever used. Each is a
+// claude process holding a context, and #287's reaper below is measured in
+// HOURS because it judges work that might still be resumed. There is nothing
+// here to resume — no one has ever had these on screen.
+//
+// THE TEST IS PROVENANCE, NOT CONTENT, and that is deliberate. Every cheap
+// signal tmux offers about "has this been used" is a lie for a DETACHED
+// session, and all three were measured before this was written:
+// `session_activity` does not move while no client is attached (a session that
+// ran a command a minute ago still reads as created-and-untouched),
+// `history_size` stays 0 until the screen scrolls, and a fresh claude session
+// draws a full splash — so a blank-pane test says the exact opposite of the
+// truth. What IS knowable is who has been attached: this reaps only sessions
+// carrying the FRESH mark (the daemon made it) that no sweep has ever caught
+// with a client on them.
+//
+// `clearFresh` on an attached session is therefore half the algorithm and not
+// a tidy-up: a session held in a browser pane, or attached over ssh, is seen
+// within one sweep and permanently exempted. What survives to be reaped is a
+// session created, orphaned inside a minute, and never seen again.
+//
+// The pin still exempts a session outright, and only stack-term-* names are
+// considered, so the autopilot's own sessions are out of reach by construction.
+//
+// `minutes` <= 0 means never. `held` is the set of names the CALLER has a
+// client on — the daemon's own live sessions, which it judges itself on how
+// long the browser held them; passing them here as well would make a
+// short-lived tab depend on whether a sweep ticked during it. Returns
+// [{ name, ageMinutes }] for the log.
+export function reapFreshSessions(minutes, held = new Set()) {
+  if (!(minutes > 0)) return [];
+  const cutoff = Date.now() - minutes * 60_000;
+  const reaped = [];
+  for (const s of listStackSessions()) {
+    if (!s.fresh || held.has(s.name)) continue;
+    // Attached, and not by the caller — so somebody reached this session
+    // another way (ssh, `tmux attach`) and it is not an orphan. Recorded
+    // permanently: a fork now beats re-deciding it every sweep.
+    if (s.attached) { clearFresh(s.name); continue; }
+    if (s.keep) continue;
+    // created 0 = tmux told us nothing; refuse to guess rather than kill on a
+    // missing timestamp, as the hours-scale reaper does.
+    if (!s.created || s.created > cutoff) continue;
+    killSession(s.name);
+    reaped.push({ name: s.name, ageMinutes: Math.round((Date.now() - s.created) / 60_000) });
   }
   return reaped;
 }

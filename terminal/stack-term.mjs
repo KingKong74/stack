@@ -30,6 +30,7 @@
 //   STACK_TOKEN               the API token the agent connects with (required, env only)
 //   STACK_TERM_ROOT           cwd jail, default $HOME  (--root)
 //   STACK_TERM_IDLE_MINUTES   close inactive sessions after this many minutes, default 240  (--idle-minutes)
+//   STACK_TERM_FRESH_MINUTES  take a session NOBODY EVER ATTACHED TO after this many minutes, default 1
 //   STACK_TERM_MAX_SESSIONS   default 8  (--max-sessions)
 //
 // STACK_API and STACK_TOKEN are env-only — passing credentials as CLI flags would expose
@@ -52,7 +53,7 @@ import meow from 'meow';
 import WebSocket from 'ws';
 import { createUsageMeter } from './usage-meter.mjs';
 import { createPlanUsage } from './plan-usage.mjs';
-import { tmuxAvailable, validName, generateName, sessionArgv, sessionExists, killSession, listDetached, listStackSessions, listAutoSessions, paneTail, reapDeadSessions, reapIdleSessions, sendKeys, setKeep } from './tmux-session.mjs';
+import { tmuxAvailable, validName, generateName, sessionArgv, sessionExists, killSession, clearFresh, listDetached, listStackSessions, listAutoSessions, markFresh, paneTail, reapDeadSessions, reapFreshSessions, reapIdleSessions, sendKeys, setKeep } from './tmux-session.mjs';
 import { detectPrompt } from './prompt-scan.mjs';
 import { parseAutoName, readActivity } from './auto-scan.mjs';
 import { agentScratchDir, agentClaudeArgs } from './agent-run.mjs';
@@ -130,6 +131,14 @@ const cli = meow(`
 const envInt = (k) => { const n = parseInt(process.env[k] || '', 10); return (n || undefined); };
 const ROOT = realpathSync(cli.flags.root || process.env.STACK_TERM_ROOT || homedir());
 const IDLE_MS = (cli.flags.idleMinutes > 0 ? cli.flags.idleMinutes : (envInt('STACK_TERM_IDLE_MINUTES') ?? 240)) * 60_000;
+// The SHORT FUSE, in minutes: how long a session the daemon opened may sit
+// with nobody ever attached to it before it is taken (tmux-session.mjs's
+// `reapFreshSessions` is the rule; this is only the number). One minute,
+// because a session nobody has ever looked at is not work — it is the residue
+// of a page load, and every one of them is a claude process holding context.
+// Env-only: it is a fuse, not a policy, and the policy switch is the setting
+// the sweep below reads.
+const FRESH_MINUTES = envInt('STACK_TERM_FRESH_MINUTES') ?? 1;
 const MAX_SESSIONS = cli.flags.maxSessions > 0 ? cli.flags.maxSessions : (envInt('STACK_TERM_MAX_SESSIONS') ?? 8);
 
 const API = (process.env.STACK_API || '').replace(/\/$/, '');
@@ -405,6 +414,41 @@ async function gcIdle() {
 setInterval(gcIdle, 10 * 60_000);
 // Not at startup: a reboot is when the clock is least trustworthy and the
 // settings fetch has not happened yet. The first pass runs ten minutes in.
+
+// THE SHORT-FUSE SWEEP. Every minute, because that is the unit the fuse is in.
+//
+// It runs under the SAME switch as the hours-scale reaper: `termIdleHours` at
+// 0 means the owner has said not to reap, and a second reaper that ignored
+// that would make the setting a lie. Null (the API never answered) still means
+// nothing is taken, and this sweep asks for the settings itself while it is
+// null so a daemon that has just started does not sit blind for ten minutes.
+//
+// The sweep also does half the EXEMPTING — `reapFreshSessions` clears the mark
+// off any session it finds attached by somebody who is not this daemon (ssh, a
+// bare `tmux attach`) — so it must keep running even when there is nothing to
+// kill. The other half is the timer beside `markFresh`, for the sessions this
+// daemon is itself holding.
+async function gcFresh() {
+  if (!tmuxAvailable()) return;
+  if (idleHours == null) await refreshTermSettings();
+  if (idleHours == null || idleHours <= 0) return;
+  // Sessions this daemon is holding a client on are NOT the sweep's to judge:
+  // the timer beside `markFresh` above decides those, on how long the browser
+  // actually held them rather than on whether a sweep happened to tick during
+  // the window. Handing them to the sweep as well made a short-lived tab a
+  // coin flip — a 12-second probe that a sweep caught mid-attach came out
+  // exempt, which is how the false-exempt case was found.
+  const mine = new Set(
+    [...sessions.values()].map((x) => x.tmuxSession).filter(Boolean),
+  );
+  const reaped = reapFreshSessions(FRESH_MINUTES, mine);
+  if (reaped.length) {
+    log(`unused reaper: terminated ${reaped.length} session(s) nobody ever attached to `
+      + `in >${FRESH_MINUTES}m: ` + reaped.map((r) => `${r.name} (${r.ageMinutes}m)`).join(', '));
+    pushDetached(); // the advertised list just changed
+  }
+}
+setInterval(gcFresh, 60_000);
 
 // Plan-window push (#220): the account-level Plan usage (#195) rides to the
 // relay even with NO session open, so Mission Control's console can show the
@@ -761,6 +805,7 @@ function startSession(msg) {
   let argv;
   let tmuxSession = null; // set when tmux is in use
   let reattached = false; // true when the named tmux session was already running
+  let markNewSession = null; // set to the name when this call CREATES the session
 
   if (msg.cmd === 'claude') {
     // The browser may ask for permission prompts to be skipped — a boolean
@@ -807,6 +852,11 @@ function startSession(msg) {
       const shellCmd = `/bin/bash -lc "${claudeCmd}"`;
       argv = sessionArgv(tmuxSession, cwd, shellCmd);
       log(`session ${sid}: tmux session ${tmuxSession} (${reattached ? 're-attach' : 'new'})`);
+      // A session we are CREATING starts out marked fresh — nobody has been
+      // near it yet. The mark is set after the spawn below, once the session
+      // exists for tmux to hang an option on; re-attaching to one never marks
+      // it, because whatever it is, it is not new.
+      markNewSession = reattached ? null : tmuxSession;
     } else {
       // Degrade gracefully when tmux is absent — direct spawn, no persistence.
       argv = ['/bin/bash', '-lc', claudeCmd];
@@ -819,6 +869,37 @@ function startSession(msg) {
   const child = spawn('python3', [SHIM, cwd, ...argv], {
     stdio: ['pipe', 'pipe', 'pipe', 'pipe'], // fd3 = resize control
   });
+  // The fresh mark, once the session exists — POLLED, not guessed at. The
+  // shim's `new-session -A` runs in another process, so there is no moment
+  // here at which tmux is known to have the session yet: a single delayed
+  // set-option lands or misses depending on how busy the host is, and the
+  // first cut of this missed on a warm machine (measured — the mark simply
+  // was not there afterwards). So it asks, briefly, and gives up out loud.
+  // A miss is the SAFE direction — an unmarked session is one the short-fuse
+  // reaper will never take — but a silent miss would make the sweep look
+  // broken rather than conservative.
+  if (markNewSession) {
+    const name = markNewSession;
+    let tries = 0;
+    const tick = setInterval(() => {
+      tries += 1;
+      if (sessionExists(name)) {
+        clearInterval(tick);
+        markFresh(name);
+      } else if (tries >= 30) {
+        clearInterval(tick);
+        log(`session ${sid}: tmux session ${name} never appeared — not marked fresh, so the unused reaper will leave it alone`);
+      }
+    }, 500);
+    // AND THE MARK COMES OFF WHEN SOMEBODY HAS ACTUALLY HAD IT ON SCREEN.
+    // The daemon is the only thing that knows this exactly: it holds the
+    // client. A minute is the same number as the fuse, and deliberately so —
+    // a session a browser held for longer than the fuse is one a person had
+    // open, whether or not they typed into it, and it never becomes the
+    // reaper's business again. A tab that opened and closed inside the minute
+    // keeps its mark, which is the case this whole sweep exists for.
+    setTimeout(() => { if (sessions.has(sid)) clearFresh(name); }, FRESH_MINUTES * 60_000);
+  }
 
   const sess = {
     outBuf: createReplayBuffer(),

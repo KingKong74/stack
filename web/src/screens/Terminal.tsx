@@ -1472,15 +1472,21 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
               // gives the tall left column to and Focus the full-width top
               // row. It has to be a class rather than :first-child, because
               // off-screen panes stay in the DOM (they keep their sockets) and
-              // would win that selector while invisible. The TRIO is the one
-              // shape that does not read it: its odd cell is the THIRD pane,
-              // not the first, so it places by `data-slot` instead.
+              // would win that selector while invisible.
+              //
+              // A CLICK ON A PANE DOES NOT MOVE THE FOCUS (owner's call). It
+              // used to: mousedown anywhere on a pane made that session the
+              // active one, so a drag to select output, a scroll, or a stray
+              // click on the way to a button quietly moved what ⤢, the pane
+              // ring and the head bar were all pointing at. ⤢ is the control
+              // that says it now, and it is the only one. Typing still goes
+              // where you clicked — xterm's own textarea takes the keyboard on
+              // a click, which is the browser's job and not this state's.
               return (
               <div key={s.id}
                 className={`term-pane${shown ? '' : ' off'}${s.id === active ? ' focused' : ''}${shown && slot === 0 ? ' lead' : ''}`}
                 style={shown ? { order: slot } : undefined}
-                data-slot={shown ? slot : undefined}
-                onMouseDown={() => { if (s.id !== active) setActive(s.id); }}>
+                data-slot={shown ? slot : undefined}>
                 {/* The title: what this session is working on, in its own
                     words via the labeller. It sits ON the pane rather than on
                     the tab because with four terminals up, the tab strip is no
@@ -1719,17 +1725,22 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                                       : x.note || x.status)}
                                   </span>
                                 )}
-                                {/* Pin and end, the two controls the design
-                                    puts on a rail row. Kept because they are
-                                    the ones you reach for while looking at the
-                                    LIST rather than at a terminal. */}
-                                {x.tmux && (
-                                  <button className={`tcg-btn${pinned ? ' on' : ''}`} aria-pressed={pinned}
-                                    title={pinned
-                                      ? `Pinned — the idle reaper will not take ${x.tmux}`
-                                      : `Pin ${x.tmux} against the idle reaper`}
-                                    onClick={(e) => { e.stopPropagation(); void togglePin(x.tmux!, !pinned); }}>
-                                    {pinned ? '📌' : '📍'}
+                                {/* THE PIN IS DRAWN ONLY WHEN IT IS ON
+                                    (owner's call). Every row carried an unlit
+                                    📍 as well, so the column said nothing: a
+                                    mark on every row marks nothing, and an
+                                    idle-looking pin beside a live session
+                                    reads as a STATE the session is in rather
+                                    than as a control. Lit, it is the one fact
+                                    worth seeing down this list — which session
+                                    the reaper will not take. PINNING happens
+                                    on the PANE, where 📍 sits beside the
+                                    session you are actually looking at. */}
+                                {x.tmux && pinned && (
+                                  <button className="tcg-btn on" aria-pressed="true"
+                                    title={`Pinned — the idle reaper will not take ${x.tmux}. Click to unpin.`}
+                                    onClick={(e) => { e.stopPropagation(); void togglePin(x.tmux!, false); }}>
+                                    📌
                                   </button>
                                 )}
                                 {/* ✎, as the design draws it. A session with no
