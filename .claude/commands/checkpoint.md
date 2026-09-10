@@ -61,16 +61,27 @@ Do the following:
      },
      "extract": {
        "bugs": [{ "title": "<bug found/introduced>", "severity": "critical|high|medium|low" }],
-       "next_steps": [{ "title": "<concrete follow-up>", "priority": "highest|high|medium|low|lowest" }],
-       "futures": [{ "title": "<directional idea for later>", "note": "<why it might matter>" }],
        "built": [{ "item": 381, "note": "<what actually landed, where it lives, how it was verified>" }]
      }
    }
    ```
 
    Leave any list empty (`[]`) when there's nothing real to put in it — do **not**
-   invent bugs, next-steps or futures. Auto-extracted items dedupe by title
-   fingerprint, so don't restate ones already tracked.
+   invent bugs. Auto-extracted items dedupe by title fingerprint, so don't
+   restate ones already tracked.
+
+   **`next_steps` AND `futures` ARE SWITCHED OFF — do not send either.** They
+   filed a fresh held roadmap row per follow-up you named, which is how the
+   board filled with ideas nobody had agreed to: a checkpoint proposing four
+   next-steps opened four cards, every session, and an idea pipeline nobody
+   empties makes the board look busy with work no one chose. The route still
+   accepts them, so this is one edit away from coming back.
+
+   **The follow-ups themselves are NOT lost, and this is the whole point of the
+   change:** they go in `session.next_up` above, which is prose on the resume
+   card. The next session reads them in its SessionStart block exactly as
+   before — they simply stop becoming tracker rows that someone has to triage.
+   Put the same sentences there that you would have put here.
 
    **`built` — the board row for what you just built.** Everything else in
    `extract` proposes work for later; this one records work that has landed.
@@ -91,8 +102,9 @@ Do the following:
      `item` id you have actually seen on the roadmap this session.
    - **Built something with no row at all?** Send a title instead:
      `{"title": "…", "note": "…", "bucket": "highest", "area": "terminal"}`. It
-     attaches to a matching row if one exists (including a ⚡ FLY card you opened
-     when you started), and only files a new one if nothing matches. This is the
+     attaches to a matching row if one exists, and only files a new one if
+     nothing matches. (It used to name a ⚡ FLY card you had opened when you
+     started; fly cards are off, so this is the usual case now.) This is the
      case that matters — a feature that ships with no row is a feature nobody
      can cite, review or find again.
    - It **never ticks the item.** The row lands as BUILT, not done, and goes to
@@ -104,11 +116,9 @@ Do the following:
    reports **ids NOT on this board**, say so to the user: you cited a number
    that doesn't exist and that note was not written anywhere.
 
-   `futures` vs `next_steps`: a next-step is concrete work someone could start
-   tomorrow; a future is a **directional idea** worth curating later ("could
-   become a review platform", "consider a public read-only mode"). If the
-   session's SessionStart block showed a **North star**, align `next_up` with it
-   and use `futures` for ideas that would bend the direction.
+   If the session's SessionStart block showed a **North star**, align `next_up`
+   with it — that list is now the only place a suggestion for later lands, so it
+   is worth writing properly rather than as a stub.
 
 4. **Post it.** Pipe the JSON straight to the poster — it reads the token from
    `~/.stack/env` itself, so **never print, echo or paste the token**:

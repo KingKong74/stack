@@ -101,37 +101,24 @@ fingerprint of their title. So:
 - Manual items are never touched by the extractor. Reach for a manual bug/roadmap
   item/note when you want something the session summary wouldn't capture.
 
-## Open a FLY card when you start ad-hoc work (#381)
+## FLY CARDS ARE SWITCHED OFF (#381, paused #477)
 
-Asked to build something **not already a roadmap item**? Open a card first, or
-the work lives only in this transcript — not somewhere the owner can review it,
-rework it, or find it next week.
+**Do not open a roadmap card for the work you are asked to do.** A session used
+to POST `{"source":"fly", …}` when it started anything that was not already a
+roadmap item, so the work was recorded somewhere the owner could review it. The
+owner turned that off: the cards arrived faster than anyone triaged them, and an
+idea pipeline nobody empties is worse than no pipeline, because it makes the
+board look busy with work no one has agreed to.
 
-```bash
-source ~/.stack/env
-curl -s -X POST "$STACK_API/api/projects/<slug>/roadmap" \
-  -H "authorization: Bearer $STACK_TOKEN" -H 'content-type: application/json' \
-  -d '{"source":"fly","session":"'"$(tmux display-message -p '#S' 2>/dev/null)"'",
-       "title":"Fix the console strip flicker","note":"What was asked for.",
-       "bucket":"high","area":"terminal"}'
-```
+The route still accepts a fly post — nothing was removed, so this is one setting
+away from coming back — but **the `fly` session default is off**, which means
+you will not be told to open one, and you should not do it unasked. Record what
+you did in your summary and in `/checkpoint` instead.
 
-- **`source:"fly"`** is the marker — a live session opened this, as against
-  `manual` (a human typed it) and `hook` (extracted from a push). Posting
-  `"hook"` is refused; that source is the extractor's alone.
-- **`session`** is your tmux session name. Send it if you can find it; the card
-  is created without one, and inventing a plausible name is far worse.
-- **It is HELD from the overnight runner** until the owner signs it off, like a
-  hook item — you are recording work, not commissioning a night of it. It does
-  not stop YOU doing the work now.
-- **One card per piece of work, not per turn.** The same title twice from one
-  session returns the first card (200, not 201) — don't lean on that.
-- **409 with `"dismissed":true`** = the owner deleted that card. Don't post it
-  again; say so in your summary.
-- Then treat it as any other item: claim it, and write a `built_note` when done.
-
-Not for trivia — a typo, a question answered, a file read. The test is whether
-the owner would want it on the board tomorrow.
+A card the OWNER asks you to open is a different thing: post it `source:"manual"`
+(a human asked for it, so it is committed work and never held) and say so — and
+not for trivia, a typo or a question answered. The test is whether the owner
+would want it on the board tomorrow.
 
 ## Branch naming
 
