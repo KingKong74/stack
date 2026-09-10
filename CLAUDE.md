@@ -196,7 +196,9 @@ or the header of the file named in the pointer.
   sprint** — a new row is born in the backlog, or the extractor could commission tonight's work by
   writing a title. Deleting a sprint **releases its items** (ON DELETE SET NULL); finishing one
   **leaves its unfinished rows in it**, because a done sprint is the record of what was committed to.
-  **Agents must never write `sprint_id` or `sprint_rank`.**
+  `starts_on`/`ends_on` are the owner's PLANNED window and **gate nothing** — a second pair beside
+  `started_at`/`ended_at`, which is when it actually ran, because "when did we mean to" and "when did
+  we" are different questions. **Agents must never write `sprint_id` or `sprint_rank`.**
 - **"Approved for the auto runner" is `source NOT IN ('hook','fly') OR reviewed_at IS NOT NULL`**
   (#359, widened by #381), with no column of its own — an `approved` flag would be a second, drifting
   truth. TWO origins need a human's sign-off: `hook` (read off a push) and `fly` (a live session's own

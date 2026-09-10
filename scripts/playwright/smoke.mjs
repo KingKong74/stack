@@ -177,7 +177,10 @@ const ROADMAP_PANELS = [
   {
     id: 'board-backlog-newsprint',
     label: 'Backlog — New sprint opens its name field',
-    click: '.km-bl-bar .k-btn.secondary',
+    // A named hook, never a tone class: this pressed `.k-btn.secondary` for
+    // exactly one commit, until the button changed colour and the harness
+    // reported a control that was sitting right there.
+    click: '.km-newsprint',
     expect: '.km-bl-new input',
   },
   // And back out of it, so the Development tab below is reached from a screen
@@ -186,7 +189,7 @@ const ROADMAP_PANELS = [
     id: 'board-backlog-newsprint-cancel',
     label: 'Backlog — the composer cancels',
     click: '.km-bl-new .k-btn.ghost',
-    expect: '.km-bl-bar .k-btn.secondary',
+    expect: '.km-newsprint',
   },
   {
     id: 'board-dev-tab',

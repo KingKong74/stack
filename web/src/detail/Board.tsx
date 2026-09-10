@@ -1396,7 +1396,11 @@ function BacklogView({
             <button className="k-btn sm ghost" onClick={closeComposer}>Cancel</button>
           </span>
         ) : (
-          <button className="k-btn sm accent" onClick={() => setNaming(true)}>
+          // `km-newsprint` is a HOOK, not a style — the smoke names it. Its
+          // first spelling was `.k-btn.secondary`, which the harness matched
+          // until this button changed tone, and a test that breaks when a
+          // colour changes is a test nobody trusts.
+          <button className="k-btn sm accent km-newsprint" onClick={() => setNaming(true)}>
             <KitIcon name="plus" size={14} />New sprint
           </button>
         )}
