@@ -735,14 +735,28 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   // per-session dirty-byte counters, the minimum interval, the "has it moved
   // on" test — is gone rather than merely disabled, because a threshold left
   // in the file is an invitation to tune it back up.
+  // The ONE ask is gated on there being something to read. Naming once and
+  // naming EARLY are different things, and doing both gives every session the
+  // permanent title "starting claude session" — read off the splash screen,
+  // before the session has done anything, and now never revised. So a live
+  // session must have emitted a screenful before it is named. The counter only
+  // ever gates the FIRST name; nothing decrements it and nothing re-asks.
+  const seenRef = useRef<Record<number, number>>({});
+  const NAME_AFTER_BYTES = 2000;
+  const noteOutput = (id: number, bytes: number) => {
+    seenRef.current[id] = (seenRef.current[id] || 0) + bytes;
+  };
   useEffect(() => {
     if (!visible) return;
     const tick = () => {
       const live = sessions.filter((x) => x.status === 'live' || x.status === 'connecting');
       if (!live.length && !detachedShown.length) return;
-      // ONLY the never-named. A session that has a label keeps it for life.
+      // ONLY the never-named, and for a live pane only once it has said enough
+      // to be worth reading. A detached session is exempt: its output happened
+      // before this browser was watching, so there is no counter for it and the
+      // daemon reads its pane directly.
       const unnamed = [
-        ...live.filter((x) => !labelOf(x)).map((x) => x.id),
+        ...live.filter((x) => !labelOf(x) && (seenRef.current[x.id] || 0) >= NAME_AFTER_BYTES).map((x) => x.id),
         ...detachedShown.filter((d) => !labels[d.name]).map((d) => d.name),
       ];
       if (!unnamed.length) return;
@@ -1444,73 +1458,12 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
             rail's Settings popover, which is where the design puts a setting.
             One status, one place; it was being drawn twice. */}
 
-        {/* #188 — sessions still running on the host that this tab doesn't
-            hold, framed the way 25b frames them: things to pick up. Detached
-            ones (a page reload's orphans) ↺ re-attach, × kills (confirmed
-            first — and only detached ones are killable); ones attached
-            elsewhere (another browser, the laptop over ssh via `stack term`)
-            ↺ mirror — tmux fans one session out to every client, so this tab
-            drives the same screen. */}
-        {detachedShown.length > 0 && (
-          <div className="term-detached">
-            <span className="td-lbl">Pick up where it stopped</span>
-            {detachedShown.map((d) => {
-              const name = labels[d.name] || d.label || '';
-              const picked = killPick.includes(d.name);
-              return (
-                <span key={d.name} className={`td-chip${d.attached ? ' away' : ''}${picked ? ' picked' : ''}${d.keep ? ' pinned' : ''}`}>
-                  {/* #292 — the keep pin. Offered on EVERY chip, attached or
-                      not: the reaper measures output, not attachment, so a
-                      session mirrored on another device is exactly as
-                      reapable as an orphan and exactly as worth protecting. */}
-                  <button className={`td-pin${d.keep ? ' on' : ''}`} aria-pressed={!!d.keep}
-                    aria-label={d.keep ? `Unpin ${d.name}` : `Pin ${d.name}`}
-                    title={d.keep
-                      ? 'Pinned — the idle reaper will not take this session. Click to unpin.'
-                      : 'Pin this session so the idle reaper never takes it, however quiet it goes'}
-                    onClick={() => void togglePin(d.name, !d.keep)}>
-                    {d.keep ? '📌' : '📍'}
-                  </button>
-                  <button className="td-attach"
-                    title={[
-                      d.attached
-                        ? `Attached on another device (tmux ${d.name}) — open it here too: both screens mirror the same session`
-                        : `Re-attach to this running claude session (tmux ${d.name}${d.created ? `, since ${new Date(d.created).toLocaleString()}` : ''})`,
-                    ].filter(Boolean).join(' ')}
-                    onClick={() => attachDetached(d)}>
-                    ↺ claude · {d.cwd ? `~/${d.cwd}` : '~'} · {d.attached ? 'another device' : 'detached'}{name ? ` — ${name}` : ''}
-                  </button>
-                  {/* Selection for a multi-kill sits on killable chips only:
-                      the daemon refuses a name a client still holds, so
-                      offering it on an attached one would be a button that
-                      cannot work. */}
-                  {!d.attached && (
-                    <button className={`td-pick${picked ? ' on' : ''}`} onClick={() => toggleKillPick(d.name)}
-                      aria-pressed={picked} aria-label={`Select ${d.name} to kill`}
-                      title={picked ? 'Unselect' : 'Select for a bulk kill'}>{picked ? '☑' : '☐'}</button>
-                  )}
-                  {!d.attached && (
-                    <button className="td-x" aria-label="Kill this detached session"
-                      title="Kill this session on the host" onClick={() => setKillTargets([d])}>×</button>
-                  )}
-                </span>
-              );
-            })}
-            {killable.length > 1 && (
-              <span className="td-bulk">
-                <button className="btn-repo sm"
-                  onClick={() => setKillPick(killPick.length === killable.length ? [] : killable.map((d) => d.name))}>
-                  {killPick.length === killable.length ? 'none' : `all ${killable.length}`}
-                </button>
-                <button className="btn-cancel sm" disabled={killPick.length === 0}
-                  title="Kill the selected sessions on the host"
-                  onClick={() => setKillTargets(killable.filter((d) => killPick.includes(d.name)))}>
-                  × Kill {killPick.length || ''}
-                </button>
-              </span>
-            )}
-          </div>
-        )}
+        {/* #490 — "PICK UP WHERE IT STOPPED" IS GONE FROM ABOVE THE CANVAS.
+            It was a horizontal strip of long chips that grew a row every time
+            the host kept a session, pushing the terminals down the page — on a
+            busy host it was taking three rows before a single pane was drawn.
+            The same sessions are in the rail now, which is already the list of
+            what is running and has a column shape that suits one. */}
 
           {/* #487 — the grid is driven by the LAYOUT, and each pane knows its
               SLOT. `data-slot` is what a drop reads; the layout class is what
@@ -1633,6 +1586,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                   onTmux={(name) => noteTmux(s.id, s.cwd, name)}
                   onSid={(sid) => setSessions((cur) => cur.map((x) => (x.id === s.id ? { ...x, sid } : x)))}
                   onExit={(name) => noteTmuxEnded(s.cwd, name)}
+                  onOutput={(bytes) => noteOutput(s.id, bytes)}
                   onCopied={(label) => noteCopied(s.id, label)}
                   register={(h) => { if (h) handles.current.set(s.id, h); else handles.current.delete(s.id); }} />
               </div>
@@ -1807,13 +1761,82 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                         </div>
                       );
                     })}
-                    {/* The detached strip stays exactly where it was — this
-                        panel lists what this BROWSER holds, and those are
-                        sessions it does not. Bulk kill lives with them. */}
+                    {/* #490 — IDLE ON THE HOST, moved off the canvas. These are
+                        sessions the daemon is holding that no pane here shows:
+                        a page reload's orphans, and ones attached on another
+                        device. They were a strip of wide chips above the
+                        terminals; a rail is a column, so each is a row that
+                        leads with the directory and carries its name beneath.
+                        Re-attach is the whole row — the biggest target, and the
+                        thing you almost always want. The pin, the kill tick and
+                        × stay small and to the side, because two of those three
+                        destroy a running session. */}
                     {detachedShown.length > 0 && (
-                      <div className="tcg-note">
-                        {detachedShown.length} session{detachedShown.length === 1 ? '' : 's'} running on the host
-                        that no pane here holds — the strip above the canvas re-attaches or kills them.
+                      <div className="tc-idle">
+                        <div className="tci-head">
+                          <span className="lbl">Idle on the host</span>
+                          <span className="n">{detachedShown.length}</span>
+                        </div>
+                        {detachedShown.map((d) => {
+                          const nm = labels[d.name] || d.label || '';
+                          const picked = killPick.includes(d.name);
+                          return (
+                            <div key={d.name}
+                              className={`tci-row${d.attached ? ' away' : ''}${picked ? ' picked' : ''}${d.keep ? ' pinned' : ''}`}>
+                              <button className="tci-main"
+                                title={d.attached
+                                  ? `Attached on another device (tmux ${d.name}) — open it here too: both screens mirror the same session`
+                                  : `Re-attach to this running claude session (tmux ${d.name}${d.created ? `, since ${new Date(d.created).toLocaleString()}` : ''})`}
+                                onClick={() => attachDetached(d)}>
+                                <span className="w">
+                                  ↺ {d.cwd ? `~/${d.cwd}` : '~'}
+                                  <span className="st">{d.attached ? 'another device' : 'detached'}</span>
+                                </span>
+                                {nm && <span className="t">{nm}</span>}
+                              </button>
+                              <span className="tci-acts">
+                                {/* #292 — the keep pin, on EVERY row: the reaper
+                                    measures output rather than attachment, so a
+                                    session mirrored elsewhere is exactly as
+                                    reapable and exactly as worth protecting. */}
+                                <button className={`td-pin${d.keep ? ' on' : ''}`} aria-pressed={!!d.keep}
+                                  aria-label={d.keep ? `Unpin ${d.name}` : `Pin ${d.name}`}
+                                  title={d.keep
+                                    ? 'Pinned — the idle reaper will not take this session. Click to unpin.'
+                                    : 'Pin this session so the idle reaper never takes it, however quiet it goes'}
+                                  onClick={() => void togglePin(d.name, !d.keep)}>
+                                  {d.keep ? '📌' : '📍'}
+                                </button>
+                                {/* Kill controls only on killable rows: the
+                                    daemon refuses a name a client still holds,
+                                    so offering them on an attached row would be
+                                    a button that cannot work. */}
+                                {!d.attached && (
+                                  <button className={`td-pick${picked ? ' on' : ''}`} onClick={() => toggleKillPick(d.name)}
+                                    aria-pressed={picked} aria-label={`Select ${d.name} to kill`}
+                                    title={picked ? 'Unselect' : 'Select for a bulk kill'}>{picked ? '☑' : '☐'}</button>
+                                )}
+                                {!d.attached && (
+                                  <button className="td-x" aria-label="Kill this detached session"
+                                    title="Kill this session on the host" onClick={() => setKillTargets([d])}>×</button>
+                                )}
+                              </span>
+                            </div>
+                          );
+                        })}
+                        {killable.length > 1 && (
+                          <div className="tci-bulk">
+                            <button className="btn-repo sm"
+                              onClick={() => setKillPick(killPick.length === killable.length ? [] : killable.map((d) => d.name))}>
+                              {killPick.length === killable.length ? 'none' : `all ${killable.length}`}
+                            </button>
+                            <button className="btn-cancel sm" disabled={killPick.length === 0}
+                              title="Kill the selected sessions on the host"
+                              onClick={() => setKillTargets(killable.filter((d) => killPick.includes(d.name)))}>
+                              × Kill {killPick.length || ''}
+                            </button>
+                          </div>
+                        )}
                       </div>
                     )}
 
@@ -2035,7 +2058,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
 
 // One tab: an xterm instance + its websocket, kept mounted (hidden when
 // inactive) so the scrollback survives tab switches.
-function TermSession({ sess, visible, focused, onStatus, onUsage, onTmux, onSid, onExit, onCopied, register }: {
+function TermSession({ sess, visible, focused, onStatus, onUsage, onTmux, onSid, onExit, onOutput, onCopied, register }: {
   sess: { id: number; cwd: string; cmd: 'shell' | 'claude'; tmux?: string };
   // Rendered on screen at all (it may be one of several panes)...
   visible: boolean;
@@ -2048,6 +2071,10 @@ function TermSession({ sess, visible, focused, onStatus, onUsage, onTmux, onSid,
   onTmux: (name: string) => void;
   onSid: (sid: string) => void;
   onExit: (tmuxName: string | null) => void;
+  // Bytes this session has emitted. Read for ONE purpose: holding the first
+  // naming back until there is something worth naming — see NAME_AFTER_BYTES.
+  // Nothing re-asks off the back of it; the counter only ever opens the gate.
+  onOutput: (bytes: number) => void;
   // A finished clipboard gesture, already worded — "copied 12 lines",
   // "paste needs ⌃V here". With a canvas and no browser selection to look at,
   // "did that work?" is otherwise unanswerable, so the pane says so.
@@ -2168,6 +2195,7 @@ function TermSession({ sess, visible, focused, onStatus, onUsage, onTmux, onSid,
         if (typeof m.sid === 'string' && m.sid && !sidRef.current) { sidRef.current = m.sid; onSid(m.sid); }
         if (m.t === 'out' && m.data) {
           scheduleWrite(b64decode(m.data));
+          onOutput(m.data.length);
         }
         else if (m.t === 'usage' && typeof m.tokens === 'number') {
           onUsage({ tokens: m.tokens, totalTokens: m.totalTokens, resetAt: m.resetAt, resetLabel: m.resetLabel, sched: m.sched, plan: m.plan });
