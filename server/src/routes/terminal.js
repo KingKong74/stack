@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { q } from '../db.js';
-import { termAgentConnected, termSessions, termTails, termDetached, termDetachedTails, setDetachedLabel, killDetachedTmux, keepTmuxSession, answerTmuxPrompt, viewAutoPane } from '../term.js';
+import { termAgentConnected, termSessions, termTails, termDetached, termDetachedTails, setDetachedLabel, killDetachedTmux, keepTmuxSession, answerTmuxPrompt, viewAutoPane, probeGateway } from '../term.js';
 import { askGemini, geminiEnabled } from '../gemini.js';
 import { readSettings } from '../settings.js';
 
@@ -42,6 +42,25 @@ terminal.get('/usage', async (_req, res) => {
 // /detached whose empty list also just means "no orphans".
 terminal.get('/agent', (_req, res) => {
   res.json({ connected: termAgentConnected() });
+});
+
+// GET /api/terminal/gateway — is the OmniRoute gateway up, and what would a
+// session started on it run? (#484)
+//
+// THREE STATES, NOT TWO, and collapsing them is the whole hazard here:
+//   connected:false            Stack cannot SEE the host. Says nothing about
+//                              the gateway. Render it as "cannot see", never
+//                              as down — same rule as a NULL review_verdict.
+//   connected, reachable:false The host looked and the gateway is not there.
+//                              `reason` says why (ECONNREFUSED, a timeout, an
+//                              HTTP status), because a bare "unavailable" reads
+//                              as a broken install rather than a stopped one.
+//   connected, reachable:true  A session can be started on it right now.
+//
+// Never carries a key or any part of one — only whether one is configured, and
+// `stack omniroute` is where even that is reported properly.
+terminal.get('/gateway', async (_req, res) => {
+  res.json(await probeGateway());
 });
 
 // GET /api/terminal/detached — surviving tmux sessions with no client attached

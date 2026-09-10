@@ -494,6 +494,10 @@ export async function getProjectPulse(slug: string): Promise<ProjectPulse> {
 export function openTerminal(opts: {
   cwd: string; cmd: 'shell' | 'claude'; cols: number; rows: number;
   tmuxSession?: string; skipPerms?: boolean;
+  // #484 — 'omniroute' routes this session through the local gateway instead of
+  // the account's own subscription. A provider KEY, never a base URL or a
+  // credential: the host owns both, and the browser has no business with either.
+  provider?: 'omniroute';
 }): WebSocket {
   const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
   const ws = new WebSocket(`${proto}://${window.location.host}/term`);
@@ -647,12 +651,20 @@ export function setTermWorkingItem(cwd: string, id: number | null) {
 // screen opens on arrival and what a Mission Control ⌨ press opens;
 // skipPermissions runs claude sessions with --dangerously-skip-permissions
 // (the daemon allow-lists the flag — the browser only ever sends a boolean).
-export interface TermSessionPrefs { autoStart: 'claude' | 'shell'; skipPermissions: boolean }
+// onGateway (#484) routes NEW claude sessions through the local OmniRoute
+// gateway instead of the account's subscription. Device-local like the rest of
+// this card, and it only ever affects sessions started AFTER it is set — a
+// running session's provider is fixed at spawn, so flipping this cannot move
+// one that is already going.
+export interface TermSessionPrefs { autoStart: 'claude' | 'shell'; skipPermissions: boolean; onGateway: boolean }
 const TERM_SESSION_KEY = 'stack.termSession';
 export function getTermSessionPrefs(): TermSessionPrefs {
   return readStoredJSON(TERM_SESSION_KEY, (p) => ({
     autoStart: p?.autoStart === 'shell' ? 'shell' as const : 'claude' as const,
     skipPermissions: p?.skipPermissions !== false,
+    // Defaults OFF: routing somebody's session to a different model is not a
+    // thing to do because a checkbox was missing.
+    onGateway: p?.onGateway === true,
   }));
 }
 export function setTermSessionPrefs(p: TermSessionPrefs) {
@@ -678,6 +690,26 @@ export interface DetachedSession {
   label?: string;      // ✧ Gemini's take on what it's doing
   keep?: boolean;      // #292 — pinned: the host's idle reaper leaves it alone
   blocked?: BlockedPrompt | null;  // stopped on a permission prompt right now
+}
+
+// (#484) The OmniRoute gateway, as the HOST sees it — this process cannot ask
+// it directly, since the server is in a container and the firewall drops
+// container->host. THREE STATES, and the type says so: `connected: false` means
+// Stack cannot SEE the host and therefore knows NOTHING about the gateway, which
+// is why `reachable` is optional rather than false. Render "cannot see", never
+// "down" — the same rule as a NULL review_verdict.
+export interface GatewayState {
+  connected: boolean;
+  reachable?: boolean;
+  baseUrl?: string;
+  reason?: string;       // why not reachable — ECONNREFUSED, a timeout, an HTTP status
+  model?: string;        // what a session started on it would run
+  keyConfigured?: boolean;  // whether, never which, and never how long
+  paidOptIn?: boolean;   // OMNIROUTE_MODEL names a specific model rather than the free combo
+  error?: string;        // the host was connected but did not answer
+}
+export async function getTerminalGateway(): Promise<GatewayState> {
+  return request<GatewayState>('/terminal/gateway');
 }
 
 export async function getDetachedSessions(): Promise<DetachedSession[]> {

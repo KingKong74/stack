@@ -13,7 +13,8 @@ import {
   labelTerminalSessions,
   getTermTmuxName, setTermTmuxName, clearTermTmuxName,
   getTermOpenTabs, setTermOpenTabs,
-  getTermSessionPrefs, termAssist, type TermAssistSuggestion,
+  getTermSessionPrefs, setTermSessionPrefs, termAssist, type TermAssistSuggestion,
+  getTerminalGateway, type GatewayState,
   getTermWorkingItem, setTermWorkingItem,
   getProjectDetail, type ProjectDetailData,
   patchRoadmapItem,
@@ -1226,6 +1227,21 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   useEffect(() => { if (visible) loadServerUsage(); }, [visible]); // eslint-disable-line react-hooks/exhaustive-deps
   useAutoRefresh(loadServerUsage, visible);
 
+  // #484 — the OmniRoute gateway, as the HOST sees it. null = not asked yet,
+  // which renders as nothing rather than as a claim; the three states the
+  // answer can carry are handled where it is drawn.
+  const [gateway, setGateway] = useState<GatewayState | null>(null);
+  const [gwPref, setGwPref] = useState<boolean>(() => getTermSessionPrefs().onGateway);
+  const loadGateway = () => {
+    getTerminalGateway()
+      .then(setGateway)
+      // A failed FETCH is not a down gateway either — it is one more way of not
+      // being able to see, so it lands in the same state as an absent daemon.
+      .catch(() => setGateway({ connected: false }));
+  };
+  useEffect(() => { if (visible) loadGateway(); }, [visible]); // eslint-disable-line react-hooks/exhaustive-deps
+  useAutoRefresh(loadGateway, visible);
+
   const dockLabel = activeSess
     ? `${activeSess.cmd === 'claude' ? 'claude' : 'shell'}${activeSess.cwd ? ` · ${activeSess.cwd}` : ''}`
     : 'terminal';
@@ -1483,6 +1499,58 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
               </button>
             </span>
             {schedNote && <span className="tu-note">{schedNote}</span>}
+          </div>
+        )}
+
+        {/* #484 — the OmniRoute gateway. THREE STATES, drawn as three different
+            sentences, because collapsing them is the whole hazard: "Stack
+            cannot see this host" is not "the gateway is down", and neither is
+            a green tick. Same rule as a NULL review_verdict — absence is never
+            rendered as good news, and never as bad news either. */}
+        {gateway && (
+          <div className="term-gateway">
+            <span className="tg-lbl">Gateway</span>
+            {!gateway.connected ? (
+              <span className="tg-unknown"
+                title="The host daemon is not on the line, so Stack cannot ask whether the gateway is up. This says nothing about the gateway itself.">
+                Stack cannot see this host — unknown
+              </span>
+            ) : gateway.reachable ? (
+              <>
+                <span className="tg-ok" title={gateway.baseUrl}>reachable</span>
+                <span className="tg-model"
+                  title={gateway.paidOptIn
+                    ? 'OMNIROUTE_MODEL names this model — a paid route, opted in on the host'
+                    : 'The free combo: the gateway routes to keyless providers'}>
+                  {gateway.model}{gateway.paidOptIn ? ' · paid route' : ''}
+                </span>
+              </>
+            ) : (
+              <span className="tg-down"
+                title={`Nothing answered at ${gateway.baseUrl || 'the gateway'}`}>
+                unreachable — {gateway.reason || gateway.error || 'no reason given'}
+              </span>
+            )}
+            {/* Only offered when a session started now would actually reach it.
+                A switch that silently starts a session against a refused
+                connection is worse than no switch. */}
+            <span className="tg-toggle">
+              <span>New claude tabs on the gateway</span>
+              <button type="button"
+                className={`switch sm ${gwPref ? 'on' : ''}`}
+                disabled={!(gateway.connected && gateway.reachable)}
+                aria-pressed={gwPref}
+                title={gateway.connected && gateway.reachable
+                  ? 'Applies to tabs opened from now on — a running session\u2019s provider is fixed at spawn'
+                  : 'The gateway is not reachable, so there is nothing to route to'}
+                onClick={() => {
+                  const next = !gwPref;
+                  setGwPref(next);
+                  setTermSessionPrefs({ ...getTermSessionPrefs(), onGateway: next });
+                }}>
+                <span className="switch-knob" />
+              </button>
+            </span>
           </div>
         )}
 
@@ -2288,6 +2356,11 @@ function TermSession({ sess, visible, focused, onStatus, onUsage, onTmux, onSid,
         // Device pref (Settings → Terminal): claude without permission prompts.
         // A boolean only — the daemon maps it to its one allow-listed flag.
         skipPerms: sess.cmd === 'claude' && getTermSessionPrefs().skipPermissions ? true : undefined,
+        // #484 — route this session through the local gateway. Read at CONNECT
+        // time, not render time, so the pref governs the session it starts and
+        // never retro-fits one already running: the daemon fixes a provider at
+        // spawn and nothing here can move it afterwards.
+        provider: sess.cmd === 'claude' && getTermSessionPrefs().onGateway ? 'omniroute' as const : undefined,
       });
       wsRef.current = ws;
       // #135 — write-batching: coalesce rapid incoming frames into one

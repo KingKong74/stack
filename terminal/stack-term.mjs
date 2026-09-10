@@ -59,7 +59,12 @@ import { createEditWatch } from './edit-watch.mjs';
 import {
   availableProvidersLive, providerEnv, getProvider,
   loadPreferredProvider, savePreferredProvider,
+  probeOmniRoute, resolveProviderKey, resolveHostValue,
 } from './model-switch.mjs';
+
+// The `stack` dispatcher, resolved from this file rather than PATH — see the
+// #484 note in startSession.
+const STACK_DISPATCHER = join(dirname(fileURLToPath(import.meta.url)), '..', 'stack');
 
 // ---- env (same loader contract as the hooks: ~/.stack/env, never printed) ----
 const envFile = join(homedir(), '.stack', 'env');
@@ -692,6 +697,35 @@ function respawnWithProvider(sid, sess, providerKey, prevExitCode) {
   log(`session ${sid} respawned on ${providerKey} (${provider.label} / ${provider.model})`);
 }
 
+// ---- gateway — answer the browser's "is OmniRoute up?" (#484) ----------------
+// The server CANNOT ask the gateway itself: it is in a container and the host
+// firewall drops container->host, so localhost:20128 is not a thing it can
+// reach. The daemon already dials OUT, so the question rides that uplink like
+// every other host fact. Same poll-and-report shape as autoView.
+//
+// The answer never claims more than it knows. `reachable` here means the probe
+// got a 200 just now; when the daemon is not connected at all the SERVER
+// substitutes "unknown" rather than false, because "we cannot see" and "it is
+// down" are different things and only one of them is the browser's problem.
+async function gatewayProbe(m) {
+  const probe = await probeOmniRoute({ timeoutMs: 2500 });
+  const p = getProvider('omniroute');
+  const key = resolveProviderKey(p.envKey);
+  const model = resolveHostValue('OMNIROUTE_MODEL');
+  sendUplink({
+    t: 'gatewayed',
+    id: m.id,
+    reachable: probe.reachable,
+    baseUrl: probe.baseUrl,
+    reason: probe.reason,
+    model: model.key || p.model,
+    // Whether a key exists, never the key, never its length — the browser has
+    // no business with either and `stack omniroute` is where that is reported.
+    keyConfigured: key.key.length > 0,
+    paidOptIn: Boolean(model.key),
+  });
+}
+
 function startSession(msg) {
   const { sid } = msg;
   const failUplink = (m) => {
@@ -720,7 +754,25 @@ function startSession(msg) {
     // The browser may ask for permission prompts to be skipped — a boolean
     // only, mapped to the one allow-listed flag here. There is no path for
     // arbitrary arguments to reach the spawn.
-    const claudeCmd = msg.skipPerms === true ? 'exec claude --dangerously-skip-permissions' : 'exec claude';
+    // #484 — `provider: 'omniroute'` routes this session through the local
+    // gateway instead of the account's own subscription. It runs `stack
+    // omniroute launch` rather than setting the env here, for the reason
+    // scripts/stack-term-cli.mjs's header spells out: tmux does not carry this
+    // process's environment into a new session when a server is already
+    // running, and the two ways to force it from outside both put a credential
+    // in argv, which `ps` shows to every user on the box. Composing keeps ONE
+    // implementation of the env allowlist and the .env shadow.
+    //
+    // Absolute path: a tmux pane's PATH is not this daemon's, and a bare
+    // `stack` that resolves to nothing leaves an empty pane with no reason.
+    const perms = msg.skipPerms === true ? ' --dangerously-skip-permissions' : '';
+    // SINGLE quotes: the whole string goes into `/bin/bash -lc "…"` below, so a
+    // double quote here would end that string early. Same trap, same fix, as
+    // scripts/stack-term-cli.mjs.
+    const dispatcher = `'${STACK_DISPATCHER.replace(/'/g, "'\\''")}'`;
+    const claudeCmd = msg.provider === 'omniroute'
+      ? `exec ${dispatcher} omniroute launch --cli claude${perms ? ` --${perms}` : ''}`
+      : `exec claude${perms}`;
     // THE PRIME IS GONE with the tab consoles. A session spawned for a tab
     // agent used to carry an appended system prompt — the server composed it,
     // a launcher script fed it in via `$(cat …)` so the text never travelled
@@ -1143,6 +1195,7 @@ function connect() {
     else if (m.t === 'answerPrompt') answerPrompt(m);
     else if (m.t === 'claudeAsk') claudeAsk(m);
     else if (m.t === 'autoView') autoView(m);
+    else if (m.t === 'gateway') gatewayProbe(m);
     else if (m.t === 'kill') {
       if (sess?.switchMode) {
         // Browser tab closed during the switch prompt — clean up gracefully.

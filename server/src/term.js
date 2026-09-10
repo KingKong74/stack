@@ -252,6 +252,43 @@ export function viewAutoPane(name, { lines = 160, timeoutMs = 8_000 } = {}) {
   });
 }
 
+// (#484) Is the OmniRoute gateway up? Asked of the HOST, because this process
+// cannot ask it directly — the server runs in a container and the host firewall
+// drops container->host, so localhost:20128 is not an address it has. The daemon
+// dials out, so the question rides that uplink like every other host fact.
+//
+// FAIL SILENT, per CLAUDE.md: with no daemon on the line this returns
+// `connected: false` and NO reachable claim at all. "Stack cannot see whether
+// the gateway is up" and "the gateway is down" are different sentences, and
+// rendering the first as the second would be the NULL-verdict lie again.
+let gatewaySeq = 0;
+const pendingGateway = new Map(); // id -> resolve
+export function probeGateway({ timeoutMs = 6_000 } = {}) {
+  if (!agentSend) return Promise.resolve({ connected: false });
+  const id = `g${++gatewaySeq}`;
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      pendingGateway.delete(id);
+      // The daemon was connected when we asked and did not answer. That is not
+      // the same as the gateway being down either, so it stays "cannot see".
+      resolve({ connected: false, error: 'the host did not answer in time' });
+    }, timeoutMs);
+    pendingGateway.set(id, (m) => {
+      clearTimeout(timer);
+      resolve({
+        connected: true,
+        reachable: m.reachable === true,
+        baseUrl: String(m.baseUrl || ''),
+        reason: String(m.reason || ''),
+        model: String(m.model || ''),
+        keyConfigured: m.keyConfigured === true,
+        paidOptIn: m.paidOptIn === true,
+      });
+    });
+    agentSend({ t: 'gateway', id });
+  });
+}
+
 export function attachTerm(httpServer) {
   const wss = new WebSocketServer({ noServer: true });
   let agent = null;
@@ -414,6 +451,10 @@ export function attachTerm(httpServer) {
 
       // autoViewed — the host's fresh read of a stack-auto-* pane it was asked
       // to look at (#366). Correlated exactly like `answered`/`claudeAnswer`.
+      if (m.t === 'gatewayed' && m.id) {
+        const waiting = pendingGateway.get(m.id);
+        if (waiting) { pendingGateway.delete(m.id); waiting(m); }
+      }
       if (m.t === 'autoViewed' && m.id) {
         const waiting = pendingAutoView.get(m.id);
         if (waiting) { pendingAutoView.delete(m.id); waiting(m); }
