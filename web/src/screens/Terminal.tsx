@@ -57,7 +57,7 @@ import { crumbName } from '../lib/ui';
 //     under the topbar owns the height — nothing below it guesses at chrome
 //     any more, which is the arithmetic full screen has always used.
 //  2. ONE RAIL, FLUSH LEFT, FULL HEIGHT: the sessions list, grouped by tool,
-//     each row a drag source for a pane. It was three segments (Sessions ·
+//     each row a way into the first pane. It was three segments (Sessions ·
 //     Work · Runbook); the other two are gone, and the block above
 //     `claimedItems` says exactly what went with them.
 //  3. NO SESSION TABS. A session was drawn three times — the rail, its pane,
@@ -793,10 +793,12 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   // WHICH SESSIONS ARE ON SCREEN, and WHERE (#487).
   //
   // It was a sliding WINDOW over the session list — start at the active tab,
-  // take N. That is why there was nothing to drag: a pane was a position in a
-  // list, so "put this session in that pane" had no meaning. The design asks
-  // for placement, so panes are SLOTS now: `slots[i]` names the session in
-  // pane i, and dragging swaps two entries.
+  // take N — so a pane was a position in a list and "put this session in that
+  // pane" had no meaning. Panes are SLOTS instead: `slots[i]` names the session
+  // in pane i, which is what lets a pane stay put while sessions come and go
+  // around it. #491 took the DRAGGING that used to rearrange them (see the ⤢
+  // button below, which is what moved a session after it); the slots stayed,
+  // because they are what keeps a pane still, not what moved one.
   //
   // SLOTS ARE NOT PERSISTED. A session id is a per-mount counter, so a stored
   // arrangement would point at whatever happened to take those numbers next
@@ -839,42 +841,18 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   }, [sessions.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [slots, setSlots] = useState<(number | null)[]>([]);
-  const [dragId, setDragId] = useState<number | null>(null);
 
-  // (#490) HOLD, THEN DRAG. A pane title and a rail row are both things you
-  // CLICK — focus a session, rename it — and both were also drag handles the
-  // instant the pointer moved, so every slightly-imprecise click tore a pane
-  // out of the grid.
+  // #491 — DRAG-AND-DROP IS GONE FROM THIS SCREEN (owner's call), and with it
+  // the hold-then-drag gate #490 had to build for it: a pane title and a rail
+  // row are both things you CLICK — focus a session, rename it, select text in
+  // the terminal under it — and making them drag handles meant every slightly
+  // imprecise click risked tearing a pane out of the grid. The gate made that
+  // rarer; removing the drag removes it.
   //
-  // The gate is on dragstart, NOT on the `draggable` attribute. Flipping that
-  // attribute mid-gesture is the obvious fix and an unreliable one: the browser
-  // decides whether a drag is possible as the gesture begins, and a handle that
-  // was not draggable at pointer-down may simply start selecting text instead.
-  // Leaving it always draggable and REFUSING the dragstart until the hold has
-  // elapsed behaves the same on every browser.
-  const HOLD_MS = 220;
-  const holdTimer = useRef<number | null>(null);
-  const armedRef = useRef<number | null>(null);
-  const [armed, setArmed] = useState<number | null>(null);
-  const clearHold = () => {
-    if (holdTimer.current !== null) { clearTimeout(holdTimer.current); holdTimer.current = null; }
-  };
-  const disarm = () => { clearHold(); armedRef.current = null; setArmed(null); };
-  // Spread onto anything that may be dragged. `armed` also drives a class, so
-  // the handle says it is grabbable before you move — a hold with no feedback
-  // reads as the drag being broken.
-  const holdProps = (id: number) => ({
-    onPointerDown: () => {
-      clearHold();
-      holdTimer.current = window.setTimeout(() => { armedRef.current = id; setArmed(id); }, HOLD_MS);
-    },
-    onPointerUp: disarm,
-    onPointerLeave: disarm,
-  });
-  // The ref, not the state: dragstart can fire in the same tick the timer set
-  // it, before React has re-rendered with the new value.
-  const dragAllowed = (id: number) => armedRef.current === id;
-  const [overSlot, setOverSlot] = useState<number | null>(null);
+  // WHAT MOVES A SESSION NOW: the pane's ⤢ button and a click on a rail row,
+  // both of which put it in the first pane (`focusInSlot`). That is one
+  // arrangement gesture rather than N, and it is the one that was already
+  // there for a session the grid was not showing at all.
 
   /**
    * The slot assignment for a layout: every entry still alive is KEPT where it
@@ -913,24 +891,6 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   const slotIds = slotsFor(layout, sessions, slots);
   const paneCount = slotIds.length;
   const shownIds = slotIds.filter((x): x is number => x != null);
-
-  /** Drop `dragId` into pane `index`, swapping with whatever was there. */
-  const dropInSlot = (index: number) => {
-    const id = dragId;
-    setDragId(null); setOverSlot(null);
-    if (id == null) return;
-    const next = slotsFor(layout, sessions, slots).slice();
-    const from = next.indexOf(id);
-    if (from === index) return;
-    const displaced = next[index];
-    next[index] = id;
-    // A session dragged from ANOTHER pane swaps; one dragged from the rail
-    // (not on screen at all) simply displaces, and the displaced session goes
-    // back to being unplaced rather than vanishing from the arrangement.
-    if (from !== -1) next[from] = displaced ?? null;
-    setSlots(next);
-    setActive(id);
-  };
 
   // ---- #487 · what the design's chrome reads ------------------------------
   //
@@ -1390,7 +1350,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
             )}
             <span className="ta-say">
               {shownIds.length} of {sessions.length} session{sessions.length === 1 ? '' : 's'} shown
-              {sessions.length > shownIds.length ? ' · hold a rail row, then drag it onto any pane' : ' · hold a pane’s title bar, then drag it onto another'}
+              {sessions.length > shownIds.length ? ' · click a rail row to bring it into the first pane' : ' · ⤢ on a pane brings it to the front'}
             </span>
           </div>
         )}
@@ -1505,8 +1465,8 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
             what is running and has a column shape that suits one. */}
 
           {/* #487 — the grid is driven by the LAYOUT, and each pane knows its
-              SLOT. `data-slot` is what a drop reads; the layout class is what
-              styles.css turns into the asymmetric shapes. */}
+              SLOT: the layout class is what styles.css turns into the
+              asymmetric shapes, and `order` is what puts a pane in its cell. */}
           <div className={`term-main term-grid lay-${layout} p${paneCount}`}>
             {sessions.map((s) => {
               const slot = slotIds.indexOf(s.id);
@@ -1524,39 +1484,20 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
               // not the first, so it places by `data-slot` instead.
               return (
               <div key={s.id}
-                className={`term-pane${shown ? '' : ' off'}${s.id === active ? ' focused' : ''}${shown && slot === 0 ? ' lead' : ''}${overSlot === slot && shown ? ' dropping' : ''}`}
+                className={`term-pane${shown ? '' : ' off'}${s.id === active ? ' focused' : ''}${shown && slot === 0 ? ' lead' : ''}`}
                 style={shown ? { order: slot } : undefined}
                 data-slot={shown ? slot : undefined}
-                onDragOver={shown ? (e) => { e.preventDefault(); if (overSlot !== slot) setOverSlot(slot); } : undefined}
-                onDragLeave={shown ? () => setOverSlot((k) => (k === slot ? null : k)) : undefined}
-                onDrop={shown ? (e) => { e.preventDefault(); dropInSlot(slot); } : undefined}
                 onMouseDown={() => { if (s.id !== active) setActive(s.id); }}>
-                {/* The drop hint. It is drawn on the PANE rather than as a
-                    ghost following the cursor, because what a drop needs to
-                    say is which pane will take it — a cursor ghost says only
-                    that something is being dragged. */}
-                {overSlot === slot && shown && dragId !== null && dragId !== s.id && (
-                  <div className="term-drop" aria-hidden="true"><span>Drop here</span></div>
-                )}
                 {/* The title: what this session is working on, in its own
                     words via the labeller. It sits ON the pane rather than on
                     the tab because with four terminals up, the tab strip is no
                     longer where you are looking. */}
-                {/* THE TITLE BAR IS THE DRAG HANDLE, not the pane. Dragging
-                    the whole pane would eat every text selection inside the
-                    terminal — the same trap the board's inline rename hit, and
-                    the reason the card there switches `draggable` off while an
-                    editor is open. The terminal is ALWAYS a text surface, so
-                    the handle is the one strip that is not one. */}
-                <div className={`term-pane-title${armed === s.id ? ' armed' : ''}`} draggable
-                  {...holdProps(s.id)}
-                  onDragStart={(e) => {
-                    if (!dragAllowed(s.id)) { e.preventDefault(); return; }
-                    e.dataTransfer.effectAllowed = 'move'; setDragId(s.id);
-                  }}
-                  onDragEnd={() => { setDragId(null); setOverSlot(null); disarm(); }}
-                  title={'Drag this bar onto another pane to rearrange.\n'
-                    + 'Copy: drag to select in the terminal — releasing copies it (⌃⇧C, or ⌃C with a selection).\n'
+                {/* The title bar. It was the pane's drag handle until #491
+                    took dragging off the screen; nothing replaced it, because
+                    a bar that is only a label cannot swallow a gesture meant
+                    for the terminal under it. */}
+                <div className="term-pane-title"
+                  title={'Copy: drag to select in the terminal — releasing copies it (⌃⇧C, or ⌃C with a selection).\n'
                     + 'Paste: ⌃V. Shift-drag selects in the browser instead of tmux.'}>
                   <span className={`dot ${s.status}`} />
                   {/* The tool mark, from the design: which runtime this pane
@@ -1703,8 +1644,9 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                     empty bar is 30px of the rail's height spent on nothing. */}
                 {(
                   /* ---- #487 · SESSIONS — the design's rail, on real data.
-                     What is running, grouped by TOOL, each row a drag source
-                     for the panes. The count beside a tool is its sessions;
+                     What is running, grouped by TOOL, and a click on a row
+                     brings that session into the first pane (#491 took the
+                     drag). The count beside a tool is its sessions;
                      the pill beside that is how many are BLOCKED on a
                      permission prompt, which is the one fact on this rail that
                      changes what you do next.
@@ -1736,17 +1678,10 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                             const pinned = !!x.tmux && pinnedOf(x.tmux);
                             return (
                               <div key={x.id}
-                                className={`tcg-row${x.id === active ? ' on' : ''}${onScreen ? '' : ' off'}${dragId === x.id ? ' dragging' : ''}${armed === x.id ? ' armed' : ''}`}
-                                draggable
-                                {...holdProps(x.id)}
-                                onDragStart={(e) => {
-                                  if (!dragAllowed(x.id)) { e.preventDefault(); return; }
-                                  e.dataTransfer.effectAllowed = 'move'; setDragId(x.id);
-                                }}
-                                onDragEnd={() => { setDragId(null); setOverSlot(null); disarm(); }}
+                                className={`tcg-row${x.id === active ? ' on' : ''}${onScreen ? '' : ' off'}`}
                                 title={onScreen
-                                  ? 'Drag onto a pane to move it there'
-                                  : 'Not on screen — click to bring it into the first pane, or drag it onto a pane'}
+                                  ? 'Click to bring this session into the first pane'
+                                  : 'Not on screen — click to bring it into the first pane'}
                                 onClick={() => { if (renaming !== x.id) focusInSlot(x.id); }}>
                                 <span className={`dot ${x.status}`} />
                                 {renaming === x.id ? (
