@@ -1148,7 +1148,18 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
       )}
       {/* #316 — the review quick link is the rail's `review ↗`, not a second
           button up here: one entrance per screen. */}
-      <TopBar crumb={[{ label: 'Projects', onClick: go.dashboard }, { label: 'Terminal' }]}
+      {/* THE CRUMB NAMES THE PROJECT WHEN THERE IS ONE. A terminal is opened
+          from a project (⌨ passes its slug as the cwd) far more often than
+          from nowhere, and `Projects / Terminal` said nothing about WHICH
+          checkout the session in front of you is running in. The step is drawn
+          only when the cwd resolves to a tracked project — `board` is null for
+          a plain directory — because a slug Stack has never heard of is not a
+          project and must not be drawn as one. */}
+      <TopBar crumb={[
+        { label: 'Projects', onClick: go.dashboard },
+        ...(board ? [{ label: board.project.name, onClick: () => go.detail(board.project.id) }] : []),
+        { label: 'Terminal' },
+      ]}
         actions={<a className="btn-repo" href={hrefTo.control} title="Mission Control">Mission Control</a>} />
 
       {/* #489 — THE COCKPIT IS FULL-BLEED, and the page's own frame is gone
