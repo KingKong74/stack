@@ -43,6 +43,7 @@
 //   The chosen provider is persisted to ~/.stack/term-model.json.
 
 import { spawn, spawnSync } from 'node:child_process';
+import { createOutbox, createReplayBuffer } from './out-coalesce.mjs';
 import { existsSync, mkdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve, sep } from 'node:path';
@@ -140,8 +141,9 @@ if (!API || !TOKEN) {
 const AGENT_URL = API.replace(/^http/, 'ws') + '/term-agent';
 const SHIM = join(dirname(fileURLToPath(import.meta.url)), 'pty-shim.py');
 
-// Output buffer cap per session: 256 KB.  Drop oldest when full.
-const OUT_BUF_CAP = 256 * 1024;
+// The per-session replay buffer's cap lives with the buffer itself, in
+// terminal/out-coalesce.mjs — it is a property of that structure, not a knob
+// this file sets.
 
 const log = (...a) => console.log(`[stack-term] ${new Date().toISOString()}`, ...a);
 
@@ -426,75 +428,44 @@ function pushUsage(ws) {
   for (const sid of sessions.keys()) target.send(JSON.stringify(usageFrame(sid)));
 }
 
-// ---- sessions (sid -> { child, outBuf, cwd, cmd, cols, rows, lastActivity,
-//                          idleTimer, hitLimit, provider, switchMode }) ----
-// buf is the reconnect output buffer: a plain string of base64 chunks
-// concatenated so they can be replayed as individual 'out' frames.
-// We store them as an array of base64 strings (each is one original chunk)
-// and track total byte size to implement the 256KB cap.
+// ---- sessions (sid -> { child, outbox, outBuf, cwd, cmd, cols, rows,
+//                    lastActivity, idleTimer, hitLimit, provider, switchMode })
+// `outbox` gathers a session's bytes into frames; `outBuf` is the bounded
+// replay buffer those frames wait in while the uplink is down. Both come from
+// terminal/out-coalesce.mjs, which carries the reasoning for each.
 const sessions = new Map();
 
 // ---- output buffering + coalescing ----
 //
-// Every byte a session produces leaves here, and it leaves as a JSON frame
-// carrying base64 — which costs about 1.4x the bytes plus a parse at both
-// ends. A pty hands us whatever the kernel had ready, so a repainting TUI
-// (claude's own spinner, a build's progress bar) arrives as dozens of tiny
-// reads a frame, each of which was becoming its own websocket message. The
-// browser already merges what it receives into one write per animation frame
-// (#135); this is the same idea one hop earlier, where the per-frame cost is
-// actually paid.
+// The COALESCER is terminal/out-coalesce.mjs and its header carries why the
+// shape is what it is (idle output never delayed, one outbox so order holds,
+// why the window is 6ms). It lives there rather than here because this file
+// dials the API at load and so cannot be imported — and a hot path nobody can
+// import is a hot path nobody can measure. server/test/out-coalesce.test.mjs
+// pins it; scripts/term-perf.test.mjs measures it.
 //
-// IDLE OUTPUT IS NEVER DELAYED, and that is the part worth keeping. A plain
-// timer would add its full window to every keystroke echo — the one latency a
-// terminal must not have. So the rule is: if nothing has been sent for at
-// least the window, send NOW; only a second chunk arriving inside the window
-// starts gathering, which is by definition a burst. Typing pays nothing; a
-// screenful of output pays one frame instead of thirty.
-//
-// Order is why both output paths go through here rather than only the hot one.
-// The daemon's own prompts (the model switch) are written with sendOutText,
-// and a direct send from there would overtake pty output still sitting in the
-// pending buffer — the prompt would print above the text it is answering.
-const OUT_COALESCE_MS = 6;
+// What stays HERE is the half that needs the uplink: where a finished frame
+// goes, and what happens to it when the browser is not on the line.
 
-// Hand a frame to the uplink, or to the reconnect buffer when it is down.
+// Hand a frame to the uplink, or to the replay buffer when it is down.
 function shipOut(sid, sess, b64) {
   if (uplink && uplink.readyState === WebSocket.OPEN) {
     uplink.send(JSON.stringify({ t: 'out', sid, data: b64 }));
     return;
   }
-  sess.outBuf.bytes += b64.length;
-  sess.outBuf.chunks.push(b64);
-  while (sess.outBuf.bytes > OUT_BUF_CAP && sess.outBuf.chunks.length > 0) {
-    sess.outBuf.bytes -= sess.outBuf.chunks.shift().length;
-  }
+  sess.outBuf.push(b64);
 }
 
-// Send whatever has gathered. Safe to call at any time, including with nothing
-// pending — the exit path leans on that.
-function flushOut(sid, sess) {
-  if (sess.outTimer) { clearTimeout(sess.outTimer); sess.outTimer = null; }
-  const pend = sess.outPend;
-  if (!pend || pend.length === 0) return;
-  sess.outPend = null;
-  sess.outLast = Date.now();
-  shipOut(sid, sess, pend.toString('base64'));
+// Every session gets one, made at spawn. `sess.outbox` is the only way bytes
+// leave a session.
+function makeOutbox(sid, sess) {
+  return createOutbox((b64) => shipOut(sid, sess, b64));
 }
 
-// The one door out. Takes a Buffer; text callers go through sendOutText.
-function emitOut(sid, sess, buf) {
-  if (!buf || buf.length === 0) return;
-  sess.outPend = sess.outPend ? Buffer.concat([sess.outPend, buf]) : buf;
-  if (sess.outTimer) return; // already gathering this burst
-  const since = Date.now() - (sess.outLast || 0);
-  if (since >= OUT_COALESCE_MS) { flushOut(sid, sess); return; }
-  sess.outTimer = setTimeout(() => flushOut(sid, sess), OUT_COALESCE_MS - since);
-}
-
-// Sends text to the browser as an 'out' frame, buffering when the uplink is down.
+// Sends text to the browser as an 'out' frame — the daemon's own prompts,
+// which must queue behind pty output rather than overtake it.
 function sendOutText(sid, sess, text) {
-  emitOut(sid, sess, Buffer.from(text));
+  sess.outbox.push(Buffer.from(text));
 }
 
 // PTY size bounds (#218: #186): resize requests are clamped to what the shim
@@ -563,17 +534,15 @@ function wireChild(sid, sess, child) {
       if (!sess.hitLimit && LIMIT_RE.test(plainTail)) sess.hitLimit = true;
       if (noteLimit(plainTail)) pushUsage(null);
     }
-    emitOut(sid, sess, d);
+    sess.outbox.push(d);
   };
   child.stdout.on('data', out);
   child.stderr.on('data', out);
 
   child.on('exit', (code) => {
     clearInterval(sess.idleTimer);
-    // The last words before the exit frame. Without this the tail of a session
-    // — a stack trace, a shell's goodbye — sits in the pending buffer while
-    // the browser is told the session ended, and is then dropped.
-    flushOut(sid, sess);
+    // The last words before the exit frame — see the outbox's own header.
+    sess.outbox.flush();
     // If a Claude session (not already on a provider) hit a usage limit, offer
     // the model-switch prompt instead of immediately ending the session.
     if (sess.cmd === 'claude' && !sess.provider && sess.hitLimit) {
@@ -852,12 +821,7 @@ function startSession(msg) {
   });
 
   const sess = {
-    outBuf: { chunks: [], bytes: 0 },
-    // The coalescer's state (see emitOut): bytes gathered but not yet framed,
-    // the timer that will frame them, and when a frame last went out.
-    outPend: null,
-    outTimer: null,
-    outLast: 0,
+    outBuf: createReplayBuffer(),
     cwd,
     tmuxSession, // non-null when the claude session runs inside tmux (#171)
     cmd: msg.cmd === 'claude' ? 'claude' : 'shell',
@@ -871,7 +835,12 @@ function startSession(msg) {
     provider: null,   // non-null after a model switch (prevents re-triggering)
     switchMode: null, // non-null while awaiting user input for model selection
     child: null,      // set by wireChild
+    outbox: null,     // set immediately below — it needs `sess` to ship into
   };
+  // The outbox OUTLIVES the child: a model-switch respawn is the same session
+  // with a new process behind it, and remaking the outbox there would drop
+  // whatever the dying child had pending.
+  sess.outbox = makeOutbox(sid, sess);
   sessions.set(sid, sess);
   log(`session ${sid} up (${sessions.size} live): ${sess.cmd} in ${cwd}`);
 
@@ -1158,12 +1127,12 @@ function connect() {
       log(`re-announcing ${liveSids.length} surviving session(s): ${liveSids.join(', ')}`);
       ws.send(JSON.stringify({ t: 'hello', sids: liveSids }));
       for (const [sid, sess] of sessions) {
-        // Flush buffered output chunks in order.
-        for (const b64 of sess.outBuf.chunks) {
+        // Flush buffered output frames in order. drain() hands them over and
+        // forgets them in one step — see the buffer's own header for why that
+        // is not a read plus a reset.
+        for (const b64 of sess.outBuf.drain()) {
           ws.send(JSON.stringify({ t: 'out', sid, data: b64 }));
         }
-        sess.outBuf.chunks = [];
-        sess.outBuf.bytes = 0;
         // Send a fresh usage frame so the browser strip is current.
         ws.send(JSON.stringify(usageFrame(sid)));
       }
