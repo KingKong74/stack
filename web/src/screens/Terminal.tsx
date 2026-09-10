@@ -203,6 +203,12 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   // Terminal; default claude — that's what this screen is for).
   const [mode, setMode] = useState<'shell' | 'claude'>(() => getTermSessionPrefs().autoStart);
   const [sessions, setSessions] = useState<Sess[]>([]);
+  // A mirror of `sessions` for the async restore (#484) to read. The adoption
+  // pass resolves after its own round trip, by which time the `sessions` it
+  // closed over at mount is empty — and deciding "is this already open" from a
+  // stale empty list is exactly how a duplicate gets opened.
+  const sessionsRef = useRef<Sess[]>([]);
+  useEffect(() => { sessionsRef.current = sessions; }, [sessions]);
   const [active, setActive] = useState(0);
   const nextId = useRef(1);
   const handles = useRef(new Map<number, Handle>());
@@ -329,6 +335,31 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   // ?attach= / ?cwd= that a restored tab already covers just focuses that tab
   // instead of opening a duplicate.
   //
+  // A RESTORED CLAUDE TAB NEVER SPAWNS. That is the whole of #484, and it is
+  // the difference between reloading a screen and breeding host sessions.
+  //
+  // What went wrong: `openSession` resolves a missing tmux name through
+  // `getTermTmuxName(cwd)`, which stores ONE name PER DIRECTORY. Three tabs in
+  // ~/stack therefore had one name between them, so on every reload the first
+  // re-attached and the other two fell through to `name = undefined` — which
+  // the daemon reads as "start a new session". Refresh three times with three
+  // tabs open and the host is running nine claude sessions, six of them
+  // orphaned, each holding a model's context and each burning the idle
+  // reaper's clock. `tmux` also lands undefined on any tab persisted while it
+  // was still connecting, so a fast double-refresh reproduced it with one tab.
+  //
+  // The fix is to stop guessing from device storage and ASK THE HOST. Device
+  // storage says what this BROWSER had open; only the daemon knows what still
+  // EXISTS. So a saved claude tab is restored by attaching to a real host
+  // session — its own name first, then any unheld session in the same
+  // directory — and if there is nothing to attach to, the tab is not opened at
+  // all. That is the honest outcome: the tab was a window onto a process, and
+  // the process is gone.
+  //
+  // Shell tabs still open eagerly. A shell is stateless and cheap, there is
+  // nothing on the host to adopt, and a fresh one in the same directory is
+  // exactly what it was.
+  //
   // With nothing remembered, one session still opens itself, as it always
   // did — the screen is never empty. The kind comes from the device pref
   // (default claude, skip-permissions via the start frame). A bare open (no
@@ -337,32 +368,96 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   // resume slug is the "current" project. Falls back to home on any miss.
   useEffect(() => {
     const saved = getTermOpenTabs();
-    const ids = saved.map((t) => openSession(t.cwd, t.cmd, t.tmux));
-    if (initialAttach) {
-      const i = saved.findIndex((t) => t.tmux === initialAttach);
-      if (i >= 0) setActive(ids[i]);
-      else openSession(initialCwd, 'claude', initialAttach);
-      return;
-    }
-    if (initialCwd) {
-      const i = saved.findIndex((t) => t.cwd === initialCwd);
-      if (i >= 0) setActive(ids[i]);
-      // The device's autoStart is what a plain ⌨ press should respect, but a
-      // button labelled "Jump back in" that lands you in a bare shell has not
-      // done what it said — it always opens claude.
-      else openSession(initialCwd, initialBrief ? 'claude' : getTermSessionPrefs().autoStart);
-      return;
-    }
-    if (ids.length) { setActive(ids[0]); return; }
+    // Shells now; claude tabs wait for the host list. `ids` keeps a slot per
+    // saved tab (null = deferred) so the route matching below still indexes
+    // against `saved` the way it always has.
+    const ids: (number | null)[] = saved.map((t) =>
+      (t.cmd === 'shell' ? openSession(t.cwd, t.cmd, t.tmux) : null));
+    const deferred = saved
+      .map((t, i) => ({ t, i }))
+      .filter(({ t }) => t.cmd === 'claude');
+
     let gone = false;
-    getOverview()
-      .then((o) => o.resume?.slug ?? '')
-      .catch(() => '')
-      .then((slug) => {
-        if (gone) return;
-        if (slug) setCwd(slug);
-        openSession(slug, getTermSessionPrefs().autoStart);
-      });
+
+    // The adoption pass. One round trip, then every deferred tab is matched to
+    // a host session that actually exists — exact name first (so a tab lands
+    // back on ITS OWN session, not merely a session), then any unheld one in
+    // the same directory for the tabs whose names were lost to a mid-connect
+    // persist. `held` grows as we go, so two tabs in one directory can never
+    // claim the same host session and mirror each other.
+    const adopt = async () => {
+      if (!deferred.length) return [] as number[];
+      const host = await getDetachedSessions().catch(() => [] as DetachedSession[]);
+      if (gone) return [] as number[];
+      const held = new Set<string>();
+      const opened: number[] = [];
+      // Exact matches first, across ALL deferred tabs, before anything is
+      // allowed to take a session by directory alone — otherwise the first tab
+      // in a directory can adopt the session that belonged to the third.
+      const exact = new Map<number, string>();
+      for (const { t, i } of deferred) {
+        if (t.tmux && host.some((h) => h.name === t.tmux) && !held.has(t.tmux)) {
+          held.add(t.tmux); exact.set(i, t.tmux);
+        }
+      }
+      // Same preference `choosePanes` uses when it fills panes: an UNATTACHED
+      // survivor first, newest before oldest. Attaching to a session some other
+      // client already holds only mirrors it — two windows typing into one
+      // terminal — so it is the last resort rather than the first match.
+      const byPreference = [...host].sort(
+        (a, b) => (a.attached ? 1 : 0) - (b.attached ? 1 : 0) || b.created - a.created);
+      for (const { t, i } of deferred) {
+        const name = exact.get(i)
+          ?? byPreference.find((h) => h.cwd === t.cwd && !held.has(h.name))?.name;
+        if (!name) continue;   // nothing on the host for it — the tab is not reopened
+        held.add(name);
+        const id = openSession(t.cwd, 'claude', name);
+        ids[i] = id;
+        opened.push(id);
+      }
+      return opened;
+    };
+
+    void adopt().then((opened) => {
+      if (gone) return;
+      const anyRestored = ids.some((x) => x !== null);
+
+      if (initialAttach) {
+        const i = saved.findIndex((t) => t.tmux === initialAttach);
+        const held = sessionsRef.current.find(
+          (s) => s.tmux === initialAttach && (s.status === 'live' || s.status === 'connecting'));
+        if (i >= 0 && ids[i] !== null) setActive(ids[i] as number);
+        else if (held) setActive(held.id);
+        else openSession(initialCwd, 'claude', initialAttach);
+        return;
+      }
+      if (initialCwd) {
+        const i = saved.findIndex((t) => t.cwd === initialCwd);
+        if (i >= 0 && ids[i] !== null) setActive(ids[i] as number);
+        // The device's autoStart is what a plain ⌨ press should respect, but a
+        // button labelled "Jump back in" that lands you in a bare shell has not
+        // done what it said — it always opens claude.
+        else openSession(initialCwd, initialBrief ? 'claude' : getTermSessionPrefs().autoStart);
+        return;
+      }
+      if (anyRestored) {
+        const first = ids.find((x) => x !== null);
+        if (first != null) setActive(first);
+        return;
+      }
+      if (opened.length) return;
+      // NOTHING came back — no saved tabs, or none of them still exists on the
+      // host. Only now does a session get spawned, which is the one case where
+      // spawning is what the screen is for.
+      getOverview()
+        .then((o) => o.resume?.slug ?? '')
+        .catch(() => '')
+        .then((slug) => {
+          if (gone) return;
+          if (slug) setCwd(slug);
+          openSession(slug, getTermSessionPrefs().autoStart);
+        });
+    });
     return () => { gone = true; };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
