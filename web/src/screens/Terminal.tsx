@@ -1736,27 +1736,17 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
         {(usage || serverUsage) && (
           <div className="term-usage">
             {usage?.plan?.session ? (
-              <>
-                <span className="tu-lbl">Session</span>
-                <div className={`tu-bar${usage.plan.session.pct >= 100 ? ' over' : usage.plan.session.pct >= 85 ? ' warn' : ''}`}>
-                  <div className="tu-fill" style={{ width: `${Math.min(100, usage.plan.session.pct)}%` }} />
-                </div>
-                <span className="tu-num"
-                  title="The Plan's 5-hour session window — the same number Claude's /usage shows in-app">
-                  {usage.plan.session.pct}%
-                  {usage.plan.session.resetAt ? ` · resets ${fmtReset(usage.plan.session.resetAt)}` : ''}
-                </span>
-                {usage.plan.week && (
-                  <span className={`tu-total${usage.plan.week.pct >= 85 || (usage.plan.weekModel?.pct ?? 0) >= 85 ? ' warn' : ''}`}
-                    title={`The Plan's weekly window — resets ${fmtReset(usage.plan.week.resetAt, true)}`}>
-                    week {usage.plan.week.pct}%
-                    {usage.plan.weekModel ? ` · ${(usage.plan.weekModel.model || 'model').toLowerCase()} ${usage.plan.weekModel.pct}%` : ''}
-                  </span>
-                )}
-                <span className="tu-total" title="Fresh tokens today (input + output + cache writes) from this host's transcripts">
-                  {fmtTok(usedTokens)} tok today
-                </span>
-              </>
+              // #487 — THE PLAN WINDOWS MOVED OUT OF THIS STRIP. They are drawn
+              // twice already by the Mission Control chrome — as the Anthropic
+              // pill in the header and as the limits block in the rail, which
+              // is where the design puts each — and a third copy here made the
+              // same percentage appear three times on one screen. What is left
+              // is the one figure the other two do NOT carry: fresh tokens
+              // today. Everything below (the resume chip, booking, auto-book)
+              // is unique to this strip and stays.
+              <span className="tu-total" title="Fresh tokens today (input + output + cache writes) from this host's transcripts">
+                {fmtTok(usedTokens)} tok today
+              </span>
             ) : (
               <>
                 <span className="tu-lbl">Tokens</span>
@@ -1837,57 +1827,12 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
           </div>
         )}
 
-        {/* #486 — the OmniRoute gateway. THREE STATES, drawn as three different
-            sentences, because collapsing them is the whole hazard: "Stack
-            cannot see this host" is not "the gateway is down", and neither is
-            a green tick. Same rule as a NULL review_verdict — absence is never
-            rendered as good news, and never as bad news either. */}
-        {gateway && (
-          <div className="term-gateway">
-            <span className="tg-lbl">Gateway</span>
-            {!gateway.connected ? (
-              <span className="tg-unknown"
-                title="The host daemon is not on the line, so Stack cannot ask whether the gateway is up. This says nothing about the gateway itself.">
-                Stack cannot see this host — unknown
-              </span>
-            ) : gateway.reachable ? (
-              <>
-                <span className="tg-ok" title={gateway.baseUrl}>reachable</span>
-                <span className="tg-model"
-                  title={gateway.paidOptIn
-                    ? 'OMNIROUTE_MODEL names this model — a paid route, opted in on the host'
-                    : 'The free combo: the gateway routes to keyless providers'}>
-                  {gateway.model}{gateway.paidOptIn ? ' · paid route' : ''}
-                </span>
-              </>
-            ) : (
-              <span className="tg-down"
-                title={`Nothing answered at ${gateway.baseUrl || 'the gateway'}`}>
-                unreachable — {gateway.reason || gateway.error || 'no reason given'}
-              </span>
-            )}
-            {/* Only offered when a session started now would actually reach it.
-                A switch that silently starts a session against a refused
-                connection is worse than no switch. */}
-            <span className="tg-toggle">
-              <span>New claude tabs on the gateway</span>
-              <button type="button"
-                className={`switch sm ${gwPref ? 'on' : ''}`}
-                disabled={!(gateway.connected && gateway.reachable)}
-                aria-pressed={gwPref}
-                title={gateway.connected && gateway.reachable
-                  ? 'Applies to tabs opened from now on — a running session\u2019s provider is fixed at spawn'
-                  : 'The gateway is not reachable, so there is nothing to route to'}
-                onClick={() => {
-                  const next = !gwPref;
-                  setGwPref(next);
-                  setTermSessionPrefs({ ...getTermSessionPrefs(), onGateway: next });
-                }}>
-                <span className="switch-knob" />
-              </button>
-            </span>
-          </div>
-        )}
+        {/* #487 — THE GATEWAY ROW IS GONE FROM HERE. Its three states are the
+            OmniRoute pill in the header now (reachable / no gateway / host
+            offline — still three sentences, still never collapsing "cannot
+            see" into "down"), and its model and its switch moved into the
+            rail's Settings popover, which is where the design puts a setting.
+            One status, one place; it was being drawn twice. */}
 
         {/* #188 — sessions still running on the host that this tab doesn't
             hold, framed the way 25b frames them: things to pick up. Detached
@@ -2361,8 +2306,12 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                           {[
                             { n: 'Terminal daemon', d: 'host-side tmux + the uplink',
                               on: !!gateway?.connected, s: gateway?.connected ? 'Connected' : 'Offline' },
-                            { n: 'OmniRoute', d: gateway?.baseUrl || 'the local gateway',
-                              on: !!gateway?.reachable, s: gateway?.reachable ? 'Reachable' : 'Not reachable' },
+                            { n: 'OmniRoute', d: gateway?.reachable
+                                ? `${gateway.model || 'auto'}${gateway.paidOptIn ? ' · paid route' : ' · free combo'}`
+                                : (gateway?.baseUrl || 'the local gateway'),
+                              on: !!gateway?.reachable,
+                              s: !gateway?.connected ? 'Cannot see'
+                                : gateway?.reachable ? 'Reachable' : 'Unreachable' },
                             { n: 'Session labeller', d: 'names sessions from what they are doing',
                               on: Object.keys(labels).length > 0, s: Object.keys(labels).length ? 'In use' : 'Idle' },
                             { n: 'Idle reaper', d: 'pinned sessions are exempt',
@@ -2376,6 +2325,32 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                               <span className={`st ${i.on ? 'on' : 'off'}`}>{i.s}</span>
                             </div>
                           ))}
+                          {/* The gateway's own switch, moved here with it.
+                              Offered only when a session started NOW would
+                              actually reach the gateway — a switch that
+                              silently starts a session against a refused
+                              connection is worse than no switch. */}
+                          <div className="row">
+                            <span className="b">
+                              <span className="n">New claude tabs on the gateway</span>
+                              <span className="d">
+                                {gateway?.connected && gateway?.reachable
+                                  ? 'a running session’s provider is fixed at spawn'
+                                  : 'nothing to route to while it is unreachable'}
+                              </span>
+                            </span>
+                            <button type="button"
+                              className={`switch sm ${gwPref ? 'on' : ''}`}
+                              disabled={!(gateway?.connected && gateway?.reachable)}
+                              aria-pressed={gwPref} aria-label="New claude tabs on the gateway"
+                              onClick={() => {
+                                const next = !gwPref;
+                                setGwPref(next);
+                                setTermSessionPrefs({ ...getTermSessionPrefs(), onGateway: next });
+                              }}>
+                              <span className="switch-knob" />
+                            </button>
+                          </div>
                         </div>
                       )}
                     </div>

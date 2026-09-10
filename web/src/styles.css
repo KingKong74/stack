@@ -1873,6 +1873,12 @@ a.term-presence { text-decoration: none; } /* it's an anchor now — middle-clic
 
 /* terminal v2 — session tabs, quick-command rail, git-bash colours */
 .term-layout { display: flex; gap: 14px; align-items: stretch; }
+/* #487 — THE RAIL IS ON THE LEFT, as the Mission Control design has it. Done
+   with `order` rather than by moving the markup: the rail is written after the
+   canvas so a screen reader and a tab press both reach the terminals first,
+   which is the order somebody actually works in. Visual order and DOM order
+   answer different questions and this is one of the few places they differ. */
+.term-cockpit { order: -1; }
 /* #136 — wide mode: terminal page expands past the 1080px max-width */
 .term-page.term-wide { max-width: none; }
 
