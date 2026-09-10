@@ -16,6 +16,22 @@
 // Persistence: the user's chosen provider is saved to ~/.stack/term-model.json
 // as { preferred: "deepseek" }. The server's settings table is out of scope for
 // host-side terminal code.
+//
+// #481 — ONE ENTRY IS KEYLESS. Every provider above is a remote endpoint that
+// exists whether or not this host can reach it, so "is it available" is "do we
+// have its key". OmniRoute is a gateway running ON this host, so the question
+// inverts: the key is optional and REACHABILITY is what decides. That is why
+// `availableProviders()` (sync, key-only) and `availableProvidersLive()`
+// (async, probes) are two functions and not one — the sync one is what the
+// daemon's exit handler and `stack models` can call without awaiting, and
+// widening it to cover a keyless entry would report a gateway that is not
+// running as ready to take a session.
+//
+// The probe FAILS SAFE and LOUD, in that order: an unreachable gateway is never
+// offered (a switch-over onto a refused connection is worse than no offer), but
+// `probeOmniRoute()` always returns WHY so every caller can say it out loud.
+// A silent omission reads as "you installed it wrong"; the reason reads as
+// "the gateway is down", which is the true thing.
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -27,6 +43,12 @@ import { join } from 'node:path';
 function stackHome() {
   return process.env.HOME || process.env.USERPROFILE || homedir();
 }
+
+// Where the gateway listens. The ROOT, with no /v1 — Claude Code appends
+// `/v1/messages` itself and has no flag to say otherwise, so a base URL that
+// already carries /v1 404s on every call. Overridable because the gateway need
+// not be on this host; `omniroute` itself supports a remote.
+export const OMNIROUTE_DEFAULT_BASE_URL = 'http://127.0.0.1:20128';
 
 // Provider catalogue — baseUrl must expose the Anthropic messages API surface.
 // Derived from https://github.com/foreveryh/claude-code-switch ccm.sh.
@@ -65,6 +87,21 @@ export const PROVIDERS = [
     model: 'MiniMax-M2.5',
     baseUrl: 'https://api.minimax.io/anthropic',
     envKey: 'MINIMAX_API_KEY',
+  },
+  // The gateway (#481). `keyless` is the whole of the difference and every
+  // branch that treats it specially says so. `model` is the free combo: the
+  // gateway ships a keyless provider wired into `auto`, so this answers on a
+  // host that has pasted no key anywhere — which is the entire point, since a
+  // limit prompt with nothing to offer is a session that just ends. Paid
+  // routing is opt-in and costs one OMNIROUTE_MODEL line in ~/.stack/env.
+  {
+    key: 'omniroute',
+    label: 'OmniRoute',
+    model: 'auto',
+    baseUrl: OMNIROUTE_DEFAULT_BASE_URL,
+    envKey: 'OMNIROUTE_API_KEY',
+    keyless: true,
+    probePath: '/api/health',
   },
 ];
 
@@ -137,9 +174,69 @@ export function resolveProviderKey(envKey) {
   return { key: '', source: '' };
 }
 
-// Providers that have a configured API key.
+// The same process.env -> ~/.stack/env -> ~/.ccm_config lookup for a value that
+// is not a credential. `resolveProviderKey` already IS that function; only its
+// name says otherwise. Aliased rather than copied so OMNIROUTE_MODEL resolves
+// through exactly the chain this file's header promises — a standalone script
+// has not loaded ~/.stack/env, which is the whole reason that chain exists.
+export const resolveHostValue = resolveProviderKey;
+
+// Where the gateway is, honouring an OMNIROUTE_BASE_URL override. Trailing
+// slashes are stripped because every caller concatenates a path onto this.
+export function omniRouteBaseUrl() {
+  const override = resolveHostValue('OMNIROUTE_BASE_URL').key;
+  return (override || OMNIROUTE_DEFAULT_BASE_URL).replace(/\/+$/, '');
+}
+
+// Providers that have a configured API key. KEY-ONLY AND SYNC ON PURPOSE — see
+// the header. A keyless provider is excluded even when a key happens to be
+// configured for it, because a key says nothing about whether its gateway is
+// up, and this function's whole contract is "safe to offer right now".
 export function availableProviders() {
-  return PROVIDERS.filter((p) => resolveProviderKey(p.envKey).key.length > 0);
+  return PROVIDERS.filter((p) => !p.keyless && resolveProviderKey(p.envKey).key.length > 0);
+}
+
+// Is the gateway answering? Never throws and always carries a reason: a probe
+// that swallows why it failed turns a stopped gateway into a mystery. Bounded
+// by an AbortController so a host that accepts the connection and then says
+// nothing costs `timeoutMs`, not the session.
+export async function probeOmniRoute({ timeoutMs = 1500 } = {}) {
+  const p = getProvider('omniroute');
+  const baseUrl = omniRouteBaseUrl();
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(baseUrl + p.probePath, { signal: ctrl.signal });
+    if (!res.ok) return { reachable: false, baseUrl, reason: `gateway answered HTTP ${res.status}` };
+    return { reachable: true, baseUrl, reason: '' };
+  } catch (e) {
+    // An abort is our own timeout; everything else carries a syscall code
+    // (ECONNREFUSED for "not running") one level down under `cause`.
+    // `cause` carries the useful half: a syscall code (ECONNREFUSED = "not
+    // running") when there is one, and otherwise a message worth more than
+    // fetch's own, which is the bare string "fetch failed" for every failure
+    // it has. Never let that string be the reason a reader gets.
+    const cause = e?.cause;
+    const reason = e?.name === 'AbortError'
+      ? `no answer within ${timeoutMs}ms`
+      : String(cause?.code || e?.code || cause?.message || e?.message || 'unreachable');
+    return { reachable: false, baseUrl, reason };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// What may actually be offered right now: the keyed providers, plus the gateway
+// when it answers. Returns the probe result alongside the list rather than just
+// the list, because a caller that cannot say WHY the gateway is missing will
+// print nothing and let the reader conclude they installed it wrong.
+// The gateway leads the list when it is up: it is the one entry that needs no
+// key, so it is the one most likely to actually work.
+export async function availableProvidersLive(opts = {}) {
+  const keyed = availableProviders();
+  const gateway = await probeOmniRoute(opts);
+  const providers = gateway.reachable ? [getProvider('omniroute'), ...keyed] : keyed;
+  return { providers, gateway };
 }
 
 // Environment overrides to inject when spawning claude with this provider.
@@ -148,7 +245,29 @@ export function providerEnv(providerKey) {
   const p = PROVIDERS.find((x) => x.key === providerKey);
   if (!p) return null;
   const apiKey = resolveProviderKey(p.envKey).key;
-  if (!apiKey) return null;
+  // A keyed provider with no key is not configured and there is nothing to
+  // spawn. A KEYLESS one is the opposite case: no key is the expected state,
+  // so it gets an env block regardless and a placeholder bearer — Claude Code
+  // wants some auth source, and a gateway not requiring one ignores it.
+  if (!apiKey && !p.keyless) return null;
+  if (p.keyless) {
+    const model = resolveHostValue('OMNIROUTE_MODEL').key || p.model;
+    return {
+      ANTHROPIC_BASE_URL: omniRouteBaseUrl(),
+      ANTHROPIC_AUTH_TOKEN: apiKey || 'omniroute-anonymous',
+      ANTHROPIC_MODEL: model,
+      ANTHROPIC_DEFAULT_SONNET_MODEL: model,
+      ANTHROPIC_DEFAULT_OPUS_MODEL: model,
+      ANTHROPIC_DEFAULT_HAIKU_MODEL: model,
+      ANTHROPIC_SMALL_FAST_MODEL: model,
+      CLAUDE_CODE_SUBAGENT_MODEL: model,
+      // Lists the gateway's own catalogue in /model. Claude Code only shows
+      // ids starting claude*/anthropic*, so this surfaces whatever the gateway
+      // has aliased into that shape and nothing else — harmless when it has not.
+      CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY: '1',
+      ANTHROPIC_API_KEY: '',
+    };
+  }
   return {
     ANTHROPIC_BASE_URL: p.baseUrl,
     ANTHROPIC_AUTH_TOKEN: apiKey,

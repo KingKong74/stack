@@ -57,7 +57,7 @@ import { parseAutoName, readActivity } from './auto-scan.mjs';
 import { agentScratchDir, agentClaudeArgs } from './agent-run.mjs';
 import { createEditWatch } from './edit-watch.mjs';
 import {
-  availableProviders, providerEnv, getProvider,
+  availableProvidersLive, providerEnv, getProvider,
   loadPreferredProvider, savePreferredProvider,
 } from './model-switch.mjs';
 
@@ -553,11 +553,34 @@ function wireChild(sid, sess, child) {
 // ---- startSwitchMode — hold the session open and prompt for a model switch ----
 // Called when a Claude session exits after hitting a usage limit. If no
 // providers are configured, falls through to a normal exit immediately.
-function startSwitchMode(sid, sess, exitCode) {
-  const available = availableProviders();
+//
+// ASYNC since #481, because one candidate is a gateway on this host and the
+// only honest way to ask whether it can take a session is to knock. That opens
+// a window — the child is dead, the prompt is not drawn yet — in which an
+// arriving keystroke would reach `child.feed()` on a closed pipe. So switchMode
+// is claimed SYNCHRONOUSLY with a handler that swallows input, before the first
+// await; the real handler replaces it once there is something to choose.
+async function startSwitchMode(sid, sess, exitCode) {
+  // Claim the session before awaiting anything. See above.
+  sess.switchMode = { probing: true, onInput: () => {} };
+
+  const { providers: available, gateway } = await availableProvidersLive();
+
+  // The session can have gone away while we were knocking.
+  if (!sessions.has(sid)) return;
+
   if (available.length === 0) {
     sessions.delete(sid);
-    log(`session ${sid} down (${sessions.size} live) — no alt providers configured`);
+    // Say WHY the gateway was not among them. An unreachable gateway that is
+    // silently missing reads as a broken install; naming the reason reads as
+    // what it is. CLAUDE.md, "Fail-safe direction": fail safe in the action,
+    // loud in the reason.
+    log(`session ${sid} down (${sessions.size} live) — no alt providers configured`
+      + ` (gateway ${gateway.baseUrl}: ${gateway.reason})`);
+    sendOutText(sid, sess,
+      `\r\n${ANSI_RESET}${ansi.warn('⚠  Claude usage limit reached, and there is nowhere to switch to.')}\r\n`
+      + `${ANSI_RESET}   OmniRoute gateway not reachable at ${gateway.baseUrl} — ${gateway.reason}\r\n`
+      + `${ANSI_RESET}   No alternative provider keys are configured either. See ${ansi.bold('stack omniroute')}.\r\n`);
     sendUplink({ t: 'exit', sid, code: exitCode });
     return;
   }
@@ -578,6 +601,11 @@ function startSwitchMode(sid, sess, exitCode) {
     lines.push(`, ${ansi.bold('Enter')} for preferred`);
   }
   lines.push(`, or ${ansi.bold('q')} to end session.\r\n`);
+  // Keyed providers were found but the gateway was not: say so here too, or the
+  // owner who installed it reads its absence as their own mistake.
+  if (!gateway.reachable) {
+    lines.push(`${ANSI_RESET}   ${ansi.warn('·')} OmniRoute gateway not reachable at ${gateway.baseUrl} — ${gateway.reason}\r\n`);
+  }
   sendOutText(sid, sess, lines.join(''));
 
   // 5-minute failsafe — clean up an unanswered prompt rather than leaking forever.

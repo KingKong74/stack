@@ -38,6 +38,8 @@ const {
   resolveProviderKey,
   loadKeyFile,
   keySources,
+  omniRouteBaseUrl,
+  OMNIROUTE_DEFAULT_BASE_URL,
 } = await import('../../terminal/model-switch.mjs');
 
 try {
@@ -115,6 +117,48 @@ try {
   check('providerEnv: ANTHROPIC_API_KEY is blanked', env?.ANTHROPIC_API_KEY, '');
   check('providerEnv: unknown provider is null', providerEnv('nope'), null);
   check('providerEnv: known provider with no key is null', providerEnv('kimi'), null);
+
+  // ---- the KEYLESS provider (#481) ------------------------------------------
+  // The gateway inverts every assumption above: no key is its normal state, so
+  // `providerEnv` must still hand back a spawnable env, and `availableProviders`
+  // must still leave it out — being configured says nothing about being up.
+  // Only DEEPSEEK_API_KEY is in the fake home at this point.
+  const om = providerEnv('omniroute');
+  check('keyless: providerEnv is NOT null without a key', om !== null, true);
+  check('keyless: base url is the gateway root, no /v1', om?.ANTHROPIC_BASE_URL, OMNIROUTE_DEFAULT_BASE_URL);
+  check('keyless: model defaults to the free combo', om?.ANTHROPIC_MODEL, 'auto');
+  check('keyless: a placeholder bearer is sent', om?.ANTHROPIC_AUTH_TOKEN, 'omniroute-anonymous');
+  check('keyless: gateway model discovery is on', om?.CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY, '1');
+  check('keyless: ANTHROPIC_API_KEY is blanked', om?.ANTHROPIC_API_KEY, '');
+  check('keyless: subagents route through the gateway too', om?.CLAUDE_CODE_SUBAGENT_MODEL, 'auto');
+  check('keyless: availableProviders still lists only keyed providers',
+    availableProviders().map((p) => p.key), ['deepseek']);
+
+  // OMNIROUTE_MODEL is where "paid opt-in" lives, and it has to resolve through
+  // the SAME ~/.stack/env chain a key does — a standalone script has not loaded
+  // that file, so reading process.env directly would silently ignore it.
+  writeFileSync(stackEnvPath,
+    'DEEPSEEK_API_KEY=sk-test-not-a-real-key\nOMNIROUTE_MODEL=anthropic/claude-opus-5\n', 'utf8');
+  check('keyless: OMNIROUTE_MODEL from ~/.stack/env overrides the free combo',
+    providerEnv('omniroute')?.ANTHROPIC_MODEL, 'anthropic/claude-opus-5');
+  check('keyless: the override reaches every model slot',
+    providerEnv('omniroute')?.ANTHROPIC_DEFAULT_OPUS_MODEL, 'anthropic/claude-opus-5');
+
+  // A configured key is used when there IS one — the placeholder is a fallback,
+  // not a ceiling. And a keyed entry never joins the list on a key alone.
+  writeFileSync(stackEnvPath,
+    'DEEPSEEK_API_KEY=sk-test-not-a-real-key\nOMNIROUTE_API_KEY=oma-test-not-a-real-key\n', 'utf8');
+  check('keyless: a configured key beats the placeholder',
+    providerEnv('omniroute')?.ANTHROPIC_AUTH_TOKEN, 'oma-test-not-a-real-key');
+  check('keyless: a configured key does NOT put it in availableProviders',
+    availableProviders().map((p) => p.key), ['deepseek']);
+
+  // The base URL override, so a gateway on another host is one line.
+  writeFileSync(stackEnvPath, 'OMNIROUTE_BASE_URL=http://10.0.0.5:20128/\n', 'utf8');
+  check('keyless: OMNIROUTE_BASE_URL overrides, trailing slash stripped',
+    omniRouteBaseUrl(), 'http://10.0.0.5:20128');
+  check('keyless: the override reaches providerEnv',
+    providerEnv('omniroute')?.ANTHROPIC_BASE_URL, 'http://10.0.0.5:20128');
 } finally {
   rmSync(fakeHome, { recursive: true, force: true });
 }
