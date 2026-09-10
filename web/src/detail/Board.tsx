@@ -86,9 +86,16 @@
 // ARCHIVE, DELETE (which tombstones a `hook` row's fingerprint, which is what
 // Dismiss means and why it has no undo), and the SIGN-OFF that releases a
 // held `hook`/`fly` row to the overnight runner (#359 — `lib/approval.ts` is
-// the rule and no browser has been able to answer it since #444). Editing opens
-// the item modal this screen is handed, which is still the only writer of
-// `tier` and of a human `risk_source`.
+// the rule). Editing opens the item modal this screen is handed, which is still
+// the only writer of `tier` and of a human `risk_source`.
+//
+// THE SIGN-OFF IS DRAWN ONLY ON A HELD CARD, and a held card is here at all
+// because BEING WORKED IS A COMMITMENT: a `fly` row a session opened for work
+// it was asked to do, then claimed a branch on and built, was landing in the
+// idea pile and had to be Promoted back onto this board by hand. `isIdea` in
+// lib/plan.ts is where that line moved; what this screen owes it is saying the
+// hold out loud (the `held` chip) and being able to answer it (the menu),
+// because Roadmap's Promote can no longer see those rows.
 //
 // STILL UNREACHABLE FROM ANY BROWSER, so nobody re-discovers it here: GIVING A
 // VERDICT. `review_tag` and the #263 trio arrive from the auto path alone, and
@@ -101,6 +108,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { KitIcon } from './kit/KitIcon';
 import type { BoardArea, BoardList, Priority, RoadmapItem, Sprint } from '../types';
 import { listKeyOf, queueOrder, isIdea } from '../lib/plan';
+import { isHeld } from '../lib/approval';
 import { PRIORITY_META, PRIORITY_DEFAULT, priorityMeta } from '../lib/ui';
 import {
   getBoardShape, createList, patchList, deleteList,
@@ -218,9 +226,11 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, hi
     const needle = query.trim().toLowerCase();
     return rows
       .filter((it) => !it.archived)
-      // #472 — THE BOARD DRAWS COMMITTED WORK. A held row and a child idea both
-      // belong to the Roadmap tab; `isIdea` in lib/plan.ts is the one line
-      // between the two screens, so neither can claim a row the other draws.
+      // #472 — THE BOARD DRAWS COMMITTED WORK. An untouched held row and an
+      // untouched child idea both belong to the Roadmap tab; `isIdea` in
+      // lib/plan.ts is the one line between the two screens, so neither can
+      // claim a row the other draws. A row somebody has CLAIMED OR BUILT is
+      // committed work whatever its sign-off says, and lands here.
       .filter((it) => !isIdea(it))
       .filter((it) => (hideParked ? !it.skipped : true))
       .filter((it) => !needle
@@ -363,6 +373,19 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, hi
 
   const park = (it: RoadmapItem) =>
     guard(async () => { wrote(await patchRoadmapItem(slug, it.id, { skipped: !it.skipped })); });
+  // THE SIGN-OFF IS BACK ON THIS SCREEN, because a held row can be on it again:
+  // a `fly` or `hook` row a session claimed or built is committed work and is
+  // drawn here (`isIdea` in lib/plan.ts), while STILL being held out of the
+  // overnight runner by #359. Roadmap's Promote cannot see it any more, so
+  // without this the hold would be unanswerable from any browser — which is the
+  // state #444 left and #359 called out by name.
+  //
+  // `reviewed` ALONE, never `parentId` with it. Promote's second half detaches
+  // an idea from its feature, and a card here may legitimately be a child whose
+  // work has started; silently re-parenting it as a side effect of approving it
+  // would lose the filing somebody chose.
+  const signOff = (it: RoadmapItem) =>
+    guard(async () => { wrote(await patchRoadmapItem(slug, it.id, { reviewed: true })); });
   const archive = (it: RoadmapItem) =>
     guard(async () => { wrote(await patchRoadmapItem(slug, it.id, { archived: true })); });
   const derive = (it: RoadmapItem) =>
@@ -590,6 +613,7 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, hi
                           menuOpen={cardMenu === it.id}
                           onMenu={(e) => { e.stopPropagation(); closeAll(); setCardMenu(cardMenu === it.id ? null : it.id); }}
                           onEdit={() => { setCardMenu(null); onEdit(it); }}
+                          onSignOff={() => { setCardMenu(null); signOff(it); }}
                           onPark={() => { setCardMenu(null); park(it); }}
                           onArchive={() => { setCardMenu(null); archive(it); }}
                           onDerive={() => { setCardMenu(null); derive(it); }}
@@ -734,7 +758,7 @@ function IssueCard({
   item, ideas, sprint, selected, onSelect, dragging, onDragStart, onDragEnd,
   editing, onOpenInline, onInline, onCancelInline,
   priOpen, onPri, onPick, menuOpen, onMenu,
-  onEdit, onPark, onArchive, onDerive, onDelete,
+  onEdit, onSignOff, onPark, onArchive, onDerive, onDelete,
 }: {
   item: RoadmapItem;
   /** How many `parent_id` children this item has — its ideas, on the Roadmap tab. */
@@ -750,10 +774,18 @@ function IssueCard({
   onInline: (title: string) => void; onCancelInline: () => void;
   priOpen: boolean; onPri: (e: React.MouseEvent) => void; onPick: (v: Priority) => void;
   menuOpen: boolean; onMenu: (e: React.MouseEvent) => void;
-  onEdit: () => void; onPark: () => void;
+  onEdit: () => void;
+  /** Release the #359 hold on a `hook`/`fly` row. Only ever pressed on a held
+   *  card, and the menu only draws it there. */
+  onSignOff: () => void;
+  onPark: () => void;
   onArchive: () => void; onDerive: () => void; onDelete: () => void;
 }) {
   const pri = priorityMeta(item.bucket);
+  // A row a session made and worked, that nobody has signed off yet. It is on
+  // the board because it is real work (`isIdea`), and it says so on its face
+  // because the alternative is a card the runner will silently never take.
+  const held = isHeld(item);
   const [confirming, setConfirming] = useState(false);
   useEffect(() => { if (!menuOpen) setConfirming(false); }, [menuOpen]);
 
@@ -771,11 +803,13 @@ function IssueCard({
 
       <div className="km-cardmeta">
         {/* THIS SLOT HELD THE APPROVAL ICON until #472 took every held row off
-            the board — with nothing held left to draw, the distinction it made
-            is one this screen can no longer show. It says whether the item has
-            IDEAS under it instead: `parent_id` children live on the Roadmap tab,
-            and a card that gives no sign of them is a feature whose notes are on
-            a screen you had no reason to open. */}
+            the board. Held rows are back — the worked ones — but the hold is
+            said in the TAG ROW below and answered in the card menu, not here:
+            an icon in a 13px slot is the weakest place to put the one fact that
+            decides whether the night touches this card. This slot says whether
+            the item has IDEAS under it instead: `parent_id` children live on the
+            Roadmap tab, and a card that gives no sign of them is a feature whose
+            notes are on a screen you had no reason to open. */}
         <span className="kind" style={{ color: ideas ? 'var(--lime-500)' : 'var(--blue-400)' }}
           title={ideas
             ? `${ideas} idea${ideas === 1 ? '' : 's'} under this on the Roadmap tab`
@@ -797,11 +831,25 @@ function IssueCard({
         </span>
       </div>
 
-      {(sprint || item.area || item.claimedBy || item.skipped || item.reviewTag) && (
+      {(held || sprint || item.area || item.claimedBy || item.skipped || item.reviewTag) && (
         <div className="km-cardtags">
-          {/* THE SPRINT CHIP (#477). It is first, ahead of the area, because it
-              is the only tag on a card that says whether the machine may touch
-              this item at all — and it wears `on` only for the sprint that is
+          {/* HELD IS FIRST, ahead of even the sprint chip, because it OUTRANKS
+              it: a held row in the box in progress still does not run, so a
+              card wearing the sprint's `on` tone and nothing else would be a
+              promise the night does not keep. The word is the one the menu
+              answers with, and the title says who opened it in the words that
+              origin's refusal uses — being told your own session's card was
+              "auto-found on a push" sends you looking through commits for it. */}
+          {held && (
+            <span className="k-tag warning" title={item.source === 'fly'
+              ? 'Opened by a live session and not signed off — the overnight runner will not take it until you do (card menu → Sign off)'
+              : 'Auto-found on a push and not signed off — the overnight runner will not take it until you do (card menu → Sign off)'}>
+              held
+            </span>
+          )}
+          {/* THE SPRINT CHIP (#477). It comes ahead of the area — and second
+              only to a hold, which overrules it — because it is the tag that
+              says whether the machine may touch this item at all — and it wears `on` only for the sprint that is
               IN PROGRESS. A card in a planned box reads as committed-but-not-yet
               and must not look like work that is running tonight; the distinction
               is the whole feature, so it is a different tone rather than a
@@ -863,10 +911,19 @@ function IssueCard({
       {menuOpen && (
         <div className="km-menu card" role="menu" onClick={(e) => e.stopPropagation()}>
           <button className="km-menuitem" onClick={onEdit}>Edit item…</button>
-          {/* SIGN OFF LIVES ON THE ROADMAP TAB NOW (#472). It was here because
-              held rows were on the board; they are not, so the button had
-              nothing left it could act on. It is "Promote to board" over
-              there, which is the same write plus a detach. */}
+          {/* SIGN OFF IS HERE AGAIN, and only on a card that is actually held.
+              #472 took it off this screen because no held row was drawn here
+              any more; a held row a session has claimed or built IS drawn here
+              now (`isIdea` in lib/plan.ts), and Roadmap's Promote — the same
+              write plus a detach — can no longer reach it. The wording says
+              what it releases, because "approve" on a change that is already
+              built reads as a verdict, which this is emphatically not. */}
+          {held && (
+            <button className="km-menuitem" onClick={onSignOff}
+              title="Clears the #359 hold: the row counts as agreed work, and the overnight runner may pick it up if there is still anything to build">
+              Sign off — clear the hold
+            </button>
+          )}
           <button className="km-menuitem" onClick={onPark}>{item.skipped ? 'Unpark' : 'Park'}</button>
           {item.listKey && (
             <button className="km-menuitem" onClick={onDerive}
@@ -1089,15 +1146,20 @@ function CreateDialog({ onClose, onCreate }: { onClose: () => void; onCreate: (t
  *  THE CLIENT TWIN of the eligibility in `scripts/stack-autopilot.mjs` and of
  *  the fan-out's WHERE in `routes/autopilot.js` — minus the area lane, which
  *  is about who may run CONCURRENTLY rather than what is runnable at all, and
- *  cannot be answered without the other workers' state. `isIdea` covers the
- *  held rows (#359/#472); the rest is the same four conditions all three
- *  spellings share.
+ *  cannot be answered without the other workers' state.
+ *
+ *  IT ASKS `isHeld` ITSELF rather than leaning on `isIdea`. The two used to be
+ *  the same question and are not: a held row a session has already worked is
+ *  board work now (see `isIdea`'s header), so a twin reading the SCREEN test
+ *  would count a row the server still refuses to enqueue. The approval gate is
+ *  #359's, and this is where it is asked.
  *
  *  It exists so the count next to the running box is honest. A sprint may
  *  legitimately hold parked, claimed and finished work, and none of it is
  *  something tonight will take. */
 const runnable = (it: RoadmapItem): boolean =>
-  !it.done && !it.skipped && !it.archived && !it.claimedBy.trim() && !isIdea(it);
+  !it.done && !it.skipped && !it.archived && !it.claimedBy.trim()
+  && !isIdea(it) && !isHeld(it);
 
 /**
  * THE COLUMN A ROW IS IN, resolved against the board's OWN lanes — its name and

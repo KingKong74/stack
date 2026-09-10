@@ -149,7 +149,11 @@ or the header of the file named in the pointer.
 - **The BOARD draws committed work; ROADMAP draws ideas** (#472), and **`isIdea` in `lib/plan.ts` is
   the ONE line between them** — a row on both is acted on twice, a row on neither has silently
   vanished. Not committed = a **HELD** row (`hook`/`fly` nobody signed off) or a **CHILD** row
-  (`parent_id`, an idea under a feature). **Promoting is one write with one meaning**:
+  (`parent_id`, an idea under a feature) — **NEITHER once somebody has WORKED it**: a claim, a
+  `built_note` or a tick (`isWorked`) makes a row board work whatever its sign-off says, so a
+  session's own card stops landing in the idea pile, and a held row's hold is then a RUNNER gate
+  only — said (`held` chip) and answered (card menu) on the board, since Promote cannot see it.
+  **Promoting is one write with one meaning**:
   `reviewed: true` + `parentId: null`. There is deliberately **no free-floating capture on Roadmap** —
   a manual row is never held, so it is committed work by definition and the board's composer is where
   it goes; ＋ on a board item is how an idea gets filed.

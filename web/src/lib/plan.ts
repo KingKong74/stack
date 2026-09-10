@@ -1022,7 +1022,7 @@ export function listKeyOf(it: RoadmapItem): string {
  * vanished, which is the worse of the two and the reason this is one function.
  *
  * THE BOARD DRAWS COMMITTED WORK. Roadmap draws what is not committed yet, and
- * exactly two things are not:
+ * exactly two things are not — NEITHER OF THEM ONCE SOMEBODY HAS WORKED IT:
  *
  *  • A HELD row — `hook` (the extractor read it off a push) or `fly` (a live
  *    session opened it for its own work) that nobody has signed off. #359 already
@@ -1030,6 +1030,21 @@ export function listKeyOf(it: RoadmapItem): string {
  *    the same reason, which is that nobody has said yes to them yet.
  *  • A CHILD row (`parentId` set) — an idea hanging off a feature. It is a note
  *    about work, not the work, and the board is the work.
+ *
+ * BEING WORKED IS ITSELF THE COMMITMENT, and leaving that out of this line put a
+ * night's work in the idea pile. A session opens a `fly` card for what it was
+ * just asked to do, claims a branch on it and builds it — and the card it made
+ * and worked was drawn on Roadmap the whole time, so the owner had to press
+ * Promote on their own instruction to get committed work onto the board it
+ * should never have left. `isWorked` is that carve-out, and it applies to a
+ * child row too: work filed under a feature is still work, and a built row the
+ * board does not draw is the "vanished" half of the paragraph above.
+ *
+ * THE SIGN-OFF IT IS STILL MISSING IS A DIFFERENT QUESTION. `isHeld` gates the
+ * RUNNER (#359) and this function picks a SCREEN; the two were one test only
+ * because a held row used to carry no work. A worked held row is drawn on the
+ * board and STILL held from the night — the board's card menu is where that
+ * sign-off is answered now, since Roadmap's Promote can no longer see it.
  *
  * PROMOTING IS THEREFORE ONE WRITE WITH ONE MEANING: `reviewed: true` and
  * `parentId: null` together say "this is committed work now", and it moves
@@ -1039,7 +1054,23 @@ export function listKeyOf(it: RoadmapItem): string {
  * `isIdea` deliberately says nothing about it so a caller cannot forget which
  * question it is asking.
  */
-export const isIdea = (it: RoadmapItem): boolean => it.parentId !== null || isHeld(it);
+export const isIdea = (it: RoadmapItem): boolean =>
+  !isWorked(it) && (it.parentId !== null || isHeld(it));
+
+/**
+ * HAS ANYBODY ACTUALLY WORKED THIS ROW? A branch claim, a built note or a tick —
+ * ANY ONE of the three, and deliberately not `isBuilt`'s conjunction of the
+ * first two. Un-ticking a row clears `claimed_by` and KEEPS `built_note`
+ * (CLAUDE.md), so a test wanting both would drop a sent-back change into the
+ * idea pile at exactly the moment somebody is waiting on it — and a claim with
+ * no built note yet is a session at work right now, which is the state this
+ * whole carve-out exists for.
+ *
+ * It says nothing about approval, verdicts or columns: those are `isHeld`,
+ * `reviewTag` and `listKeyOf`, and each is asked separately on purpose.
+ */
+export const isWorked = (it: RoadmapItem): boolean =>
+  it.done || it.claimedBy.trim() !== '' || it.builtNote.trim() !== '';
 
 /**
  * EVERY ROADMAP ROW, IN THE PAYLOAD'S OWN ORDER — the one place the client

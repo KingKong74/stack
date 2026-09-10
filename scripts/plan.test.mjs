@@ -39,7 +39,7 @@ const {
   whatsNext, fmtWhen, calendarDays, calendarMonths, CAL_HOUR_FROM,
   slipOf, layoutLane, scopeTotals, defaultLen, DUR_OPTIONS, rolledSched, isRolled,
   newItemSched,
-  listKeyOf, inCycle, areaMatches, horizonOf, UNALLOCATED,
+  listKeyOf, isIdea, isWorked, isBuilt, inCycle, areaMatches, horizonOf, UNALLOCATED,
   queueOrder, inActiveSprint, bucketRank,
 } = await import(planUrl.href);
 
@@ -764,6 +764,58 @@ test('a verdict ships the card even while its branch claim stands', () => {
 test('clearing the verdict returns the card to the lane its state puts it in', () => {
   assert.equal(listKeyOf(item({ claimedBy: 'feat/3-x', reviewTag: '' })), 'progress');
   assert.equal(listKeyOf(item({ claimedBy: '', reviewTag: '' })), 'planned');
+});
+
+// --- which screen a row is on ------------------------------------------------
+// `isIdea` is THE ONE LINE between the board and the Roadmap tab, so what these
+// pin is the two failures it can have: a row on BOTH screens is acted on twice,
+// and a row on NEITHER is work that has silently vanished. The second is the one
+// that actually happened — a session's own `fly` card, claimed and built by that
+// same session, sat in the idea pile through the night that built it.
+
+test('an untouched held row is an idea, and so is a child', () => {
+  assert.equal(isIdea(item({ source: 'fly', reviewed: false })), true);
+  assert.equal(isIdea(item({ source: 'hook', reviewed: false })), true);
+  assert.equal(isIdea(item({ parentId: 12 })), true);
+  assert.equal(isIdea(item()), false, 'a manual row is committed work by definition');
+  assert.equal(isIdea(item({ source: 'fly', reviewed: true })), false, 'signed off');
+});
+
+test('a held row somebody has WORKED is board work, sign-off or no sign-off', () => {
+  const claimed = item({ source: 'fly', reviewed: false, claimedBy: 'feat/9-x' });
+  assert.equal(isWorked(claimed), true);
+  assert.equal(isIdea(claimed), false, 'a session is on it right now');
+
+  const built = item({ source: 'fly', reviewed: false, claimedBy: 'feat/9-x', builtNote: 'what landed' });
+  assert.equal(isIdea(built), false, 'the night that built it must not file it as an idea');
+  assert.equal(listKeyOf(built), 'review', 'and it lands in the verify lane');
+
+  // A SENT-BACK row keeps its built note and loses its claim. `isBuilt` wants
+  // both, which is why `isWorked` is not `isBuilt`: wanting both here would
+  // drop a rejected change into the idea pile just as somebody waits on it.
+  const sentBack = item({ source: 'fly', reviewed: false, builtNote: 'what landed' });
+  assert.equal(isBuilt(sentBack), false);
+  assert.equal(isWorked(sentBack), true);
+  assert.equal(isIdea(sentBack), false);
+});
+
+test('being worked outranks the child test too — work under a feature is work', () => {
+  assert.equal(isIdea(item({ parentId: 12, claimedBy: 'feat/9-x' })), false);
+  assert.equal(isIdea(item({ parentId: 12, done: true })), false);
+  assert.equal(isIdea(item({ parentId: 12 })), true, 'a note about work stays a note');
+});
+
+test('nothing is on both screens or on neither', () => {
+  const rows = [
+    item(), item({ source: 'hook', reviewed: false }), item({ parentId: 3 }),
+    item({ source: 'fly', reviewed: false, claimedBy: 'feat/9-x' }),
+    item({ source: 'fly', reviewed: false, builtNote: 'x' }),
+    item({ done: true }), item({ skipped: true }),
+  ];
+  const roadmap = rows.filter((it) => isIdea(it));
+  const board = rows.filter((it) => !isIdea(it));
+  assert.equal(roadmap.length + board.length, rows.length);
+  assert.equal(roadmap.filter((it) => board.includes(it)).length, 0);
 });
 
 // --- in the cycle ------------------------------------------------------------

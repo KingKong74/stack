@@ -4,14 +4,22 @@
 // lib/plan.ts is the one line between the two screens — read its header before
 // touching either. Two populations land here:
 //
-//  • HELD rows — `hook` (the extractor read one off a push) and `fly` (a live
-//    session opened one for its own work) that nobody has signed off. They used
-//    to appear on the board, where an auto-extraction sat among committed work
-//    looking exactly like it. They arrive here now, which is the whole of what
-//    the owner asked for: an idea is not work until somebody says it is.
+//  • HELD rows NOBODY HAS WORKED — `hook` (the extractor read one off a push)
+//    and `fly` (a live session opened one for its own work) that nobody has
+//    signed off. They used to appear on the board, where an auto-extraction sat
+//    among committed work looking exactly like it. They arrive here now, which
+//    is the whole of what the owner asked for: an idea is not work until
+//    somebody says it is.
 //  • CHILD rows (`parent_id`) — an idea filed under something already on the
 //    board. The other half of the ask: see what you are working on, and add to
 //    it without turning every thought into a card the runner might pick up.
+//
+// WORK LEAVES THIS SCREEN THE MOMENT IT IS WORKED, sign-off or no sign-off. A
+// held row a session has CLAIMED or BUILT is committed work by the only evidence
+// that matters — somebody did it — so it is drawn on the board and the hold is
+// said and answered there (`isIdea`'s header carries why). Without that, a
+// session's own card sat here through the whole night that built it, and the
+// owner had to Promote their own instruction to get it onto the board.
 //
 // PROMOTING IS ONE WRITE WITH ONE MEANING: `reviewed: true` plus
 // `parentId: null`, together saying "this is committed work now". Nothing else
@@ -489,7 +497,7 @@ function IdeaCard({ idea, parent, open, onToggle, onPromote, onBucket, onPark, o
 
           <span className="from">
             {held
-              ? `Opened by ${sourceOf(idea)} and held out of the overnight runner until you promote it.`
+              ? `Opened by ${sourceOf(idea)}, not worked yet, and held out of the overnight runner until you promote it.`
               : parent
                 ? `Filed under "${parent.title}". Promoting detaches it and puts it on the board.`
                 : 'Promoting puts this on the board.'}
