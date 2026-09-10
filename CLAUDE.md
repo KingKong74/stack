@@ -11,7 +11,7 @@ pointer and the cross-cutting half. That is not tidiness: a rule beside the code
 by whoever is changing it, and a rule here is read by everyone else once. Headers that carry their
 own: `routes/ingest.js`, `prompts.js`, `routes/checks.js`, `routes/worktrees.js`,
 `routes/terminal.js`, `routes/autopilot.js`, `routes/sprints.js`, `agent-profiles.js`, `agents.js`, `pulse.js`,
-`lanes.js`, `terminal/agent-run.mjs`, `scripts/lib/autoverdict.mjs`, `scripts/lib/refine.mjs`,
+`lanes.js`, `terminal/agent-run.mjs`, `terminal/model-switch.mjs`, `terminal/cli-registry.mjs`, `scripts/lib/autoverdict.mjs`, `scripts/lib/refine.mjs`,
 `scripts/stack-autopilot-dispatch.mjs`, `lib/branch.ts`, `lib/plan.ts`, `styles.css`,
 `detail/Board.tsx`, `detail/Roadmap.tsx`, `detail/Plans.tsx` and `components/RoadmapModal.tsx`. **Adding a rule here
 that belongs in one of those is how this file got to 40 KB.**
@@ -422,6 +422,14 @@ One file per surface in `server/src/routes/` — `ls` is the index. All behind b
     `draft: ""` when the record doesn't evidence a change — a model told to produce a delta will
     otherwise produce one, and what comes back is "verify it works" dressed as a finding. Any prompt
     asked for a judgement needs the same escape hatch, or it manufactures one.
+- **The OMNIROUTE GATEWAY is local, and Stack's use of it is FREE BY DEFAULT** (#481). No paid API is
+  called unless `OMNIROUTE_MODEL` names a paid model — one deliberate line in `~/.stack/env`. It is
+  loopback-only by DOCKER's `-p 127.0.0.1:`, because it binds 0.0.0.0 whatever its own host vars say.
+  **Host-side only**: the server is in a container and cannot reach `localhost:20128`, so routing
+  `gemini.js` through it needs a compose service — a decision, not a tidy-up.
+- **A LAUNCH-ONLY RUNTIME IS NOT A STACK SESSION** (#481). The half that reaches past
+  `cli-registry.mjs`'s header: **branch claims are NOT injected into a non-Claude session**, so the
+  lane discipline every other surface enforces is, in that one runtime, on the human. Say it out loud.
 - **Checks are Stack's only automated regression net.** When a route's payload contract changes,
   change its check in the same commit — a green suite is what #212 and #263 spend.
 - `templates/stack-agent-context.md` is the single source of truth for the portable agent manual — if the
