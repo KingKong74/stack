@@ -1,3 +1,43 @@
+// INGEST — everything `/checkpoint` and the SessionEnd hook send, in ONE
+// transaction: project upsert, session row, resume refresh, extraction against
+// the commit. CLAUDE.md pointed here for "the most invariants" and this file
+// had no header at all; these are the four, gathered from the code below.
+//
+// THE WIRE SHAPE is `{ project, session, extract }`, listed in full in
+// `hook/stack-post.mjs` and `.claude/commands/checkpoint.md`. The part you would
+// guess wrong: the usage fields (`tokens_used`, `model_usage`, `agent_calls`,
+// `agent_types`) are HOOK-ONLY, because the hook alone reads the transcript.
+//
+//  1. IDEMPOTENT ON session_id, THEN commit_hash — never the other way round.
+//     Matching the commit first collapsed parallel sessions: several in one
+//     checkout end at the same HEAD, so three pushes became one row. The
+//     fallback still lets the SessionEnd backstop claim the authored
+//     `/checkpoint` row (which posts no session_id), but only while that row is
+//     UNCLAIMED.
+//
+//  2. `authored` IS WHAT MAKES THE METADATA BACKSTOP SAFE. true = a rich
+//     `/checkpoint`; false = the hook's metadata post. The session-row update is
+//     COALESCE-safe, so a metadata post never overwrites an authored
+//     summary/current_phase and the jsonb lists only overwrite when non-empty.
+//     `authored` is sticky (`authored OR $incoming`) — once a session has said
+//     something real about itself, a later backstop cannot blank it.
+//
+//  3. THE RESUME REFRESH RUNS ONLY FOR `authored:true` POSTS, and only while
+//     `keep_resume_card` is on. The metadata hook records the activity row and
+//     bumps `last_session_at`, and nothing more: a hook firing after a session
+//     that said nothing must not overwrite the card the last real one wrote.
+//
+//  4. AUTO-EXTRACTION DEDUPS ON FINGERPRINT AND HONOURS THE `dismissed_items`
+//     TOMBSTONE. An existing auto item is RE-POINTED at the new commit, never
+//     duplicated; a dismissed fingerprint is skipped, which is what makes
+//     Dismiss mean "and stay gone"; manual items are never touched; and
+//     `reviewed_at` survives a re-point, so a sign-off is sticky.
+//
+// Extracted rows land as `source='hook'`, which means HELD: they are kept out
+// of the overnight runner until a human signs one off (#359), and since #472
+// they are drawn on the Roadmap tab rather than the board. An extraction is an
+// idea, not a commission.
+
 import { Router } from 'express';
 import { pool } from '../db.js';
 import {

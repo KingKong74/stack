@@ -4,6 +4,21 @@
 // only queues the merge, this gate additionally lets a low-risk, all-green
 // night skip the human's verdict click.
 //
+// THE SANCTION IS CONDITIONAL, and the three conditions are the whole of why a
+// machine is allowed to verdict at all (owner's call, #263). Drop any one and
+// this module is not sanctioned any more — it is a machine closing the loop on
+// itself:
+//
+//   POSITIVE EVIDENCE — every gate below is something that HAPPENED, never the
+//     absence of something bad. That is the rest of this paragraph.
+//   REVERSIBLE — clearing `review_tag` resets `verdict_source` to 'human' and
+//     wipes `verdict_at`/`verdict_evidence` in the same statement, so undo needs
+//     no route of its own (PATCH /roadmap/:id).
+//   VISIBLE — a machine verdict must be readable by the human it stands in for.
+//     THIS LEG IS UNMET and is a debt, not a design: the board says a verdict
+//     came from the auto path and no screen reads `verdict_evidence` or lets
+//     anyone disagree. Whatever surfaces a change next owes both.
+//
 // Same fail-closed direction as everywhere else in Stack: every gate below is
 // POSITIVE evidence. An ABSENT signal — no checks ran, no reviewer verdict, a
 // declaration with nothing in it — is never treated as a green one, exactly

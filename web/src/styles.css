@@ -22,6 +22,19 @@
    no Appearance toggle — every rule states its colour ONCE. If a
    light theme is ever wanted it starts here, by giving these aliases
    a second set of values; nothing downstream would need touching.
+
+   TWO TRAPS THIS SPLIT HAS SPRUNG, both worth reading before you
+   reach for a token:
+
+   · --ink IS NEAR-WHITE. It is the primary TEXT colour on a dark
+     ground, not a dark ink on paper. Anything that inverts to #fff
+     on top of it vanishes completely.
+   · A FILL TONE IS NOT A TEXT TONE. --action-primary is sized for
+     white text sitting ON it, so it fails as a colour READ against
+     the page. --accent and --paused each split for this reason:
+     use --accent-text wherever the accent is a `color`. The palette
+     audit (scripts/run-palette-audit.sh) is what catches the ones
+     you miss, and it has caught several.
    ============================================================ */
 
 :root {

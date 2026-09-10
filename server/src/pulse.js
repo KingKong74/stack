@@ -1,6 +1,6 @@
 // A project's PULSE — the arithmetic behind the Overview tab's three measured
 // bands: what the models spent here, what the test suite is doing, and how the
-// autopilot's runs came out. Pure and DB-free (the same shape as debrief.js),
+// autopilot's runs came out. Pure and DB-free (the shape `debrief.js` had),
 // so `server/test/pulse.test.mjs` can pin every rule without a database.
 //
 // The route is `GET /api/projects/:slug/pulse` in routes/projects.js. It is a
@@ -307,12 +307,14 @@ export function readTests({ checks = [], suiteRuns = [], results = [] } = {}) {
 // ---------------------------------------------------------------------------
 
 /**
- * The five outcomes partition across FOUR buckets, exactly as debrief.js does
- * it fleet-wide: landed / failed (failed + limit) / planned / noCommits, which
- * always sum to `total`. Spelt here rather than imported because debrief.js
- * composes a NIGHT (one day, cross-project) and this composes a PROJECT over
- * twelve weeks — but the partition is the same one, and if that one ever
- * changes this changes with it.
+ * THE FIVE OUTCOMES PARTITION ACROSS FOUR BUCKETS: landed / failed (failed +
+ * limit) / planned / noCommits, which always sum to `total`.
+ *
+ * `debrief.js` held the fleet-wide twin of this and is CULLED, so what was a
+ * deliberate second spelling — it composed a NIGHT, one day and cross-project,
+ * where this composes a PROJECT over twelve weeks — is now the ONLY one. If a
+ * fleet-wide reader ever comes back, this is the partition it copies, and the
+ * reason to copy rather than import is above: two questions, one shape.
  *
  * A PLAN NIGHT COMMITS NOTHING BY DESIGN, so it can never be `landed` and sits
  * out the land rate entirely. Folding it in scores the advisor as having failed
