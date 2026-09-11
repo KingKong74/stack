@@ -17,8 +17,27 @@ export type Route =
   | { name: 'share'; slug: string; token: string }
   | { name: 'detail'; id: string; tab?: string; highlight?: string };
 
-function parse(): Route {
-  const h = window.location.hash.replace(/^#/, '');
+// PARSING IS A PURE FUNCTION OF THE HASH, and reading `window` is the caller's
+// job — the same injection `util.pushCadence` uses for `today`, and for the same
+// reason: a router nothing can call without a browser is a router nothing tests,
+// and every rule below (the legacy spellings that must not 404, what `hl` means,
+// how a slug carrying a slash survives a round trip) is silent when it breaks.
+// A dead link renders a page; it just renders the wrong one.
+// `scripts/route.test.mjs` is the reader.
+// A PATH SEGMENT IS DECODED DEFENSIVELY. `decodeURIComponent` THROWS on a
+// malformed escape — a bare `%`, or `%zz` — and a throw in here escapes
+// `useState(parse)` and blanks the whole app for that URL, with nothing on
+// screen to say why. A URL is user input: `#/p/%/quality` is a typo, a
+// truncated paste or a link a chat client mangled, and the right answer to all
+// three is to render a project page for a slug that will simply not be found.
+// Query values need no equivalent — URLSearchParams already decodes them, and
+// tolerantly.
+const seg = (v: string): string => {
+  try { return decodeURIComponent(v); } catch { return v; }
+};
+
+export function parseHash(hash: string): Route {
+  const h = String(hash || '').replace(/^#/, '');
   if (h === '/settings' || h.startsWith('/settings')) return { name: 'settings' };
   if (h === '/timeline' || h.startsWith('/timeline')) return { name: 'timeline' };
   if (h === '/control' || h.startsWith('/control')) return { name: 'control' };
@@ -35,16 +54,26 @@ function parse(): Route {
   }
   // The public showcase — rendered without the token gate (read-only, its own key).
   const s = h.match(/^\/share\/([^/]+)\/([^/?]+)/);
-  if (s) return { name: 'share', slug: decodeURIComponent(s[1]), token: decodeURIComponent(s[2]) };
+  if (s) return { name: 'share', slug: seg(s[1]), token: seg(s[2]) };
   const [pathPart, queryPart] = h.split('?');
   const m = pathPart.match(/^\/p\/([^/]+)(?:\/([^/]+))?/);
   if (m) {
     const params = new URLSearchParams(queryPart || '');
+    // `hl` IS DECODED ONCE, BY URLSearchParams, and must not be decoded again.
+    // It was: `decodeURIComponent(params.get('hl'))`, which is a SECOND pass
+    // over an already-decoded string. A highlight carrying a literal `%` not
+    // followed by two hex digits then threw a URIError out of the router — out
+    // of `useState(parse)`, i.e. a blank screen for that URL and nothing in the
+    // UI to say why — and one carrying a real `%2F` came back with a slash it
+    // never had. The slug on the line below is different and DOES need the
+    // call: it comes off the PATH, which no URLSearchParams has touched.
     const hl = params.get('hl');
-    return { name: 'detail', id: decodeURIComponent(m[1]), tab: m[2], highlight: hl ? decodeURIComponent(hl) : undefined };
+    return { name: 'detail', id: seg(m[1]), tab: m[2], highlight: hl || undefined };
   }
   return { name: 'dashboard' };
 }
+
+const parse = (): Route => parseHash(window.location.hash);
 
 export function useRoute(): Route {
   const [route, setRoute] = useState<Route>(parse);
