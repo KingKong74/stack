@@ -53,7 +53,7 @@ import meow from 'meow';
 import WebSocket from 'ws';
 import { createUsageMeter } from './usage-meter.mjs';
 import { createPlanUsage } from './plan-usage.mjs';
-import { tmuxAvailable, validName, generateName, sessionArgv, sessionExists, killSession, clearFresh, listDetached, listStackSessions, listAutoSessions, markFresh, paneTail, reapDeadSessions, reapFreshSessions, reapIdleSessions, sendKeys, setKeep } from './tmux-session.mjs';
+import { tmuxAvailable, validName, generateName, sessionArgv, sessionExists, killSession, clearFresh, listDetached, listStackSessions, listAutoSessions, markFresh, paneTail, reapDeadSessions, reapFreshSessions, reapIdleSessions, sendKeys, setKeep, setSessionModel } from './tmux-session.mjs';
 import { detectPrompt } from './prompt-scan.mjs';
 import { parseAutoName, readActivity } from './auto-scan.mjs';
 import { agentScratchDir, agentClaudeArgs } from './agent-run.mjs';
@@ -62,6 +62,7 @@ import {
   availableProvidersLive, providerEnv, getProvider,
   loadPreferredProvider, savePreferredProvider,
   probeOmniRoute, resolveProviderKey, resolveHostValue,
+  sessionModelTag, describeModelTag,
 } from './model-switch.mjs';
 
 // The `stack` dispatcher, resolved from this file rather than PATH — see the
@@ -285,6 +286,12 @@ function pushDetached() {
       // Stopped, waiting on a human. null unless a permission prompt is
       // genuinely sitting at the end of the pane right now.
       blocked: detectPrompt(tail),
+      // #503 — what this session is talking to, PARSED here rather than in the
+      // browser. The vocabulary of a tag lives in model-switch.mjs, host-side,
+      // and shipping the raw string would put a second copy of it in the client
+      // — the mirrored-predicate failure this repo keeps paying for. null =
+      // unrecorded, and the screen must say so rather than assuming Claude.
+      model: describeModelTag(s.model),
     };
   });
   sendUplink({ t: 'detached', sessions: sessionsList });
@@ -746,6 +753,13 @@ function respawnWithProvider(sid, sess, providerKey, prevExitCode) {
   });
 
   sess.provider = providerKey;
+  // #503 — a switch-over is the one thing that legitimately moves a running
+  // session's model, so the tag moves with it. Fixed-at-spawn is the rule for
+  // what the BROWSER asks for; this is the host answering a usage limit, and a
+  // rail row still reading "Claude" afterwards would be stale, not stable.
+  sess.modelTag = sessionModelTag(providerKey);
+  if (sess.tmuxSession) setSessionModel(sess.tmuxSession, sess.modelTag);
+  sendUplink({ t: 'model', sid, model: describeModelTag(sess.modelTag) });
   sess.switchMode = null;
   sess.hitLimit = false;
   wireChild(sid, sess, child);
@@ -806,6 +820,7 @@ function startSession(msg) {
   let tmuxSession = null; // set when tmux is in use
   let reattached = false; // true when the named tmux session was already running
   let markNewSession = null; // set to the name when this call CREATES the session
+  let modelTag = ''; // #503 — the provider/model this session runs on ('' = unrecorded)
 
   if (msg.cmd === 'claude') {
     // The browser may ask for permission prompts to be skipped — a boolean
@@ -849,6 +864,14 @@ function startSession(msg) {
       // a different thing to be told. Asking after the spawn would always
       // answer yes.
       reattached = sessionExists(tmuxSession);
+      // #503 — what this tab is talking to. A session ALREADY RUNNING is asked
+      // rather than assumed: its provider was fixed when it was spawned and the
+      // gateway pref can have been flipped since, so computing a tag here would
+      // relabel a running session to something it is not. A new one gets the tag
+      // for what it is about to start on.
+      modelTag = reattached
+        ? (listStackSessions().find((x) => x.name === tmuxSession)?.model || '')
+        : sessionModelTag(msg.provider === 'omniroute' ? 'omniroute' : null);
       const shellCmd = `/bin/bash -lc "${claudeCmd}"`;
       argv = sessionArgv(tmuxSession, cwd, shellCmd);
       log(`session ${sid}: tmux session ${tmuxSession} (${reattached ? 're-attach' : 'new'})`);
@@ -859,6 +882,9 @@ function startSession(msg) {
       markNewSession = reattached ? null : tmuxSession;
     } else {
       // Degrade gracefully when tmux is absent — direct spawn, no persistence.
+      // The tag is still computed: there is no session to hang it on, but the
+      // browser asked what this tab is on and the answer is known either way.
+      modelTag = sessionModelTag(msg.provider === 'omniroute' ? 'omniroute' : null);
       argv = ['/bin/bash', '-lc', claudeCmd];
       log(`session ${sid}: tmux not available, running claude directly`);
     }
@@ -886,6 +912,9 @@ function startSession(msg) {
       if (sessionExists(name)) {
         clearInterval(tick);
         markFresh(name);
+        // #503 — same poll, same reason: tmux has nothing to hang an option on
+        // until the shim's `new-session -A` has actually landed.
+        setSessionModel(name, modelTag);
       } else if (tries >= 30) {
         clearInterval(tick);
         log(`session ${sid}: tmux session ${name} never appeared — not marked fresh, so the unused reaper will leave it alone`);
@@ -914,6 +943,7 @@ function startSession(msg) {
     idleTimer: null,
     hitLimit: false,  // set to true when LIMIT_RE fires on this session's output
     provider: null,   // non-null after a model switch (prevents re-triggering)
+    modelTag,         // #503 — what it is talking to ('' = unrecorded)
     switchMode: null, // non-null while awaiting user input for model selection
     child: null,      // set by wireChild
     outbox: null,     // set immediately below — it needs `sess` to ship into
@@ -928,7 +958,10 @@ function startSession(msg) {
   wireChild(sid, sess, child);
 
   const cwdLabel = cwd === ROOT ? '~' : '~/' + cwd.slice(ROOT.length + 1);
-  const readyFrame = { t: 'ready', sid, cwd: cwdLabel };
+  // #503 — the ready frame answers "what am I on" for a LIVE tab, so the rail
+  // does not have to wait for the next detached push (a minute away) to label a
+  // session somebody just opened. Same parsed shape, same null for unrecorded.
+  const readyFrame = { t: 'ready', sid, cwd: cwdLabel, model: describeModelTag(modelTag) };
   if (tmuxSession) {
     readyFrame.tmuxSession = tmuxSession;
     readyFrame.reattached = reattached;

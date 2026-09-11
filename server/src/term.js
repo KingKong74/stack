@@ -56,8 +56,13 @@ let detachedSessions = []; // [{ name, cwd, created, attached, keep, tail }]
 // name/cwd/created/attached/keep/tail); pruned when a name leaves the list.
 const detachedLabels = new Map(); // name -> label
 export const termDetached = () =>
-  detachedSessions.map(({ name, cwd, created, attached, keep, blocked }) => ({
+  detachedSessions.map(({ name, cwd, created, attached, keep, blocked, model }) => ({
     name, cwd, created, attached, keep, label: detachedLabels.get(name) || '',
+    // #503 — what the session is talking to, as the HOST read it off the tmux
+    // session a moment ago. null is UNRECORDED and is not the same claim as any
+    // model: a session started by hand carries no tag, and a row that quietly
+    // said "Claude" for it would be inventing the one fact this exists to show.
+    model: model || null,
     // …plus HOW LONG it has been waiting. The host reports what the prompt is,
     // not when it appeared — a pane read has no memory. The relay supplies the
     // clock by stamping the first push that carried this fingerprint, which is
@@ -95,6 +100,19 @@ const blockedShape = (b) => (b && typeof b.question === 'string' && typeof b.fin
       .map((o) => ({ n: Number(o?.n) || 0, label: String(o?.label || '').slice(0, 200) })),
     yes: Number(b.yes) || 0,
     fingerprint: b.fingerprint,
+  }
+  : null);
+
+// #503 — the provider/model tag the host parsed, narrowed and length-capped.
+// The daemon does the PARSING (model-switch.mjs owns what a tag means); this
+// only decides what may cross into the payload, the same job blockedShape does.
+// Anything malformed collapses to null, which renders as unrecorded — the
+// truthful answer, and the one that cannot be mistaken for a model.
+const modelShape = (m) => (m && typeof m.key === 'string' && m.key
+  ? {
+    key: String(m.key).slice(0, 40),
+    id: String(m.id || '').slice(0, 120),
+    label: String(m.label || m.key).slice(0, 60),
   }
   : null);
 
@@ -383,6 +401,10 @@ export function attachTerm(httpServer) {
             // An older daemon sends nothing, which reads as "not blocked" — the
             // truthful answer for a host that cannot see a block at all.
             blocked: blockedShape(s.blocked),
+            // #503 — an older daemon sends nothing, which reads as unrecorded:
+            // the truthful answer for a host that cannot say what a session is
+            // on, and deliberately NOT a default to the subscription.
+            model: modelShape(s.model),
           }));
         stampBlocked(detachedSessions);
         const alive = new Set(detachedSessions.map((s) => s.name));
@@ -494,7 +516,10 @@ export function attachTerm(httpServer) {
         const meta = termMeta.get(m.sid);
         if (meta) meta.tmux = m.tmuxSession;
       }
-      if (m.t === 'out' || m.t === 'ready' || m.t === 'err' || m.t === 'usage') send(browser, m);
+      // #503 — 'model' joins the allow-list: the daemon sends one when a
+      // session's provider MOVES under it (a usage-limit switch-over), which is
+      // the only time a live tab's answer changes without a new ready frame.
+      if (m.t === 'out' || m.t === 'ready' || m.t === 'err' || m.t === 'usage' || m.t === 'model') send(browser, m);
       if (m.t === 'exit') { send(browser, m); browser.close(); sessions.delete(m.sid); termMeta.delete(m.sid); broadcastStatus(); }
     });
     ws.on('close', () => {

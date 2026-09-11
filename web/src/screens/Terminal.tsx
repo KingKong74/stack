@@ -12,6 +12,7 @@ import {
   getAutopilotJobs, resumeAutopilotJob, hangupAutopilotJob, type AutopilotJob,
   getTerminalUsage, type TerminalUsageData,
   getDetachedSessions, killDetachedSession, keepSession, type DetachedSession,
+  type SessionModel,
   labelTerminalSessions,
   getTermTmuxName, setTermTmuxName, clearTermTmuxName,
   getTermOpenTabs, setTermOpenTabs,
@@ -130,7 +131,14 @@ const parseTok = (s: string): number => {
 // daemon's frames (they are multiplexed by sid and the relay forwards them
 // whole), and it is the only id that exists for EVERY session — a shell has no
 // tmux name, so keying names by tmux is why shells used to go unnamed.
-type Sess = { id: number; cwd: string; cmd: 'shell' | 'claude'; status: Status; note: string; tmux?: string; sid?: string };
+type Sess = {
+  id: number; cwd: string; cmd: 'shell' | 'claude'; status: Status; note: string; tmux?: string; sid?: string;
+  // #503 — what this session is talking to, as the HOST reported it. undefined
+  // = not answered yet (the ready frame has not landed); null = answered, and
+  // the answer is UNRECORDED. The two are different and the row draws them
+  // differently: nothing, versus a chip that says so.
+  model?: SessionModel | null;
+};
 
 // #487 — the rail groups sessions by TOOL, as the Mission Control design does.
 //
@@ -148,6 +156,39 @@ const TOOL_GROUPS: { key: Sess['cmd']; name: string; mark: string }[] = [
   { key: 'claude', name: 'Claude Code', mark: 'C' },
   { key: 'shell', name: 'Shell', mark: '$' },
 ];
+// #503 — WHAT A SESSION IS TALKING TO, as a chip on its row.
+//
+// THREE STATES, and collapsing any two of them is the whole trap:
+//   a model      — the host read a tag off the session and this is it
+//   UNRECORDED   — the host looked and there is no tag (a session started by
+//                  hand, or by a daemon predating the option). Drawn as `model ?`
+//                  and never as Claude: defaulting it to the subscription would
+//                  state a fact nobody established, the NULL-verdict lie.
+//   not asked yet— `undefined`, before the ready frame lands. Draws NOTHING,
+//                  because a chip that says `model ?` for half a second and then
+//                  changes its mind is worse than a chip that waits.
+//
+// Shells never get one: a shell is not on a model, and an empty chip on every
+// shell row would make the column mean nothing.
+function ModelChip({ model, show }: { model?: SessionModel | null; show: boolean }) {
+  if (!show || model === undefined) return null;
+  if (!model) {
+    return (
+      <span className="mdl none"
+        title="Stack cannot say what this session is running on — it carries no model tag. Sessions started by hand (ssh + stack term), or before the host recorded this, have none.">
+        model ?
+      </span>
+    );
+  }
+  return (
+    <span className={`mdl ${model.key === 'anthropic' ? 'own' : 'alt'}`}
+      title={`${model.label}${model.id ? ` · ${model.id}` : ''}${
+        model.key === 'omniroute' ? ' — routed through the local OmniRoute gateway' : ''}`}>
+      {model.label}
+    </span>
+  );
+}
+
 type Handle = { sendText: (s: string) => void; reconnect: () => void; focus: () => void };
 
 // Mounted once by App and never unmounted (#137): sessions, sockets and
@@ -1566,6 +1607,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                   onStatus={(st, note) => setStatus(s.id, st, note)}
                   onUsage={setUsage}
                   onTmux={(name) => noteTmux(s.id, s.cwd, name)}
+                  onModel={(mdl) => setSessions((cur) => cur.map((x) => (x.id === s.id ? { ...x, model: mdl } : x)))}
                   onSid={(sid) => setSessions((cur) => cur.map((x) => (x.id === s.id ? { ...x, sid } : x)))}
                   onExit={(name) => noteTmuxEnded(s.cwd, name)}
                   onOutput={(bytes) => noteOutput(s.id, bytes)}
@@ -1785,6 +1827,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                                     what is true per row, and it is the thing
                                     you actually need when two sessions wear
                                     similar names. */}
+                                <ModelChip model={x.model} show={x.cmd === 'claude'} />
                                 <span className="cw">{x.cwd || '~'}</span>
                               </div>
                             );
@@ -1842,6 +1885,10 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                                       <span className="d" />
                                     </span>
                                   )}
+                                  {/* Every idle row is a claude session by
+                                      construction (the host lists stack-term-*
+                                      only), so the chip always applies here. */}
+                                  <ModelChip model={d.model ?? null} show />
                                 </span>
                                 {nm && <span className="t">{nm}</span>}
                               </button>
@@ -2161,7 +2208,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
 
 // One tab: an xterm instance + its websocket, kept mounted (hidden when
 // inactive) so the scrollback survives tab switches.
-function TermSession({ sess, visible, focused, fontSize, onStatus, onUsage, onTmux, onSid, onExit, onOutput, onCopied, register }: {
+function TermSession({ sess, visible, focused, fontSize, onStatus, onUsage, onTmux, onModel, onSid, onExit, onOutput, onCopied, register }: {
   sess: { id: number; cwd: string; cmd: 'shell' | 'claude'; tmux?: string };
   // Rendered on screen at all (it may be one of several panes)...
   visible: boolean;
@@ -2175,6 +2222,9 @@ function TermSession({ sess, visible, focused, fontSize, onStatus, onUsage, onTm
   onStatus: (s: Status, note: string) => void;
   onUsage: (u: TermUsage) => void;
   onTmux: (name: string) => void;
+  // #503 — what the host says this session is running on. Arrives on the ready
+  // frame, and again on a 'model' frame if a usage-limit switch-over moves it.
+  onModel: (m: SessionModel | null) => void;
   onSid: (sid: string) => void;
   onExit: (tmuxName: string | null) => void;
   // Bytes this session has emitted. Read for ONE purpose: holding the first
@@ -2292,6 +2342,7 @@ function TermSession({ sess, visible, focused, fontSize, onStatus, onUsage, onTm
           // one id the labeller keys on.
           sid?: string;
           tmuxSession?: string;
+          model?: SessionModel | null;
           tokens?: number; resetAt?: number; resetLabel?: string; sched?: { runDate: string; atTime: string };
           totalTokens?: number; plan?: TermUsage['plan'];
         };
@@ -2308,9 +2359,18 @@ function TermSession({ sess, visible, focused, fontSize, onStatus, onUsage, onTm
         }
         else if (m.t === 'ready') {
           if (m.tmuxSession) { tmuxRef.current = m.tmuxSession; onTmux(m.tmuxSession); }
+          // Always reported, including when it is null: "the host does not know
+          // what this is on" is an answer the rail must be able to draw, and a
+          // daemon too old to send the field at all leaves it undefined, which
+          // is the third state — not yet answered.
+          if (m.model !== undefined) onModel(m.model);
           onStatus('live', m.cwd || '');
           if (focused) term.focus();
         }
+        // #503 — the session's provider moved under it (a usage-limit
+        // switch-over is the only thing that does this). The rail would
+        // otherwise keep showing what it started on until the next host push.
+        else if (m.t === 'model') onModel(m.model ?? null);
         else if (m.t === 'exit') {
           // An exit while attached = the underlying process really ended (a
           // detach kills only the shim and no frame reaches us) — let the

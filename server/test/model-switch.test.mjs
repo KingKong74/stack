@@ -40,6 +40,8 @@ const {
   keySources,
   omniRouteBaseUrl,
   OMNIROUTE_DEFAULT_BASE_URL,
+  sessionModelTag,
+  describeModelTag,
 } = await import('../../terminal/model-switch.mjs');
 
 try {
@@ -169,6 +171,49 @@ try {
     omniRouteBaseUrl(), 'http://10.0.0.5:20128');
   check('keyless: the override reaches providerEnv',
     providerEnv('omniroute')?.ANTHROPIC_BASE_URL, 'http://10.0.0.5:20128');
+
+  // ---- #503 · the session model tag ------------------------------------
+  // What a rail row says a session is talking to. The pair is tested TOGETHER
+  // because the whole design is that one writes and the other reads, possibly
+  // across daemon versions — a round trip that does not survive an unknown tag
+  // is the bug this shape exists to prevent.
+  writeFileSync(stackEnvPath, '', 'utf8');
+  check('tag: no provider is the account subscription, spelled out',
+    sessionModelTag(null), 'anthropic:subscription');
+  check('tag: the gateway carries the free combo by default',
+    sessionModelTag('omniroute'), 'omniroute:auto');
+  // A pinned model is what that session is on, and the tag has to say so —
+  // this is the number the whole feature exists to make visible.
+  writeFileSync(stackEnvPath, 'OMNIROUTE_MODEL=some-pinned-model\n', 'utf8');
+  check('tag: OMNIROUTE_MODEL is what the tag records',
+    sessionModelTag('omniroute'), 'omniroute:some-pinned-model');
+  writeFileSync(stackEnvPath, 'DEEPSEEK_API_KEY=sk-test-not-a-real-key\n', 'utf8');
+  check('tag: a keyed provider records its own model',
+    sessionModelTag('deepseek'), 'deepseek:deepseek-chat');
+
+  // Reading one back. NULL IS THE ANSWER FOR NO TAG, and it must never fall
+  // through to the subscription: that would state a fact nobody established.
+  check('describe: an empty tag is null, not Claude', describeModelTag(''), null);
+  check('describe: undefined is null too', describeModelTag(undefined), null);
+  check('describe: the subscription reads back as Claude',
+    describeModelTag('anthropic:subscription'), { key: 'anthropic', id: 'subscription', label: 'Claude' });
+  check('describe: the gateway reads back with its label',
+    describeModelTag('omniroute:auto'), { key: 'omniroute', id: 'auto', label: 'OmniRoute' });
+  // The cross-version case: a tag naming a provider this build has never heard
+  // of comes back AS ITSELF. A reader that dropped it would erase the one fact
+  // the row is there to carry.
+  check('describe: an unknown provider survives as itself',
+    describeModelTag('something-new:m1'), { key: 'something-new', id: 'm1', label: 'something-new' });
+  check('describe: a bare key with no model still describes',
+    describeModelTag('omniroute'), { key: 'omniroute', id: 'auto', label: 'OmniRoute' });
+  // It comes off a tmux option, so it is treated as outside input.
+  check('describe: control characters are stripped',
+    describeModelTag('omni\u0007route:au\u0000to'), { key: 'omniroute', id: 'auto', label: 'OmniRoute' });
+  // 120 for the whole tag, of which 'omniroute:' is ten.
+  check('describe: a runaway value is capped',
+    describeModelTag(`omniroute:${'x'.repeat(400)}`).id.length, 110);
+  check('describe: a colon with nothing before it is null',
+    describeModelTag(':auto'), null);
 } finally {
   rmSync(fakeHome, { recursive: true, force: true });
 }

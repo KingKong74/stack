@@ -690,12 +690,25 @@ export async function termAssist(prompt: string, cwd: string): Promise<TermAssis
 // comes from the relay's cache of the daemon's advertisements; killing goes
 // back through the same channel, and the daemon refuses names that aren't
 // actually detached.
+// (#503) WHAT A SESSION IS TALKING TO. The host parses the tag and ships this
+// shape; the client never parses one itself, or the vocabulary would live in two
+// places with nothing holding them in step. `key` is the provider ('anthropic'
+// for the account's own subscription, 'omniroute' for the gateway), `id` the
+// model, `label` what to draw.
+//
+// NULL MEANS UNRECORDED AND MUST BE DRAWN AS SUCH — a session started by hand,
+// or one from a daemon that predates the tag, carries nothing, and rendering
+// that as Claude states a fact nobody established. Same rule as a NULL
+// review_verdict: absence is absence, not good news.
+export interface SessionModel { key: string; id: string; label: string }
+
 export interface DetachedSession {
   name: string; cwd: string; created: number;
   attached?: boolean;  // a client holds it elsewhere (another browser / laptop ssh) — attach mirrors it
   label?: string;      // ✧ Gemini's take on what it's doing
   keep?: boolean;      // #292 — pinned: the host's idle reaper leaves it alone
   blocked?: BlockedPrompt | null;  // stopped on a permission prompt right now
+  model?: SessionModel | null;     // #503 — what it is running on; null = unrecorded
 }
 
 // (#486) The OmniRoute gateway, as the HOST sees it — this process cannot ask

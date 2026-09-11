@@ -2352,6 +2352,22 @@ a.tab { display: inline-block; }
   background: var(--status-warning-fg);
   animation: term-ask 1.6s ease-in-out infinite;
 }
+/* #503 — THE MODEL CHIP, on a live rail row and on an idle one. Muted by
+   default: it states a standing fact about a session, not a change, so it must
+   not compete with the status dot or the "asking" pill, which are things you
+   act on. `alt` — anything that is NOT the account's own subscription — takes
+   the accent, because that is the fact worth spotting down a column of rows.
+   `none` is UNRECORDED and is drawn as a dashed outline: absence, not a
+   warning, and visibly not a model name. */
+.tcg-row .mdl, .tci-main .mdl {
+  flex: none; font-family: var(--mono); font-size: 9px; line-height: 1.6;
+  padding: 0 4px; border-radius: 5px; border: 1px solid var(--line-3);
+  color: var(--fainter); background: transparent; white-space: nowrap;
+}
+.tcg-row .mdl.alt, .tci-main .mdl.alt {
+  color: var(--accent-text); border-color: var(--accent-tint-border); background: var(--accent-tint);
+}
+.tcg-row .mdl.none, .tci-main .mdl.none { border-style: dashed; }
 .tcg-btn { flex: none; border: 0; background: transparent; cursor: pointer; font-size: 10px; padding: 0 2px; color: var(--fainter); }
 .tcg-btn:hover, .tcg-btn.on { color: var(--accent-text); }
 .tcg-note { font-size: 10px; line-height: 1.5; color: var(--fainter); padding: 6px 2px 0; border-top: 1px solid var(--line-2); }

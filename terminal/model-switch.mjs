@@ -307,3 +307,53 @@ export function loadPreferredProvider() {
 export function savePreferredProvider(key) {
   try { writeFileSync(PREF_FILE, JSON.stringify({ preferred: key }), 'utf8'); } catch { /* non-fatal */ }
 }
+
+// ---- what a session is running on (#503) ------------------------------------
+// One short string, written onto the tmux session at spawn and read back on
+// every push, so a rail row can say which model a tab is talking to.
+//
+// TWO FUNCTIONS WITH A SEAM BETWEEN THEM, on purpose. `sessionModelTag` is what
+// gets WRITTEN, once, by the daemon that spawned the session. `describeModelTag`
+// is what READS one back — possibly a newer build reading a tag an older one
+// wrote, or the reverse, since a tmux session outlives the daemon that made it.
+// So the reader never assumes its own vocabulary: an unknown provider key comes
+// back as itself rather than as nothing.
+//
+// NULL IS THE HONEST ANSWER FOR "NO TAG", AND EVERY CALLER MUST RENDER IT AS
+// UNRECORDED — never as Claude. A session started by hand (ssh + `stack term`),
+// or by a daemon predating this, carries no option at all, and a reader that
+// quietly defaults such a row to the account's own subscription states a fact
+// nobody established. Same rule as a NULL review_verdict: absence is not good
+// news, it is absence.
+export function sessionModelTag(providerKey) {
+  // No provider = the account's own subscription, with no gateway in front. It
+  // is spelled out rather than left blank BECAUSE blank means unrecorded here,
+  // and "we know it is the subscription" and "we do not know" are different
+  // answers that must not share a spelling.
+  const p = providerKey ? getProvider(providerKey) : null;
+  if (!p) return 'anthropic:subscription';
+  // The gateway's model is whatever OMNIROUTE_MODEL pins, or the free combo.
+  // Resolved at SPAWN because that is when it is fixed for this session: the
+  // env line can change afterwards and this session will not have moved.
+  if (p.keyless) return `${p.key}:${resolveHostValue('OMNIROUTE_MODEL').key || p.model}`;
+  return `${p.key}:${p.model}`;
+}
+
+// Read a tag back into something renderable, or null when there is nothing to
+// read. Defensive about its input: the value arrives from a tmux option, which
+// is outside this process and survives daemon versions, so it is length-capped
+// and stripped of control characters before it is handed to anything that draws.
+export function describeModelTag(tag) {
+  const raw = String(tag || '').replace(/[\x00-\x1f\x7f]/g, '').trim().slice(0, 120);
+  if (!raw) return null;
+  const cut = raw.indexOf(':');
+  const key = (cut < 0 ? raw : raw.slice(0, cut)).trim();
+  const id = (cut < 0 ? '' : raw.slice(cut + 1)).trim();
+  if (!key) return null;
+  // 'anthropic' is not in PROVIDERS and should not be: that list is the
+  // ALTERNATIVES a limit prompt can offer, and the subscription is what it is
+  // offering an alternative TO.
+  if (key === 'anthropic') return { key, id: id || 'subscription', label: 'Claude' };
+  const p = getProvider(key);
+  return { key, id: id || p?.model || '', label: p?.label || key };
+}

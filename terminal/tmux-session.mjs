@@ -173,6 +173,27 @@ export function clearFresh(name) {
   spawnSync('tmux', ['set-option', '-t', `=${name}:`, '-u', '@stack-fresh'], { stdio: 'ignore' });
 }
 
+// (#503) WHAT THIS SESSION IS TALKING TO — the provider and model tag, written
+// once at spawn. A third tmux user option, for the third time and the same
+// reason: the state sits on the thing it describes, so a daemon restart, a
+// reload or a re-attach from another device cannot drift from it, and it dies
+// exactly when the session does. The daemon's own `sess.provider` map could not
+// do this job — it is keyed by socket id, it is lost on restart, and the tmux
+// session outlives it.
+//
+// The VALUE is opaque here on purpose: model-switch.mjs owns what a tag means
+// (sessionModelTag / describeModelTag) and this file owns only where it lives.
+// Importing that vocabulary into a tmux wrapper would put two files in charge of
+// one format with nothing holding them in step.
+//
+// Best-effort, like markFresh: a session that never gets a tag reads as
+// UNRECORDED, which is the truthful answer and the safe direction — nothing
+// acts on this, it only draws.
+export function setSessionModel(name, tag) {
+  if (!tag) return;
+  spawnSync('tmux', ['set-option', '-t', `=${name}:`, '@stack-model', String(tag)], { stdio: 'ignore' });
+}
+
 // List every stack-term-* tmux session on the host — the web daemon's own and
 // any started by hand (ssh + `stack term`), with whether a client is attached
 // anywhere. Only stack-term-* names: autopilot/test sessions are not the
@@ -181,13 +202,13 @@ export function clearFresh(name) {
 export function listStackSessions() {
   const r = spawnSync(
     'tmux',
-    ['list-sessions', '-F', '#{session_name}\t#{session_attached}\t#{session_created}\t#{session_path}\t#{session_activity}\t#{@stack-keep}\t#{@stack-fresh}'],
+    ['list-sessions', '-F', '#{session_name}\t#{session_attached}\t#{session_created}\t#{session_path}\t#{session_activity}\t#{@stack-keep}\t#{@stack-fresh}\t#{@stack-model}'],
     { encoding: 'utf8' },
   );
   if (r.status !== 0) return []; // no server running = no sessions
   const out = [];
   for (const line of r.stdout.split('\n')) {
-    const [name, attached, created, path, activity, keep, fresh] = line.split('\t');
+    const [name, attached, created, path, activity, keep, fresh, model] = line.split('\t');
     // One strict pattern (#218: #199) instead of the old two-step
     // validName() + startsWith() pair, whose rules could drift apart.
     if (typeof name !== 'string' || !/^stack-term-[A-Za-z0-9_-]{1,64}$/.test(name)) continue;
@@ -205,6 +226,12 @@ export function listStackSessions() {
       // The fresh mark — see markFresh above. Nobody has ever been seen
       // attached to this session since the daemon created it.
       fresh: fresh === '1',
+      // #503 — the provider/model tag, raw. '' means UNRECORDED (a session
+      // started by hand, or by a daemon that predates the option), which is a
+      // different answer from any model and must stay distinguishable all the
+      // way to the screen. tmux prints an unset user option as the empty
+      // string, so there is nothing to normalise here.
+      model: typeof model === 'string' ? model : '',
     });
   }
   return out;
