@@ -306,6 +306,18 @@
 
   --chip-ink: var(--grey-300);
 
+  /* THE TERMINAL'S CANVAS, and the one tone in this file that is NOT an alias
+     onto layer 1 — because it is not a palette decision at all. It is the
+     ground xterm paints its own cells on, matched to mintty so the app's
+     chrome does not frame the pane in a slightly different black. The ramp
+     bottoms out at --grey-1000 (#0A0B0C), which is near-black and reads as a
+     tint against the real thing.
+     It is named here rather than written inline because that is this file's
+     rule with no exceptions — "adding a tone still means adding it here" — and
+     an unexplained #000 in the middle of the terminal block is indistinguishable
+     from one somebody typed in a hurry. Both of the ones beside it were. */
+  --terminal-canvas: #000000;
+
   --panel: var(--surface-raised);
 
   /* the feature table's column track, shared by its header and every row so
@@ -2574,10 +2586,27 @@ a.tab { display: inline-block; }
 .term-lanes { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11px; color: var(--muted); }
 /* the canvas keeps its git-bash colours — black, mintty palette (25b changed
    the chrome around it, never the box itself). The tab strip and the usage
-   strip moved off this column, so it gets that height back. */
-.term-holder.gitbash { background: #000; border-radius: 14px; height: calc(100vh - 210px); }
-.term-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; color: #8a8a8a; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; }
-.term-empty .dim { color: #666; font-size: 12px; }
+   strip moved off this column, so it gets that height back.
+
+   The canvas black is `--terminal-canvas`, declared up in :root beside the
+   other aliases with the reasoning for why it is pure black and not the ramp's
+   own near-black. Everything drawn ON this ground is a token too, now. */
+.term-holder.gitbash { background: var(--terminal-canvas); border-radius: 14px; height: calc(100vh - 210px); }
+/* THE EMPTY STATE'S TWO LINES SIT ON TWO DIFFERENT GROUNDS, which is what made
+   the old #8a8a8a / #666 pair wrong twice over rather than once.
+
+   With no session open at all this is the bare `.term-holder.gitbash`, so the
+   ground is the #000 canvas above. Inside a shape's spare pane it is
+   `.term-pane.empty .term-holder`, which repaints to --surface (#242528) at
+   higher specificity. Both had to be measured, and #666 failed both: 3.66:1 on
+   black and 2.67:1 on the card, at 12px, for the words a reader is given when
+   there is nothing else on the screen to read.
+
+   Secondary over tertiary keeps the two lines apart — 10.7:1 and 7.0:1 on the
+   canvas, 7.8:1 and 5.1:1 on the card — where one token for both would have
+   flattened the hierarchy the `.dim` class exists to draw. */
+.term-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; color: var(--text-secondary); font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; }
+.term-empty .dim { color: var(--text-tertiary); font-size: 12px; }
 
 /* the usage strip — today's tokens against the daily budget, limit reset + booking (#111) */
 /* the usage strip — above the canvas, where the machine's day belongs */
