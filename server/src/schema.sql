@@ -1433,3 +1433,36 @@ ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS sprint_id INTEGER
 -- integer here would have every sort site writing its own COALESCE.
 ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS sprint_rank INTEGER NOT NULL DEFAULT 0;
 CREATE INDEX IF NOT EXISTS roadmap_sprint_idx ON roadmap_items (sprint_id, sprint_rank, id);
+
+-- #498 — A TEST A SESSION SUGGESTED, and the two things that make it one.
+--
+-- It is a ROADMAP ROW and not a table of its own, deliberately. A suggestion
+-- has to be held from the overnight runner until a human signs it off, deduped
+-- by fingerprint, tombstoned when dismissed, promotable onto the board and
+-- keepable onto the Roadmap — every one of which roadmap_items already does,
+-- and every one of which a second table would have to grow its own copy of.
+-- What is genuinely new is only what the row is ABOUT, so that is all these
+-- columns hold.
+--
+-- `test_kind` is NULL on every row that is not a test suggestion, which is
+-- nearly all of them, and NULL is the only value that means "ordinary row" —
+-- the two real values are:
+--   'bug'      a test that would have caught a defect this session found. Its
+--              target is the bug key it would have caught (BUG-12), or '' when
+--              the session described the defect without filing one.
+--   'function' a check on a NAMED function, route or behaviour. Its target is
+--              that name — `GET /api/health`, `computeProgress` — and it is
+--              what makes the suggestion actionable rather than a wish: the
+--              Quality tab's composer can be opened straight onto it.
+--
+-- Two columns and not one encoded string ('bug:BUG-12'), because this schema
+-- keeps saying not to build a second truth inside a free-text field, and the
+-- one place it still does (a merge job's branch inside `detail`) is filed in
+-- CLAUDE.md as a gotcha rather than as a pattern.
+--
+-- NOT a new `source`. The source stays 'hook' — a session's checkpoint read it
+-- off this push, which is exactly what 'hook' means — so the approval gate
+-- (#359), `homeOf` and the Auto-ideas pane all keep working with no changes and
+-- no new value for three packages to learn.
+ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS test_kind   TEXT;
+ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS test_target TEXT;

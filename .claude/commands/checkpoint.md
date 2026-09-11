@@ -61,6 +61,7 @@ Do the following:
      },
      "extract": {
        "bugs": [{ "title": "<bug found/introduced>", "severity": "critical|high|medium|low" }],
+       "tests": [{ "title": "<the test that is missing>", "kind": "bug|function", "target": "<BUG-12, or GET /api/health>" }],
        "built": [{ "item": 381, "note": "<what actually landed, where it lives, how it was verified>" }]
      }
    }
@@ -82,6 +83,41 @@ Do the following:
    card. The next session reads them in its SessionStart block exactly as
    before — they simply stop becoming tracker rows that someone has to triage.
    Put the same sentences there that you would have put here.
+
+   **`tests` — the checks this session showed were missing (#498).** These land
+   in **For you → Auto-ideas**, held from the overnight runner, where the owner
+   keeps, promotes or dismisses them like anything else in that pane.
+
+   This is the one thing `next_steps` is not, and the distinction is the whole
+   reason it is switched on while that stays off: a next-step is unbounded and
+   is a matter of taste, so it became a card nobody had agreed to. A missing
+   test is bounded by what actually broke this session, and it turns into a real
+   check on the Quality tab rather than into more planning.
+
+   Two kinds, and the kind is required — an entry without one is dropped rather
+   than guessed at:
+
+   - `"kind": "bug"` — **a test that would have caught a defect.** Send it when
+     something was broken this session, whether you fixed it or filed it.
+     `target` is the bug key if one was filed (`"BUG-12"`), and may be left
+     empty if you only described the defect. **A suggestion naming a bug that
+     already has a check linked to it is dropped by the server**, so you never
+     have to check first — but do not send one for a defect that was never real.
+   - `"kind": "function"` — **a check on a NAMED route, function or behaviour
+     that nothing watches.** `target` is that name: `"GET /api/health"`,
+     `"computeProgress"`, `"POST /api/projects/:slug/checks/run"`. A target is
+     what makes this actionable rather than a wish, so write the real name —
+     "the API" is not a target.
+
+   **At most six, and send fewer.** They are capped at six server-side and the
+   pane is read top-down by a person. Six real gaps is a lot; twenty is padding,
+   and padding is what got `next_steps` switched off. Send `[]` when this
+   session showed nothing missing — a session that only read code, or one whose
+   work was already covered, has nothing to put here and should not invent any.
+
+   The poster prints a `tests:` line saying how many actually landed. Fewer than
+   you sent is normal: duplicates by title fingerprint, ones previously
+   dismissed, and bugs a check already covers are all skipped silently.
 
    **`built` — the board row for what you just built.** Everything else in
    `extract` proposes work for later; this one records work that has landed.

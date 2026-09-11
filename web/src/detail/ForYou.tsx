@@ -85,6 +85,15 @@ import { patchRoadmapItem, deleteRoadmapItem } from '../store';
 
 type Tone = 'info' | 'danger' | 'success' | 'warning' | 'neutral';
 
+// #498 — HOW A SUGGESTED TEST READS ON ITS ROW. Two kinds, and the difference
+// is worth drawing rather than flattening to one "test" chip: one is a gap
+// something already fell through, the other is a part of the app nothing
+// watches. The first is the one you act on today.
+const TEST_META: Record<'bug' | 'function', { label: string; icon: KitIconName; tone: Tone }> = {
+  bug: { label: 'would have caught', icon: 'circle-alert', tone: 'danger' },
+  function: { label: 'nothing checks', icon: 'circle-check', tone: 'success' },
+};
+
 /* ---------- the kit's sample rows ---------- */
 
 const RESUME = {
@@ -716,6 +725,8 @@ function AutoPane({ slug, items, onRefresh, onEdit, highlightId }: {
         session for work it was doing. Nothing here is on the board or the Roadmap, and the
         overnight runner leaves all of it alone until you answer. <b>Keep</b> files it on the
         Roadmap as an idea; <b>Promote</b> puts it on the board as work.
+        {' '}Rows marked <b>test</b> are checks a session thought were missing (#498) — one kind for
+        a defect that got through, one for a route nothing watches.
       </div>
 
       {err && <div className="km-err" role="alert">{err}</div>}
@@ -729,11 +740,16 @@ function AutoPane({ slug, items, onRefresh, onEdit, highlightId }: {
         const src = it.source === 'hook'
           ? 'read off a push'
           : `opened by ${it.flySession || 'a session'}`;
+        // A SUGGESTED TEST WEARS ITS OWN GLYPH, because it is answered
+        // differently from everything else in this queue: an idea is kept or
+        // promoted, a test is WRITTEN, and the row says which kind of answer it
+        // is waiting for before you read the title.
+        const t = it.testKind ? TEST_META[it.testKind] : null;
         return (
           <div className={`ai-row${on ? ' open' : ''}`} key={it.id} data-hl={it.id}
             onClick={() => { setOpen(on ? null : it.id); setConfirming(null); }}>
-            <span className={`ai-ico tone-${it.source === 'hook' ? 'info' : 'warning'}`}>
-              <KitIcon name={it.source === 'hook' ? 'arrow-up-right' : 'terminal'} size={13} />
+            <span className={`ai-ico tone-${t ? t.tone : it.source === 'hook' ? 'info' : 'warning'}`}>
+              <KitIcon name={t ? t.icon : it.source === 'hook' ? 'arrow-up-right' : 'terminal'} size={13} />
             </span>
             <div className="ai-body">
               <div className="ai-top">
@@ -744,6 +760,16 @@ function AutoPane({ slug, items, onRefresh, onEdit, highlightId }: {
               <div className="ai-meta">
                 <span className="ai-src">#{it.id}</span>
                 <span className="ai-signal">{src}</span>
+                {/* WHAT IT WOULD TEST, not just that it is a test. A target is
+                    the difference between a suggestion and a wish — it is what
+                    the Quality tab's composer would open onto — so an empty one
+                    says so rather than rendering an empty chip. A session may
+                    describe a defect it never filed, and that is a real state. */}
+                {t && (
+                  <span className={`k-tag ${t.tone}`} title="A test this session suggested">
+                    test · {t.label}{it.testTarget.trim() ? ` ${it.testTarget}` : '…'}
+                  </span>
+                )}
                 {it.area.trim() && <span className="k-tag">{it.area}</span>}
                 <span className="k-tag" style={{ color: p.color }} title={`Priority — ${p.label}`}>
                   {p.glyph} {p.short}

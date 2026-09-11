@@ -90,7 +90,7 @@ function tmuxSession() {
   const body = {
     project,
     session,
-    extract: input.extract || { bugs: [], next_steps: [] },
+    extract: input.extract || { bugs: [], next_steps: [], tests: [] },
   };
 
   const result = await postIngest(body);
@@ -113,6 +113,18 @@ function tmuxSession() {
     if (built.created) parts.push(`${built.created} row(s) filed`);
     if (built.missed) parts.push(`${built.missed} id(s) NOT on this board — nothing was written for them`);
     logStderr(`built: ${parts.join(', ')}`);
+  }
+
+  // #498 — and what the `tests` block filed, for the same reason: a session
+  // that sent six suggestions and sees two filed has learnt something real
+  // (four were already tracked, dismissed before, or already covered by a
+  // check), where a silent success would have it believe all six are waiting.
+  const tests = result.body?.tests;
+  const sentTests = Array.isArray(body.extract?.tests) ? body.extract.tests.length : 0;
+  if (sentTests) {
+    const made = tests?.created || 0;
+    logStderr(`tests: ${made} of ${sentTests} suggestion(s) filed into For you → Auto-ideas`
+      + (made < sentTests ? ' — the rest were already tracked, dismissed before, or already covered' : ''));
   }
   process.exit(0);
 })();

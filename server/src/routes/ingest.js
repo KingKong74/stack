@@ -65,6 +65,39 @@ function asBugCandidates(v) {
 }
 
 // Candidate next-step list off the wire: [{ title, priority }].
+// #498 — A TEST A SESSION SUGGESTED, in the two kinds it is allowed to be.
+//
+// WHY THIS IS ON WHEN `next_steps` IS OFF. `next_steps` was switched off in the
+// checkpoint command because every follow-up a session named became a held
+// roadmap row, and held rows were drawn on the BOARD: four cards a session,
+// every session, and a board that looked busy with work nobody had chosen.
+// #496 moved held, unworked rows off the board entirely and into For you →
+// Auto-ideas, a triage pane whose whole job is answering them — so the reason
+// that door was shut is gone. This is the narrow first thing back through it:
+// not "what should we do next", which is unbounded and is prose on the resume
+// card, but "what would have caught this", which is bounded by what actually
+// broke and turns into a real check on the Quality tab.
+//
+// CAPPED AT SIX, well under the 25 `next_steps` allowed. A session that has
+// found six things worth testing has found plenty; one that names twenty is
+// padding, and the pane it lands in is read top-down by a human.
+const TEST_KINDS = ['bug', 'function'];
+function asTestCandidates(v) {
+  if (!Array.isArray(v)) return [];
+  return v
+    .map((t) => ({
+      title: str(t?.title, 300),
+      // An unrecognised kind is NOT guessed at and NOT defaulted — the row is
+      // dropped below. A suggestion whose kind nobody understands cannot be
+      // rendered honestly and cannot be acted on.
+      kind: TEST_KINDS.includes(String(t?.kind || '').trim()) ? String(t.kind).trim() : '',
+      target: str(t?.target, 200),
+      bucket: oneOf(t?.priority, BUCKETS, BUCKET_DEFAULT),
+    }))
+    .filter((t) => t.title && t.kind)
+    .slice(0, 6);
+}
+
 function asStepCandidates(v) {
   if (!Array.isArray(v)) return [];
   return v
@@ -127,6 +160,7 @@ function asBuiltCandidates(v) {
  *   extract: {
  *     bugs?: [{ title, severity }],
  *     next_steps?: [{ title, priority }],
+ *     tests?: [{ title, kind: 'bug'|'function', target?, priority? }],  // #498
  *     built?: [{ item?, title?, note, bucket?, area? }]   // #174 — see below
  *   }
  * }
@@ -238,6 +272,7 @@ ingest.post('/', async (req, res) => {
 
   const bugCandidates = asBugCandidates(extract.bugs);
   const stepCandidates = asStepCandidates(extract.next_steps);
+  const testCandidates = asTestCandidates(extract.tests);
   const builtCandidates = asBuiltCandidates(extract.built);
 
   const client = await pool.connect();
@@ -456,6 +491,70 @@ ingest.post('/', async (req, res) => {
       }
     }
 
+    // --- 4b. Land the tests a session suggested (#498) ---
+    //
+    // Same landing as the roadmap items below — held, fingerprint-deduped,
+    // tombstone-honouring — with two additions that are the whole point of the
+    // feature:
+    //
+    //  • A `bug`-kind suggestion naming a bug A CHECK ALREADY COVERS is
+    //    DROPPED. The one thing that would make this pane worth switching off
+    //    again is it nagging about work already done, and #278's bug↔check link
+    //    is the record of exactly that. A suggestion naming no bug, or a bug
+    //    nothing covers, still lands.
+    //  • `test_kind` / `test_target` ride along, because what a suggestion is
+    //    ABOUT is what makes it actionable — the Quality tab can open its
+    //    composer straight onto the named route.
+    let createdTests = 0;
+    {
+      const seen = new Set();
+      for (const cand of testCandidates) {
+        const fp = fingerprint(cand.title);
+        if (!fp || seen.has(fp)) continue;
+        seen.add(fp);
+        if (await dismissed('roadmap', fp)) continue;
+
+        // Already covered? Only asks when the suggestion named a bug key — a
+        // free-text target is not a key and must not be matched loosely
+        // against one.
+        if (cand.kind === 'bug' && /^BUG-\d+$/i.test(cand.target)) {
+          const covered = await client.query(
+            `SELECT 1 FROM bugs WHERE project_id = $1 AND upper(bug_key) = upper($2)
+                AND check_id IS NOT NULL LIMIT 1`,
+            [projectId, cand.target]
+          );
+          if (covered.rows.length) continue;
+        }
+
+        const existing = await client.query(
+          `SELECT id FROM roadmap_items WHERE project_id=$1 AND fingerprint=$2 AND source='hook'`,
+          [projectId, fp]
+        );
+        if (existing.rows.length) {
+          // A re-push of the same suggestion refreshes its stamp so it sorts to
+          // the top of the pane again, and RE-STATES what it is about: a
+          // session that has since filed the bug can name it on the second
+          // pass, and a row stuck with the vaguer first answer helps nobody.
+          await client.query(
+            `UPDATE roadmap_items SET updated_at = now(), test_kind = $2, test_target = $3
+              WHERE id = $1`,
+            [existing.rows[0].id, cand.kind, cand.target || null]
+          );
+        } else {
+          const pos = await client.query(
+            'SELECT COALESCE(MAX(position), -1) + 1 AS p FROM roadmap_items WHERE project_id=$1 AND bucket=$2',
+            [projectId, cand.bucket]
+          );
+          await client.query(
+            `INSERT INTO roadmap_items (project_id, bucket, title, note, done, position, source, fingerprint, test_kind, test_target)
+             VALUES ($1,$2,$3,'',false,$4,'hook',$5,$6,$7)`,
+            [projectId, cand.bucket, cand.title, pos.rows[0].p, fp, cand.kind, cand.target || null]
+          );
+          createdTests++;
+        }
+      }
+    }
+
     // --- 5. Land auto-extracted roadmap items ---
     let createdSteps = 0;
     {
@@ -659,6 +758,11 @@ ingest.post('/', async (req, res) => {
       session: existingSession ? 'updated' : 'created',
       bugs: { created: createdBugs, relinked: relinkedBugs },
       roadmap: { created: createdSteps },
+      // #498 — what the session suggested testing. Reported for the same reason
+      // `built.missed` is: the poster prints it, so a session can see that six
+      // suggestions became two rows (four were already tracked, or already
+      // covered by a check) rather than assuming all six landed.
+      tests: { created: createdTests },
       // #174 — `missed` is REPORTED, not swallowed: an id that matched nothing
       // means a session cited a number that is not on this board, and the
       // /checkpoint command tells the session to relay that rather than let a

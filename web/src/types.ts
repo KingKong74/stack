@@ -1,5 +1,8 @@
 export type ProjectStatus = 'live' | 'building' | 'paused' | 'archived';
 export type Severity = 'critical' | 'high' | 'medium' | 'low';
+// #498 — what a session suggested testing. '' is the ordinary case and is not a
+// kind: it means the row is not a test suggestion at all.
+export type TestKind = '' | 'bug' | 'function';
 export type BugStatus = 'open' | 'investigating' | 'fixing' | 'fixed';
 // #469 — the console kit's five levels. It was MoSCoW ('must' | 'should' |
 // 'could' | 'wont') and the column behind it is still called `bucket`; the
@@ -120,6 +123,12 @@ export interface RoadmapItem {
   bucket: Priority;
   source: Source;
   reviewed: boolean;
+  // #498 — a test a session suggested, and what it is about. '' = an ordinary
+  // row, which is nearly all of them; the two real kinds are 'bug' (a test that
+  // would have caught a defect) and 'function' (a check on a named route or
+  // function). `testTarget` is the bug key or the route's own name.
+  testKind: TestKind;
+  testTarget: string;
   // #381 — the live session that opened this card ('' = not a fly card, or a
   // fly card whose session did not name itself). Outlives claimedBy on purpose:
   // the claim is released and cleared, the provenance is not.

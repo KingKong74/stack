@@ -64,6 +64,13 @@ export function roadmapItemShape(row) {
     done: row.done,
     bucket: row.bucket,
     source: row.source,                // 'hook' | 'manual' | 'fly' (#381)
+    // #498 — a test a session suggested: '' = an ordinary row, which is nearly
+    // all of them. 'bug' = a test that would have caught a defect, 'function' =
+    // a check on a named route or function. `testTarget` is what it is about —
+    // a bug key, or the route's own name — and is what lets the Quality tab
+    // open its composer straight onto it.
+    testKind: row.test_kind || '',
+    testTarget: row.test_target || '',
     reviewed: !!row.reviewed_at,
     // #381 — the live session that opened this card ('' = not a fly item, or a
     // fly item whose session did not name itself). Kept after the claim is

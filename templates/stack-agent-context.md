@@ -101,6 +101,32 @@ fingerprint of their title. So:
 - Manual items are never touched by the extractor. Reach for a manual bug/roadmap
   item/note when you want something the session summary wouldn't capture.
 
+## Suggest the tests this session showed were missing (#498)
+
+`extract.tests` on a checkpoint files what nothing checks yet. It lands in
+**For you → Auto-ideas**, held from the overnight runner until the owner keeps,
+promotes or dismisses it — never straight onto the board.
+
+```json
+"tests": [
+  { "title": "A red check's bug link survives a re-run", "kind": "bug", "target": "BUG-31" },
+  { "title": "The health route answers before the database is up", "kind": "function", "target": "GET /api/health" }
+]
+```
+
+- `kind` is REQUIRED — `bug` (a test that would have caught a defect this
+  session saw) or `function` (a check on a named route or function nothing
+  watches). Any other kind is dropped rather than guessed at.
+- `target` is what makes it actionable: a bug key, or the route's real name.
+  "the API" is not a target. It may be empty on a `bug` entry whose defect was
+  described but never filed.
+- **At most six**, fewer is better, `[]` when nothing was missing. A `bug`
+  entry naming a bug a check already covers is dropped server-side.
+
+Narrower than `next_steps` (switched off) on purpose: a next-step is a matter of
+taste and became a card nobody agreed to; a missing test is bounded by what
+actually broke.
+
 ## FLY CARDS ARE SWITCHED OFF (#381, paused #477)
 
 **Do not open a roadmap card for the work you are asked to do.** A session used
