@@ -140,6 +140,10 @@ type Sess = {
   // the answer is UNRECORDED. The two are different and the row draws them
   // differently: nothing, versus a chip that says so.
   model?: SessionModel | null;
+  // #505 — what actually answered, filled in from the host's 60s push rather
+  // than at spawn: at spawn there is no transcript yet, because the session has
+  // not said anything.
+  resolvedModel?: string;
 };
 
 // #487 — the rail groups sessions by TOOL, as the Mission Control design does.
@@ -181,8 +185,23 @@ function ctxLabel(n: number): string {
   return `${Math.round(n / 1000)}k ctx`;
 }
 
-function ModelChip({ model, show }: { model?: SessionModel | null; show: boolean }) {
-  if (!show || model === undefined) return null;
+function ModelChip({ model, resolved, show }: {
+  model?: SessionModel | null; resolved?: string; show: boolean;
+}) {
+  if (!show || (model === undefined && !resolved)) return null;
+  // #505 — WHAT ANSWERED BEATS WHAT WAS ASKED FOR, and it is worth having even
+  // when the route is unknown: a session with no tag but a readable transcript
+  // can still say what replied, which is the question actually being asked.
+  if (resolved) {
+    const asked = model?.key === 'anthropic' ? 'your subscription' : model?.id;
+    return (
+      <span className={`mdl ${model?.key === 'anthropic' ? 'own' : 'alt'}`}
+        title={`${resolved} — what actually answered${asked ? `, on ${asked}` : ''}${
+          asked && asked !== resolved ? '. A gateway combo picks per request, so this can change mid-session.' : ''}`}>
+        {resolved}
+      </span>
+    );
+  }
   if (!model) {
     return (
       <span className="mdl none"
@@ -191,11 +210,16 @@ function ModelChip({ model, show }: { model?: SessionModel | null; show: boolean
       </span>
     );
   }
+  // THE MODEL IS THE LABEL, not the provider. A column of rows all reading
+  // "OmniRoute" answers the question nobody asked — which gateway — while
+  // hiding the one that matters. The provider moves to the title, where it is
+  // one hover away and never competes with the thing you are looking for.
   return (
     <span className={`mdl ${model.key === 'anthropic' ? 'own' : 'alt'}`}
-      title={`${model.label}${model.id ? ` · ${model.id}` : ''}${
-        model.key === 'omniroute' ? ' — routed through the local OmniRoute gateway' : ''}`}>
-      {model.label}
+      title={`${model.id || model.label} — ${model.key === 'omniroute'
+        ? 'routed through the local OmniRoute gateway'
+        : model.key === 'anthropic' ? 'your own Anthropic subscription' : model.label}`}>
+      {model.key === 'anthropic' ? 'Claude' : (model.id || model.label)}
     </span>
   );
 }
@@ -719,6 +743,16 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
 
   // Chips for sessions a live tab already holds would be re-attach traps —
   // hide them (the daemon's next push drops them anyway).
+  // #505 — a LIVE row's resolved model comes from the host's session list, not
+  // from its socket: the transcript is written by the claude process, so the
+  // only reader is the host, and it reports on its own 60s tick. Keyed by tmux
+  // name, the one id both sides agree on.
+  const resolvedByTmux = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const d of detached) if (d.name && d.resolvedModel) m.set(d.name, d.resolvedModel);
+    return m;
+  }, [detached]);
+
   const detachedShown = detached.filter(
     (d) => !sessions.some((s) => s.tmux === d.name && (s.status === 'live' || s.status === 'connecting')));
   const killable = detachedShown.filter((d) => !d.attached);
@@ -1973,7 +2007,9 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                                     what is true per row, and it is the thing
                                     you actually need when two sessions wear
                                     similar names. */}
-                                <ModelChip model={x.model} show={x.cmd === 'claude'} />
+                                <ModelChip model={x.model}
+                                  resolved={x.resolvedModel || (x.tmux ? resolvedByTmux.get(x.tmux) : '')}
+                                  show={x.cmd === 'claude'} />
                                 <span className="cw">{x.cwd || '~'}</span>
                               </div>
                             );
@@ -2034,7 +2070,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                                   {/* Every idle row is a claude session by
                                       construction (the host lists stack-term-*
                                       only), so the chip always applies here. */}
-                                  <ModelChip model={d.model ?? null} show />
+                                  <ModelChip model={d.model ?? null} resolved={d.resolvedModel} show />
                                 </span>
                                 {nm && <span className="t">{nm}</span>}
                               </button>

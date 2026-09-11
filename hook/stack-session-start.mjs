@@ -21,7 +21,7 @@
 //
 // Test against the current repo:  node stack-session-start.mjs --demo
 
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -43,6 +43,37 @@ import { join } from 'node:path';
     }
   } catch { /* ignore */ }
 })();
+
+// (#505) THE TWIN OF terminal/session-model.mjs's READER, and deliberately
+// inlined rather than imported: ~/.stack holds COPIES of these hooks, not
+// symlinks, so an import reaching back into the repo would resolve here and
+// break the moment the hook is installed. What is mirrored is only the file's
+// shape — a flat { tmuxName: { transcript, at } } — and the reader is written
+// to tolerate anything it does not recognise rather than to trust this.
+function noteTranscriptForTmux(payload) {
+  try {
+    if (!process.env.TMUX) return; // not in tmux: nothing to key a mapping on
+    const transcript = payload.transcript_path
+      || (payload.session_id && payload.cwd
+        // Claude Code's own layout, used only when stdin did not carry the
+        // path: ~/.claude/projects/<cwd with every non-alphanumeric as ->/<id>.jsonl
+        ? join(homedir(), '.claude', 'projects', String(payload.cwd).replace(/[^A-Za-z0-9]/g, '-'), `${payload.session_id}.jsonl`)
+        : '');
+    if (!transcript) return;
+    const name = execFileSync('tmux', ['display-message', '-p', '#{session_name}'],
+      { encoding: 'utf8', timeout: 1500, stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    if (!name) return;
+    const file = join(homedir(), '.stack', 'term-transcripts.json');
+    let map = {};
+    try { const j = JSON.parse(readFileSync(file, 'utf8')); if (j && typeof j === 'object' && !Array.isArray(j)) map = j; } catch { /* first write */ }
+    map[name.slice(0, 80)] = { transcript: String(transcript).slice(0, 512), at: Date.now() };
+    const rows = Object.entries(map)
+      .filter(([, v]) => v && typeof v.at === 'number' && Date.now() - v.at < 14 * 24 * 60 * 60_000)
+      .sort((a, b) => b[1].at - a[1].at)
+      .slice(0, 200);
+    writeFileSync(file, JSON.stringify(Object.fromEntries(rows)), 'utf8');
+  } catch { /* never block session start */ }
+}
 
 const DEMO = process.argv.includes('--demo');
 const TIMEOUT_MS = parseInt(process.env.STACK_TIMEOUT_MS || '2500', 10);
@@ -176,6 +207,14 @@ function buildBlock(p) {
     try { payload = JSON.parse(readStdin() || '{}'); } catch { payload = {}; }
   }
   const cwd = DEMO ? process.cwd() : (payload.cwd || process.cwd());
+  // (#505) Record which transcript this session is writing, against the tmux
+  // session it is running in — BEFORE the slug check, so an untracked project
+  // still gets a mapping. This is the one place both halves are known: the
+  // transcript path arrives on stdin, and the tmux name can only be asked from
+  // inside the pane. terminal/session-model.mjs is the reader and explains why
+  // matching by cwd instead would be wrong on a host where sessions share a
+  // checkout. Best-effort in every direction — the hook must exit 0.
+  if (!DEMO) noteTranscriptForTmux(payload);
   const slug = slugFromGit(cwd);
   if (!slug) done('');
 

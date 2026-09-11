@@ -58,6 +58,7 @@ import { detectPrompt } from './prompt-scan.mjs';
 import { parseAutoName, readActivity } from './auto-scan.mjs';
 import { agentScratchDir, agentClaudeArgs } from './agent-run.mjs';
 import { createEditWatch } from './edit-watch.mjs';
+import { resolvedModelFor } from './session-model.mjs';
 import {
   availableProvidersLive, providerEnv, getProvider,
   loadPreferredProvider, savePreferredProvider,
@@ -286,6 +287,13 @@ function pushDetached() {
       // Stopped, waiting on a human. null unless a permission prompt is
       // genuinely sitting at the end of the pane right now.
       blocked: detectPrompt(tail),
+      // #505 — and WHAT ACTUALLY ANSWERED, read off the session's own
+      // transcript. A SIBLING of `model`, not a field inside it, for two
+      // reasons: a combo route resolves per request so the two are genuinely
+      // different facts, and a session with no tag at all (started by hand, or
+      // before #503) can still have a transcript worth reading. '' = Stack
+      // cannot say, which is not the same as the route it was asked for.
+      resolvedModel: resolvedModelFor(s.name),
       // #503 — what this session is talking to, PARSED here rather than in the
       // browser. The vocabulary of a tag lives in model-switch.mjs, host-side,
       // and shipping the raw string would put a second copy of it in the client

@@ -56,13 +56,18 @@ let detachedSessions = []; // [{ name, cwd, created, attached, keep, tail }]
 // name/cwd/created/attached/keep/tail); pruned when a name leaves the list.
 const detachedLabels = new Map(); // name -> label
 export const termDetached = () =>
-  detachedSessions.map(({ name, cwd, created, attached, keep, blocked, model }) => ({
+  detachedSessions.map(({ name, cwd, created, attached, keep, blocked, model, resolvedModel }) => ({
     name, cwd, created, attached, keep, label: detachedLabels.get(name) || '',
     // #503 — what the session is talking to, as the HOST read it off the tmux
     // session a moment ago. null is UNRECORDED and is not the same claim as any
     // model: a session started by hand carries no tag, and a row that quietly
     // said "Claude" for it would be inventing the one fact this exists to show.
     model: model || null,
+    // #505 — the model that actually answered, as the host read it off the
+    // session's own transcript. '' means Stack cannot say; it is NEVER filled
+    // in from the route, because "what you asked for" and "what replied" are
+    // the two facts this pair exists to keep apart.
+    resolvedModel: resolvedModel || '',
     // …plus HOW LONG it has been waiting. The host reports what the prompt is,
     // not when it appeared — a pane read has no memory. The relay supplies the
     // clock by stamping the first push that carried this fingerprint, which is
@@ -449,6 +454,7 @@ export function attachTerm(httpServer) {
             // the truthful answer for a host that cannot say what a session is
             // on, and deliberately NOT a default to the subscription.
             model: modelShape(s.model),
+            resolvedModel: typeof s.resolvedModel === 'string' ? s.resolvedModel.slice(0, 120) : '',
           }));
         stampBlocked(detachedSessions);
         const alive = new Set(detachedSessions.map((s) => s.name));

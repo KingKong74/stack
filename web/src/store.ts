@@ -769,6 +769,11 @@ export interface DetachedSession {
   keep?: boolean;      // #292 — pinned: the host's idle reaper leaves it alone
   blocked?: BlockedPrompt | null;  // stopped on a permission prompt right now
   model?: SessionModel | null;     // #503 — what it is running on; null = unrecorded
+  // #505 — what actually ANSWERED, off the session's own transcript. '' = Stack
+  // cannot say. Separate from `model` on purpose: a combo route resolves per
+  // request, so the route asked for and the model that replied are two facts,
+  // and a session with no tag can still have a readable transcript.
+  resolvedModel?: string;
 }
 
 // (#486) The OmniRoute gateway, as the HOST sees it — this process cannot ask
