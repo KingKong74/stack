@@ -750,18 +750,13 @@ function AutoPane({ slug, items, onRefresh, onEdit, highlightId }: {
                 </span>
                 {it.skipped && <span className="k-tag warning">parked</span>}
               </div>
-            </div>
-            <div className="ai-acts" onClick={(e) => e.stopPropagation()}>
-              <button className="k-btn secondary sm" disabled={busy === it.id} onClick={() => keep(it)}
-                title="Sign it off and file it on the Roadmap as an idea — not committed work">
-                <KitIcon name="bookmark" size={13} />Keep
-              </button>
-              <button className="k-btn accent sm" disabled={busy === it.id} onClick={() => promote(it)}
-                title="Sign it off and put it on the board as committed work">
-                <KitIcon name="arrow-up-right" size={13} />Promote
-              </button>
+              {/* EDIT AND DISMISS LIVE IN THE BODY, not in the action column.
+                  Stacked with Keep and Promote they made an open row four
+                  buttons tall against a two-line body, so opening one opened a
+                  hole in the middle of the list. Here they fill the width the
+                  body already has and the row barely grows. */}
               {on && (
-                <>
+                <div className="ai-more">
                   <button className="k-btn ghost sm" onClick={() => onEdit(it)}>
                     <KitIcon name="pencil" size={13} />Edit…
                   </button>
@@ -772,11 +767,21 @@ function AutoPane({ slug, items, onRefresh, onEdit, highlightId }: {
                     onClick={() => (confirming === it.id ? dismiss(it) : setConfirming(it.id))}>
                     <KitIcon name="trash-2" size={13} />
                     {confirming === it.id
-                      ? (it.source === 'hook' ? 'Really? No re-add' : 'Really?')
+                      ? (it.source === 'hook' ? 'Really? The next push will not re-add it' : 'Really discard?')
                       : 'Dismiss'}
                   </button>
-                </>
+                </div>
               )}
+            </div>
+            <div className="ai-acts" onClick={(e) => e.stopPropagation()}>
+              <button className="k-btn secondary sm" disabled={busy === it.id} onClick={() => keep(it)}
+                title="Sign it off and file it on the Roadmap as an idea — not committed work">
+                <KitIcon name="bookmark" size={13} />Keep
+              </button>
+              <button className="k-btn accent sm" disabled={busy === it.id} onClick={() => promote(it)}
+                title="Sign it off and put it on the board as committed work">
+                <KitIcon name="arrow-up-right" size={13} />Promote
+              </button>
             </div>
           </div>
         );

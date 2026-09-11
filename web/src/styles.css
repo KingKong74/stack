@@ -3975,6 +3975,7 @@ body[data-mc-full] .totop { display: none; }
   -webkit-box-orient: vertical; overflow: hidden;
 }
 .ai-acts .k-btn { justify-content: flex-start; white-space: nowrap; }
+.ai-more { display: flex; gap: var(--space-3); flex-wrap: wrap; margin-top: var(--space-2); }
 
 
 /* ==========================================================================
