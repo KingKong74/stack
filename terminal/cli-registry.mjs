@@ -244,6 +244,17 @@ export const ENV_ALLOWLIST = [
   'PATH', 'HOME', 'USER', 'LOGNAME', 'SHELL', 'TERM', 'TERMINFO', 'COLORTERM',
   'LANG', 'LC_ALL', 'LC_CTYPE', 'TZ', 'TMPDIR', 'XDG_RUNTIME_DIR', 'XDG_CONFIG_HOME',
   'DISPLAY', 'NO_COLOR', 'FORCE_COLOR', 'COLUMNS', 'LINES',
+  // (#505) TMUX and TMUX_PANE — how a process knows which tmux session it is
+  // in. Not a credential: the value is a socket path, a pid and a session id,
+  // all of which anything in the pane could find anyway.
+  //
+  // Dropping them made the gateway path differ from the native one INVISIBLY.
+  // A native `exec claude` inherits the pane's environment, so Stack's
+  // SessionStart hook can ask tmux its own name and record which transcript
+  // this session is writing; a gateway launch rebuilt the env from this list
+  // and the hook silently recorded nothing. The symptom was one rail row
+  // knowing what model answered and its neighbour not, with no error anywhere.
+  'TMUX', 'TMUX_PANE',
 ];
 
 // The NAMES defined in a .env file. Names only — this never returns, logs or
