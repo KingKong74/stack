@@ -2593,14 +2593,17 @@ a.tab { display: inline-block; }
    own near-black. Everything drawn ON this ground is a token too, now. */
 .term-holder.gitbash { background: var(--terminal-canvas); border-radius: 14px; height: calc(100vh - 210px); }
 /* THE EMPTY STATE'S TWO LINES SIT ON TWO DIFFERENT GROUNDS, which is what made
-   the old #8a8a8a / #666 pair wrong twice over rather than once.
+   the pair of greys that used to be written here wrong twice over, not once.
+   (Their values are in the commit; they are not repeated as `#`-prefixed hex
+   because `scripts/roadmap-refs.mjs` reads every #NNN in this repo as a roadmap
+   citation, and a three-digit grey is indistinguishable from an item id.)
 
    With no session open at all this is the bare `.term-holder.gitbash`, so the
    ground is the #000 canvas above. Inside a shape's spare pane it is
    `.term-pane.empty .term-holder`, which repaints to --surface (#242528) at
-   higher specificity. Both had to be measured, and #666 failed both: 3.66:1 on
-   black and 2.67:1 on the card, at 12px, for the words a reader is given when
-   there is nothing else on the screen to read.
+   higher specificity. Both had to be measured, and the dim one failed both:
+   3.66:1 on black and 2.67:1 on the card, at 12px, for the words a reader is
+   given when there is nothing else on the screen to read.
 
    Secondary over tertiary keeps the two lines apart — 10.7:1 and 7.0:1 on the
    canvas, 7.8:1 and 5.1:1 on the card — where one token for both would have
