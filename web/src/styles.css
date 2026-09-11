@@ -3976,6 +3976,17 @@ body[data-mc-full] .totop { display: none; }
 }
 .ai-acts .k-btn { justify-content: flex-start; white-space: nowrap; }
 .ai-more { display: flex; gap: var(--space-3); flex-wrap: wrap; margin-top: var(--space-2); }
+/* NARROW: the answers go UNDER the row, not beside it. The action column keeps
+   its full width whatever the viewport does, so on a phone it took half the row
+   and squeezed a one-line title into four — and `13h ago` was clipped by the
+   title it was sharing the line with. */
+@media (max-width: 720px) {
+  .ai-row { flex-wrap: wrap; }
+  .ai-acts { flex-direction: row; width: 100%; }
+  .ai-acts .k-btn { flex: 1; justify-content: center; }
+  .ai-when { margin-left: 0; }
+  .ai-top { flex-wrap: wrap; }
+}
 
 
 /* ==========================================================================
