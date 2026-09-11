@@ -28,14 +28,27 @@ const NEEDS_SIGNOFF = new Set(['hook', 'fly']);
 
 type Approvable = Pick<RoadmapItem, 'source' | 'reviewed'>;
 
-export function isApproved(it: Approvable): boolean {
+// NO ITEM, NO APPROVAL — the same fail-safe direction both host twins take, and
+// the one place this copy had drifted from them: it read `it.source` off the
+// argument unguarded, so a null threw a TypeError where the others answered
+// `false`. Nothing passes one today; it is the FAIL-SAFE DIRECTION that had
+// gone, and a rule about what the overnight fleet may build does not get to
+// have one of its three copies crash instead of refusing.
+export function isApproved(it: Approvable | null | undefined): boolean {
+  if (!it) return false;
   const src = String(it.source || 'manual');
   if (!NEEDS_SIGNOFF.has(src)) return true;
+  // `reviewed` ALONE, deliberately, where the host twins also accept a raw
+  // `reviewed_at`: the client never sees a DB row — shape.js renders it to a
+  // boolean first. A narrowing, not a disagreement, and safe in one direction
+  // only: handed a raw row this reports HELD, which errs toward refusing to run
+  // rather than toward running something unsigned. `scripts/approval.test.mjs`
+  // pins both halves of that against all three copies.
   return it.reviewed === true;
 }
 
 // The inverse — an auto-found item still awaiting approval, i.e. still
 // sitting in the review inbox.
-export function isHeld(it: Approvable): boolean {
+export function isHeld(it: Approvable | null | undefined): boolean {
   return !isApproved(it);
 }
