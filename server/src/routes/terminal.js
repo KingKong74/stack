@@ -11,6 +11,14 @@ import { readSettings } from '../settings.js';
 // session rows and die with them. 503 without a key (silent degrade upstream).
 export const terminal = Router();
 
+// A label is a TITLE, so it starts with a capital — and asking the model nicely
+// is not enough on its own (the examples in the prompt are the strongest signal
+// it has, and a model that has just written six lowercase labels keeps going).
+// So the prompt shows sentence case AND this normalises what comes back. It
+// only ever touches the first character: an all-caps word further in is the
+// model spelling something the way the session spelled it, never a shout.
+const titleLabel = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+
 // GET /api/terminal/usage — token consumption and budget for the terminal header.
 // tokensToday: sum of autopilot_runs.tokens over the last 24 hours (BIGINT → Number).
 // tokenBudget: settings.autopilot_tokens (0 = unlimited).
@@ -210,8 +218,9 @@ For each session write one SHORT label (max 8 words, plain, no punctuation flour
 loosely paraphrases THE LAST THING THE ASSISTANT SAID — the subject it just wrote about or just
 finished. This is a title, not a status report: name the topic, not the mechanics. Do not try to
 work out whether it is still running, waiting, or idle, and do not describe the tooling.
+Write it in sentence case — a capital on the first word, and no full stop.
 
-Good: "reworking the merge strip", "explaining the tunnel trade-off", "adding preview teardown".
+Good: "Reworking the merge strip", "Explaining the tunnel trade-off", "Adding preview teardown".
 Bad: "claude is running a command", "session appears idle", "waiting for input".
 
 For a plain shell with no assistant in it, name the subject of the last command instead.
@@ -223,11 +232,11 @@ Respond with ONLY this JSON: { "labels": { "<session id>": "<label>", ... } }`,
       );
       for (const { sid, meta } of tails) {
         const label = out?.labels?.[sid];
-        if (typeof label === 'string' && label.trim()) meta.label = label.trim().slice(0, 60);
+        if (typeof label === 'string' && label.trim()) meta.label = titleLabel(label.trim().slice(0, 60));
       }
       for (const d of orphans) {
         const label = out?.labels?.[d.name];
-        if (typeof label === 'string' && label.trim()) setDetachedLabel(d.name, label.trim().slice(0, 60));
+        if (typeof label === 'string' && label.trim()) setDetachedLabel(d.name, titleLabel(label.trim().slice(0, 60)));
       }
     } catch (e) {
       return res.status(e.httpStatus || 502).json({ error: e.message || 'Labelling failed.' });

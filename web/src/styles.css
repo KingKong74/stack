@@ -2175,7 +2175,6 @@ a.tab { display: inline-block; }
 }
 .ta-pill .d { width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: term-ask 1.6s ease-in-out infinite; }
 .ta-pill:hover { filter: brightness(1.08); }
-.ta-say { font-size: 11px; color: var(--fainter); }
 .term-spawn { white-space: nowrap; }
 
 /* THE RAIL HEAD, and the collapsed rail's tool marks. 52px is enough for a
@@ -2240,6 +2239,18 @@ a.tab { display: inline-block; }
 .tc-pop .row .d { font-family: var(--mono); font-size: 9.5px; color: var(--fainter); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tc-pop .row .st { flex: none; white-space: nowrap; padding: 2px 8px; border-radius: 999px; font-size: 9.5px; background: var(--surface-hover); color: var(--muted); }
 .tc-pop .row .st.on { background: var(--status-success-bg); color: var(--status-success-fg); }
+
+/* Today's token count, the block above the limits — same column shape as
+   .tc-limits so the two read as one footer, and it borrows .tl-bar for its
+   budget bar rather than growing a second 4px rounded rule. */
+.tc-tokens { border-top: 1px solid var(--line-2); padding: 8px 9px 0; display: flex; flex-direction: column; gap: 6px; flex: none; }
+.tt-head { display: flex; align-items: baseline; gap: 6px; width: 100%; }
+.tt-head .nm { flex: 1; font-size: 10.5px; color: var(--muted); }
+.tt-head .v { font-family: var(--mono); font-size: 10px; color: var(--body); }
+.tt-sub { font-size: 9.5px; color: var(--fainter); }
+.tt-sub .tu-limit { font-size: 9.5px; }
+.tt-sub .tu-edit { height: 20px; width: 58px; font-size: 10px; }
+.tc-tokens + .tc-limits { border-top: 0; }
 
 .tc-limits { border-top: 1px solid var(--line-2); padding: 8px 9px 10px; display: flex; flex-direction: column; gap: 6px; flex: none; }
 .tl-head { display: flex; align-items: center; gap: 6px; width: 100%; border: 0; background: transparent; cursor: pointer; padding: 0; }
@@ -2523,18 +2534,10 @@ a.tab { display: inline-block; }
 /* the usage strip — today's tokens against the daily budget, limit reset + booking (#111) */
 /* the usage strip — above the canvas, where the machine's day belongs */
 .term-usage { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: -4px 0 12px; font-size: 12.5px; color: var(--muted); }
-.tu-lbl { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
-.tu-bar { flex: 1 1 120px; max-width: 260px; height: 8px; border-radius: 6px; background: var(--surface); border: 1px solid var(--line-3); overflow: hidden; }
-.tu-fill { height: 100%; border-radius: 6px; background: var(--sage, var(--green)); transition: width 0.4s ease; }
-.tu-bar.warn .tu-fill { background: var(--building); }
-.tu-bar.over .tu-fill { background: var(--critical); }
 .tu-limit { font-family: inherit; font-size: inherit; color: var(--body); text-decoration: underline dotted; text-underline-offset: 3px; }
 .tu-limit:hover { color: var(--accent-text); }
 .tu-edit { width: 64px; height: 24px; padding: 0 6px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
-.tu-num { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; color: var(--body); white-space: nowrap; }
 .tu-reset { color: var(--critical-text); font-weight: 600; }
-.tu-total { color: var(--faint); font-size: 11px; white-space: nowrap; } /* #130 — cache-inclusive raw volume */
-.tu-total.warn { color: var(--critical-text); font-weight: 600; } /* #195 — a plan weekly window running hot */
 .tu-booked { color: var(--green); font-weight: 600; }
 /* #142 — the project's paused session (a limit-hit resume job in the queue) */
 .tu-resume { display: inline-flex; align-items: center; gap: 8px; color: var(--accent-text); font-weight: 600; }

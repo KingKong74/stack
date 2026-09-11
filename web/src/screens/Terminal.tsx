@@ -1329,86 +1329,38 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
           </span>
         </div>
 
-        {/* #487 — THE ATTENTION STRIP, the design's second toolbar row. What is
-            stopped and waiting on you, then what the grid is showing. It is
+        {/* #487 — THE ATTENTION STRIP, the design's second toolbar row. It is
             drawn only when it has something to say: a permanent "0 waiting"
-            trains the eye to skip the row that will one day say 3. */}
-        {(waiting.length > 0 || sessions.length > 0) && (
+            trains the eye to skip the row that will one day say 3.
+            The "N of M sessions shown" sentence that used to sit beside the
+            pill is GONE — it was true on every screen the app has ever drawn,
+            so it took a row of the canvas permanently to restate the two
+            things already in front of you (the rail lists the sessions, the
+            grid shows which are up), and its tail was a tip, not a state. A
+            row that is always there is a row nobody reads, which is exactly
+            what the pill beside it cannot afford. */}
+        {waiting.length > 0 && (
           <div className="term-attn">
-            {waiting.length > 0 && (
-              <button className="ta-pill" title="Jump to the first session waiting on an answer"
-                onClick={() => { const w = waiting[0]; if (w) showInLead(w.id); }}>
-                <span className="d" />{attentionLabel}
-              </button>
-            )}
-            <span className="ta-say">
-              {shownIds.length} of {sessions.length} session{sessions.length === 1 ? '' : 's'} shown
-              {sessions.length > shownIds.length ? ' · click a rail row to bring it into the first pane' : ' · ⤢ on a pane brings it to the focus view'}
-            </span>
+            <button className="ta-pill" title="Jump to the first session waiting on an answer"
+              onClick={() => { const w = waiting[0]; if (w) showInLead(w.id); }}>
+              <span className="d" />{attentionLabel}
+            </button>
           </div>
         )}
 
-        {/* The usage strip lives ABOVE the canvas, not in the cockpit rail: it
-            is about the machine and the day, not about this session, and
-            reading it should never cost a segment switch. Visible once the
-            daemon sends a frame OR the server endpoint responds, whichever
-            comes first. With plan data (#195) the bar IS the Plan session
-            window — the same percentages + reset times Claude's in-app /usage
-            shows — and the transcript token count drops to a secondary figure.
-            Without it (no credentials on the host, or offline) the old
-            tokens-vs-budget estimate carries the strip. */}
-        {(usage || serverUsage) && (
+        {/* WHAT IS LEFT ABOVE THE CANVAS IS THE DAY'S EVENTS, not its readings.
+            THE TOKEN COUNT MOVED TO THE RAIL (owner's call), where it sits with
+            the three plan windows — it is the fourth of the same question and
+            the one figure they do not carry, and a reading that never changes
+            state does not earn a permanent row across the top of the screen.
+            (#487 had already moved the plan windows off this strip for the same
+            reason: three copies of one percentage on one screen.)
+            So this strip is drawn only when something has HAPPENED — a limit
+            reset landing, a session paused, a booking offered or taken — and is
+            absent, rather than empty, the rest of the time. Everything in it is
+            an event or the button that answers one. */}
+        {(usage?.resetLabel || resumeJob || usage?.sched || schedNote) && (
           <div className="term-usage">
-            {usage?.plan?.session ? (
-              // #487 — THE PLAN WINDOWS MOVED OUT OF THIS STRIP. They are drawn
-              // twice already by the Mission Control chrome — as the Anthropic
-              // pill in the header and as the limits block in the rail, which
-              // is where the design puts each — and a third copy here made the
-              // same percentage appear three times on one screen. What is left
-              // is the one figure the other two do NOT carry: fresh tokens
-              // today. Everything below (the resume chip, booking, auto-book)
-              // is unique to this strip and stays.
-              <span className="tu-total" title="Fresh tokens today (input + output + cache writes) from this host's transcripts">
-                {fmtTok(usedTokens)} tok today
-              </span>
-            ) : (
-              <>
-                <span className="tu-lbl">Tokens</span>
-                <div className={`tu-bar${usagePct >= 100 ? ' over' : usagePct >= 85 ? ' warn' : ''}`}>
-                  <div className="tu-fill" style={{ width: `${Math.min(100, usagePct)}%` }} />
-                </div>
-                <span className="tu-num"
-                  title={`${fmtTok(usedTokens)} / ${serverUsage && serverUsage.tokenBudget > 0 ? fmtTok(serverUsage.tokenBudget) + ' nightly budget' : fmtTok(usagePrefs.dailyLimit) + ' estimate'} (24h)`}>
-                  {fmtTok(usedTokens)} /{' '}
-                  {serverUsage && serverUsage.tokenBudget > 0
-                    ? <span>{fmtTok(serverUsage.tokenBudget)}</span>
-                    : editLimit
-                      ? (
-                        <input className="field-input tu-edit" autoFocus value={limitDraft}
-                          onChange={(e) => setLimitDraft(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              const v = parseTok(limitDraft);
-                              if (v) savePrefs({ ...usagePrefs, dailyLimit: v });
-                              setEditLimit(false);
-                            } else if (e.key === 'Escape') setEditLimit(false);
-                          }}
-                          onBlur={() => setEditLimit(false)} />
-                      ) : (
-                        <button className="tu-limit" title="Daily token estimate (this device only) — click to change"
-                          onClick={() => { setLimitDraft(fmtTok(usagePrefs.dailyLimit)); setEditLimit(true); }}>
-                          {fmtTok(usagePrefs.dailyLimit)}
-                        </button>
-                      )
-                  }
-                </span>
-                {usage?.totalTokens != null && usage.totalTokens > (usage?.tokens ?? 0) && (
-                  <span className="tu-total" title="Raw volume including prompt-cache reads — the fresh count on the bar is what tracks real work">
-                    {fmtTok(usage.totalTokens)} incl. cache reads
-                  </span>
-                )}
-              </>
-            )}
             {usage?.resetLabel && <span className="tu-reset">⏳ limit resets {usage.resetLabel}</span>}
             {resumeJob && (
               <span className={`tu-resume ${resumeJob.status}`}
@@ -1953,6 +1905,66 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                         </div>
                       )}
                     </div>
+
+                    {/* TODAY'S TOKENS — off the top of the screen and onto the
+                        rail, directly above the windows it belongs with. The
+                        limits below are PERCENTAGES the daemon reads off the
+                        Claude account; this is the COUNT read off the host's
+                        transcripts, which is the one figure they do not carry.
+                        With no plan data it also keeps the budget bar and the
+                        editable estimate, because then it is the only thing on
+                        the screen measuring the day — the same fallback the
+                        strip had, in a column instead of a row. */}
+                    {(usage || serverUsage) && (
+                      <div className="tc-tokens">
+                        <span className="tt-head">
+                          <span className="nm">Tokens today</span>
+                          <span className="v" title="Fresh tokens today (input + output + cache writes) from this host's transcripts">
+                            {fmtTok(usedTokens)}
+                          </span>
+                        </span>
+                        {!usage?.plan?.session && (
+                          <>
+                            <span className="tl-bar">
+                              <span className="v" style={{
+                                width: `${Math.min(100, usagePct)}%`,
+                                background: usagePct >= 100 ? 'var(--critical)'
+                                  : usagePct >= 85 ? 'var(--building)' : 'var(--accent-text)',
+                              }} />
+                            </span>
+                            <span className="tt-sub">
+                              of{' '}
+                              {serverUsage && serverUsage.tokenBudget > 0
+                                ? <span title="The nightly token budget, set in Stack settings">{fmtTok(serverUsage.tokenBudget)} budget</span>
+                                : editLimit
+                                  ? (
+                                    <input className="field-input tu-edit" autoFocus value={limitDraft}
+                                      onChange={(e) => setLimitDraft(e.target.value)}
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                          const v = parseTok(limitDraft);
+                                          if (v) savePrefs({ ...usagePrefs, dailyLimit: v });
+                                          setEditLimit(false);
+                                        } else if (e.key === 'Escape') setEditLimit(false);
+                                      }}
+                                      onBlur={() => setEditLimit(false)} />
+                                  ) : (
+                                    <button className="tu-limit" title="Daily token estimate (this device only) — click to change"
+                                      onClick={() => { setLimitDraft(fmtTok(usagePrefs.dailyLimit)); setEditLimit(true); }}>
+                                      {fmtTok(usagePrefs.dailyLimit)} estimate
+                                    </button>
+                                  )
+                              }
+                            </span>
+                          </>
+                        )}
+                        {usage?.totalTokens != null && usage.totalTokens > (usage?.tokens ?? 0) && (
+                          <span className="tt-sub" title="Raw volume including prompt-cache reads — the fresh count above is what tracks real work">
+                            {fmtTok(usage.totalTokens)} incl. cache reads
+                          </span>
+                        )}
+                      </div>
+                    )}
 
                     {/* THE LIMITS, the design's bottom block. Its three are
                         three PROVIDERS; these are the three real windows the
