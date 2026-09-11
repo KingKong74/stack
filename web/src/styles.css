@@ -2169,6 +2169,51 @@ a.tab { display: inline-block; }
 .term-mode-btn { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
 .term-mode-btn.on { color: var(--accent-text); border-color: var(--accent-tint-border); background: var(--accent-tint); }
 .term-mode-btn.on:hover { border-color: var(--accent); }
+
+/* ---- #504 · the model picker, beside the tool toggle ----------------------
+   The BUTTON wears the same accent as the tool toggle when it is on, because
+   it means the same class of thing: this is what the next tab will be. Off, it
+   is a plain control reading "Claude" — the subscription, the default, and the
+   state that needs no explaining. */
+.term-modelpick { position: relative; display: inline-flex; }
+.term-model-btn { font-family: var(--mono); font-size: 12px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.term-model-btn.on { color: var(--accent-text); border-color: var(--accent-tint-border); background: var(--accent-tint); }
+.term-model-btn.on:hover { border-color: var(--accent); }
+/* The menu is ABSOLUTE and scrolls: 38 combos plus pins is more than a head bar
+   can hold, and a menu that pushed the terminal down every time it opened would
+   reflow every pane under it. */
+.term-modelmenu {
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 40;
+  min-width: 300px; max-width: 380px; max-height: 60vh; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 1px;
+  padding: 6px; border: 1px solid var(--line-2); border-radius: 10px;
+  background: var(--card); box-shadow: var(--shadow-lg);
+}
+.tmm-row, .tmm-more, .tmm-hit {
+  display: flex; align-items: baseline; gap: 8px; width: 100%;
+  padding: 6px 8px; border: 0; border-radius: 7px; background: transparent;
+  text-align: left; cursor: pointer; color: var(--body);
+}
+.tmm-row:hover, .tmm-more:hover, .tmm-hit:hover { background: var(--surface-hover); }
+.tmm-row.on { background: var(--surface-selected); color: var(--ink); }
+.tmm-row .n, .tmm-hit .n { flex: 1; min-width: 0; font-family: var(--mono); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tmm-row .d, .tmm-hit .d { flex: none; font-size: 9.5px; color: var(--fainter); }
+/* A pinned row is a row plus its own unpin button, so it is a SPAN holding two
+   buttons rather than a button inside a button. */
+.tmm-row.pin { padding: 0; }
+.tmm-main { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 8px; padding: 6px 8px; border: 0; background: transparent; text-align: left; cursor: pointer; color: inherit; }
+.tmm-unpin { flex: none; border: 0; background: transparent; cursor: pointer; color: var(--fainter); font-size: 12px; padding: 0 8px; }
+.tmm-unpin:hover { color: var(--critical); }
+.tmm-cap { padding: 8px 8px 3px; font-size: 9px; letter-spacing: .08em; text-transform: uppercase; color: var(--fainter); }
+.tmm-cap .busy { text-transform: none; letter-spacing: 0; }
+/* A reason, never an empty list — the menu says why it cannot offer anything. */
+.tmm-note { padding: 6px 8px; font-size: 10.5px; line-height: 1.5; color: var(--fainter); }
+.tmm-more { color: var(--accent-text); font-size: 11px; }
+.tmm-list { display: flex; flex-direction: column; gap: 1px; max-height: 46vh; overflow-y: auto; margin-top: 10px; }
+.tmm-hit .p { flex: none; font-size: 9px; color: var(--fainter); }
+.tmm-hit.on { background: var(--accent-tint); }
+.tmm-hit.on .p { color: var(--accent-text); }
+.tmm-count { font-size: 10.5px; line-height: 1.6; margin-top: 8px; }
 /* How many terminals are on screen — this replaced the wide-mode toggle. */
 .term-panes .seg-opt { font-size: 11.5px; padding: 4px 8px; font-variant-numeric: tabular-nums; }
 .tc-empty { font-size: 11.5px; line-height: 1.5; color: var(--muted); }

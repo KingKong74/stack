@@ -19,6 +19,7 @@ import {
   getTermNames, setTermName,
   getTermSessionPrefs, setTermSessionPrefs,
   getTerminalGateway, type GatewayState,
+  getTerminalModels, type GatewayModels,
   getProjectDetail, type ProjectDetailData,
   getOverview,
 } from '../store';
@@ -38,6 +39,7 @@ import { attachRenderer } from '../lib/termRenderer';
 // `claude · stack` hides the one fact that distinguishes it from the four
 // beside it, so the name is parsed back.
 import { ConfirmModal } from '../components/ConfirmModal';
+import { Modal } from '../components/Modal';
 
 import { flatRoadmap } from '../lib/plan';
 import { TopBar } from '../components/TopBar';
@@ -170,6 +172,15 @@ const TOOL_GROUPS: { key: Sess['cmd']; name: string; mark: string }[] = [
 //
 // Shells never get one: a shell is not on a model, and an empty chip on every
 // shell row would make the column mean nothing.
+// #504 — a context window, short enough to sit in a menu row. The number is
+// the one thing that separates two otherwise identical-looking models, and it
+// is what Claude Code will actually compact against.
+function ctxLabel(n: number): string {
+  if (!n) return 'window unknown';
+  if (n >= 1_000_000) return `${Math.round(n / 100_000) / 10}M ctx`;
+  return `${Math.round(n / 1000)}k ctx`;
+}
+
 function ModelChip({ model, show }: { model?: SessionModel | null; show: boolean }) {
   if (!show || model === undefined) return null;
   if (!model) {
@@ -1194,6 +1205,52 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   // answer can carry are handled where it is drawn.
   const [gateway, setGateway] = useState<GatewayState | null>(null);
   const [gwPref, setGwPref] = useState<boolean>(() => getTermSessionPrefs().onGateway);
+  // #504 — WHAT THE NEXT CLAUDE TAB RUNS ON. Three things are stored and they
+  // move together: `onGateway` (subscription or gateway), the model id, and
+  // that model's context window. A model without the gateway is meaningless, so
+  // the picker is the only writer of all three — never two of them.
+  const [modelPref, setModelPref] = useState<string>(() => getTermSessionPrefs().model);
+  const [pinned, setPinned] = useState<string[]>(() => getTermSessionPrefs().pinnedModels);
+  const [pickOpen, setPickOpen] = useState(false);
+  const [pinOpen, setPinOpen] = useState(false);
+  const [pinQuery, setPinQuery] = useState('');
+  // The catalogue, fetched ONCE when the picker is first opened rather than on
+  // arrival: it is 400 rows nobody asked for until they open the menu, and it
+  // costs a host round trip through the gateway.
+  const [cat, setCat] = useState<GatewayModels | null>(null);
+  const [catBusy, setCatBusy] = useState(false);
+  const loadCatalogue = () => {
+    if (catBusy || cat?.ok) return;
+    setCatBusy(true);
+    getTerminalModels()
+      .then(setCat)
+      // A failed fetch is one more way of not being able to look, so it lands
+      // as a REASON rather than as an empty catalogue.
+      .catch(() => setCat({ ok: false, connected: false, reason: 'Stack could not reach the API', total: 0, models: [] }))
+      .finally(() => setCatBusy(false));
+  };
+  // The one writer. `id === null` means the subscription (the gateway off
+  // entirely); '' means the gateway's own default route; anything else is a
+  // catalogue id, stored with the window it was listed with.
+  const chooseModel = (id: string | null, contextTokens = 0) => {
+    const onGateway = id !== null;
+    setGwPref(onGateway);
+    setModelPref(onGateway ? id : '');
+    setTermSessionPrefs({
+      ...getTermSessionPrefs(),
+      onGateway,
+      model: onGateway ? id : '',
+      modelContext: onGateway ? contextTokens : 0,
+    });
+    setPickOpen(false);
+  };
+  const togglePinned = (id: string) => {
+    setPinned((cur) => {
+      const next = cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id].slice(0, 24);
+      setTermSessionPrefs({ ...getTermSessionPrefs(), pinnedModels: next });
+      return next;
+    });
+  };
   const loadGateway = () => {
     getTerminalGateway()
       .then(setGateway)
@@ -1295,6 +1352,95 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
             onClick={() => setMode((m) => m === 'shell' ? 'claude' : 'shell')}>
             {mode === 'claude' ? 'Claude' : 'Shell'}
           </button>
+          {/* ---- #504 · WHAT THE NEXT CLAUDE TAB RUNS ON ----
+              Beside the tool toggle, because it answers the same kind of
+              question — what am I about to open — and a setting that changes
+              what a button does belongs next to that button, not two clicks
+              deep in a popover. (The rail's Settings switch still exists and
+              still writes the same stored field; this is the fast path.)
+
+              SHOWN ONLY FOR CLAUDE. A shell is not on a model, and a control
+              that is inert half the time teaches you to stop reading it.
+
+              480 catalogue entries is not a menu, so the list is: the
+              subscription, the gateway's own default, YOUR pinned few, then
+              OmniRoute's 38 curated combos. Discovery lives in the pin dialog
+              — searching is what you do once, picking is what you do daily. */}
+          {mode === 'claude' && (
+            <div className="term-modelpick">
+              <button
+                className={`btn-repo sm term-model-btn${gwPref ? ' on' : ''}`}
+                aria-expanded={pickOpen}
+                title={gwPref
+                  ? `New Claude tabs run on ${modelPref || 'the gateway\'s default route'} through OmniRoute`
+                  : 'New Claude tabs run on your own Anthropic subscription'}
+                onClick={() => { setPickOpen((v) => !v); loadCatalogue(); }}>
+                {gwPref ? (modelPref || 'auto') : 'Claude'} ▾
+              </button>
+              {pickOpen && (
+                <div className="term-modelmenu" role="dialog" aria-label="Model for new sessions">
+                  <button className={`tmm-row${!gwPref ? ' on' : ''}`} onClick={() => chooseModel(null)}>
+                    <span className="n">Claude — your subscription</span>
+                    <span className="d">full telemetry · what this screen is for</span>
+                  </button>
+                  {/* THE GATEWAY'S STATE IS SAID, NOT IMPLIED. With no daemon
+                      Stack cannot see the gateway at all, and a menu that just
+                      showed nothing would read as "no models exist". */}
+                  {!gateway?.connected ? (
+                    <span className="tmm-note">
+                      Stack cannot see the host, so it cannot say what the gateway offers.
+                    </span>
+                  ) : !gateway?.reachable ? (
+                    <span className="tmm-note">
+                      The gateway is not answering{gateway?.reason ? ` — ${gateway.reason}` : ''}.
+                    </span>
+                  ) : (
+                    <>
+                      <button className={`tmm-row${gwPref && !modelPref ? ' on' : ''}`}
+                        onClick={() => chooseModel('')}>
+                        <span className="n">OmniRoute — auto</span>
+                        <span className="d">the free combo; the gateway picks per request</span>
+                      </button>
+                      {pinned.length > 0 && <span className="tmm-cap">Pinned</span>}
+                      {pinned.map((id) => {
+                        const row = cat?.models.find((m) => m.id === id);
+                        return (
+                          <span key={id} className={`tmm-row pin${gwPref && modelPref === id ? ' on' : ''}`}>
+                            <button className="tmm-main" onClick={() => chooseModel(id, row?.contextTokens || 0)}>
+                              <span className="n">{id}</span>
+                              <span className="d">
+                                {row ? `${row.owner} · ${ctxLabel(row.contextTokens)}` : 'not in the catalogue right now'}
+                              </span>
+                            </button>
+                            <button className="tmm-unpin" title={`Unpin ${id}`}
+                              onClick={() => togglePinned(id)}>×</button>
+                          </span>
+                        );
+                      })}
+                      <span className="tmm-cap">
+                        Combos
+                        {catBusy && <span className="busy"> · reading the catalogue…</span>}
+                      </span>
+                      {cat && !cat.ok && (
+                        <span className="tmm-note">Could not read the catalogue — {cat.reason}</span>
+                      )}
+                      {cat?.models.filter((m) => m.owner === 'combo').map((m) => (
+                        <button key={m.id}
+                          className={`tmm-row${gwPref && modelPref === m.id ? ' on' : ''}`}
+                          onClick={() => chooseModel(m.id, m.contextTokens)}>
+                          <span className="n">{m.id}</span>
+                          <span className="d">{ctxLabel(m.contextTokens)}</span>
+                        </button>
+                      ))}
+                      <button className="tmm-more" onClick={() => { setPinOpen(true); setPickOpen(false); }}>
+                        + pin another…
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
           {/* #487 — the design's spawn button SAYS WHAT IT WILL DO: the tool
               and the directory, not "+ New session". Both are already chosen
               in the two controls beside it, so a button that repeats them back
@@ -2155,6 +2301,58 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
         </div>
       </div>
     </div>
+    {/* ---- #504 · PIN A MODEL ----
+        Discovery, deliberately separated from picking. The menu is what you
+        use every day and must stay short; this is the once-in-a-while search
+        over everything the gateway routes.
+
+        ONLY TOOL-CAPABLE MODELS ARE OFFERED. Claude Code without tool calling
+        cannot read a file or make an edit, so a session on one fails in a way
+        that looks like Stack is broken. 180 of the catalogue's 480 are in that
+        state; hiding them is not tidying, it is refusing to sell a button that
+        cannot work. The count SAYS so rather than quietly showing fewer. */}
+    {pinOpen && (
+      <Modal onClose={() => { setPinOpen(false); setPinQuery(''); }} wide>
+        <h3>Pin a model</h3>
+        <p className="dim">
+          Pinned models sit at the top of the picker. Everything here runs through the local
+          OmniRoute gateway, on your own machine.
+        </p>
+        <input className="field-input" autoFocus value={pinQuery} placeholder="search the catalogue — opus, coding, gemini…"
+          onChange={(e) => setPinQuery(e.target.value)} />
+        {!cat ? (
+          <p className="dim">Reading the catalogue…</p>
+        ) : !cat.ok ? (
+          <p className="dim">Could not read the catalogue — {cat.reason}</p>
+        ) : (
+          <>
+            <p className="dim tmm-count">
+              {cat.models.filter((m) => m.tools).length} models can run a Claude Code session
+              {cat.models.length > cat.models.filter((m) => m.tools).length && (
+                <> · {cat.models.length - cat.models.filter((m) => m.tools).length} hidden: no tool calling, so a session on one cannot read or edit anything</>
+              )}
+              {cat.total > cat.models.length && <> · {cat.total - cat.models.length} more the gateway lists and Stack will not start</>}
+            </p>
+            <div className="tmm-list">
+              {cat.models
+                .filter((m) => m.tools && (!pinQuery.trim() || m.id.toLowerCase().includes(pinQuery.trim().toLowerCase())))
+                .slice(0, 200)
+                .map((m) => (
+                  <button key={m.id} className={`tmm-hit${pinned.includes(m.id) ? ' on' : ''}`}
+                    onClick={() => togglePinned(m.id)}>
+                    <span className="n">{m.id}</span>
+                    <span className="d">{m.owner} · {ctxLabel(m.contextTokens)}</span>
+                    <span className="p">{pinned.includes(m.id) ? 'pinned' : 'pin'}</span>
+                  </button>
+                ))}
+            </div>
+          </>
+        )}
+        <div className="modal-actions">
+          <button className="btn-submit sm" onClick={() => { setPinOpen(false); setPinQuery(''); }}>Done</button>
+        </div>
+      </Modal>
+    )}
     {killTargets && killTargets.length > 0 && (
       <ConfirmModal
         title={killTargets.length === 1 ? 'Kill detached session?' : `Kill ${killTargets.length} detached sessions?`}
@@ -2309,6 +2507,14 @@ function TermSession({ sess, visible, focused, fontSize, onStatus, onUsage, onTm
         // never retro-fits one already running: the daemon fixes a provider at
         // spawn and nothing here can move it afterwards.
         provider: sess.cmd === 'claude' && getTermSessionPrefs().onGateway ? 'omniroute' as const : undefined,
+        // #504 — and WHICH model, read at the same moment and under the same
+        // rule: the pref governs the session it starts, never one already
+        // running. Only sent alongside the gateway — a model id means nothing
+        // for a session going to the subscription.
+        model: sess.cmd === 'claude' && getTermSessionPrefs().onGateway
+          ? (getTermSessionPrefs().model || undefined) : undefined,
+        contextTokens: sess.cmd === 'claude' && getTermSessionPrefs().onGateway
+          ? (getTermSessionPrefs().modelContext || undefined) : undefined,
       });
       wsRef.current = ws;
       // #135 — write-batching: coalesce rapid incoming frames into one

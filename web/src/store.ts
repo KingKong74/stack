@@ -494,6 +494,12 @@ export async function getProjectPulse(slug: string): Promise<ProjectPulse> {
 export function openTerminal(opts: {
   cwd: string; cmd: 'shell' | 'claude'; cols: number; rows: number;
   tmuxSession?: string; skipPerms?: boolean;
+  // #504 — WHICH model, for this tab only. An id from the gateway's catalogue;
+  // the host validates it again before it goes anywhere near a command line, and
+  // an id it refuses falls back to the host default rather than failing the
+  // spawn. contextTokens is that model's own window, read off the catalogue, so
+  // Claude Code stops assuming 200k for an id it has never heard of.
+  model?: string; contextTokens?: number;
   // #486 — 'omniroute' routes this session through the local gateway instead of
   // the account's own subscription. A provider KEY, never a base URL or a
   // credential: the host owns both, and the browser has no business with either.
@@ -662,7 +668,18 @@ export function setTermWorkingItem(cwd: string, id: number | null) {
 // this card, and it only ever affects sessions started AFTER it is set — a
 // running session's provider is fixed at spawn, so flipping this cannot move
 // one that is already going.
-export interface TermSessionPrefs { autoStart: 'claude' | 'shell'; skipPermissions: boolean; onGateway: boolean }
+//
+// (#504) `model` and `pinnedModels` are the per-tab model choice. `model` is
+// what the NEXT claude tab will be started on ('' = whatever the gateway's own
+// default routes to, which is the free combo); `pinnedModels` is the short list
+// the picker offers above the combos, because 480 catalogue entries is not a
+// menu. Both device-local like the rest of this card. `model` means nothing
+// unless `onGateway` is on — the picker sets the two together, so a model is
+// never named for a session that is going to the subscription anyway.
+export interface TermSessionPrefs {
+  autoStart: 'claude' | 'shell'; skipPermissions: boolean; onGateway: boolean;
+  model: string; modelContext: number; pinnedModels: string[];
+}
 const TERM_SESSION_KEY = 'stack.termSession';
 export function getTermSessionPrefs(): TermSessionPrefs {
   return readStoredJSON(TERM_SESSION_KEY, (p) => ({
@@ -671,10 +688,53 @@ export function getTermSessionPrefs(): TermSessionPrefs {
     // Defaults OFF: routing somebody's session to a different model is not a
     // thing to do because a checkbox was missing.
     onGateway: p?.onGateway === true,
+    // A stored id is re-validated on the way OUT as well as in: this row is
+    // localStorage, which anything on the device can write, and the value ends
+    // up on a command line host-side. The host validates again — this is the
+    // near side of the same boundary, not a substitute for it.
+    model: cleanModelId(p?.model),
+    // The window that goes WITH that model, read off the catalogue when it was
+    // picked. Stored beside it so the pane does not have to re-fetch 400 rows
+    // to answer one number at connect time. 0 = not known, which is not a
+    // guess: the host then leaves Claude Code on its own 200k assumption.
+    modelContext: Number.isFinite(Number(p?.modelContext)) && Number(p?.modelContext) > 0
+      ? Math.floor(Number(p.modelContext)) : 0,
+    pinnedModels: (Array.isArray(p?.pinnedModels) ? p.pinnedModels : [])
+      .map((x: unknown) => cleanModelId(x)).filter(Boolean).slice(0, 24),
   }));
+}
+
+// The same allowlist the host keeps (terminal/model-switch.mjs's cleanModelId),
+// and it is a MIRROR — there is no way for a browser bundle to import a host
+// module, so the two are kept in step by discipline, like lib/branch.ts and
+// lane.mjs. THE HOST'S COPY IS THE ONE THAT MATTERS: it is what stands between
+// a model id and `/bin/bash -lc`. This one exists so the UI never offers or
+// stores something the host will refuse, which would otherwise show up as a
+// picker that silently does nothing.
+export function cleanModelId(id: unknown): string {
+  const raw = String(id ?? '').trim();
+  if (!raw || raw.length > 120) return '';
+  return /^[A-Za-z0-9._:/-]+$/.test(raw) ? raw : '';
 }
 export function setTermSessionPrefs(p: TermSessionPrefs) {
   localStorage.setItem(TERM_SESSION_KEY, JSON.stringify(p));
+}
+
+// (#504) The gateway's catalogue — what a tab could be started on. Read
+// through the HOST (the server is containerised and cannot reach the gateway),
+// so it carries the same three states everything on that path does.
+//
+// `ok:false` ALWAYS CARRIES A REASON and never an unexplained empty list:
+// "Stack could not read the catalogue" (no daemon, no key, a timeout) and "the
+// gateway offers nothing" are different sentences, and the picker must say
+// which. `total` is the gateway's own count, `models` what Stack will actually
+// start a session on — separate, so the gap is visible.
+export interface GatewayModel { id: string; owner: string; contextTokens: number; tools: boolean }
+export interface GatewayModels {
+  ok: boolean; connected: boolean; reason: string; total: number; models: GatewayModel[];
+}
+export async function getTerminalModels(): Promise<GatewayModels> {
+  return request<GatewayModels>('/terminal/models');
 }
 
 // ✧ Gemini command help in the terminal rail — describe what you want to do,
