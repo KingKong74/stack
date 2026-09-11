@@ -101,7 +101,7 @@ fingerprint of their title. So:
 - Manual items are never touched by the extractor. Reach for a manual bug/roadmap
   item/note when you want something the session summary wouldn't capture.
 
-## Suggest the tests this session showed were missing (#498)
+## Suggest the tests this session showed were missing (#500)
 
 `extract.tests` on a checkpoint files what nothing checks yet. It lands in
 **For you → Auto-ideas**, held from the overnight runner until the owner keeps,

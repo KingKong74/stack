@@ -1434,7 +1434,7 @@ ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS sprint_id INTEGER
 ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS sprint_rank INTEGER NOT NULL DEFAULT 0;
 CREATE INDEX IF NOT EXISTS roadmap_sprint_idx ON roadmap_items (sprint_id, sprint_rank, id);
 
--- #498 — A TEST A SESSION SUGGESTED, and the two things that make it one.
+-- #500 — A TEST A SESSION SUGGESTED, and the two things that make it one.
 --
 -- It is a ROADMAP ROW and not a table of its own, deliberately. A suggestion
 -- has to be held from the overnight runner until a human signs it off, deduped

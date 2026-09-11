@@ -115,7 +115,7 @@ function tmuxSession() {
     logStderr(`built: ${parts.join(', ')}`);
   }
 
-  // #498 — and what the `tests` block filed, for the same reason: a session
+  // #500 — and what the `tests` block filed, for the same reason: a session
   // that sent six suggestions and sees two filed has learnt something real
   // (four were already tracked, dismissed before, or already covered by a
   // check), where a silent success would have it believe all six are waiting.

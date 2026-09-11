@@ -64,7 +64,7 @@ export function roadmapItemShape(row) {
     done: row.done,
     bucket: row.bucket,
     source: row.source,                // 'hook' | 'manual' | 'fly' (#381)
-    // #498 — a test a session suggested: '' = an ordinary row, which is nearly
+    // #500 — a test a session suggested: '' = an ordinary row, which is nearly
     // all of them. 'bug' = a test that would have caught a defect, 'function' =
     // a check on a named route or function. `testTarget` is what it is about —
     // a bug key, or the route's own name — and is what lets the Quality tab

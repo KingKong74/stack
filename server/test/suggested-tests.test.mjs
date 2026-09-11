@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// #498 — THE TESTS A SESSION SUGGESTS, from the wire to the Auto-ideas pane.
+// #500 — THE TESTS A SESSION SUGGESTS, from the wire to the Auto-ideas pane.
 //
 // Needs a running server on an EMPTY database (it writes real rows):
 //   docker run -d --rm --name pg -e POSTGRES_PASSWORD=t -e POSTGRES_USER=t \

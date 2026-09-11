@@ -84,7 +84,7 @@ Do the following:
    before — they simply stop becoming tracker rows that someone has to triage.
    Put the same sentences there that you would have put here.
 
-   **`tests` — the checks this session showed were missing (#498).** These land
+   **`tests` — the checks this session showed were missing (#500).** These land
    in **For you → Auto-ideas**, held from the overnight runner, where the owner
    keeps, promotes or dismisses them like anything else in that pane.
 

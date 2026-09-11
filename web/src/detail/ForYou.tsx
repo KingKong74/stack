@@ -85,7 +85,7 @@ import { patchRoadmapItem, deleteRoadmapItem } from '../store';
 
 type Tone = 'info' | 'danger' | 'success' | 'warning' | 'neutral';
 
-// #498 — HOW A SUGGESTED TEST READS ON ITS ROW. Two kinds, and the difference
+// #500 — HOW A SUGGESTED TEST READS ON ITS ROW. Two kinds, and the difference
 // is worth drawing rather than flattening to one "test" chip: one is a gap
 // something already fell through, the other is a part of the app nothing
 // watches. The first is the one you act on today.
@@ -725,7 +725,7 @@ function AutoPane({ slug, items, onRefresh, onEdit, highlightId }: {
         session for work it was doing. Nothing here is on the board or the Roadmap, and the
         overnight runner leaves all of it alone until you answer. <b>Keep</b> files it on the
         Roadmap as an idea; <b>Promote</b> puts it on the board as work.
-        {' '}Rows marked <b>test</b> are checks a session thought were missing (#498) — one kind for
+        {' '}Rows marked <b>test</b> are checks a session thought were missing (#500) — one kind for
         a defect that got through, one for a route nothing watches.
       </div>
 

@@ -65,7 +65,7 @@ function asBugCandidates(v) {
 }
 
 // Candidate next-step list off the wire: [{ title, priority }].
-// #498 — A TEST A SESSION SUGGESTED, in the two kinds it is allowed to be.
+// #500 — A TEST A SESSION SUGGESTED, in the two kinds it is allowed to be.
 //
 // WHY THIS IS ON WHEN `next_steps` IS OFF. `next_steps` was switched off in the
 // checkpoint command because every follow-up a session named became a held
@@ -160,7 +160,7 @@ function asBuiltCandidates(v) {
  *   extract: {
  *     bugs?: [{ title, severity }],
  *     next_steps?: [{ title, priority }],
- *     tests?: [{ title, kind: 'bug'|'function', target?, priority? }],  // #498
+ *     tests?: [{ title, kind: 'bug'|'function', target?, priority? }],  // #500
  *     built?: [{ item?, title?, note, bucket?, area? }]   // #174 — see below
  *   }
  * }
@@ -491,7 +491,7 @@ ingest.post('/', async (req, res) => {
       }
     }
 
-    // --- 4b. Land the tests a session suggested (#498) ---
+    // --- 4b. Land the tests a session suggested (#500) ---
     //
     // Same landing as the roadmap items below — held, fingerprint-deduped,
     // tombstone-honouring — with two additions that are the whole point of the
@@ -758,7 +758,7 @@ ingest.post('/', async (req, res) => {
       session: existingSession ? 'updated' : 'created',
       bugs: { created: createdBugs, relinked: relinkedBugs },
       roadmap: { created: createdSteps },
-      // #498 — what the session suggested testing. Reported for the same reason
+      // #500 — what the session suggested testing. Reported for the same reason
       // `built.missed` is: the poster prints it, so a session can see that six
       // suggestions became two rows (four were already tracked, or already
       // covered by a check) rather than assuming all six landed.

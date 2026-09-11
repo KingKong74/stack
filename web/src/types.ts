@@ -1,6 +1,6 @@
 export type ProjectStatus = 'live' | 'building' | 'paused' | 'archived';
 export type Severity = 'critical' | 'high' | 'medium' | 'low';
-// #498 — what a session suggested testing. '' is the ordinary case and is not a
+// #500 — what a session suggested testing. '' is the ordinary case and is not a
 // kind: it means the row is not a test suggestion at all.
 export type TestKind = '' | 'bug' | 'function';
 export type BugStatus = 'open' | 'investigating' | 'fixing' | 'fixed';
@@ -123,7 +123,7 @@ export interface RoadmapItem {
   bucket: Priority;
   source: Source;
   reviewed: boolean;
-  // #498 — a test a session suggested, and what it is about. '' = an ordinary
+  // #500 — a test a session suggested, and what it is about. '' = an ordinary
   // row, which is nearly all of them; the two real kinds are 'bug' (a test that
   // would have caught a defect) and 'function' (a check on a named route or
   // function). `testTarget` is the bug key or the route's own name.
