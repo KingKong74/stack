@@ -2336,6 +2336,11 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
             <div className="tmm-list">
               {cat.models
                 .filter((m) => m.tools && (!pinQuery.trim() || m.id.toLowerCase().includes(pinQuery.trim().toLowerCase())))
+                // NAMED MODELS FIRST, combos last. The combos are already one
+                // click away in the picker itself, so a pin dialog that opened
+                // on them is showing you the thing you did not come here for.
+                .slice()
+                .sort((a, b) => Number(a.owner === 'combo') - Number(b.owner === 'combo'))
                 .slice(0, 200)
                 .map((m) => (
                   <button key={m.id} className={`tmm-hit${pinned.includes(m.id) ? ' on' : ''}`}

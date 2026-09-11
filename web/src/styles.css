@@ -2196,8 +2196,12 @@ a.tab { display: inline-block; }
 }
 .tmm-row:hover, .tmm-more:hover, .tmm-hit:hover { background: var(--surface-hover); }
 .tmm-row.on { background: var(--surface-selected); color: var(--ink); }
-.tmm-row .n, .tmm-hit .n { flex: 1; min-width: 0; font-family: var(--mono); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tmm-row .d, .tmm-hit .d { flex: none; font-size: 9.5px; color: var(--fainter); }
+/* THE NAME DOES NOT SHRINK, THE DESCRIPTION DOES. Both flexing meant a row
+   whose description was a sentence ate its own name — "Claude — your
+   subscription" rendered as "Claude — you…", which is the one word on the row
+   that has to be readable. The description is the part you can lose. */
+.tmm-row .n, .tmm-hit .n { flex: 1 0 auto; max-width: 100%; font-family: var(--mono); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tmm-row .d, .tmm-hit .d { flex: 0 1 auto; min-width: 0; font-size: 9.5px; color: var(--fainter); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* A pinned row is a row plus its own unpin button, so it is a SPAN holding two
    buttons rather than a button inside a button. */
 .tmm-row.pin { padding: 0; }
