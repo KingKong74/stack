@@ -61,7 +61,7 @@ import {
 } from '../store';
 import { STATUS_LABEL } from '../lib/ui';
 import {
-  SEVERITY, SEV_KEYS, UNGROUPED, assertLabel, bugGrade, checkResultLine, clusterBugs, fmtMs,
+  SEVERITY, SEV_KEYS, UNGROUPED, assertLabel, bugAge, bugGrade, checkResultLine, clusterBugs, fmtMs,
   groupByFeature, isGreenFlake, openItems, plural, readHealth, readHistory, runBy,
   sparkline, statStrip, type FeatureGroup, type OpenItem, type SevKey,
 } from '../lib/quality';
@@ -502,10 +502,15 @@ function FeatureRow({ feature, history, running, open, onToggle, onRun, onRunAll
             const h = readHistory(history[c.id]);
             const red = c.lastStatus === 'fail';
             const flake = isGreenFlake(c, h);
+            // NEVER RUN IS NOT A PASS, and it gets its own glyph and its own
+            // tone here for the same reason the Checks tab gives it one: a
+            // green tick over a check nobody has ever run is the NULL-verdict
+            // lie in a picture.
+            const tone = red ? `sev-${feature.worst || 'broken'}` : flake ? 'sev-flaky' : c.lastStatus ? 'ok' : 'never';
             return (
               <div className="row" key={c.id}>
-                <span className={`ico${red ? ` sev-${feature.worst || 'broken'}` : flake ? ' sev-flaky' : c.lastStatus ? ' ok' : ''}`}>
-                  <KitIcon name={red || flake ? 'circle-alert' : 'circle-check'} size={12} />
+                <span className={`ico ${tone}`}>
+                  <KitIcon name={red || flake ? 'circle-alert' : tone === 'never' ? 'clock' : 'circle-check'} size={12} />
                 </span>
                 <span className="nm">{c.name}</span>
                 <span className="avg">{checkResultLine(c)}</span>
@@ -901,7 +906,7 @@ function BugRow({ bug, cover, running, onStatus, onKeep, onUnlink, onDelete, onR
         {BUG_STATUSES.map((s) => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
       </select>
       <span className="tag"><SevTag severity={bugGrade(bug.severity)} /></span>
-      <span className="age">{bug.meta}</span>
+      <span className="age">{bugAge(bug)}</span>
       {cover && !cover.external
         ? <button className="ql-act" onClick={() => onRun(cover.id)} disabled={busy}>{busy ? '…' : '▸ retest'}</button>
         : cover

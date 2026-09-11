@@ -28,7 +28,7 @@ const url = new URL('../web/src/lib/quality.ts', import.meta.url);
 const {
   SEVERITY, bugGrade, readHistory, isGreenFlake, readHealth, gradeRedCheck,
   openItems, qualityAttention, groupByFeature, statStrip, sparkline, clusterBugs,
-  assertLabel, runBy, fmtMs, worstOf,
+  assertLabel, runBy, bugAge, fmtMs, worstOf,
 } = await import(url.href);
 
 // --- fixtures ---------------------------------------------------------
@@ -336,8 +336,14 @@ test('a status-only check says so rather than pretending to assert something', (
 
 test('who runs a check is the one two-value distinction the data can source', () => {
   assert.equal(runBy(check()), 'stack');
-  assert.equal(runBy(check({ auth: true })), 'stack · auth');
-  assert.equal(runBy(check({ external: true })), 'reported');
+  assert.equal(runBy(check({ auth: true })), 'authed');
+  assert.equal(runBy(check({ external: true })), 'reported',
+    'external wins: #261 auth is about the token, not about who probes');
+});
+
+test('a bug\'s age loses the word the column already is', () => {
+  assert.equal(bugAge(bug({ meta: 'reported 14h ago' })), '14h ago');
+  assert.equal(bugAge(bug({ meta: 'reported recently' })), 'recently');
 });
 
 test('a missing latency is an em dash, never a zero', () => {

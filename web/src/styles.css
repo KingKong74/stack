@@ -5849,6 +5849,9 @@ body[data-mc-full] .totop { display: none; }
 .ql-fbody .row.foot .nm { color: var(--text-tertiary); }
 .ql-fbody .ico { display: flex; flex: none; color: var(--sev-dot); }
 .ql-fbody .ico.ok { color: var(--lime-500); }
+/* Never run is not a pass — the same NULL-verdict rule the Checks tab's own
+   `.c-last.never` follows, and the fold body had the green tick until #497. */
+.ql-fbody .ico.never { color: var(--text-tertiary); }
 .ql-fbody .nm { flex: 1; min-width: 0; font: var(--type-code); color: var(--text-secondary); }
 .ql-fbody .avg { flex: none; font: var(--weight-regular) var(--text-xs)/1 var(--font-mono); color: var(--text-tertiary); }
 
@@ -5986,8 +5989,11 @@ body[data-mc-full] .totop { display: none; }
 .ql-brow .id { flex: none; font: var(--weight-medium) var(--text-xs)/1.4 var(--font-mono); color: var(--text-link); }
 .ql-brow .t { flex: 1; min-width: 0; font: var(--type-body-sm); color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ql-brow .repro { flex: none; font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-secondary); }
-.ql-brow .age { flex: 0 0 34px; text-align: right; font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-secondary); }
-.ql-brow .ql-act { flex: 0 0 76px; text-align: right; }
+.ql-brow .age { flex: 0 0 52px; text-align: right; font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-secondary); }
+/* 92px, not the kit's 76: "write a check" is the longest thing this slot ever
+   says and it is the action that matters most on an uncovered row, so it gets
+   the width rather than wrapping to two lines. */
+.ql-brow .ql-act { flex: 0 0 92px; text-align: right; }
 /* A bug's status is the one thing this screen writes on it, so it is a control
    on the row rather than a line in the ⋯ menu. It takes the slot the kit gave
    `repro`, which Stack has no column for. */

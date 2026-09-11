@@ -101,7 +101,12 @@ export function assertLabel(c: Check): string {
 // demand and by the nightly, OR its result is REPORTED from outside (#291) and
 // Stack never probes it at all. That is a real two-value distinction and the
 // only one the data can source.
-export const runBy = (c: Check) => (c.external ? 'reported' : c.auth ? 'stack · auth' : 'stack');
+export const runBy = (c: Check) => (c.external ? 'reported' : c.auth ? 'authed' : 'stack');
+
+// `bugs.meta` is server-rendered as "reported 14h ago"; the column it sits in on
+// a bug row is the AGE column, and the word is already the row's subject. One
+// word each way, so nothing wraps.
+export const bugAge = (b: Bug) => b.meta.replace(/^reported\s+/, '');
 
 // ---- #279: what a check remembers ----------------------------------------
 //
