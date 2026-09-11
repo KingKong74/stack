@@ -421,7 +421,10 @@ export function statStrip(items: OpenItem[], health: Health): QualityStat[] {
   const mid = at('broken') + at('degraded');
   const flaky = at('flaky');
   return [
-    { v: health.run ? `${health.passing}/${health.total}` : `0/${health.total}`, l: 'passing' },
+    // AN EM DASH, NOT A ZERO. A suite nothing has ever run is not a suite that
+    // failed — the same NULL-verdict rule every other reader on this page
+    // follows, and it was broken in the one number at the top of the screen.
+    { v: health.run ? `${health.passing}/${health.total}` : `—/${health.total}`, l: 'passing' },
     { v: String(blocking), l: 'blocking', ...(blocking ? { sev: 'blocking' as SevKey } : { good: true }) },
     { v: String(mid), l: 'broken or degraded', ...(mid ? { sev: 'broken' as SevKey } : { good: true }) },
     { v: String(flaky), l: 'flaky' },

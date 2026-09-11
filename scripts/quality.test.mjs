@@ -223,6 +223,13 @@ test('the badge takes no history and still agrees with the screen it labels', ()
   assert.equal(badge, 3, 'two red checks and one critical bug; the flake and the cosmetic are not an alarm');
 });
 
+test('a suite nothing has run reads an em dash, never 0 of N', () => {
+  const checks = [check({ id: 1 }), check({ id: 2 })];
+  const strip = statStrip(openItems(checks, [], {}), readHealth(checks, []));
+  assert.equal(strip[0].v, '\u2014/2', 'no pass is not a failed pass, in the headline number too');
+  assert.equal(strip[4].v, '\u2014', 'and there is no average to claim');
+});
+
 test('the strip\'s blocking count is the same grading the list uses', () => {
   const checks = [fail({ id: 1 }), fail({ id: 2 })];   // suite down -> both blocking
   const items = openItems(checks, [], {});

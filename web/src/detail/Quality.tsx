@@ -60,10 +60,12 @@ import {
   patchBug, patchCheck, runChecks, type CheckInput,
 } from '../store';
 import { STATUS_LABEL } from '../lib/ui';
+import { isHeld } from '../lib/approval';
+import { useAutoRefresh } from '../lib/autoRefresh';
 import {
-  SEVERITY, SEV_KEYS, UNGROUPED, assertLabel, bugAge, bugGrade, checkResultLine, clusterBugs, fmtMs,
-  groupByFeature, isGreenFlake, openItems, plural, readHealth, readHistory, runBy,
-  sparkline, statStrip, type FeatureGroup, type OpenItem, type SevKey,
+  SEVERITY, SEV_KEYS, UNGROUPED, assertLabel, bugAge, bugGrade, checkResultLine, clusterBugs,
+  failSignature, fmtMs, groupByFeature, isGreenFlake, openItems, plural, readHealth, readHistory,
+  runBy, sparkline, statStrip, type FeatureGroup, type OpenItem, type SevKey,
 } from '../lib/quality';
 import { MoreMenu } from '../components/MoreMenu';
 import { ConfirmModal } from '../components/ConfirmModal';
@@ -130,8 +132,14 @@ export function Quality({ slug, checks, bugs, onRefresh }: {
   // from the one payload every tab renders from.
   const [runs, setRuns] = useState<CheckRun[]>([]);
   const [history, setHistory] = useState<CheckHistory>({});
+  // ARMED IN THE BODY, NOT ONLY CLEARED IN THE CLEANUP. StrictMode mounts every
+  // effect twice in development — mount, clean up, mount — so a ref that is
+  // only ever set false by a cleanup is false for the rest of the page's life
+  // the moment the first teardown runs. The ledger then never lands and a run
+  // leaves its rows on "running…" for good, in dev alone, which is exactly
+  // where it would be blamed on the server.
   const alive = useRef(true);
-  useEffect(() => () => { alive.current = false; }, []);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
 
   const readLedger = useCallback(() => {
     Promise.all([getCheckRuns(slug, 40), getCheckHistory(slug, 20)])
@@ -147,6 +155,14 @@ export function Quality({ slug, checks, bugs, onRefresh }: {
   // button.
   const [running, setRunning] = useState<ReadonlySet<number>>(new Set());
   const [runningAll, setRunningAll] = useState(false);
+
+  // #312 — the run ledger moves on the HOST's clock (the nightly suite runs
+  // while this screen is open), and it is NOT in the payload the parent's own
+  // auto-refresh re-reads, so a screen left open would drift: fresh check rows
+  // over a stale sparkline and stale diagnoses. Through the shared hook, never
+  // a bare setInterval, so one device-local setting still governs every poll.
+  // Paused while a run is in flight — that run ends by re-reading this anyway.
+  useAutoRefresh(readLedger, !runningAll && running.size === 0);
 
   const guard = async (fn: () => Promise<void>) => {
     try { setError(''); await fn(); }
@@ -181,14 +197,26 @@ export function Quality({ slug, checks, bugs, onRefresh }: {
     const input = toInput(state.draft);
     if (state.editing) {
       await patchCheck(slug, state.editing.id, input);
-    } else {
-      const made = await createCheck(slug, input);
-      // #278's data change, written from the bug's side. Only ever on create:
-      // a bug already linked to something is not re-aimed by writing a check.
-      if (state.linkBug) await patchBug(slug, state.linkBug, { check_id: made.id });
-      await runChecks(slug, { id: made.id }).catch(() => { /* a new check may be red; that is a result */ });
+      setCheckForm(null);
+      after();
+      return;
     }
+    const made = await createCheck(slug, input);
+    // THE FORM CLOSES THE MOMENT THE CHECK EXISTS, and that ordering is the
+    // whole point: the link and the first run are both allowed to fail, and if
+    // either threw with the composer still open, pressing Save again would
+    // create a SECOND check with the same definition. Nothing after this line
+    // can be retried into a duplicate.
     setCheckForm(null);
+    // #278's data change, written from the bug's side. Only ever on create: a
+    // bug already linked to something is not re-aimed by writing a check.
+    // Surfaced if it fails, because a check written FOR a bug that ends up not
+    // wearing it is the loop quietly losing its thread.
+    if (state.linkBug) {
+      await patchBug(slug, state.linkBug, { check_id: made.id })
+        .catch((e) => setError(`Check saved, but linking it to ${state.linkBug} failed: ${(e as Error).message}`));
+    }
+    await runChecks(slug, { id: made.id }).catch(() => { /* a new check may be red; that is a result */ });
     after();
   });
 
@@ -252,7 +280,7 @@ export function Quality({ slug, checks, bugs, onRefresh }: {
   const fileBugFor = (c: Check) => {
     setTab('bugs');
     setBugForm({
-      title: `${c.name}: ${c.lastError || `HTTP ${c.lastCode ?? '?'}`}`.slice(0, 300),
+      title: `${c.name}: ${failSignature(c)}`.slice(0, 300),
       severity: 'high', checkId: c.id, checkName: c.name,
     });
   };
@@ -489,7 +517,11 @@ function FeatureRow({ feature, history, running, open, onToggle, onRun, onRunAll
             </span>
           )}
         </span>
-        <span className="n">{feature.passing}/{feature.checks.length}</span>
+        {/* THE NUMBER AGREES WITH THE BAR. Both are over the checks that have
+            RUN: `10/15` beside a bar drawn at 83% is two different claims in
+            one row, and the never-run difference is said in the fold's own
+            sentence and drawn with a clock on each row inside it. */}
+        <span className="n">{feature.passing}/{feature.run}</span>
         <span className="avg">{fmtMs(feature.avgMs)}</span>
         <span className="tag">
           {feature.worst ? <SevTag severity={feature.worst} /> : <span className="clean">clean</span>}
@@ -555,9 +587,16 @@ function ChecksTab({ checks, history, running, form, onForm, onSave, onRun, onDe
     () => [...new Set(checks.map((c) => c.feature || ''))].sort((a, b) => (a === '' ? 1 : b === '' ? -1 : a.localeCompare(b))),
     [checks]);
 
+  // A FILTER THAT HAS OUTLIVED ITS FEATURE FALLS BACK TO ALL. Delete the last
+  // check under a feature — or edit it into another one — and the select is
+  // left pointing at a key no check carries, which renders as a blank control
+  // over an empty table: the screen says "no checks" about a suite of sixty.
+  // Derived rather than corrected in an effect, so there is no render where
+  // the two disagree.
+  const live = feature === '__all' || featureKeys.includes(feature) ? feature : '__all';
   const q = term.trim().toLowerCase();
   const rows = checks.filter((c) =>
-    (feature === '__all' || (c.feature || '') === feature)
+    (live === '__all' || (c.feature || '') === live)
     && (!q || `${c.name} ${c.feature} ${c.url} ${assertLabel(c)}`.toLowerCase().includes(q)));
 
   const groups = [...new Set(rows.map((c) => c.feature || ''))]
@@ -573,7 +612,7 @@ function ChecksTab({ checks, history, running, form, onForm, onSave, onRun, onDe
             value={term} onChange={(e) => setTerm(e.target.value)} />
         </span>
         <select className="km-select sm ql-area" aria-label="Feature"
-          value={feature} onChange={(e) => setFeature(e.target.value)}>
+          value={live} onChange={(e) => setFeature(e.target.value)}>
           <option value="__all">All features</option>
           {featureKeys.map((k) => <option key={k} value={k}>{k || UNGROUPED}</option>)}
         </select>
@@ -886,7 +925,15 @@ function BugRow({ bug, cover, running, onStatus, onKeep, onUnlink, onDelete, onR
   // A hook-extracted bug nobody has signed off is HELD from the overnight
   // runner (#359). The Dashboard's review deck was the only surface that could
   // keep one while this tab was a mockup; Keep is back here, where the bug is.
-  const held = !bug.reviewed && bug.source !== 'manual';
+  //
+  // THROUGH `isHeld`, NOT SPELLED AGAIN. The rule already exists three times
+  // (server/src, scripts/lib, web/src/lib) because no package can import
+  // another, and a fourth copy inside one of those packages is the one with no
+  // excuse. The hand-rolled version here read `source !== 'manual'`, which is
+  // the same answer today and the WRONG DIRECTION tomorrow: a source nobody
+  // has taught it about would be treated as held, and blocking work a human
+  // typed is the failure mode this feature must not have.
+  const held = isHeld(bug);
   const options = [
     ...(held ? [{ key: 'keep', label: 'Keep — sign it off', onSelect: () => onKeep(bug) }] : []),
     ...(cover ? [{ key: 'unlink', label: 'Unlink its check', onSelect: () => onUnlink(bug) }] : []),
