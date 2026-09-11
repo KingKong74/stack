@@ -47,8 +47,6 @@ const isMockTab = (t: Tab) => t === 'roadmap' || t === 'ideas';
 // The four readings of a project. `navSections` below is the ONE list of them
 // — #432 moved them from a horizontal strip into the console's left rail, and
 // a second copy anywhere is how the two would drift.
-const STATUS_LABEL = { live: 'Live', building: 'Building', paused: 'Paused', archived: 'Archived' } as const;
-
 const TAB_KEYS = new Set<Tab>(['overview', 'quality', 'roadmap', 'activity', 'auto', 'ideas', 'plans']);
 // 'bugs' and 'audit' both land on Quality — old deep links (bookmarks, a search
 // payload from an older server, a ⌘K target) keep working. 'tips' still
@@ -358,14 +356,6 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
       setEditingUrl(null);
     });
 
-  // Automode: opt this project in/out of the overnight autopilot (the runner
-  // refuses projects with this off, on top of the global arm switch).
-  const toggleAutomode = () =>
-    guard(async () => {
-      const updated = await patchProject(slug, { automode: !project.automode });
-      setData({ ...data, project: { ...project, automode: updated.automode } });
-    });
-
   // ---- public showcase link ----
   const shareUrl = data.shareToken
     ? `${window.location.origin}/#/share/${encodeURIComponent(slug)}/${encodeURIComponent(data.shareToken)}`
@@ -569,14 +559,13 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
         {!isMockTab(tab) && <div className="detail-head">
           <div>
             <div className="titlerow">
+              {/* THE STATUS BADGE AND THE AUTOMODE SWITCH ARE GONE at the
+                  owner's request. The switch was `automode`'s ONLY writer in
+                  any browser, so opting a project in or out of the overnight
+                  autopilot is now `./stack` or a PATCH — it joins the list in
+                  CLAUDE.md of what has no surface left. The status itself is
+                  still drawn on the dashboard's card and on a share link. */}
               <div className="detail-title">{project.name}</div>
-              <span className={`statusbadge ${project.status}`}><span className="dot" />{STATUS_LABEL[project.status]}</span>
-              <button className={`autobadge ${project.automode ? 'on' : ''}`} onClick={toggleAutomode}
-                title={project.automode
-                  ? 'Automode ON — the overnight autopilot may pick up this project. Click to switch off.'
-                  : 'Automode OFF — the autopilot leaves this project alone. Click to opt in.'}>
-                ⚙ {project.automode ? 'auto' : 'manual'}
-              </button>
             </div>
             {project.subtitle && <div className="detail-sub">{project.subtitle}</div>}
           </div>

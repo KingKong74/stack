@@ -173,12 +173,12 @@ or the header of the file named in the pointer.
 - **THE REST ARE MOCKUPS AND SAY SO ON THEIR OWN FACE** (#443–#482): `ForYouMock` (3 panes),
   `QualityMock`, `ControlMock` (7 tabs), `DevelopmentView` at the foot of `Board.tsx`, and FOUR OF
   `Plans.tsx`'s SIX sub-views (#482 wired Timeline and Calendar). Each wears a **Mock chip** —
-  on the rail row, or, where a tab is part wired, **on the sub-tab itself**, which is the finest
-  grain the rule has: these screens look exactly like the real thing, and a chip covering a wired
-  default view warns about the wrong one. **A number and the screen behind it must agree**: a wired
+  on the rail row, or, where a tab is part wired, **on the sub-tab itself**: these screens look
+  exactly like the real thing, and a chip covering a wired default view warns about the wrong one. **A number and the screen behind it must agree**: a wired
   row's badge is its real count, a mockup's counts the MOCKUP. Still UNREACHABLE from a browser,
   with `./stack` and the API the way in: a **verdict**, **labels**, the **⎇ claim**, **risk**,
-  **checks and bugs** (#450), and **WRITING the stored schedule** (#451) — Plans reads it (#482).
+  **`automode`**, **checks and bugs** (#450) and **WRITING the stored schedule** (#451; Plans
+  reads it, #482).
 - **A verdict is `verdict_source` / `verdict_at` / `verdict_evidence` (#263, owner-sanctioned)** — the
   one place a machine may verdict instead of the human. **The sanction has three conditions and
   `scripts/lib/autoverdict.mjs`'s header carries them**, including that the VISIBLE leg is unmet and
