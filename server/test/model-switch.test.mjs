@@ -42,6 +42,8 @@ const {
   OMNIROUTE_DEFAULT_BASE_URL,
   sessionModelTag,
   describeModelTag,
+  cleanModelId,
+  cleanContextTokens,
 } = await import('../../terminal/model-switch.mjs');
 
 try {
@@ -214,6 +216,55 @@ try {
     describeModelTag(`omniroute:${'x'.repeat(400)}`).id.length, 110);
   check('describe: a colon with nothing before it is null',
     describeModelTag(':auto'), null);
+
+  // ---- #504 · a model id is untrusted input ----------------------------
+  // It comes from a browser and ends up inside the string the daemon hands to
+  // `/bin/bash -lc`, so this is the injection boundary, not a formatting rule.
+  // Rejection returns '' — which every caller reads as "nothing was asked for"
+  // and falls back to a known-good default. There is no sanitise-and-continue.
+  check('id: a real catalogue id passes', cleanModelId('dva/claude-opus-5-max'), 'dva/claude-opus-5-max');
+  check('id: a combo passes', cleanModelId('auto/coding:fast'), 'auto/coding:fast');
+  check('id: a semicolon is refused WHOLE', cleanModelId('auto/coding; rm -rf ~'), '');
+  check('id: command substitution is refused', cleanModelId('$(id)'), '');
+  check('id: backticks are refused', cleanModelId('a`id`b'), '');
+  check('id: a quote is refused', cleanModelId("auto/'coding"), '');
+  check('id: a space is refused', cleanModelId('aihorde/Anything v3'), '');
+  check('id: a newline is refused', cleanModelId('auto/coding\nwhoami'), '');
+  check('id: empty is empty', cleanModelId(''), '');
+  check('id: a runaway length is refused', cleanModelId('a'.repeat(200)), '');
+
+  check('ctx: a real window passes as a string', cleanContextTokens(1000000), '1000000');
+  check('ctx: a numeric string passes', cleanContextTokens('200000'), '200000');
+  check('ctx: nonsense is refused', cleanContextTokens('lots'), '');
+  check('ctx: zero and negatives are refused', [cleanContextTokens(0), cleanContextTokens(-5)], ['', '']);
+  check('ctx: a fraction is refused', cleanContextTokens(1.5), '');
+
+  // ---- #504 · the per-spawn override -----------------------------------
+  // One tab asking for one model is not the same question as what the host
+  // defaults to, and the tag must resolve by the SAME precedence as the env or
+  // the rail chip becomes a confident lie.
+  writeFileSync(stackEnvPath, 'OMNIROUTE_MODEL=host-default\n', 'utf8');
+  check('override: the caller beats the env line',
+    providerEnv('omniroute', { model: 'auto/coding' })?.ANTHROPIC_MODEL, 'auto/coding');
+  check('override: and the tag agrees with it',
+    sessionModelTag('omniroute', 'auto/coding'), 'omniroute:auto/coding');
+  check('override: no caller model falls back to the env line',
+    providerEnv('omniroute')?.ANTHROPIC_MODEL, 'host-default');
+  check('override: and so does the tag',
+    sessionModelTag('omniroute'), 'omniroute:host-default');
+  // A refused id must not quietly become the env default under a DIFFERENT
+  // name: it falls back, and the tag falls back with it, so what the rail says
+  // is still what the session is on.
+  check('override: a refused id falls back, env and tag together',
+    [providerEnv('omniroute', { model: 'bad;id' })?.ANTHROPIC_MODEL, sessionModelTag('omniroute', 'bad;id')],
+    ['host-default', 'omniroute:host-default']);
+  check('override: the caller\'s context window wins',
+    providerEnv('omniroute', { model: 'auto/coding', contextTokens: 1000000 })?.CLAUDE_CODE_MAX_CONTEXT_TOKENS,
+    '1000000');
+  check('override: every model env var moves together',
+    (() => { const e = providerEnv('omniroute', { model: 'auto/cheap' });
+      return [e.ANTHROPIC_MODEL, e.ANTHROPIC_DEFAULT_OPUS_MODEL, e.CLAUDE_CODE_SUBAGENT_MODEL]; })(),
+    ['auto/cheap', 'auto/cheap', 'auto/cheap']);
 } finally {
   rmSync(fakeHome, { recursive: true, force: true });
 }

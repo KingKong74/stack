@@ -48,7 +48,7 @@ const load = (rel) => import(pathToFileURL(join(HERE, '..', rel)).href);
 
 const {
   probeOmniRoute, omniRouteBaseUrl, resolveProviderKey, resolveHostValue,
-  getProvider, providerEnv,
+  getProvider, providerEnv, gatewayModels, cleanContextTokens,
 } = await load('terminal/model-switch.mjs');
 const {
   RUNTIMES, getRuntime, runtimeArgv, runtimeEnv, telemetryBanner,
@@ -56,7 +56,7 @@ const {
 
 const USAGE = 'usage: stack omniroute [--json] [--check]\n'
   + '       stack omniroute runtimes [--json]\n'
-  + '       stack omniroute launch [--cli <key>] [--model <id>] [-- <tool args>]\n'
+  + '       stack omniroute launch [--cli <key>] [--model <id>] [--context-tokens <n>] [-- <tool args>]\n'
   + '       stack omniroute setup <cli> [--dry-run]\n';
 
 // Is a binary on PATH? `command -v` rather than `which`, which is not everywhere.
@@ -81,7 +81,7 @@ async function collect() {
   // state to report, never an error and never "the gateway is broken".
   let catalogue = { available: false, reason: 'gateway not reachable', models: 0, free: null };
   if (gateway.reachable) {
-    catalogue = await readCatalogue(gateway.baseUrl, key.key);
+    catalogue = await readCatalogue();
   }
 
   return {
@@ -96,38 +96,15 @@ async function collect() {
   };
 }
 
-async function readCatalogue(baseUrl, key) {
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 8000);
-  try {
-    const res = await fetch(`${baseUrl}/v1/models`, {
-      signal: ctrl.signal,
-      headers: key ? { authorization: `Bearer ${key}` } : {},
-    });
-    if (res.status === 401 || res.status === 403) {
-      return {
-        available: false,
-        reason: 'the catalogue is authenticated (inference is not) — set OMNIROUTE_API_KEY to read it',
-        models: 0,
-        free: null,
-      };
-    }
-    if (!res.ok) return { available: false, reason: `HTTP ${res.status}`, models: 0, free: null };
-    const body = await res.json();
-    const models = Array.isArray(body?.data) ? body.data : [];
-    return { available: true, reason: '', models: models.length, free: null };
-  } catch (e) {
-    const cause = e?.cause;
-    return {
-      available: false,
-      reason: e?.name === 'AbortError' ? 'no answer within 8s'
-        : String(cause?.code || cause?.message || e?.message || 'unreadable'),
-      models: 0,
-      free: null,
-    };
-  } finally {
-    clearTimeout(timer);
-  }
+async function readCatalogue() {
+  // (#504) One reader, in model-switch.mjs, because the daemon now serves this
+  // same catalogue to the browser's model picker and two fetchers would drift.
+  // This wrapper keeps the status line's shape: a COUNT, plus the reason when
+  // there is nothing to count.
+  const r = await gatewayModels({ timeoutMs: 8000 });
+  return r.ok
+    ? { available: true, reason: '', models: r.models.length, hidden: r.total - r.models.length, free: null }
+    : { available: false, reason: r.reason, models: 0, hidden: 0, free: null };
 }
 
 function renderStatus(s) {
@@ -155,6 +132,13 @@ function renderStatus(s) {
   if (s.gateway.reachable) {
     out.push(s.catalogue.available
       ? `  Catalogue ${s.catalogue.models} models`
+        + (s.catalogue.hidden
+          // The gap is SAID, not silently absorbed: a reader comparing this
+          // with the gateway's own dashboard would otherwise have two counts
+          // and no idea which one to believe.
+          ? `\n            ${s.catalogue.hidden} more are listed and cannot be started `
+            + '— their ids carry spaces or brackets; all measured so far are image models'
+          : '')
       : `  Catalogue unavailable — ${s.catalogue.reason}`);
   }
   out.push('');
@@ -209,6 +193,12 @@ function launch(args) {
   const dashdash = args.indexOf('--');
   const cli = cliIdx >= 0 ? args[cliIdx + 1] : 'claude';
   const model = modelIdx >= 0 ? args[modelIdx + 1] : '';
+  // The window that goes WITH that model, read off the catalogue by whoever
+  // picked it. Optional: without it Claude Code assumes 200k for an id it does
+  // not recognise, which is right for the default combo and wrong for a pinned
+  // 1M model — see providerEnv's note on why this is never guessed.
+  const ctxIdx = args.indexOf('--context-tokens');
+  const contextTokens = ctxIdx >= 0 ? cleanContextTokens(args[ctxIdx + 1]) : '';
   const passthrough = dashdash >= 0 ? args.slice(dashdash + 1) : [];
 
   const r = getRuntime(cli);
@@ -255,7 +245,14 @@ function launch(args) {
   const extra = { OMNIROUTE_API_KEY: resolveProviderKey('OMNIROUTE_API_KEY').key || '' };
   if (r.launch === 'native') {
     // Stack owns this one's env: point it at the gateway itself.
-    Object.assign(extra, providerEnv('omniroute') || {});
+    //
+    // (#504) AND `--model` REACHES IT HERE, not through runtimeArgv. A native
+    // runtime takes no model FLAG — `claude` has its own idea of what --model
+    // means and it is not a gateway id — so for this row the model is an env
+    // override, which is the only spelling claude actually honours. A delegated
+    // row is the opposite: `omniroute run` takes the flag and owns the env.
+    // Same word, two mechanisms, and this is where they part.
+    Object.assign(extra, providerEnv('omniroute', { model, contextTokens }) || {});
   }
   const env = runtimeEnv({ cwd, extra });
 

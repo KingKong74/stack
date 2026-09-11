@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { q } from '../db.js';
-import { termAgentConnected, termSessions, termTails, termDetached, termDetachedTails, setDetachedLabel, killDetachedTmux, keepTmuxSession, answerTmuxPrompt, viewAutoPane, probeGateway } from '../term.js';
+import { termAgentConnected, termSessions, termTails, termDetached, termDetachedTails, setDetachedLabel, killDetachedTmux, keepTmuxSession, answerTmuxPrompt, viewAutoPane, probeGateway, readGatewayModels } from '../term.js';
 import { askGemini, geminiEnabled } from '../gemini.js';
 import { readSettings } from '../settings.js';
 
@@ -69,6 +69,21 @@ terminal.get('/agent', (_req, res) => {
 // `stack omniroute` is where even that is reported properly.
 terminal.get('/gateway', async (_req, res) => {
   res.json(await probeGateway());
+});
+
+// GET /api/terminal/models — the gateway's catalogue, for the model picker
+// (#504). Read through the host for the same reason /gateway is.
+//
+// `ok:false` always carries a REASON and never an explanation-free empty list:
+// "Stack could not read the catalogue" and "the gateway offers nothing" are
+// different sentences, and only the first is usually true. `total` is the
+// gateway's own count, `models` what Stack will actually start a session on —
+// reported separately so a gap between them is visible rather than mysterious.
+//
+// Carries no key and never has: the host reads the catalogue with the key it
+// holds, and only the result crosses back.
+terminal.get('/models', async (_req, res) => {
+  res.json(await readGatewayModels());
 });
 
 // GET /api/terminal/detached — surviving tmux sessions with no client attached

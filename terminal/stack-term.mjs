@@ -62,7 +62,7 @@ import {
   availableProvidersLive, providerEnv, getProvider,
   loadPreferredProvider, savePreferredProvider,
   probeOmniRoute, resolveProviderKey, resolveHostValue,
-  sessionModelTag, describeModelTag,
+  sessionModelTag, describeModelTag, cleanModelId, cleanContextTokens, gatewayModels,
 } from './model-switch.mjs';
 
 // The `stack` dispatcher, resolved from this file rather than PATH — see the
@@ -796,6 +796,27 @@ async function gatewayProbe(m) {
   });
 }
 
+// ---- models — the gateway's catalogue, for the browser's picker (#504) ------
+// Same poll-and-report shape as gatewayProbe above, and for the same reason:
+// the server is in a container and cannot reach the gateway, so every question
+// about it rides the uplink the host dials OUT.
+//
+// A FAILED READ IS REPORTED AS A REASON, NEVER AS AN EMPTY CATALOGUE. The
+// picker has to be able to say "Stack could not read the catalogue" rather than
+// draw an empty list, which reads as "the gateway has no models" — a different
+// and much more alarming claim than "we were not allowed to look".
+async function modelsRead(m) {
+  const r = await gatewayModels({ timeoutMs: 8000 });
+  sendUplink({
+    t: 'modelsRead',
+    id: m.id,
+    ok: r.ok,
+    reason: r.reason,
+    total: r.total || 0,
+    models: r.models,
+  });
+}
+
 function startSession(msg) {
   const { sid } = msg;
   const failUplink = (m) => {
@@ -842,8 +863,20 @@ function startSession(msg) {
     // double quote here would end that string early. Same trap, same fix, as
     // scripts/stack-term-cli.mjs.
     const dispatcher = `'${STACK_DISPATCHER.replace(/'/g, "'\\''")}'`;
+    // #504 — WHICH MODEL, per tab. Validated by cleanModelId BEFORE it goes
+    // anywhere near this string: what is being built here is a command line for
+    // `/bin/bash -lc`, so an id is untrusted input crossing an injection
+    // boundary, not a label. The validator's allowlist excludes quotes, spaces
+    // and every shell metacharacter, and an id it will not vouch for comes back
+    // '' — which means "the browser said nothing" and falls through to the host
+    // default. There is no sanitise-and-continue path on purpose.
+    const wantModel = cleanModelId(msg.model);
+    const wantCtx = cleanContextTokens(msg.contextTokens);
+    const modelArgs = wantModel
+      ? ` --model '${wantModel}'${wantCtx ? ` --context-tokens ${wantCtx}` : ''}`
+      : '';
     const claudeCmd = msg.provider === 'omniroute'
-      ? `exec ${dispatcher} omniroute launch --cli claude${perms ? ` --${perms}` : ''}`
+      ? `exec ${dispatcher} omniroute launch --cli claude${modelArgs}${perms ? ` --${perms}` : ''}`
       : `exec claude${perms}`;
     // THE PRIME IS GONE with the tab consoles. A session spawned for a tab
     // agent used to carry an appended system prompt — the server composed it,
@@ -871,7 +904,7 @@ function startSession(msg) {
       // for what it is about to start on.
       modelTag = reattached
         ? (listStackSessions().find((x) => x.name === tmuxSession)?.model || '')
-        : sessionModelTag(msg.provider === 'omniroute' ? 'omniroute' : null);
+        : sessionModelTag(msg.provider === 'omniroute' ? 'omniroute' : null, wantModel);
       const shellCmd = `/bin/bash -lc "${claudeCmd}"`;
       argv = sessionArgv(tmuxSession, cwd, shellCmd);
       log(`session ${sid}: tmux session ${tmuxSession} (${reattached ? 're-attach' : 'new'})`);
@@ -884,7 +917,7 @@ function startSession(msg) {
       // Degrade gracefully when tmux is absent — direct spawn, no persistence.
       // The tag is still computed: there is no session to hang it on, but the
       // browser asked what this tab is on and the answer is known either way.
-      modelTag = sessionModelTag(msg.provider === 'omniroute' ? 'omniroute' : null);
+      modelTag = sessionModelTag(msg.provider === 'omniroute' ? 'omniroute' : null, wantModel);
       argv = ['/bin/bash', '-lc', claudeCmd];
       log(`session ${sid}: tmux not available, running claude directly`);
     }
@@ -1327,6 +1360,7 @@ function connect() {
     else if (m.t === 'claudeAsk') claudeAsk(m);
     else if (m.t === 'autoView') autoView(m);
     else if (m.t === 'gateway') gatewayProbe(m);
+    else if (m.t === 'models') modelsRead(m);
     else if (m.t === 'kill') {
       if (sess?.switchMode) {
         // Browser tab closed during the switch prompt — clean up gracefully.

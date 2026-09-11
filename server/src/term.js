@@ -307,6 +307,50 @@ export function probeGateway({ timeoutMs = 6_000 } = {}) {
   });
 }
 
+// (#504) THE GATEWAY'S CATALOGUE — what the model picker lists. Rides the
+// uplink for the same reason probeGateway does: this process cannot reach
+// localhost:20128 from inside its container.
+//
+// THREE STATES AGAIN, and the empty list is the one to get right. `ok:false`
+// with a reason means Stack could not READ the catalogue (no daemon, no key, a
+// timeout); `ok:true` with an empty list would mean the gateway genuinely
+// offers nothing. A picker drawing the first as the second would report an
+// empty gateway when the truth is that nobody managed to ask it.
+let modelsSeq = 0;
+const pendingModels = new Map(); // id -> resolve
+export function readGatewayModels({ timeoutMs = 12_000 } = {}) {
+  if (!agentSend) {
+    return Promise.resolve({ ok: false, connected: false, reason: 'the host daemon is not connected', total: 0, models: [] });
+  }
+  const id = `m${++modelsSeq}`;
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      pendingModels.delete(id);
+      resolve({ ok: false, connected: true, reason: 'the host did not answer in time', total: 0, models: [] });
+    }, timeoutMs);
+    pendingModels.set(id, (m) => {
+      clearTimeout(timer);
+      resolve({
+        ok: m.ok === true,
+        connected: true,
+        reason: String(m.reason || ''),
+        total: Number(m.total) || 0,
+        // Narrowed here, the same job blockedShape and modelShape do: the host
+        // parsed and validated, this decides what may cross into a payload.
+        models: (Array.isArray(m.models) ? m.models : []).slice(0, 600)
+          .filter((x) => x && typeof x.id === 'string' && x.id)
+          .map((x) => ({
+            id: String(x.id).slice(0, 120),
+            owner: String(x.owner || '').slice(0, 60),
+            contextTokens: Number(x.contextTokens) || 0,
+            tools: x.tools === true,
+          })),
+      });
+    });
+    agentSend({ t: 'models', id });
+  });
+}
+
 export function attachTerm(httpServer) {
   const wss = new WebSocketServer({ noServer: true });
   let agent = null;
@@ -476,6 +520,11 @@ export function attachTerm(httpServer) {
       if (m.t === 'gatewayed' && m.id) {
         const waiting = pendingGateway.get(m.id);
         if (waiting) { pendingGateway.delete(m.id); waiting(m); }
+      }
+      if (m.t === 'modelsRead' && m.id) {
+        const waiting = pendingModels.get(m.id);
+        if (waiting) { pendingModels.delete(m.id); waiting(m); }
+        return;
       }
       if (m.t === 'autoViewed' && m.id) {
         const waiting = pendingAutoView.get(m.id);

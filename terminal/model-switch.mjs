@@ -226,6 +226,81 @@ export async function probeOmniRoute({ timeoutMs = 1500 } = {}) {
   }
 }
 
+// (#504) THE GATEWAY'S CATALOGUE — what a tab could be started on.
+//
+// Lives here rather than in whichever script asked first, because there are now
+// two callers that must not drift: `stack omniroute` counts it for the status
+// line, and the daemon serves it to the browser's model picker. One reader, one
+// shape, one set of caps.
+//
+// THE CATALOGUE IS AUTHENTICATED AND INFERENCE IS NOT, so a 401 here is a
+// normal state on a host that has never pasted a key — reported as a REASON,
+// never as an empty list. An empty list would read as "the gateway has no
+// models", which is a different and much more alarming claim than "we were not
+// allowed to look". Same rule as a NULL review_verdict.
+//
+// `tools` is carried because it decides whether a model can be used at all:
+// Claude Code without tool calling cannot read a file or make an edit, and a
+// picker that offered such a model would be offering a session that fails
+// confusingly rather than refusing up front.
+export async function gatewayModels({ timeoutMs = 8000, limit = 600 } = {}) {
+  const baseUrl = omniRouteBaseUrl();
+  const key = resolveProviderKey('OMNIROUTE_API_KEY').key;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${baseUrl}/v1/models`, {
+      signal: ctrl.signal,
+      headers: key ? { authorization: `Bearer ${key}` } : {},
+    });
+    if (res.status === 401 || res.status === 403) {
+      return {
+        ok: false,
+        reason: 'the catalogue is authenticated (inference is not) — set OMNIROUTE_API_KEY to read it',
+        total: 0,
+        models: [],
+      };
+    }
+    if (!res.ok) return { ok: false, reason: `HTTP ${res.status}`, total: 0, models: [] };
+    const body = await res.json();
+    const rows = Array.isArray(body?.data) ? body.data : [];
+    // `total` is the gateway's own count and `models` is what survived the id
+    // validator. They are reported SEPARATELY so a reader comparing this with
+    // the gateway's own dashboard is told about the gap rather than left to
+    // wonder which of the two is broken.
+    return {
+      ok: true,
+      reason: '',
+      total: rows.length,
+      models: rows.slice(0, limit).map((m) => ({
+        // Through the same validator the spawn path uses: an id this cannot
+        // vouch for is one no tab could be started on, so offering it would be
+        // offering a button that does nothing. Measured against this gateway's
+        // own catalogue: it drops 103 of 480, every one of them an `aihorde/*`
+        // image model whose NAME contains spaces or brackets, and NOT ONE of
+        // them tool-capable. Nothing a session could have used is lost — but if
+        // that ever stops being true the answer is to widen the allowlist here
+        // deliberately, never to skip the validator at the spawn.
+        id: cleanModelId(m?.id),
+        owner: String(m?.owned_by || '').slice(0, 60),
+        contextTokens: Number(m?.context_length) || 0,
+        tools: m?.capabilities?.tool_calling === true,
+      })).filter((m) => m.id),
+    };
+  } catch (e) {
+    const cause = e?.cause;
+    return {
+      ok: false,
+      reason: e?.name === 'AbortError' ? `no answer within ${timeoutMs}ms`
+        : String(cause?.code || cause?.message || e?.message || 'unreadable'),
+      total: 0,
+      models: [],
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // What may actually be offered right now: the keyed providers, plus the gateway
 // when it answers. Returns the probe result alongside the list rather than just
 // the list, because a caller that cannot say WHY the gateway is missing will
@@ -239,9 +314,42 @@ export async function availableProvidersLive(opts = {}) {
   return { providers, gateway };
 }
 
+// (#504) A MODEL ID IS UNTRUSTED INPUT AND IS VALIDATED AS SUCH.
+//
+// It arrives from a browser, crosses the relay, and ends up inside the string
+// the daemon hands to `/bin/bash -lc`. So this is not tidiness, it is the
+// injection boundary: an allowlist of the characters real catalogue ids use
+// (`auto/coding`, `dva/claude-opus-5-max`, `qwen/qwen3-max:free`) and nothing
+// else — no quotes, no spaces, no backticks, no $, no semicolons. Anything
+// outside that is dropped WHOLE rather than sanitised into something that still
+// runs: a half-scrubbed id is a command nobody reviewed.
+//
+// Returns '' for anything it will not vouch for, and every caller treats '' as
+// "the caller said nothing" — which falls back to the env line and then to the
+// free combo, both of which are known-good.
+export function cleanModelId(id) {
+  const raw = String(id ?? '').trim();
+  if (!raw || raw.length > 120) return '';
+  return /^[A-Za-z0-9._:/-]+$/.test(raw) ? raw : '';
+}
+
+// The context window, same posture: a positive integer inside the range any
+// real model could have, as a STRING (that is what Claude Code reads), or ''.
+// A bad number here is worse than none — see providerEnv's note on why this
+// knob is only ever set when somebody actually knows the answer.
+export function cleanContextTokens(n) {
+  const v = Number(n);
+  if (!Number.isInteger(v) || v < 1000 || v > 20_000_000) return '';
+  return String(v);
+}
+
 // Environment overrides to inject when spawning claude with this provider.
 // ANTHROPIC_API_KEY is blanked so an existing Anthropic key cannot interfere.
-export function providerEnv(providerKey) {
+// (#504) `override` is the PER-SPAWN answer: one tab asking for one model,
+// which is not the same question as "what does this host default to". Without
+// it the only dial was the global OMNIROUTE_MODEL line, so every tab moved
+// together. An absent override changes nothing — the env line still decides.
+export function providerEnv(providerKey, override = {}) {
   const p = PROVIDERS.find((x) => x.key === providerKey);
   if (!p) return null;
   const apiKey = resolveProviderKey(p.envKey).key;
@@ -251,8 +359,16 @@ export function providerEnv(providerKey) {
   // wants some auth source, and a gateway not requiring one ignores it.
   if (!apiKey && !p.keyless) return null;
   if (p.keyless) {
-    const model = resolveHostValue('OMNIROUTE_MODEL').key || p.model;
-    const contextTokens = resolveHostValue('OMNIROUTE_CONTEXT_TOKENS').key;
+    // The caller's model wins over the env line, and the env line over the
+    // combo — most specific first. A caller that passes nothing gets exactly
+    // the behaviour this had before the parameter existed.
+    const model = cleanModelId(override.model) || resolveHostValue('OMNIROUTE_MODEL').key || p.model;
+    // The window follows the model it was measured for: a number the caller
+    // read off the catalogue for THIS model is worth more than a host-wide
+    // line set for a different one. Only a positive integer is accepted —
+    // a guess here is worse than the 200k default, per the note below.
+    const contextTokens = cleanContextTokens(override.contextTokens)
+      || resolveHostValue('OMNIROUTE_CONTEXT_TOKENS').key;
     return {
       ANTHROPIC_BASE_URL: omniRouteBaseUrl(),
       ANTHROPIC_AUTH_TOKEN: apiKey || 'omniroute-anonymous',
@@ -325,7 +441,7 @@ export function savePreferredProvider(key) {
 // quietly defaults such a row to the account's own subscription states a fact
 // nobody established. Same rule as a NULL review_verdict: absence is not good
 // news, it is absence.
-export function sessionModelTag(providerKey) {
+export function sessionModelTag(providerKey, model = '') {
   // No provider = the account's own subscription, with no gateway in front. It
   // is spelled out rather than left blank BECAUSE blank means unrecorded here,
   // and "we know it is the subscription" and "we do not know" are different
@@ -335,7 +451,10 @@ export function sessionModelTag(providerKey) {
   // The gateway's model is whatever OMNIROUTE_MODEL pins, or the free combo.
   // Resolved at SPAWN because that is when it is fixed for this session: the
   // env line can change afterwards and this session will not have moved.
-  if (p.keyless) return `${p.key}:${resolveHostValue('OMNIROUTE_MODEL').key || p.model}`;
+  // #504 — the same precedence providerEnv uses, and it MUST be the same: the
+  // tag is what the rail tells you a session is on, so a tag resolved by a
+  // different rule than the env would make the chip a confident lie.
+  if (p.keyless) return `${p.key}:${cleanModelId(model) || resolveHostValue('OMNIROUTE_MODEL').key || p.model}`;
   return `${p.key}:${p.model}`;
 }
 
