@@ -6072,10 +6072,11 @@ body[data-mc-full] .totop { display: none; }
 .ql-brow .t { flex: 1; min-width: 0; font: var(--type-body-sm); color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ql-brow .repro { flex: none; font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-secondary); }
 .ql-brow .age { flex: 0 0 52px; text-align: right; font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-secondary); }
-/* 92px, not the kit's 76: "write a check" is the longest thing this slot ever
-   says and it is the action that matters most on an uncovered row, so it gets
-   the width rather than wrapping to two lines. */
-.ql-brow .ql-act { flex: 0 0 92px; text-align: right; }
+/* 106px and nowrap, not the kit's 76: "write a check" is the longest thing this
+   slot ever says and it is the action that matters most on an uncovered row, so
+   it gets the width. `nowrap` because a flex basis alone does not stop a wrap —
+   92px was still one pixel short at --text-sm and broke the label in half. */
+.ql-brow .ql-act { flex: 0 0 106px; text-align: right; white-space: nowrap; }
 /* A bug's status is the one thing this screen writes on it, so it is a control
    on the row rather than a line in the ⋯ menu. It takes the slot the kit gave
    `repro`, which Stack has no column for. */
