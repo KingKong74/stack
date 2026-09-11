@@ -391,10 +391,15 @@ a { color: inherit; }
 }
 .crumb { display: flex; align-items: center; gap: var(--space-3); font: var(--type-caption); color: var(--text-tertiary); flex: none; min-width: 0; }
 .crumb .chev { font-size: 15px; color: var(--fainter); cursor: pointer; }
+/* Every step is an <a> so middle/⌘-click can open it in a new tab (TopBar.tsx);
+   the link decoration is dropped so it still READS as a crumb, and the current
+   step keeps the default cursor — it is a place to copy, not a place to go. */
+.crumb a { text-decoration: none; }
 .crumb .back { cursor: pointer; }
 .crumb .back:hover { color: var(--ink); }
 .crumb .sep { color: var(--faint); }
 .crumb .here { color: var(--text-primary); font-weight: var(--weight-medium); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.crumb a.here { cursor: default; }
 .topbar .right { display: flex; align-items: center; gap: var(--space-3); margin-left: auto; flex: none; }
 /* Each crumb carries its OWN leading separator, so the run reads
    `Stack / Projects / stack` — the brand is the first crumb, which is why the
@@ -431,6 +436,9 @@ a { color: inherit; }
   display: inline-flex; align-items: center; justify-content: center;
   font: var(--weight-semibold) var(--text-2xs)/1 var(--font-sans);
   transition: var(--transition-control);
+  /* An <a> since the gear is a link — middle/⌘-click opens Settings in a new
+     tab, which a <button> cannot offer. */
+  text-decoration: none;
 }
 .avatar:hover { background: var(--action-accent-hover); }
 .avatar.sm { width: 32px; height: 32px; }

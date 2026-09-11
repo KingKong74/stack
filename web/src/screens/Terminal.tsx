@@ -21,7 +21,7 @@ import {
   getProjectDetail, type ProjectDetailData,
   getOverview,
 } from '../store';
-import { go, hrefTo } from '../lib/route';
+import { hrefTo } from '../lib/route';
 
 import { useAutoRefresh } from '../lib/autoRefresh';
 import { wireTermClipboard } from '../lib/termClipboard';
@@ -1197,9 +1197,12 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
           a plain directory — because a slug Stack has never heard of is not a
           project and must not be drawn as one. */}
       <TopBar crumb={[
-        { label: 'Projects', onClick: go.dashboard },
-        ...(board ? [{ label: crumbName(board.project.name), onClick: () => go.detail(board.project.id) }] : []),
-        { label: 'Terminal' },
+        { label: 'Projects', href: hrefTo.dashboard },
+        ...(board ? [{ label: crumbName(board.project.name), href: hrefTo.detail(board.project.id) }] : []),
+        // The cwd only: a crumb href that re-attached would MIRROR the session the
+        // new tab lands beside, and a duplicate of this screen wants the same
+        // directory, not the same pane.
+        { label: 'Terminal', href: hrefTo.terminal(cwd) },
       ]}
         actions={<a className="btn-repo" href={hrefTo.control} title="Mission Control">Mission Control</a>} />
 

@@ -8,7 +8,7 @@ import {
   getTermSessionPrefs, setTermSessionPrefs, type TermSessionPrefs,
   getAutoRefreshSeconds, setAutoRefreshSeconds, AUTO_REFRESH_CHOICES, type AutoRefreshSeconds,
 } from '../store';
-import { go } from '../lib/route';
+import { hrefTo } from '../lib/route';
 import { PRODUCT_NAME } from '../lib/ui';
 import { DIRECTIVES } from '../lib/brief';
 import { TopBar } from '../components/TopBar';
@@ -167,7 +167,7 @@ export function Settings() {
 
   return (
     <div>
-      <TopBar crumb={[{ label: 'Projects', onClick: go.dashboard }, { label: 'Settings' }]} />
+      <TopBar crumb={[{ label: 'Projects', href: hrefTo.dashboard }, { label: 'Settings', href: hrefTo.settings }]} />
 
       <div className="page detail">
         <div className="dash-head" style={{ marginBottom: 16 }}>

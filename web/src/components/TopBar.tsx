@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { go } from '../lib/route';
+import { hrefTo } from '../lib/route';
 import { Brandmark } from './Brandmark';
 
 // THE HEADER, merged (#432). Six screens each drew their own topbar out of the
@@ -24,7 +24,16 @@ function GearMark() {
   );
 }
 
-export type Crumb = { label: string; onClick?: () => void };
+// A CRUMB STEP IS A LINK, INCLUDING THE LAST ONE. Every step used to be
+// a span with an onClick, so a middle click — the standard "open this
+// elsewhere" gesture — did nothing at all, and neither did ⌘/ctrl-click. The
+// browser only offers those on an anchor with a real href, so a step carrying
+// one is drawn as an <a> and left click needs no handler: the href IS the hash,
+// which IS the router. The LAST step gets one too, pointing at where you
+// already are — on the project screen that means the tab you are on, which the
+// hash does not otherwise carry (the rail switches tabs in state), so a new tab
+// opens on the same reading rather than on the default one.
+export type Crumb = { label: string; href?: string; onClick?: () => void };
 
 export function TopBar({ crumb, onSearch, searchLabel = 'Search…', actions, dash, noAvatar }: {
   /** Breadcrumb after the brand. The LAST entry is the current place. */
@@ -54,9 +63,11 @@ export function TopBar({ crumb, onSearch, searchLabel = 'Search…', actions, da
             return (
               <span key={`${c.label}-${i}`} className="crumb-part">
                 <span className="sep">/</span>
-                {last
-                  ? <span className="here">{c.label}</span>
-                  : <span className="back" onClick={c.onClick}>{c.label}</span>}
+                {c.href
+                  ? <a className={last ? 'here' : 'back'} href={c.href} onClick={c.onClick}>{c.label}</a>
+                  : last
+                    ? <span className="here">{c.label}</span>
+                    : <span className="back" onClick={c.onClick}>{c.label}</span>}
               </span>
             );
           })}
@@ -75,7 +86,7 @@ export function TopBar({ crumb, onSearch, searchLabel = 'Search…', actions, da
       <div className="right">
         {actions}
         {!noAvatar && (
-          <button className="avatar" onClick={go.settings} aria-label="Settings"><GearMark /></button>
+          <a className="avatar" href={hrefTo.settings} aria-label="Settings"><GearMark /></a>
         )}
       </div>
     </div>

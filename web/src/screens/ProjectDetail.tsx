@@ -112,7 +112,7 @@ export function ProjectDetail({ id, tab, highlight, onOpenSearch }: {
 function Shell({ children }: { children: ReactNode }) {
   return (
     <div>
-      <TopBar crumb={[{ label: 'Projects', onClick: go.dashboard }]} />
+      <TopBar crumb={[{ label: 'Projects', href: hrefTo.dashboard }]} />
       <div className="con-main"><div className="con-inner">{children}</div></div>
     </div>
   );
@@ -539,8 +539,11 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
         // as a duplicate. A separate SCREEN (Terminal, Mission Control,
         // Settings) is a different place and does take the third step.
         crumb={[
-          { label: 'Projects', onClick: go.dashboard },
-          { label: crumbName(project.name) },
+          { label: 'Projects', href: hrefTo.dashboard },
+          // The href carries the TAB, which the hash does not: the rail switches
+          // tabs in state, so `hrefTo.detail(slug)` alone would open a new tab on
+          // Overview from wherever you actually are.
+          { label: crumbName(project.name), href: hrefTo.detail(slug, tab) },
         ]}
         onSearch={onOpenSearch}
         actions={

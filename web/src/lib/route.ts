@@ -60,6 +60,8 @@ export function useRoute(): Route {
 // middle/ctrl-click open a new tab, while a plain left click just changes the
 // hash — which IS the router, so no onClick is needed for pure navigation.
 export const hrefTo = {
+  dashboard: '#/',
+  timeline: '#/timeline',
   control: '#/control',
   settings: '#/settings',
   skills: '#/skills',

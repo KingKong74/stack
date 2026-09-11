@@ -3,7 +3,7 @@ import {
   getSkills, createSkill, patchSkill, deleteSkill, getProjects, AuthError,
   type Skill, type SkillOnDisk, type SkillsData,
 } from '../store';
-import { go, hrefTo } from '../lib/route';
+import { hrefTo } from '../lib/route';
 import { useAutoRefresh } from '../lib/autoRefresh';
 import { Modal } from '../components/Modal';
 import { ConfirmModal } from '../components/ConfirmModal';
@@ -201,7 +201,7 @@ export default function Skills() {
 
   return (
     <div className="term-screen">
-      <TopBar crumb={[{ label: 'Projects', onClick: go.dashboard }, { label: 'Skills' }]}
+      <TopBar crumb={[{ label: 'Projects', href: hrefTo.dashboard }, { label: 'Skills', href: hrefTo.skills }]}
         actions={<a className="btn-repo" href={hrefTo.control}>Mission Control</a>} />
 
       <div className="page detail sk-page">

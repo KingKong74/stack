@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { getTimeline, AuthError, type TimelineData } from '../store';
-import { go } from '../lib/route';
+import { go, hrefTo } from '../lib/route';
 import { isAccentTag } from '../lib/ui';
 import { buildWeeks, contribLevel as level } from '../lib/contrib';
 import { TopBar } from '../components/TopBar';
@@ -52,7 +52,7 @@ export function Timeline() {
 
   return (
     <div>
-      <TopBar crumb={[{ label: 'Projects', onClick: go.dashboard }, { label: 'Timeline' }]}
+      <TopBar crumb={[{ label: 'Projects', href: hrefTo.dashboard }, { label: 'Timeline', href: hrefTo.timeline }]}
         actions={<button className="btn-repo" onClick={go.control} title="Mission Control">Mission Control</button>} />
 
       <div className="page detail">

@@ -75,7 +75,7 @@
 // is the undo.
 
 import { useState, type ReactNode } from 'react';
-import { go } from '../lib/route';
+import { hrefTo } from '../lib/route';
 import { TopBar } from '../components/TopBar';
 import { KitIcon, type KitIconName } from '../detail/kit/KitIcon';
 
@@ -348,7 +348,7 @@ export function ControlMock() {
 
   return (
     <div className="mcx-ground">
-      <TopBar crumb={[{ label: 'Projects', onClick: go.dashboard }, { label: 'Mission Control' }]} />
+      <TopBar crumb={[{ label: 'Projects', href: hrefTo.dashboard }, { label: 'Mission Control', href: hrefTo.control }]} />
 
       <div className="page detail mcx">
         <div className="mcx-head">
