@@ -252,15 +252,23 @@ const IDEAS_PANELS = [
   },
 ];
 
-// The Quality screen is a mockup too (QualityMock.tsx). Six presses walk its
-// three tabs, because a tab is where a mockup keeps the rest of itself and an
-// unpressed tab is a screen this harness has photographed rather than tested.
+// The Quality screen is WIRED (#497), so these six presses now walk a screen
+// drawing this project's own checks and bugs. A tab is still where the screen
+// keeps the rest of itself and an unpressed tab is one this harness has
+// photographed rather than tested.
 //
 // ORDER IS LOAD-BEARING, the same way the board's is: the first two name
 // Overview's own rows, so they run before anything switches tabs. Each press
 // is proved by something that cannot already be on screen — no severity chip
-// is selected at first paint, no feature is folded open, and the check table,
-// the composer and a bug row each exist only after the press that reveals it.
+// is selected at first paint, no feature is folded open, and the check table
+// and the composer each exist only after the press that reveals it.
+//
+// THE BUGS FOLD IS THE ONE ASSERTION THE WIRING CHANGED. A bug cluster that is
+// not `fixed` OPENS at first paint — an open bug behind a click is a bug
+// nobody reads — so pressing its head SHUTS it, and `.ql-brow` appearing can
+// no longer be the proof. The caret is: it reads ▾ before the press and ▸
+// after, which is `expectTextChangeIn`'s whole purpose. Both steps together
+// still prove the same two things (the tab draws rows, the fold responds).
 const QUALITY_PANELS = [
   {
     id: 'quality-severity',
@@ -290,13 +298,13 @@ const QUALITY_PANELS = [
     id: 'quality-bugs-tab',
     label: 'Quality — Bugs tab',
     click: '.ql-tabs .k-tab:nth-child(3)',
-    expect: '.ql-barea',
+    expect: '.ql-brow',
   },
   {
-    id: 'quality-bugarea',
-    label: 'Quality — a bug area folds open',
+    id: 'quality-bugcluster',
+    label: 'Quality — a bug cluster folds shut',
     click: '.ql-barea',
-    expect: '.ql-brow',
+    expectTextChangeIn: '.ql-barea .caret',
   },
 ];
 

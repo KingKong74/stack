@@ -112,9 +112,9 @@ or the header of the file named in the pointer.
 
 ### The roadmap row
 
-- **`bucket` IS THE PRIORITY: five values since #469** — highest/high/medium/low/lowest (it held
-  MoSCoW; the column keeps its name, `util.js`'s BUCKETS is the vocabulary, `schema.sql` the
-  convergent migration must→highest, should→high, could→LOW, wont→lowest). **`medium` is the level
+- **`bucket` IS THE PRIORITY: five values since #469** — highest/high/medium/low/lowest (it held MoSCoW; the
+  column keeps its name, `util.js`'s BUCKETS is the vocabulary and `schema.sql` the convergent
+  migration). **`medium` is the level
   MoSCoW never had**: nothing migrated in, and it moves no progress bar. **It no longer gates the
   runner** — #477 dropped the highest/high filter, because being in the sprint in progress is the
   stronger commitment and a gate that silently refused a `medium` somebody dragged into the box
@@ -147,8 +147,7 @@ or the header of the file named in the pointer.
   move. **Four packages must agree and none can import another**: `routes/roadmap.js`, `shape.js`
   (BIGINT arrives as a STRING), `lib/plan.ts`, `lib/spine.ts` — which no component imports;
   `scripts/spine.test.mjs` is its only reader. **`estimate` stays in WEEKS**, so `defaultLen` in
-  `lib/plan.ts` is the ONE place the two units may meet. NOTHING EDITS one since #428 and #451 took
-  its two editors; Plans' Timeline and Calendar READ one again (#482).
+  `lib/plan.ts` is the ONE place the two units may meet.
 
 ### Which screen a row is on
 
@@ -170,15 +169,18 @@ or the header of the file named in the pointer.
   unguarded compare floats the whole backlog above committed work. `position` is a different number —
   scoped to the BUCKET, still PATCHable, **written by nothing in the client** — and the kanban has no
   within-column drag because its columns cut across buckets.
-- **THE REST ARE MOCKUPS AND SAY SO ON THEIR OWN FACE** (#443–#482): `ForYouMock` (3 panes),
-  `QualityMock`, `ControlMock` (7 tabs), `DevelopmentView` at the foot of `Board.tsx`, and FOUR OF
-  `Plans.tsx`'s SIX sub-views (#482 wired Timeline and Calendar). Each wears a **Mock chip** —
-  on the rail row, or, where a tab is part wired, **on the sub-tab itself**: these screens look
-  exactly like the real thing, and a chip covering a wired default view warns about the wrong one. **A number and the screen behind it must agree**: a wired
-  row's badge is its real count, a mockup's counts the MOCKUP. Still UNREACHABLE from a browser,
-  with `./stack` and the API the way in: a **verdict**, **labels**, the **⎇ claim**, **risk**,
-  **`automode`**, **checks and bugs** (#450) and **WRITING the stored schedule** (#451; Plans
-  reads it, #482).
+- **THE REST ARE MOCKUPS AND SAY SO ON THEIR OWN FACE** (#443–#497): `ForYouMock` (3 panes),
+  `ControlMock` (7 tabs), `DevelopmentView` at the foot of `Board.tsx`, and FOUR OF `Plans.tsx`'s SIX
+  sub-views (#482). Each wears a **Mock chip** — on the rail row, or, where a tab is part wired, **on
+  the sub-tab itself**: these screens look exactly like the real thing, and a chip covering a wired
+  default view warns about the wrong one. **A number and the screen behind it must agree**: a wired
+  row's badge is its real count, a mockup's counts the MOCKUP. Still UNREACHABLE from a browser, with
+  `./stack` and the API the way in: a **verdict**, **labels**, the **⎇ claim**, **`automode`** and
+  **WRITING the stored schedule** (#451; Plans reads it, #482).
+- **QUALITY'S FIVE SEVERITIES ARE DERIVED, NEVER A COLUMN** (#497) — `lib/quality.ts`'s header owns
+  the mapping. The half that reaches past it: **no grade of rank ≤ 3 may depend on `check_results`**,
+  or the rail's badge (`qualityAttention`, off the payload) and the screen (which fetches the history)
+  stop counting the same rows.
 - **A verdict is `verdict_source` / `verdict_at` / `verdict_evidence` (#263, owner-sanctioned)** — the
   one place a machine may verdict instead of the human. **The sanction has three conditions and
   `scripts/lib/autoverdict.mjs`'s header carries them**, including that the VISIBLE leg is unmet and
@@ -235,8 +237,7 @@ or the header of the file named in the pointer.
   in BOTH the runner and the dispatcher's kill path and `stack-autopilot-dispatch.mjs` says what
   diverging costs; and `heldByArea` reports only LANE holds, so a job waiting on the cap is not held
   by an area.
-- **`claimed_by` is the branch claim** (#277 — a "lane" until the rename; the `lane/` git ref prefix
-  is unchanged, naming branches already on origin). Claim before starting; a terminal tab's claim is
+- **`claimed_by` is the branch claim** (#277; the `lane/` git ref prefix is unchanged). Claim before starting; a terminal tab's claim is
   `term:<name>`. It is the don't-re-pick marker, injected by SessionStart as "Branch claims —
   respect these", and stays until a human merges and ticks.
 - **Branch names are `<kind>/<id>-<summary>`** (#363; feat · fix · ui · refactor · perf · test · docs ·

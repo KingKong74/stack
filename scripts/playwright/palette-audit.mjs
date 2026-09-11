@@ -101,7 +101,9 @@ const SCREENS = [
   { slug: 'quality', hash: '#/p/{slug}/quality' },
   { slug: 'quality-open', hash: '#/p/{slug}/quality', press: ['.ql-frow'] },
   { slug: 'quality-checks', hash: '#/p/{slug}/quality', press: ['.ql-tabs .k-tab:nth-child(2)'] },
-  { slug: 'quality-bugs', hash: '#/p/{slug}/quality', press: ['.ql-tabs .k-tab:nth-child(3)', '.ql-barea'] },
+  // No `.ql-barea` press since #497: an unfixed cluster opens at first paint,
+  // so pressing it would SHUT the rows this screen exists to measure.
+  { slug: 'quality-bugs', hash: '#/p/{slug}/quality', press: ['.ql-tabs .k-tab:nth-child(3)'] },
   // THE BOARD IS WIRED and its cards carry tone the mockup's never did: an
   // area chip, a branch chip, a parked chip, a verdict chip, a tier and an
   // estimate — every one of them small text on a card that LIGHTENS to

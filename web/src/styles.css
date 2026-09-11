@@ -5646,8 +5646,8 @@ body[data-mc-full] .totop { display: none; }
 }
 
 /* ==========================================================================
-   THE QUALITY MOCKUP — ui_kits/console QualityScreen, ported.
-   (web/src/detail/QualityMock.tsx)
+   THE QUALITY TAB — ui_kits/console QualityScreen, ported and then WIRED (#497).
+   (web/src/detail/Quality.tsx; every number on it is web/src/lib/quality.ts)
 
    SEVERITY IS FOUR ROLES, NOT FOUR COLOURS. Each `.sev-*` class sets the same
    four local custom properties — a text tone, a fill tone, a rule and a dot —
@@ -5783,6 +5783,27 @@ body[data-mc-full] .totop { display: none; }
 .ql-act.edit { visibility: hidden; color: var(--text-tertiary); }
 .ql-crow:hover .ql-act.edit { visibility: visible; }
 
+/* A busy or unavailable action stays a row action rather than becoming a
+   greyed rectangle: it keeps its place in the row so nothing shifts when a
+   check starts running, and loses the cursor and the hover tone instead. */
+.ql-act:disabled, .ql-act[aria-disabled] { cursor: default; color: var(--text-tertiary); }
+.ql-act:disabled:hover, .ql-act[aria-disabled]:hover { text-decoration: none; }
+.ql-openrow:hover .ql-act:disabled, .ql-crow:hover .ql-act:disabled,
+.ql-fbody .row:hover .ql-act:disabled, .ql-brow:hover .ql-act:disabled,
+.ql-openrow:hover .ql-act[aria-disabled], .ql-crow:hover .ql-act[aria-disabled],
+.ql-fbody .row:hover .ql-act[aria-disabled], .ql-brow:hover .ql-act[aria-disabled] {
+  color: var(--text-tertiary);
+}
+
+/* An empty panel says what would fill it. On --surface-card, which does not
+   lighten, so tertiary is the right tone here. */
+.ql-empty {
+  margin: 0; padding: var(--space-6);
+  border-top: 1px solid var(--border-subtle);
+  font: var(--type-body-sm); color: var(--text-tertiary);
+}
+.ql-panel > .ql-empty:first-child { border-top: 0; }
+
 /* ---- by feature ---- */
 .ql-frow {
   display: flex; align-items: center; gap: var(--space-5); width: 100%;
@@ -5809,6 +5830,12 @@ body[data-mc-full] .totop { display: none; }
   display: flex; flex-direction: column; gap: var(--space-3);
 }
 .ql-fbody .row { display: flex; align-items: center; gap: var(--space-5); }
+/* The group's own sentence — what its history can answer — above its rows. */
+.ql-fbody .read { margin: 0; font: var(--type-body-sm); color: var(--text-secondary); }
+/* The feature run sits under the rows it would run, indented past the icon
+   column so it reads as the group's action and not as another check. */
+.ql-fbody .row.foot { padding-top: var(--space-2); border-top: 1px solid var(--border-subtle); }
+.ql-fbody .row.foot .nm { color: var(--text-tertiary); }
 .ql-fbody .ico { display: flex; flex: none; color: var(--sev-dot); }
 .ql-fbody .ico.ok { color: var(--lime-500); }
 .ql-fbody .nm { flex: 1; min-width: 0; font: var(--type-code); color: var(--text-secondary); }
@@ -5881,6 +5908,10 @@ body[data-mc-full] .totop { display: none; }
 .ql-crow .c-last.pass { color: var(--status-success-fg); }
 .ql-crow .c-last.fail { color: var(--status-warning-fg); }
 .ql-crow .c-last.flake { color: var(--text-secondary); }
+/* #497 paying that debt: never-run is the NULL-verdict state and takes the
+   neutral tone, never the green one. Secondary and not tertiary because the row
+   lightens under the cursor — the #450 rule at the top of this block. */
+.ql-crow .c-last.never { color: var(--text-secondary); }
 .ql-crow .c-pass, .ql-crow .c-time { font: var(--weight-regular) var(--text-xs)/1 var(--font-mono); color: var(--text-secondary); }
 
 /* ---- the two composers ---- */
@@ -5892,6 +5923,18 @@ body[data-mc-full] .totop { display: none; }
 }
 .ql-composer > .t { font: var(--weight-semibold) var(--text-md)/1 var(--font-sans); color: var(--text-primary); }
 .ql-composer .foot { display: flex; gap: var(--space-3); justify-content: flex-end; }
+/* Delete lives at the far end from Save — a destructive control must not sit
+   under the thumb that is aiming for the safe one. It still confirms. */
+.ql-composer .foot .del { margin-right: auto; color: var(--status-danger-fg); }
+.ql-composer .foot .del:hover { background: var(--status-danger-bg); }
+/* What this composer is about to do that the fields do not say: the bug it
+   will link to, or the history a definition change is about to clear. */
+.ql-composernote {
+  margin: 0; padding: var(--space-4) var(--space-5);
+  background: var(--surface-sunken); border-radius: var(--radius-md);
+  font: var(--type-body-sm); color: var(--text-secondary);
+}
+.ql-composernote b { color: var(--text-primary); font-weight: var(--weight-medium); }
 .ql-fields { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-5); }
 .ql-fields .km-field .hint { font: var(--type-caption); color: var(--text-tertiary); }
 .ql-checkbox {
@@ -5934,12 +5977,28 @@ body[data-mc-full] .totop { display: none; }
 .ql-brow .repro { flex: none; font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-secondary); }
 .ql-brow .age { flex: 0 0 34px; text-align: right; font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-secondary); }
 .ql-brow .ql-act { flex: 0 0 76px; text-align: right; }
+/* A bug's status is the one thing this screen writes on it, so it is a control
+   on the row rather than a line in the ⋯ menu. It takes the slot the kit gave
+   `repro`, which Stack has no column for. */
+.ql-brow .ql-bstatus { flex: 0 0 118px; }
+/* #359 — an extracted bug nobody has signed off is HELD from the overnight
+   runner. Said on the row, and answered by Keep in its own menu. */
+.ql-held {
+  flex: none; padding: 2px 7px; border-radius: var(--radius-pill);
+  background: var(--status-neutral-bg); color: var(--text-secondary);
+  font: var(--weight-medium) var(--text-2xs)/1.4 var(--font-mono);
+}
 
 @media (max-width: 1080px) {
   /* What goes first is what the row can be read without: the linked bug key,
      the schedule and the pass count. The name, the severity and the action
      are the row. */
   .ql-openrow .bug, .ql .c-on, .ql .c-pass, .ql-brow .repro { display: none; }
+  /* The status select is the widest thing on a bug row and the ⋯ menu is not
+     where it lives, so at this width the row keeps its name, grade and action
+     and the status moves out of reach rather than squeezing the title to
+     nothing. Same call the line above makes for the linked bug key. */
+  .ql-brow .ql-bstatus, .ql-held { display: none; }
   .ql-fields { grid-template-columns: 1fr; }
   .ql-stats { gap: var(--space-5); }
   .ql-spark { margin-left: 0; }

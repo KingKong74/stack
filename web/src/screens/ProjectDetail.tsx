@@ -13,7 +13,8 @@ import { go, hrefTo } from '../lib/route';
 import { TopBar } from '../components/TopBar';
 import { ConsoleNav, NavIcons, SpaceDot, type NavSection } from '../detail/ConsoleNav';
 import { absoluteHref, type MenuOption } from '../components/MoreMenu';
-import { QualityMock, QUALITY_ATTENTION } from '../detail/QualityMock';
+import { Quality } from '../detail/Quality';
+import { qualityAttention } from '../lib/quality';
 import { ForYouMock, AUTO_IDEA_COUNT } from '../detail/ForYouMock';
 import { Plans } from '../detail/Plans';
 import { Board } from '../detail/Board';
@@ -279,11 +280,15 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
   // console kit's, not this project's. Quality keeps its number BECAUSE it
   // wears the chip: the count comes from the mockup and now says so.
   //
-  // QUALITY'S BADGE IS THE SAME RULE, ANSWERED THE OTHER WAY. It used to be red
-  // checks plus serious open bugs (#278); its screen is a mockup now, so the
-  // number comes FROM that mockup (`QUALITY_ATTENTION`) and the two agree. What
-  // it no longer is, is true of this project: the rail can read 2 while the
-  // real suite is entirely green, or entirely red.
+  // QUALITY'S BADGE IS THE SAME RULE, AND #497 GAVE IT BACK ITS REAL NUMBER.
+  // It was red checks plus serious open bugs (#278), then the mockup's own
+  // constant while the screen behind it was the kit's; it is this project's
+  // again — the open items graded blocking, broken or degraded. `lib/quality.ts`
+  // derives it from the payload the rail already has, and its header says why
+  // that can be done WITHOUT the per-check history the screen fetches: no grade
+  // of that rank depends on one, so the badge and the page count the same rows.
+  const qualityCount = useMemo(
+    () => qualityAttention(data.checks || [], data.bugs), [data.checks, data.bugs]);
 
   const guard = async (fn: () => Promise<void>) => {
     try { setActionError(''); await fn(); }
@@ -483,7 +488,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
           menu: placeMenu(hrefTo.detail(slug, 'plans'), 'plans'), onClick: () => setTab('plans'),
         },
         {
-          key: 'quality', label: 'Quality', icon: NavIcons.check, count: QUALITY_ATTENTION, bad: true, mock: true,
+          key: 'quality', label: 'Quality', icon: NavIcons.check, count: qualityCount, bad: true,
           menu: placeMenu(hrefTo.detail(slug, 'quality'), 'quality'), onClick: () => setTab('quality'),
         },
       ],
@@ -633,14 +638,16 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
             and its header lists what stopped being reachable when the real
             Overview, Activity and Auto-ideas went. */}
         {isForYou(tab) && <ForYouMock pane={tab as 'overview' | 'activity' | 'auto'} />}
-        {/* QUALITY IS A MOCKUP TOO at the owner's request — the kit's own
-            QualityScreen on the kit's own checks and bugs. It takes no props
-            because it reads nothing: neither `checks` nor `bugs` is passed and
-            no callback is wired, so running a check, filing a bug and reading
-            the run ledger have no surface in any browser. QualityMock's header
-            lists the whole of what that costs; it is the heaviest of the five
-            culls because a check is this app's only automated regression net. */}
-        {tab === 'quality' && <QualityMock />}
+        {/* QUALITY IS WIRED (#497) — the kit's QualityScreen on this project's
+            own checks and bugs. It takes both off the one payload every tab
+            renders from, plus the re-read, and fetches only the two things that
+            are NOT in that payload: the run ledger and the per-check history.
+            Quality.tsx's header lists what came back with the wiring and the
+            four places the kit's picture and this app's data disagreed;
+            lib/quality.ts owns every number on it, including the rail's. */}
+        {tab === 'quality' && (
+          <Quality slug={slug} checks={data.checks || []} bugs={data.bugs} onRefresh={reread} />
+        )}
         {/* #361 — the ✧ surfaces on the Roadmap tab belong to the CURATOR, and
             an absent callback is how each one goes away when the agent (or that
             one op) is switched off: the button is not rendered at all, rather
