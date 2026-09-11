@@ -764,16 +764,23 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   // a decision; the labeller's is a reading of what the session is doing this
   // minute, and it keeps changing underneath by design.
   const [names, setNames] = useState<Record<string, string>>(() => getTermNames());
-  const [renaming, setRenaming] = useState<number | null>(null);
+  // WHICH SESSION IS BEING RENAMED, AND ON WHICH SURFACE. The `where` is not
+  // bookkeeping: the rail row and the pane title both draw an editor for the
+  // same session, and an id alone opens BOTH. Two inputs carrying `autoFocus`
+  // then fight over the focus on mount, the loser's onBlur runs commitRename
+  // with an empty draft, and the rename closes itself the instant it opens —
+  // which is exactly what it did until this field existed. One editor at a
+  // time, and the surface you double-clicked is the one that gets it.
+  const [renaming, setRenaming] = useState<{ id: number; where: 'rail' | 'pane' } | null>(null);
   const [draft, setDraft] = useState('');
   const [setsOpen, setSetsOpen] = useState(false);
   const [limitsOpen, setLimitsOpen] = useState(false);
   const [limitIdx, setLimitIdx] = useState(0);
   const labelOf = (s: Sess) =>
     (s.tmux && names[s.tmux]) || (s.sid && labels[s.sid]) || (s.tmux && labels[s.tmux]) || '';
-  const startRename = (x: Sess) => {
+  const startRename = (x: Sess, where: 'rail' | 'pane') => {
     if (!x.tmux) return;   // nothing stable to key the name on yet
-    setRenaming(x.id); setDraft(labelOf(x));
+    setRenaming({ id: x.id, where }); setDraft(labelOf(x));
   };
   // BLUR COMMITS rather than discarding — losing a name you just typed by
   // clicking away is the worst of the three outcomes, which is the same call
@@ -1461,11 +1468,39 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                   <span className={`term-mark ${s.cmd}`} aria-hidden="true">
                     {s.cmd === 'claude' ? 'C' : '$'}
                   </span>
-                  <span className="what">
-                    {labelOf(s) || (s.status === 'live'
-                      ? (labelBusy ? 'naming this session…' : 'not named yet')
-                      : s.note || s.status)}
-                  </span>
+                  {/* THE NAME IS EDITABLE HERE TOO, on a double-click, the
+                      same gesture the rail row carries. Both are needed: the
+                      rail is where you rename a session you are looking FOR,
+                      and the pane is where you rename the one you are looking
+                      AT — with four terminals up, the rail row for the pane
+                      under your cursor is the one place you are not reading.
+                      ONE `renaming` state serves both AND NAMES THE SURFACE,
+                      so only the editor you opened is drawn — see the state's
+                      own comment for what two of them do to each other.
+                      A session with no tmux name yet has nothing stable to key
+                      a name on, so the tooltip says so rather than promising a
+                      gesture that silently does nothing (`startRename` already
+                      refuses; a tooltip that lies is worse than none). */}
+                  {renaming?.id === s.id && renaming.where === 'pane' ? (
+                    <input className="tcg-edit pane-edit" autoFocus value={draft}
+                      onClick={(e) => e.stopPropagation()}
+                      onChange={(e) => setDraft(e.target.value)}
+                      onBlur={() => commitRename(s)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') commitRename(s);
+                        if (e.key === 'Escape') { setRenaming(null); setDraft(''); }
+                      }} />
+                  ) : (
+                    <span className="what"
+                      title={s.tmux
+                        ? 'Double-click to rename this session'
+                        : 'No host session name yet — this one cannot be renamed until the daemon reports it'}
+                      onDoubleClick={(e) => { e.stopPropagation(); startRename(s, 'pane'); }}>
+                      {labelOf(s) || (s.status === 'live'
+                        ? (labelBusy ? 'naming this session…' : 'not named yet')
+                        : s.note || s.status)}
+                    </span>
+                  )}
                   <span className="where">
                     {`${s.cmd === 'claude' ? 'claude' : 'shell'} · ${s.cwd || '~'}`}
                   </span>
@@ -1521,12 +1556,13 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                   /* FOCUS'S SMALL PANES GET A SMALLER FACE. They are a third of
                      the width and a fraction of the height, so at the shared
                      14px they hold a dozen wrapped lines and are genuinely
-                     hard to read — the complaint that prompted this. 11px is
-                     not decoration: it is what puts a useful number of ROWS in
-                     a short pane, which is the only thing that makes one worth
-                     glancing at. The big pane keeps the full size, since that
-                     is the one you are working in. */
-                  fontSize={layout === 'focus' && slot !== 0 ? 11 : undefined}
+                     hard to read — the complaint that prompted this. The size
+                     is not decoration: it is what puts a useful number of ROWS
+                     and COLUMNS in a short pane, which is the only thing that
+                     makes one worth glancing at, and 11px was still wrapping
+                     ordinary claude output. The big pane keeps the full size,
+                     since that is the one you are working in. */
+                  fontSize={layout === 'focus' && slot !== 0 ? 10 : undefined}
                   onStatus={(st, note) => setStatus(s.id, st, note)}
                   onUsage={setUsage}
                   onTmux={(name) => noteTmux(s.id, s.cwd, name)}
@@ -1655,15 +1691,21 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                           {mine.map((x) => {
                             const onScreen = slotIds.includes(x.id);
                             const pinned = !!x.tmux && pinnedOf(x.tmux);
+                            // The one thing on this row that is not a reading
+                            // but a REQUEST: this session has stopped and is
+                            // waiting for an answer.
+                            const ask = blockedOf(x);
                             return (
                               <div key={x.id}
-                                className={`tcg-row${x.id === active ? ' on' : ''}${onScreen ? '' : ' off'}`}
-                                title={onScreen
-                                  ? 'Click to bring this session into the first pane'
-                                  : 'Not on screen — click to bring it into the first pane'}
-                                onClick={() => { if (renaming !== x.id) showInLead(x.id); }}>
+                                className={`tcg-row${x.id === active ? ' on' : ''}${onScreen ? '' : ' off'}${ask ? ' asking' : ''}`}
+                                title={ask
+                                  ? 'Stopped on a question — click to bring it into the first pane and answer it'
+                                  : onScreen
+                                    ? 'Click to bring this session into the first pane'
+                                    : 'Not on screen — click to bring it into the first pane'}
+                                onClick={() => { if (renaming?.id !== x.id) showInLead(x.id); }}>
                                 <span className={`dot ${x.status}`} />
-                                {renaming === x.id ? (
+                                {renaming?.id === x.id && renaming.where === 'rail' ? (
                                   <input className="tcg-edit" autoFocus value={draft}
                                     onClick={(e) => e.stopPropagation()}
                                     onChange={(e) => setDraft(e.target.value)}
@@ -1674,10 +1716,38 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                                     }} />
                                 ) : (
                                   <span className="t" title="Double-click to rename"
-                                    onDoubleClick={(e) => { e.stopPropagation(); startRename(x); }}>
+                                    onDoubleClick={(e) => { e.stopPropagation(); startRename(x, 'rail'); }}>
                                     {labelOf(x) || (x.status === 'live'
                                       ? (labelBusy ? 'naming…' : 'not named yet')
                                       : x.note || x.status)}
+                                  </span>
+                                )}
+                                {/* THE ASK MARK — a session that has STOPPED to
+                                    ask you something. The group head already
+                                    counts them ("2 asking") and the strip above
+                                    the canvas names one, but neither says WHICH
+                                    row: with six sessions under one tool the
+                                    count sends you reading every line. So the
+                                    mark goes where the eye already is — on the
+                                    name — and the row's left edge goes with it,
+                                    because a 7px dot is not findable down a
+                                    column of eight.
+                                    It pulses for the same reason the head's
+                                    badge does: a permission prompt is a session
+                                    that has stopped dead, and a still dot reads
+                                    as decoration. It is NOT a button — the
+                                    whole row already does the one useful thing
+                                    (bring it into the first pane, where the
+                                    question is), and a target inside a target
+                                    is how you mis-click a rail.
+                                    It leans towards NULL with `blockedOf`: a
+                                    false mark puts an orange dot on a session
+                                    nobody asked anything, which is worse than
+                                    catching a real one a tick late. */}
+                                {ask && (
+                                  <span className="tcg-ask" aria-label="Waiting on your answer"
+                                    title={`Waiting on you — ${ask.title || ask.question}`}>
+                                    <span className="d" />
                                   </span>
                                 )}
                                 {/* THE PIN IS DRAWN ONLY WHEN IT IS ON
@@ -1702,9 +1772,9 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                                     tmux name yet has nothing stable to key a
                                     name on, so it gets no pencil rather than
                                     one that silently does nothing. */}
-                                {x.tmux && renaming !== x.id && (
+                                {x.tmux && renaming?.id !== x.id && (
                                   <button className="tcg-btn" title="Rename this session"
-                                    onClick={(e) => { e.stopPropagation(); startRename(x); }}>✎</button>
+                                    onClick={(e) => { e.stopPropagation(); startRename(x, 'rail'); }}>✎</button>
                                 )}
                                 {/* The design's last column is the session's
                                     token count. There is no PER-SESSION token
@@ -1743,7 +1813,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                           const picked = killPick.includes(d.name);
                           return (
                             <div key={d.name}
-                              className={`tci-row${d.attached ? ' away' : ''}${picked ? ' picked' : ''}${d.keep ? ' pinned' : ''}`}>
+                              className={`tci-row${d.attached ? ' away' : ''}${picked ? ' picked' : ''}${d.keep ? ' pinned' : ''}${d.blocked ? ' asking' : ''}`}>
                               <button className="tci-main"
                                 title={d.attached
                                   ? `Attached on another device (tmux ${d.name}) — open it here too: both screens mirror the same session`
@@ -1752,6 +1822,26 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                                 <span className="w">
                                   ↺ {d.cwd ? `~/${d.cwd}` : '~'}
                                   <span className="st">{d.attached ? 'another device' : 'detached'}</span>
+                                  {/* An idle row is the one place an unanswered
+                                      question can sit unseen for hours: no pane
+                                      draws it, so the attention strip above the
+                                      canvas — which reads the SESSIONS list —
+                                      cannot name it either. The mark is the
+                                      same one the rail's live rows wear because
+                                      it means the same thing; here re-attaching
+                                      is what you do about it, and re-attaching
+                                      is what the whole row already does.
+                                      It goes on the DIRECTORY line rather than
+                                      under the name, because the name line is
+                                      conditional — a session the labeller has
+                                      not answered for yet would drop the mark
+                                      with it. */}
+                                  {d.blocked && (
+                                    <span className="tcg-ask" aria-label="Waiting on your answer"
+                                      title={`Waiting on you — ${d.blocked.title || d.blocked.question}`}>
+                                      <span className="d" />
+                                    </span>
+                                  )}
                                 </span>
                                 {nm && <span className="t">{nm}</span>}
                               </button>

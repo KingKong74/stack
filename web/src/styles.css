@@ -1996,6 +1996,13 @@ a.tab { display: inline-block; }
 .tci-row:hover { border-color: var(--accent-tint-border); }
 .tci-row.picked { border-color: var(--critical); }
 .tci-row.pinned { border-left: 2px solid var(--accent-text); }
+/* An idle session sitting on a question. The whole border warns rather than
+   just the left edge, because these rows are cards rather than list lines and
+   have no left rule to colour — and because this is the row you are least
+   likely to be looking at. `.picked` still wins: selecting one for a KILL is
+   the more dangerous of the two states and has to keep saying so. */
+.tci-row.asking { border-color: var(--status-warning-fg); }
+.tci-row.asking.picked { border-color: var(--critical); }
 .tci-main {
   flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px;
   padding: 5px 4px 5px 7px; border: 0; background: transparent; text-align: left; cursor: pointer;
@@ -2314,6 +2321,25 @@ a.tab { display: inline-block; }
 .tcg-row .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; color: var(--body); }
 .tcg-row.on .t { color: var(--ink); }
 .tcg-row .cw { flex: none; font-family: var(--mono); font-size: 9.5px; color: var(--fainter); }
+/* THE ASK MARK — a session that has stopped for an answer, on its own row.
+   The row's left edge goes warning-coloured as well as the dot: the dot is
+   what you read once you are on the row, the edge is what pulls you to it down
+   a column of eight. The edge does NOT pulse — one moving thing per row, or the
+   rail reads as an alarm panel. An asking row keeps its edge even when it is
+   the selected one, which is why `.on.asking` is spelled out rather than left
+   to source order: the accent says where you ARE, this says where to go, and
+   the second is the one that expires. */
+.tcg-row.asking, .tcg-row.on.asking { border-left-color: var(--status-warning-fg); }
+/* Full opacity even off-screen: a dimmed request is the one state this mark
+   cannot afford, and a session asking from off the canvas is precisely the one
+   that gets forgotten. */
+.tcg-row.asking.off { opacity: 1; }
+.tcg-ask { flex: none; display: inline-flex; align-items: center; padding: 0 1px; }
+.tcg-ask .d {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--status-warning-fg);
+  animation: term-ask 1.6s ease-in-out infinite;
+}
 .tcg-btn { flex: none; border: 0; background: transparent; cursor: pointer; font-size: 10px; padding: 0 2px; color: var(--fainter); }
 .tcg-btn:hover, .tcg-btn.on { color: var(--accent-text); }
 .tcg-note { font-size: 10px; line-height: 1.5; color: var(--fainter); padding: 6px 2px 0; border-top: 1px solid var(--line-2); }
@@ -2489,6 +2515,20 @@ a.tab { display: inline-block; }
 .term-pane-title .what {
   font-size: 12.5px; font-weight: 600; color: var(--muted);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1 1 auto; min-width: 0;
+}
+/* The pane title's rename box. It borrows the rail's field and re-states only
+   what this bar changes: the bar is baseline-aligned for the label and the path
+   beside it, which drops an input a couple of pixels low, and the face is the
+   title's rather than the rail's so the name does not resize as you start
+   typing it. */
+.term-pane-title .pane-edit {
+  align-self: center; font-size: 12.5px; font-weight: 600; padding: 1px 6px;
+  /* CAPPED, unlike the rail's. The rail is 210px wide, so a field that fills
+     it is still a field; the lead pane's title bar is thirteen hundred, and an
+     input that wide for a three-word name reads as a search box across the top
+     of the terminal. The cap is what keeps it looking like the label it
+     replaces. */
+  flex: 0 1 320px; max-width: 320px;
 }
 .term-pane.focused .term-pane-title { border-color: var(--accent-tint-border); background: var(--accent-tint); }
 .term-pane.focused .term-pane-title .what { color: var(--accent-text-hover); }
