@@ -54,12 +54,32 @@
 //     for the same reason: letting a column drag re-file an area would
 //     re-partition the night's concurrency as a side effect of moving a card
 //     to In Progress.
-//  6b. DOUBLE-CLICK A CARD TO RENAME IT IN PLACE (#469). Enter commits, Escape
-//     cancels, and BLUR COMMITS rather than discarding — losing a rename you
-//     typed by clicking away is the worst of the three outcomes. The PATCH
-//     names `title` and nothing else, so an inline edit cannot touch a tier, a
-//     claim or a verdict. `draggable` is switched off for exactly as long as
-//     the editor is open, or the drag gesture eats the text selection inside it.
+//  6b. TWO DOUBLE-CLICKS, AND WHICH ONE YOU GET IS DECIDED BY WHAT IS UNDER
+//     THE CURSOR. DOUBLE-CLICK THE TITLE RENAMES IT IN PLACE (#469); DOUBLE-
+//     CLICK ANYWHERE ELSE ON THE CARD OPENS THE ITEM, which is the gesture
+//     every other board in the world has and this one did not — the modal was
+//     reachable only through ⋯ → Edit item…, two presses deep, on the screen
+//     the whole tab is for. The split is the text because the text is what a
+//     rename edits: a double-click landing on the id, a tag or the card's own
+//     padding was a rename of a word you were not pointing at.
+//     Enter commits, Escape cancels, and BLUR COMMITS rather than discarding —
+//     losing a rename you typed by clicking away is the worst of the three
+//     outcomes. The PATCH names `title` and nothing else, so an inline edit
+//     cannot touch a tier, a claim or a verdict. `draggable` is switched off
+//     for exactly as long as the editor is open, or the drag gesture eats the
+//     text selection inside it. A double press on a CONTROL is that control
+//     pressed twice and never the card behind it (`openItem`), or the second
+//     press would open the modal over the menu the first one had just closed.
+//  6c. A `fly` CARD SAYS IT WAS FILED BY A SESSION (#381). It is the one origin
+//     that reads on this board exactly like hand-written work and is not: a
+//     live terminal session opened it mid-flight for work it was doing. The
+//     chip carries `flySession`, and it OUTLIVES THE HOLD — `held` goes the
+//     moment somebody signs the row off, provenance does not.
+//  6d. EVERY POPOVER ON THIS SCREEN IS PORTALLED TO THE BODY (`Popover`), and
+//     that is a correctness fix, not a tidy-up: `.km-cols` scrolls sideways,
+//     which makes it a clip on BOTH axes, and the card menu was being cut in
+//     half by it. Its header carries the three rules that replaced the
+//     stylesheet's anchoring.
 //  6. NO ASSIGNEE AVATARS AND NO LIST/BOARD VIEW TOGGLE. Stack has no assignees
 //     and this screen has one layout; two buttons where one does nothing is a
 //     lie the mockup could afford and a wired screen cannot. The kit's check-run
@@ -105,7 +125,8 @@
 // verdict came from a machine, which is not the same as letting anyone disagree
 // with it. Whatever surfaces a change next still owes both.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { KitIcon } from './kit/KitIcon';
 import type { BoardArea, BoardList, Priority, RoadmapItem, Sprint } from '../types';
 import { listKeyOf, queueOrder, isBoardWork } from '../lib/plan';
@@ -730,6 +751,86 @@ function AreaChip({ label, dot, count, active, onClick }: {
   );
 }
 
+/**
+ * EVERY POPOVER ON THIS BOARD IS RENDERED INTO THE BODY, AND THAT IS NOT A
+ * REFACTOR — IT IS THE ONLY WAY IT IS VISIBLE. `.km-cols` scrolls its columns
+ * sideways (`overflow-x: auto`), and CSS computes the OTHER axis of a scroll
+ * container to `auto` as well: a lane row clips its own contents top and
+ * bottom, whatever the stylesheet says about the y axis. So an absolutely
+ * positioned menu hanging off a card near the foot of a short column was cut
+ * off at the row's edge — the ⋯ opened, and the half of the menu with Delete in
+ * it was simply not on the screen. No z-index reaches out of a clip; leaving
+ * the DOM does.
+ *
+ * The three rules the portal has to keep, because the stylesheet can no longer:
+ *  • IT IS ANCHORED IN VIEWPORT COORDINATES and re-measured on every scroll
+ *    (capture phase — the lane row's own sideways scroll does not bubble) and
+ *    every resize, so the menu tracks the card it belongs to instead of
+ *    floating away from it.
+ *  • IT FLIPS ABOVE THE ANCHOR rather than running off the bottom of the
+ *    window, and clamps into the viewport either way. The card menu opening
+ *    DOWNWARD is a decision (see `.km-menu.card`) and the flip is the exception
+ *    the window forces, not a second opinion about which way it should go.
+ *  • A CLICK INSIDE IT STILL STOPS THERE. The board closes its menus with one
+ *    `onClick` on the root; a React portal bubbles through the REACT tree, so
+ *    that handler still fires for a press outside the menu and this one still
+ *    has to swallow the press inside it.
+ *
+ * `inset` is the gap the stylesheet used to spell as `right: var(--space-5)` —
+ * the menu's right edge sits that far inside the anchor's.
+ */
+function Popover({ anchor, className, inset = 0, children }: {
+  anchor: HTMLElement | null;
+  className: string;
+  inset?: number;
+  children: React.ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const [at, setAt] = useState<{ top: number; left: number } | null>(null);
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!anchor || !el) return;
+    const place = () => {
+      const a = anchor.getBoundingClientRect();
+      const w = el.offsetWidth;
+      const h = el.offsetHeight;
+      // `top: calc(100% - 6px)` in viewport terms — the overlap the card menu
+      // and the priority list both had against the bottom edge of their card.
+      const gap = 6;
+      let top = a.bottom - gap;
+      if (top + h > window.innerHeight - 8) {
+        const above = a.top + gap - h;
+        top = above >= 8 ? above : Math.max(8, window.innerHeight - 8 - h);
+      }
+      const left = Math.min(Math.max(8, a.right - inset - w), Math.max(8, window.innerWidth - 8 - w));
+      setAt({ top, left });
+    };
+    place();
+    window.addEventListener('resize', place);
+    window.addEventListener('scroll', place, true);
+    return () => {
+      window.removeEventListener('resize', place);
+      window.removeEventListener('scroll', place, true);
+    };
+  }, [anchor, inset]);
+
+  return createPortal(
+    <div ref={ref} className={className} role="menu"
+      style={{
+        position: 'fixed', top: at ? at.top : 0, left: at ? at.left : 0,
+        right: 'auto', bottom: 'auto',
+        // Hidden for the one layout pass that measures it. `useLayoutEffect`
+        // runs before paint, so nothing is ever drawn at 0,0.
+        visibility: at ? undefined : 'hidden',
+      }}
+      onClick={(e) => e.stopPropagation()}>
+      {children}
+    </div>,
+    document.body,
+  );
+}
+
 function ColumnHead({ col, first, last, open, onMenu, onRename, onMove, onDelete }: {
   col: { key: string; name: string; items: RoadmapItem[]; real: boolean };
   first: boolean; last: boolean; open: boolean;
@@ -740,6 +841,10 @@ function ColumnHead({ col, first, last, open, onMenu, onRename, onMove, onDelete
 }) {
   const [tip, setTip] = useState(false);
   const [editing, setEditing] = useState(false);
+  // The anchor the menu is measured against. A ref rather than the button
+  // itself: the menu opens BELOW the whole head, which is where it opened when
+  // it was `top: 30px` inside it.
+  const headRef = useRef<HTMLDivElement | null>(null);
   const [draft, setDraft] = useState(col.name);
   const [confirming, setConfirming] = useState(false);
   useEffect(() => { if (!open) setConfirming(false); }, [open]);
@@ -765,7 +870,7 @@ function ColumnHead({ col, first, last, open, onMenu, onRename, onMove, onDelete
   }
 
   return (
-    <div className="km-colhead">
+    <div className="km-colhead" ref={headRef}>
       <span className="nm">{col.name}</span>
       <span className="k-badge">{col.items.length}</span>
 
@@ -794,7 +899,7 @@ function ColumnHead({ col, first, last, open, onMenu, onRename, onMove, onDelete
       {tip && !open && <span className="km-tip">More actions</span>}
 
       {open && (
-        <div className="km-menu" role="menu" onClick={(e) => e.stopPropagation()}>
+        <Popover anchor={headRef.current} className="km-menu">
           <button className="km-menuitem" onClick={() => { setDraft(col.name); setEditing(true); }}>Rename column</button>
           <span className="km-menusep" />
           <button className="km-menuitem" disabled={first} onClick={() => onMove(-1)}>Move column left</button>
@@ -806,7 +911,7 @@ function ColumnHead({ col, first, last, open, onMenu, onRename, onMove, onDelete
           <button className="km-menuitem danger" onClick={() => (confirming ? onDelete() : setConfirming(true))}>
             {confirming ? 'Really delete? Cards return to their derived column' : 'Delete column'}
           </button>
-        </div>
+        </Popover>
       )}
     </div>
   );
@@ -877,7 +982,25 @@ function IssueCard({
   // the board because it is real work (`homeOf`), and it says so on its face
   // because the alternative is a card the runner will silently never take.
   const held = isHeld(item);
+  // #381 — opened by a live terminal session rather than typed by a human. A
+  // row keeps saying so after its hold is answered; see the chip below.
+  const fly = item.source === 'fly';
   const [confirming, setConfirming] = useState(false);
+  // The anchor both of this card's popovers are measured against — the card
+  // itself, which is where the stylesheet anchored them before they left the
+  // column's clip (see `Popover`).
+  const cardRef = useRef<HTMLDivElement | null>(null);
+
+  // TWO DOUBLE-CLICKS WITH TWO MEANINGS (see decision 6b): the TITLE renames in
+  // place, the rest of the card opens the item. A press on a control is that
+  // control pressed, never the card behind it — the ⋯ and the priority glyph
+  // both toggle on a single click, so a second one reaching this handler would
+  // open the modal over a menu the same gesture had just closed.
+  const openItem = (e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest('button, input, textarea, [role="menu"]')) return;
+    e.stopPropagation();
+    onEdit();
+  };
   useEffect(() => { if (!menuOpen) setConfirming(false); }, [menuOpen]);
 
   return (
@@ -885,12 +1008,17 @@ function IssueCard({
     // eats the pointer inside a text input in Chromium — select-by-drag stops
     // working and the card starts flying instead — so the one gesture is
     // switched off for exactly as long as the other one is open.
-    <div className={`km-card${selected ? ' selected' : ''}${dragging ? ' dragging' : ''}${landed ? ' landed' : ''}${editing ? ' editing' : ''}`}
-      data-hl={item.id} onClick={onSelect} onDoubleClick={(e) => { e.stopPropagation(); onOpenInline(); }}
+    <div ref={cardRef} className={`km-card${selected ? ' selected' : ''}${dragging ? ' dragging' : ''}${landed ? ' landed' : ''}${editing ? ' editing' : ''}`}
+      data-hl={item.id} onClick={onSelect} onDoubleClick={openItem}
       draggable={!editing} onDragStart={onDragStart} onDragEnd={onDragEnd}>
       {editing
         ? <InlineTitle initial={item.title} onCommit={onInline} onCancel={onCancelInline} />
-        : <span className="t" title="Double-click to rename">{item.title}</span>}
+        : (
+          <span className="t" title="Double-click the title to rename it — double-click anywhere else on the card to open it"
+            onDoubleClick={(e) => { e.stopPropagation(); onOpenInline(); }}>
+            {item.title}
+          </span>
+        )}
 
       <div className="km-cardmeta">
         {/* THIS SLOT HELD THE APPROVAL ICON until #472 took every held row off
@@ -922,7 +1050,7 @@ function IssueCard({
         </span>
       </div>
 
-      {(held || sprint || item.area || item.claimedBy || item.skipped || item.reviewTag) && (
+      {(held || fly || sprint || item.area || item.claimedBy || item.skipped || item.reviewTag) && (
         <div className="km-cardtags">
           {/* HELD IS FIRST, ahead of even the sprint chip, because it OUTRANKS
               it: a held row in the box in progress still does not run, so a
@@ -953,6 +1081,29 @@ function IssueCard({
               <KitIcon name="layers" size={11} /><span className="v">{sprint.name}</span>
             </span>
           )}
+          {/* WHERE A CARD CAME FROM, for the one origin nobody typed onto this
+              board: `fly` (#381) is a row a LIVE TERMINAL SESSION opened for
+              work it was in the middle of. It reads on the board exactly like
+              a card somebody wrote by hand, and it is not one — it was filed by
+              a machine mid-flight, so it has a hold to answer while it is
+              unsigned and provenance worth knowing long after.
+              THE CHIP OUTLIVES THE HOLD on purpose: the `held` chip above goes
+              the moment somebody signs the row off, and `flySession` does not
+              (its comment in types.ts says why), so the question "did I ask for
+              this or did a session file it?" stays answerable. `hook` gets no
+              chip of its own — it is the extractor's, and the `held` chip's
+              title already says a push found it.
+              It sits after the sprint because a sprint chip is a claim about
+              what the night does and this one is a claim about the past; the
+              hold, which outranks both, is still first. */}
+          {fly && (
+            <span className="k-tag mono" title={item.flySession
+              ? `Filed by the live session "${item.flySession}" while it worked — not typed onto this board`
+              : 'Filed by a live session while it worked — not typed onto this board'}>
+              <KitIcon name="terminal" size={11} />
+              <span className="v">{item.flySession || 'session'}</span>
+            </span>
+          )}
           {item.area && <span className="k-tag">{item.area}</span>}
           {item.claimedBy && (
             // A BRANCH NAME IS THE ONE UNBOUNDED STRING ON A CARD. `<kind>/<id>-<summary>`
@@ -980,7 +1131,7 @@ function IssueCard({
       )}
 
       {priOpen && (
-        <div className="km-prilist" role="menu" onClick={(e) => e.stopPropagation()}>
+        <Popover anchor={cardRef.current} className="km-prilist" inset={12}>
           <span className="cur">
             <span className="g" style={{ color: pri.color }}>{pri.glyph}</span>
             {pri.label}
@@ -996,11 +1147,11 @@ function IssueCard({
               );
             })}
           </div>
-        </div>
+        </Popover>
       )}
 
       {menuOpen && (
-        <div className="km-menu card" role="menu" onClick={(e) => e.stopPropagation()}>
+        <Popover anchor={cardRef.current} className="km-menu card" inset={12}>
           <button className="km-menuitem" onClick={onEdit}>Edit item…</button>
           {/* SIGN OFF IS HERE AGAIN, and only on a card that is actually held.
               #472 took it off this screen because no held row was drawn here
@@ -1033,7 +1184,7 @@ function IssueCard({
               ? (item.source === 'hook' ? 'Really delete? The next push will not re-add it' : 'Really delete?')
               : 'Delete'}
           </button>
-        </div>
+        </Popover>
       )}
     </div>
   );

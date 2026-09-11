@@ -94,10 +94,23 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 // `:has(.km-card)` or an `nth-child` inside one `.km-cols`, and the runner takes
 // `.first()`, so each press lands in the first section that can serve it.
 //
+// EVERY BOARD POPOVER IS A CHILD OF `<body>` NOW, and the `expect` selectors
+// below say so deliberately (`body > .km-prilist`, not `.km-card .km-prilist`).
+// `.km-cols` scrolls sideways, which makes it a clip on BOTH axes, so a menu
+// rendered inside a column was being cut off at the lane's edge — the portal is
+// the fix and this is where it is pinned. A selector matching the menu wherever
+// it lives would let the next refactor put it back inside the clip, and the
+// smoke suppresses `clipped-ancestor` overflow, so nothing else here would
+// notice. If one of these three fails, read Board.tsx's `Popover`.
+//
+// WHAT IS NOT PRESSED HERE, and why: a double-click on the CARD (rather than on
+// its title) opens the item modal, which covers the screen for every press
+// after it, and this harness has no way to dismiss one. The title's own
+// double-click — the other half of that pair — is `board-inline` below.
+//
 // THE ORDER IS LOAD-BEARING, and for a reason the mockup's list already knew:
-// every popover here is absolutely positioned and tall enough to cover what is
-// under it. The card presses come FIRST, because a column menu opens over the
-// first card in its own column. The parked filter comes LAST of the board-view
+// every popover here floats over what is under it. The card presses come FIRST,
+// because a column menu opens over the first card in its own column. The parked filter comes LAST of the board-view
 // presses, because it HIDES rows — every demo card is parked, so pressing it
 // earlier would empty the board underneath every press that follows.
 const ROADMAP_PANELS = [
@@ -105,21 +118,22 @@ const ROADMAP_PANELS = [
     id: 'board-priority',
     label: 'Board — card priority picker',
     click: '.km-col:has(.km-card) .km-card [aria-label^="Priority"]',
-    expect: '.km-card .km-prilist',
+    expect: 'body > .km-prilist',
   },
   {
-    // The same card: the priority list opens BELOW the card it belongs to, so
-    // it covers the next one down and never this card's own meta row.
+    // The same card: both popovers anchor to the card's own bottom edge (and
+    // flip above it only when the window leaves no room), so each covers what
+    // is under the card and never this card's own meta row.
     id: 'board-cardmenu',
     label: 'Board — card actions menu',
     click: '.km-col:has(.km-card) .km-card [aria-label^="More actions for #"]',
-    expect: '.km-card .km-menu.card',
+    expect: 'body > .km-menu.card',
   },
   {
     id: 'board-colmenu',
     label: 'Board — column actions menu',
     click: '.km-col:nth-child(1) [aria-label^="Column actions"]',
-    expect: '.km-col:nth-child(1) .km-colhead .km-menu',
+    expect: 'body > .km-menu:not(.card)',
   },
   {
     // A different column from the menu above, which covers its own column's
