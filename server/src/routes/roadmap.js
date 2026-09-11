@@ -223,7 +223,7 @@ roadmap.post('/', async (req, res) => {
 
 // PATCH /:id  -> done toggle, bucket move, title/note edit, reorder, reviewed,
 //                claim/release (claimed_by), archive-review verdict (review_tag),
-//                review shelving (review_shelved, #148)
+//                review shelving (review_shelved, #148), commitment (#496)
 roadmap.patch('/:id', async (req, res) => {
   const sets = [];
   const vals = [];
@@ -447,6 +447,18 @@ roadmap.patch('/:id', async (req, res) => {
     // "This is the plan now." The only path that overwrites the ghost, and it
     // is deliberately its own flag rather than a side effect of a drag.
     sets.push('plan_start_min = sched_start_min', 'plan_len_min = sched_len_min');
+  }
+  if (req.body?.committed !== undefined) {
+    // #496 — the third leg of WHICH SCREEN this row is on. `false` files a
+    // signed-off row on the Roadmap as an idea somebody is keeping; `true` is
+    // the commitment that puts it on the board.
+    //
+    // Deliberately settable on its own and deliberately NOT touched by any
+    // other branch of this PATCH. Promoting is TWO fields sent together
+    // (`reviewed` + `committed`, and `parentId: null` for the board), so the
+    // two meanings of "yes" stay two writes the caller has to choose between
+    // rather than one the server guesses at.
+    sets.push(`committed = $${i++}`); vals.push(Boolean(req.body.committed));
   }
   if (req.body?.parentId !== undefined) {
     // ONE LEVEL DEEP. A ticket hangs off a feature; a feature may not hang off

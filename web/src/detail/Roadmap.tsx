@@ -1,30 +1,34 @@
-// THE ROADMAP TAB IS THE IDEA SURFACE, and it is wired (#472).
+// THE ROADMAP TAB IS THE KEPT-IDEA SURFACE, and it is wired (#472, narrowed by
+// #496).
 //
-// It draws exactly the rows the BOARD deliberately does not, and `isIdea` in
-// lib/plan.ts is the one line between the two screens — read its header before
-// touching either. Two populations land here:
+// It draws one of the three populations `homeOf` in lib/plan.ts partitions the
+// project into — read that header before touching this screen, the board or For
+// you's Auto-ideas pane. What lands here is an idea SOMEBODY HAS KEPT and
+// nobody has committed to:
 //
-//  • HELD rows NOBODY HAS WORKED — `hook` (the extractor read one off a push)
-//    and `fly` (a live session opened one for its own work) that nobody has
-//    signed off. They used to appear on the board, where an auto-extraction sat
-//    among committed work looking exactly like it. They arrive here now, which
-//    is the whole of what the owner asked for: an idea is not work until
-//    somebody says it is.
 //  • CHILD rows (`parent_id`) — an idea filed under something already on the
-//    board. The other half of the ask: see what you are working on, and add to
-//    it without turning every thought into a card the runner might pick up.
+//    board. See what you are working on, and add to it without turning every
+//    thought into a card the runner might pick up.
+//  • KEPT rows (`committed` false, #496) — a session's idea the owner signed
+//    off with Keep rather than Promote. "Yes, hold on to this" is a different
+//    answer from "yes, do this", and before that column they were one write.
+//
+// WHAT NO LONGER LANDS HERE IS THE RAW FEED (#496). A held `hook` or `fly` row
+// nobody has answered used to be drawn in these columns, which meant the
+// Roadmap's own badge counted whatever a machine thought of overnight and the
+// triage columns filled up with it. That queue is For you → Auto-ideas now, and
+// its Keep button is the door into this screen. The Roadmap is what you MEANT
+// to do; Auto-ideas is what was SUGGESTED.
 //
 // WORK LEAVES THIS SCREEN THE MOMENT IT IS WORKED, sign-off or no sign-off. A
-// held row a session has CLAIMED or BUILT is committed work by the only evidence
-// that matters — somebody did it — so it is drawn on the board and the hold is
-// said and answered there (`isIdea`'s header carries why). Without that, a
-// session's own card sat here through the whole night that built it, and the
-// owner had to Promote their own instruction to get it onto the board.
+// row a session has CLAIMED or BUILT is committed work by the only evidence
+// that matters — somebody did it — so it is drawn on the board and any hold it
+// still carries is said and answered there (`homeOf`'s header carries why).
 //
-// PROMOTING IS ONE WRITE WITH ONE MEANING: `reviewed: true` plus
-// `parentId: null`, together saying "this is committed work now". Nothing else
-// moves a row between the two screens, and a held row and a child both leave by
-// the same door.
+// PROMOTING IS ONE WRITE WITH ONE MEANING: `reviewed: true`, `committed: true`
+// and `parentId: null` together say "this is committed work now". All three
+// matter — leave `committed` out and the row bounces straight back here on the
+// next render, leave `parentId` out and a child does the same.
 //
 // FOUR DECISIONS WORTH THE INK:
 //
@@ -48,7 +52,8 @@
 //     mode approval must not have), so a hand-typed row with no parent is
 //     committed work by definition and belongs on the board, where the
 //     composer and the create dialog already put it. Capture here always hangs
-//     off something: press ＋ on a board item and the idea is born under it.
+//     off something: press ＋ on a board item and the idea is born under it,
+//     `committed` false so the stored bit agrees with the parent.
 //  3. AN AREA IS A LANE, so this screen says so in the same words the board
 //     does — `(project, area)` admits one overnight worker (#267), each section
 //     header names the branch holding its lane, and untagged says it can never
@@ -57,7 +62,7 @@
 //  4. DISCARD IS DELETE, and on a `hook` row it TOMBSTONES THE FINGERPRINT so
 //     the next push cannot re-create it. That is what Dismiss has always meant
 //     and why it has no undo; the second press is because the word does not say
-//     it on its own.
+//     it on its own. Auto-ideas' Dismiss is the same write for the same reason.
 //
 // WHAT THIS SCREEN STILL CANNOT DO: give a verdict. #263's third leg — a
 // machine verdict must be readable by the human it stands in for — is unmet
@@ -68,8 +73,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { KitIcon } from './kit/KitIcon';
 import type { BoardArea, Priority, RoadmapItem } from '../types';
 import { PRIORITY_META, PRIORITY_DEFAULT, priorityMeta } from '../lib/ui';
-import { isIdea } from '../lib/plan';
-import { isHeld } from '../lib/approval';
+import { isIdea, isBoardWork } from '../lib/plan';
 import {
   getBoardShape, createRoadmapItem, patchRoadmapItem, deleteRoadmapItem,
 } from '../store';
@@ -96,10 +100,12 @@ const READY: Priority[] = ['highest', 'high'];
 const colOf = (it: RoadmapItem): Col =>
   (it.skipped ? 'parked' : READY.includes(it.bucket) ? 'ready' : 'thinking');
 
-/** Where an idea came from, in one word. `manual` on a CHILD means somebody
- *  typed it here, which is the only way a manual row reaches this screen. */
+/** Where an idea came from, in one word. A `hook` or `fly` row on THIS screen
+ *  is one somebody kept from Auto-ideas (#496) — it is signed off by
+ *  definition, which is why nothing here draws a hold. `filed` means somebody
+ *  typed it under a board item, the only way a manual row reaches this screen. */
 const sourceOf = (it: RoadmapItem): string =>
-  (it.source === 'hook' ? 'auto' : it.source === 'fly' ? (it.flySession || 'session') : 'filed');
+  (it.source === 'hook' ? 'kept from a push' : it.source === 'fly' ? `kept from ${it.flySession || 'a session'}` : 'filed');
 
 export function Roadmap({ slug, projectName, items, onRefresh, onEdit, highlightId }: {
   slug: string;
@@ -149,13 +155,13 @@ export function Roadmap({ slug, projectName, items, onRefresh, onEdit, highlight
       || String(it.id) === needle.replace(/^#/, '');
   };
 
-  // The two populations, off the same rows and by the same predicate the board
-  // filters with, so nothing can be on both screens or on neither.
+  // The two populations, off the same rows and by the same function the board
+  // and Auto-ideas filter with, so no row is on two screens or on none.
   const ideas = useMemo(
     () => rows.filter((it) => !it.archived && isIdea(it) && matches(it)),
     [rows, query]);
   const onBoard = useMemo(
-    () => rows.filter((it) => !it.archived && !it.done && !isIdea(it)),
+    () => rows.filter((it) => !it.archived && !it.done && isBoardWork(it)),
     [rows]);
 
   const parentOf = useMemo(() => {
@@ -224,12 +230,14 @@ export function Roadmap({ slug, projectName, items, onRefresh, onEdit, highlight
 
   // ---- writes ---------------------------------------------------------------
 
-  // ONE WRITE, ONE MEANING. `reviewed` releases a held row to the runner
-  // (#359); `parentId: null` detaches a child. Together they say the row is
-  // committed work, and it is on the board on the next render.
+  // ONE WRITE, ONE MEANING — and THREE FIELDS since #496. `reviewed` releases
+  // the row to the runner (#359), `committed` is the commitment that makes it
+  // board work, and `parentId: null` detaches a child. Leave the middle one out
+  // and a kept idea bounces straight back onto this screen on the next render,
+  // because `committed` false is exactly what put it here.
   const promote = (it: RoadmapItem) =>
     guard(async () => {
-      wrote(await patchRoadmapItem(slug, it.id, { reviewed: true, parentId: null }));
+      wrote(await patchRoadmapItem(slug, it.id, { reviewed: true, committed: true, parentId: null }));
     });
   const setBucket = (it: RoadmapItem, bucket: Priority) =>
     guard(async () => { wrote(await patchRoadmapItem(slug, it.id, { bucket })); });
@@ -249,7 +257,10 @@ export function Roadmap({ slug, projectName, items, onRefresh, onEdit, highlight
         title, note: '', bucket: PRIORITY_DEFAULT,
         ...(parent.area ? { area: parent.area } : {}),
       });
-      const child = await patchRoadmapItem(slug, made.id, { parentId: parent.id });
+      // `committed: false` alongside the parent so the STORED bit agrees with
+      // what the parent already implies. The predicate reads either leg, so
+      // this changes no behaviour — it stops the column from lying about a row.
+      const child = await patchRoadmapItem(slug, made.id, { parentId: parent.id, committed: false });
       setRows((r) => [...r, child]);
       onRefresh();
     });
@@ -388,7 +399,7 @@ export function Roadmap({ slug, projectName, items, onRefresh, onEdit, highlight
           <span className="im-empty">
             {query.trim()
               ? 'No idea matches that.'
-              : 'No ideas yet. A push files them here automatically, and ＋ on a board item adds one by hand.'}
+              : 'No ideas kept yet. Keep one in For you → Auto-ideas, or press ＋ on a board item to file one by hand.'}
           </span>
         )}
       </div>
@@ -439,7 +450,6 @@ function IdeaCard({ idea, parent, open, onToggle, onPromote, onBucket, onPark, o
   onEdit: () => void; onDiscard: () => void;
 }) {
   const ready = colOf(idea) === 'ready';
-  const held = isHeld(idea);
   const [confirming, setConfirming] = useState(false);
   useEffect(() => { if (!open) setConfirming(false); }, [open]);
 
@@ -459,9 +469,12 @@ function IdeaCard({ idea, parent, open, onToggle, onPromote, onBucket, onPark, o
 
       <div className="im-meta">
         <span className="k-tag mono">#{idea.id}</span>
-        <span className="k-tag" title={held
-          ? 'Nobody has signed this off, so the overnight runner leaves it alone (#359)'
-          : 'Filed by hand under a board item'}>{sourceOf(idea)}</span>
+        {/* NO HOLD IS DRAWN HERE ANY MORE (#496). Every row on this screen is
+            signed off — a held one is in For you → Auto-ideas — so a chip
+            saying "the runner leaves this alone" would be false on all of them
+            and the honest thing to say is where the idea came from. */}
+        <span className="k-tag" title="Signed off — kept as an idea rather than committed to">
+          {sourceOf(idea)}</span>
         {parent && (
           <span className="k-tag" title={`An idea under "${parent.title}" (#${parent.id})`}>
             under #{parent.id}
@@ -496,11 +509,9 @@ function IdeaCard({ idea, parent, open, onToggle, onPromote, onBucket, onPark, o
           </div>
 
           <span className="from">
-            {held
-              ? `Opened by ${sourceOf(idea)}, not worked yet, and held out of the overnight runner until you promote it.`
-              : parent
-                ? `Filed under "${parent.title}". Promoting detaches it and puts it on the board.`
-                : 'Promoting puts this on the board.'}
+            {parent
+              ? `Filed under "${parent.title}". Promoting detaches it and puts it on the board.`
+              : 'Kept as an idea. Promoting commits to it and puts it on the board.'}
           </span>
 
           <div className="btns">

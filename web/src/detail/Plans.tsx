@@ -21,7 +21,7 @@
 // tooltip is what says so — the same distinction `BacklogRow` draws in
 // Board.tsx, for the same reason.
 //
-// WHAT IT DRAWS IS COMMITTED WORK — `!isIdea` (#472), the board's own
+// WHAT IT DRAWS IS COMMITTED WORK — `isBoardWork` (#472, #496), the board's own
 // population. A held hook/fly row and a child idea are on Roadmap and are in
 // nobody's plan yet; drawing them here would put one row on three screens.
 //
@@ -65,7 +65,7 @@
 import { useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import { KitIcon, type KitIconName } from './kit/KitIcon';
 import type { RoadmapItem, Sprint } from '../types';
-import { dateAt, fmtDate, isBuilt, isIdea, listKeyOf } from '../lib/plan';
+import { dateAt, fmtDate, isBuilt, isBoardWork, listKeyOf } from '../lib/plan';
 
 type SubTab = 'summary' | 'progress' | 'timeline' | 'calendar' | 'releases' | 'dependencies';
 type StatusKey = 'todo' | 'progress' | 'review' | 'done';
@@ -491,7 +491,8 @@ const MOCK_SUBS = new Set<SubTab>(['summary', 'progress', 'releases', 'dependenc
 
 export function Plans({ items, sprints, weekZero, onBoard }: {
   /** EVERY roadmap row, in the payload's own order — the same flattened list the
-   *  board and Roadmap take. This screen keeps the committed half (`!isIdea`). */
+   *  board and Roadmap take. This screen keeps the committed third (#496 —
+   *  `isBoardWork`, never `!isIdea`, which would draw the Auto-ideas pile). */
   items: RoadmapItem[];
   /** The project's sprints, in board order, off the same payload (#477). */
   sprints: Sprint[];
@@ -505,7 +506,7 @@ export function Plans({ items, sprints, weekZero, onBoard }: {
 
   // COMMITTED WORK ONLY (#472), and archived rows are neither surface's. Done
   // once here so the two wired views cannot disagree about their population.
-  const plan = useMemo(() => items.filter((it) => !isIdea(it) && !it.archived), [items]);
+  const plan = useMemo(() => items.filter((it) => isBoardWork(it) && !it.archived), [items]);
 
   return (
     <div className="pl">

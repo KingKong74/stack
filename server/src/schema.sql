@@ -1097,6 +1097,30 @@ CREATE TABLE IF NOT EXISTS agent_profiles (
 --    Three states, three meanings — collapsing any two loses the owner's intent.
 ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS parent_id  INTEGER REFERENCES roadmap_items(id) ON DELETE SET NULL;
 
+-- #496 — IS THIS ROW COMMITTED WORK? The third state a row's HOME needs, and the
+-- only thing the board/Roadmap split could not already express.
+--
+-- A row lives on exactly one of three screens now, and the two columns above
+-- decide two thirds of it: an unsigned `hook`/`fly` row nobody has worked is a
+-- SESSION IDEA and belongs in For you → Auto-ideas; a CHILD row is a note about
+-- work and belongs on the Roadmap. What was missing is the row a session found,
+-- the owner SIGNED OFF, and still did not commit to — "yes, keep this idea" is
+-- a different answer from "yes, do this", and before this column both wrote
+-- `reviewed_at` and both landed on the board.
+--
+-- DEFAULT TRUE, which is the safe end: a row nobody has said anything about is
+-- board work, exactly as it was before this column existed, so no screen loses
+-- a row to a missing migration. The convergent UPDATE below only makes the
+-- stored bit agree with what `parent_id` already said — a child was on the
+-- Roadmap under the old rule and stays there under the new one whatever this
+-- column holds, because the predicate reads `parent_id OR NOT committed`.
+--
+-- It is NOT `reviewed_at` (who may RUN — #359), NOT `archived` (off the board,
+-- recoverable) and NOT `skipped` (parked, meaning later). Four questions, four
+-- columns; collapsing any two of them loses the owner's intent.
+ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS committed BOOLEAN NOT NULL DEFAULT true;
+UPDATE roadmap_items SET committed = false WHERE parent_id IS NOT NULL AND committed;
+
 -- #401 — the schedule's unit became MINUTES. A RENAME and a multiply, not a new
 -- pair of columns beside the old: two spellings of one schedule is exactly the
 -- drifting second truth this schema keeps saying not to build.

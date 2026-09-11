@@ -15,7 +15,7 @@ import { ConsoleNav, NavIcons, SpaceDot, type NavSection } from '../detail/Conso
 import { absoluteHref, type MenuOption } from '../components/MoreMenu';
 import { Quality } from '../detail/Quality';
 import { qualityAttention } from '../lib/quality';
-import { ForYouMock, AUTO_IDEA_COUNT } from '../detail/ForYouMock';
+import { ForYou } from '../detail/ForYou';
 import { Plans } from '../detail/Plans';
 import { Board } from '../detail/Board';
 import { Roadmap } from '../detail/Roadmap';
@@ -23,7 +23,7 @@ import { TabStrip } from '../components/TabStrip';
 import { Modal } from '../components/Modal';
 import { RoadmapModal, type RoadmapFields } from '../components/RoadmapModal';
 import { useAutoRefresh } from '../lib/autoRefresh';
-import { newItemSched, flatRoadmap, isIdea } from '../lib/plan';
+import { newItemSched, flatRoadmap, isIdea, isAutoIdea, isBoardWork } from '../lib/plan';
 import { PRIORITY_DEFAULT, crumbName } from '../lib/ui';
 
 // #278 — Bugs and Audit are one tab now: Quality. They were halves of one loop
@@ -261,17 +261,22 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
   // anywhere on the screen. The ORDER matters too: `queueOrder` uses payload
   // order as its last sort key, and this is the payload's order.
   const allRoadmap = useMemo(() => flatRoadmap(roadmap), [roadmap]);
-  // #472 — the rows the BOARD deliberately does not draw: held hook/fly items
-  // and child ideas. `isIdea` is the one line between the two screens, so the
-  // rail's two counts partition the board rather than overlapping.
+  // #472, #496 — THE THREE POPULATIONS, off ONE list and by one function, so
+  // the three counts on this screen partition the project rather than
+  // overlapping. `homeOf` in lib/plan.ts is that function; nothing here may
+  // re-derive a screen's rows from `source`, `reviewed` or `parentId` directly.
   const ideaRows = useMemo(
     () => allRoadmap.filter((i) => !i.archived && isIdea(i)), [allRoadmap]);
-  // THE PROJECT-SCOPED REVIEW QUEUE IS GONE with the tab that drew it. It was
-  // every 'hook' and 'fly' row no human had signed off — held from the
-  // overnight runner by `lib/approval.ts` until someone kept one — and
-  // Auto-ideas was the last screen anywhere that could keep or dismiss one.
-  // Nothing filters for them now; the holding is unchanged and only the
-  // browser's way out of it went (ForYouMock's header).
+  // A session's own ideas, waiting in For you → Auto-ideas. THE STRIP'S COUNT
+  // IS THIS, and it is real now — the pane behind it draws these same rows.
+  const autoIdeaRows = useMemo(
+    () => allRoadmap.filter((i) => !i.archived && isAutoIdea(i)), [allRoadmap]);
+  // THE REVIEW QUEUE IS BACK, and `autoIdeaRows` above is it (#496). It is
+  // every 'hook' and 'fly' row no human has signed off and no session has
+  // worked — held from the overnight runner by `lib/approval.ts` until
+  // somebody promotes one — and For you's Auto-ideas pane both draws it and
+  // answers it. #444 had culled the only screen that could, which left the
+  // hold unanswerable from any browser for six issues.
 
   // BOTH WIRED ROWS CARRY A REAL COUNT, and every mock row carries a MOCK CHIP
   // (#472). The rule behind both is one rule: a row's number and the screen
@@ -448,7 +453,11 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
         // which half to read first. Its KEY is still `overview`, so every deep
         // link, legacy spelling and `hl` target resolves as before.
         {
-          key: 'overview', label: 'For you', icon: NavIcons.inbox, mock: true,
+          // NO MOCK CHIP ON THIS ROW ANY MORE (#496): one of its three panes
+          // is wired, and a chip on the rail would warn about the whole screen.
+          // It moved to the two sub-tabs it is actually true of, which is the
+          // finest grain the rule has and the same place Plans keeps its.
+          key: 'overview', label: 'For you', icon: NavIcons.inbox,
           menu: placeMenu(hrefTo.detail(slug, 'overview'), 'overview'), onClick: () => setTab('overview'),
         },
         { key: 'soon:starred', label: 'Starred', icon: NavIcons.star, soon: true },
@@ -463,22 +472,29 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
           // and #450 stated from the other side — a row's number and the screen
           // behind it have to agree — and the board is wired now, so the number
           // is what it draws: open, un-archived COMMITTED cards — #472 moved
-          // held rows and child ideas to Roadmap, and the two counts partition.
+          // child ideas to Roadmap and #496 moved held rows to Auto-ideas, and
+          // the three counts on this screen partition one list.
           key: 'roadmap', label: project.name, icon: NavIcons.board,
           // COMMITTED, open and un-archived — the rows the board actually
           // draws. It counted every open row until #472 moved held items and
-          // child ideas to Roadmap, at which point the rail read 15 over a
-          // board of 3: the exact failure the "a row's number and the screen
-          // behind it must agree" rule is about, committed against my own rule.
-          count: allRoadmap.filter((i) => !i.done && !i.archived && !isIdea(i)).length,
+          // child ideas off it, at which point the rail read 15 over a board of
+          // 3: the exact failure the "a row's number and the screen behind it
+          // must agree" rule is about, committed against my own rule.
+          //
+          // `isBoardWork` and NOT `!isIdea` — with a third surface the negation
+          // counts the Auto-ideas pile as board work and the rail lies again.
+          count: allRoadmap.filter((i) => !i.done && !i.archived && isBoardWork(i)).length,
           menuLabel: `${project.name} board`,
           menu: placeMenu(hrefTo.detail(slug, 'roadmap'), 'board'), onClick: () => setTab('roadmap'),
         },
         {
-          // #472 — Roadmap is the IDEA surface and is wired, so it carries a
-          // real count: the rows the board deliberately does not draw. Not in
-          // the critical tone — an idea nobody has signed off is a queue, not
-          // an alarm.
+          // #472 — Roadmap is the KEPT-IDEA surface and is wired, so it
+          // carries a real count: child ideas, and rows promoted to the Roadmap
+          // rather than the board (#496). A session's raw output is NOT in this
+          // number any more — that is For you's Auto-ideas count, and putting a
+          // machine's overnight suggestions in the roadmap's badge made a
+          // triage queue look like a plan. Not in the critical tone either way:
+          // an idea is a queue, not an alarm.
           key: 'ideas', label: 'Roadmap', icon: NavIcons.map,
           count: ideaRows.length,
           menu: placeMenu(hrefTo.detail(slug, 'ideas'), 'ideas'), onClick: () => setTab('ideas'),
@@ -620,24 +636,36 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
             reason to press it; Overview and Activity carry none. */}
         {isForYou(tab) && (
           <TabStrip<Tab>
+            // THE MOCK CHIP IS ON THE SUB-TAB, NOT THE RAIL ROW (#496). Two
+            // of these three panes are the console kit's and one is real, and a
+            // chip over the whole screen would warn about the wrong two thirds
+            // of it — the same finest-grain rule Plans' sub-tabs follow.
+            //
+            // AUTO-IDEAS' COUNT IS REAL, and it is the same rows the pane
+            // draws: a row's number and the screen behind it must agree, and
+            // this is now the third count on this screen read off `homeOf`.
             tabs={[
-              { key: 'overview', label: 'Overview' },
-              { key: 'activity', label: 'Activity' },
-              // THE COUNT IS THE MOCKUP'S OWN. A row's number and the screen
-              // behind it must agree or one of them is lying, and the pane
-              // behind this one draws the kit's four suggestions.
-              { key: 'auto', label: 'Auto-ideas', count: AUTO_IDEA_COUNT },
+              { key: 'overview', label: 'Overview', mock: true },
+              { key: 'activity', label: 'Activity', mock: true },
+              { key: 'auto', label: 'Auto-ideas', count: autoIdeaRows.length },
             ]}
             active={tab} onPick={setTab} />
         )}
 
-        {/* ALL THREE FOR-YOU PANES ARE THE KIT'S MOCKUP at the owner's request.
-            It takes one prop, and that prop is the ROUTE KEY — the pane is not
-            component state, so every deep link and legacy spelling lands where
-            it always did. It reads nothing: no `pulse`, no queue, no callback,
-            and its header lists what stopped being reachable when the real
-            Overview, Activity and Auto-ideas went. */}
-        {isForYou(tab) && <ForYouMock pane={tab as 'overview' | 'activity' | 'auto'} />}
+        {/* FOR YOU — Overview and Activity are still the kit's mockup;
+            AUTO-IDEAS IS WIRED (#496) and draws this project's own held rows,
+            which is the third screen a roadmap row can live on. The PANE is the
+            ROUTE KEY and not component state, so every deep link and legacy
+            spelling lands where it always did, and `hl` on Auto-ideas opens
+            that row's card. It takes the same flattened payload the board,
+            Roadmap and Plans take — ONE list partitioned four ways by `homeOf`
+            rather than four fetches that can disagree. ForYou.tsx's header
+            lists what the other two panes still cost. */}
+        {isForYou(tab) && (
+          <ForYou pane={tab as 'overview' | 'activity' | 'auto'} slug={slug} items={allRoadmap}
+            onRefresh={reread} highlightId={highlightId}
+            onEdit={(it) => setRoadModal({ open: true, title: it.title, note: it.note, editing: it })} />
+        )}
         {/* QUALITY IS WIRED (#497) — the kit's QualityScreen on this project's
             own checks and bugs. It takes both off the one payload every tab
             renders from, plus the re-read, and fetches only the two things that

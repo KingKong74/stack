@@ -9,7 +9,11 @@
 // Zero renders nothing, the same rule the rail's counts follow: a grey 0 reads
 // as "this is empty" when what it means is "there is nothing waiting".
 
-export type StripTab<K extends string> = { key: K; label: string; count?: number };
+// A MOCK CHIP RIDES ON THE TAB, not on the screen (#482, #496). Where a tab
+// strip covers a part-wired screen, the chip has to say WHICH sub-view is the
+// kit's rows — one over the whole screen warns about the panes it is wrong for,
+// and these mockups look exactly like the real thing.
+export type StripTab<K extends string> = { key: K; label: string; count?: number; mock?: boolean };
 
 export function TabStrip<K extends string>({ tabs, active, onPick, right }: {
   tabs: StripTab<K>[];
@@ -26,6 +30,10 @@ export function TabStrip<K extends string>({ tabs, active, onPick, right }: {
           onClick={() => onPick(t.key)}>
           {t.label}
           {t.count ? <span className="n">{t.count}</span> : null}
+          {t.mock && (
+            <span className="con-navsoon mock"
+              title="A mockup — the console kit's own sample rows. It reads and writes nothing.">Mock</span>
+          )}
         </button>
       ))}
       {right && <span className="k-tabs-right">{right}</span>}

@@ -986,6 +986,10 @@ export async function patchRoadmapItem(
     sched: SchedSpan | null;
     rebaseline: boolean;         // "this is the plan now" — the one way to move the ghost
     parentId: number | null;     // one level deep; an invalid target leaves the row alone
+    // #496 — false files a signed-off row on the Roadmap as a kept idea; true
+    // is the commitment that puts it on the board. Promoting sends this WITH
+    // `reviewed` — the two halves of "yes" are deliberately not one field.
+    committed: boolean;
     labels: string[];            // unknown ids are dropped server-side
     listKey: string;             // '' returns the card to the derived column
     archived: boolean;

@@ -39,7 +39,7 @@ const {
   whatsNext, fmtWhen, calendarDays, calendarMonths, CAL_HOUR_FROM,
   slipOf, layoutLane, scopeTotals, defaultLen, DUR_OPTIONS, rolledSched, isRolled,
   newItemSched,
-  listKeyOf, isIdea, isWorked, isBuilt, inCycle, areaMatches, horizonOf, UNALLOCATED,
+  listKeyOf, homeOf, isIdea, isAutoIdea, isBoardWork, isWorked, isBuilt, inCycle, areaMatches, horizonOf, UNALLOCATED,
   queueOrder, inActiveSprint, bucketRank,
 } = await import(planUrl.href);
 
@@ -58,7 +58,7 @@ function item(over = {}) {
     reviewTag: '', reviewTags: [], refineNote: '', reviewShelved: false,
     skipped: false, skippedAt: null, risk: 'normal', riskSource: '', riskReason: '',
     sprintId: null, sprintRank: 0, plan: [], updatedAt: null, agentProfile: '',
-    parentId: null, sched: null, baseline: null, labels: [], listKey: '',
+    parentId: null, committed: true, sched: null, baseline: null, labels: [], listKey: '',
     archived: false, estimate: null,
     ...over,
   };
@@ -767,27 +767,53 @@ test('clearing the verdict returns the card to the lane its state puts it in', (
 });
 
 // --- which screen a row is on ------------------------------------------------
-// `isIdea` is THE ONE LINE between the board and the Roadmap tab, so what these
-// pin is the two failures it can have: a row on BOTH screens is acted on twice,
-// and a row on NEITHER is work that has silently vanished. The second is the one
-// that actually happened — a session's own `fly` card, claimed and built by that
-// same session, sat in the idea pile through the night that built it.
+// `homeOf` is THE ONE LINE between the board, the Roadmap tab and For you's
+// Auto-ideas pane, so what these pin is the two failures it can have: a row on
+// TWO screens is acted on twice, and a row on NONE is work that has silently
+// vanished. The second is the one that actually happened — a session's own
+// `fly` card, claimed and built by that same session, sat in the idea pile
+// through the night that built it.
 
-test('an untouched held row is an idea, and so is a child', () => {
-  assert.equal(isIdea(item({ source: 'fly', reviewed: false })), true);
-  assert.equal(isIdea(item({ source: 'hook', reviewed: false })), true);
-  assert.equal(isIdea(item({ parentId: 12 })), true);
-  assert.equal(isIdea(item()), false, 'a manual row is committed work by definition');
-  assert.equal(isIdea(item({ source: 'fly', reviewed: true })), false, 'signed off');
+test("a held row nobody has worked is a session's idea, not the board's and not the Roadmap's", () => {
+  assert.equal(homeOf(item({ source: 'fly', reviewed: false })), 'auto');
+  assert.equal(homeOf(item({ source: 'hook', reviewed: false })), 'auto');
+  assert.equal(isAutoIdea(item({ source: 'hook', reviewed: false })), true);
+  assert.equal(isIdea(item({ source: 'hook', reviewed: false })), false, 'off the Roadmap too (#496)');
+  assert.equal(isBoardWork(item({ source: 'hook', reviewed: false })), false);
+});
+
+test('a child is a Roadmap idea, and so is a row somebody KEPT', () => {
+  assert.equal(homeOf(item({ parentId: 12 })), 'roadmap');
+  // #496 — the Keep write, in full: signed off and deliberately not committed.
+  assert.equal(homeOf(item({ source: 'hook', reviewed: true, committed: false })), 'roadmap');
+  assert.equal(homeOf(item()), 'board', 'a manual row is committed work by definition');
+});
+
+test('the two promotions differ by exactly one field, and that field is the screen', () => {
+  const found = item({ source: 'hook', reviewed: false });
+  assert.equal(homeOf(found), 'auto');
+  // Keep — { reviewed: true, committed: false }
+  assert.equal(homeOf({ ...found, reviewed: true, committed: false }), 'roadmap');
+  // Promote — { reviewed: true, committed: true, parentId: null }
+  assert.equal(homeOf({ ...found, reviewed: true, committed: true, parentId: null }), 'board');
+  // The sign-off alone was the whole write before #496, and it landed on the
+  // board: without `committed` there is no way to say "kept but not committed".
+  assert.equal(homeOf({ ...found, reviewed: true }), 'board');
+});
+
+test("promoting a CHILD has to detach it too, or it bounces back to the Roadmap", () => {
+  const kid = item({ parentId: 12, committed: false });
+  assert.equal(homeOf({ ...kid, committed: true }), 'roadmap', 'the parent still holds it');
+  assert.equal(homeOf({ ...kid, committed: true, parentId: null }), 'board');
 });
 
 test('a held row somebody has WORKED is board work, sign-off or no sign-off', () => {
   const claimed = item({ source: 'fly', reviewed: false, claimedBy: 'feat/9-x' });
   assert.equal(isWorked(claimed), true);
-  assert.equal(isIdea(claimed), false, 'a session is on it right now');
+  assert.equal(homeOf(claimed), 'board', 'a session is on it right now');
 
   const built = item({ source: 'fly', reviewed: false, claimedBy: 'feat/9-x', builtNote: 'what landed' });
-  assert.equal(isIdea(built), false, 'the night that built it must not file it as an idea');
+  assert.equal(homeOf(built), 'board', 'the night that built it must not file it as an idea');
   assert.equal(listKeyOf(built), 'review', 'and it lands in the verify lane');
 
   // A SENT-BACK row keeps its built note and loses its claim. `isBuilt` wants
@@ -796,26 +822,46 @@ test('a held row somebody has WORKED is board work, sign-off or no sign-off', ()
   const sentBack = item({ source: 'fly', reviewed: false, builtNote: 'what landed' });
   assert.equal(isBuilt(sentBack), false);
   assert.equal(isWorked(sentBack), true);
-  assert.equal(isIdea(sentBack), false);
+  assert.equal(homeOf(sentBack), 'board');
 });
 
-test('being worked outranks the child test too — work under a feature is work', () => {
-  assert.equal(isIdea(item({ parentId: 12, claimedBy: 'feat/9-x' })), false);
-  assert.equal(isIdea(item({ parentId: 12, done: true })), false);
-  assert.equal(isIdea(item({ parentId: 12 })), true, 'a note about work stays a note');
+test('being worked outranks BOTH idea tests — work under a feature is work', () => {
+  assert.equal(homeOf(item({ parentId: 12, claimedBy: 'feat/9-x' })), 'board');
+  assert.equal(homeOf(item({ parentId: 12, done: true })), 'board');
+  assert.equal(homeOf(item({ committed: false, builtNote: 'x' })), 'board');
+  assert.equal(homeOf(item({ parentId: 12 })), 'roadmap', 'a note about work stays a note');
 });
 
-test('nothing is on both screens or on neither', () => {
+test('every row is on exactly one of the three screens', () => {
   const rows = [
     item(), item({ source: 'hook', reviewed: false }), item({ parentId: 3 }),
     item({ source: 'fly', reviewed: false, claimedBy: 'feat/9-x' }),
     item({ source: 'fly', reviewed: false, builtNote: 'x' }),
+    item({ source: 'hook', reviewed: true, committed: false }),
     item({ done: true }), item({ skipped: true }),
   ];
-  const roadmap = rows.filter((it) => isIdea(it));
-  const board = rows.filter((it) => !isIdea(it));
-  assert.equal(roadmap.length + board.length, rows.length);
-  assert.equal(roadmap.filter((it) => board.includes(it)).length, 0);
+  const auto = rows.filter(isAutoIdea);
+  const roadmap = rows.filter(isIdea);
+  const board = rows.filter(isBoardWork);
+  assert.equal(auto.length + roadmap.length + board.length, rows.length);
+  for (const set of [auto, roadmap, board]) {
+    for (const other of [auto, roadmap, board]) {
+      if (set === other) continue;
+      assert.equal(set.filter((it) => other.includes(it)).length, 0);
+    }
+  }
+  // And none of the three is empty for this fixture, which is what makes the
+  // sum above a real test rather than everything landing in one bucket.
+  assert.ok(auto.length && roadmap.length && board.length);
+});
+
+test('a row read before the migration is board work, not a vanished one', () => {
+  // `roadmapItemShape` serves `committed: row.committed !== false`, so an
+  // undefined column reads true. The client twin has to agree: the safe end of
+  // this question is the board, never the pile nobody looks at.
+  const stale = item();
+  delete stale.committed;
+  assert.equal(homeOf(stale), 'board');
 });
 
 // --- in the cycle ------------------------------------------------------------

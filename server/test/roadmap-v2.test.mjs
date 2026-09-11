@@ -250,6 +250,38 @@ async function main() {
   r = (await call('PATCH', `/api/projects/${SLUG}/roadmap/${ticket.id}`, { estimate: null })).json;
   ok('unsized is null, not zero — an unsized ticket is not a free one', r.estimate === null, r.estimate);
 
+  // ---- #496: the commitment column ---------------------------------------
+  // The third leg of WHICH SCREEN a row is on (web/src/lib/plan.ts homeOf).
+  // What these pin is that the two promotions are genuinely two writes: before
+  // this column both said `reviewed: true` and both landed on the board.
+
+  const found = await mk('Something a push found');
+  ok('#496 — a row is born COMMITTED, which is the state the board draws',
+    found.committed === true, found.committed);
+
+  r = (await call('PATCH', `/api/projects/${SLUG}/roadmap/${found.id}`,
+    { reviewed: true, committed: false })).json;
+  ok('#496 — Keep signs it off AND withholds the commitment, in one PATCH',
+    r.reviewed === true && r.committed === false, { rev: r.reviewed, c: r.committed });
+
+  r = (await call('PATCH', `/api/projects/${SLUG}/roadmap/${found.id}`,
+    { reviewed: true, committed: true, parentId: null })).json;
+  ok('#496 — Promote commits to it and detaches it in the same write',
+    r.committed === true && r.parentId === null, { c: r.committed, p: r.parentId });
+
+  // NO OTHER BRANCH OF THE PATCH MAY TOUCH IT. The two meanings of "yes" stay
+  // two writes the caller chooses between; a server that inferred one from
+  // `reviewed` would put every signed-off idea back on the board.
+  r = (await call('PATCH', `/api/projects/${SLUG}/roadmap/${found.id}`, { committed: false })).json;
+  ok('#496 — it is settable on its own', r.committed === false, r.committed);
+  r = (await call('PATCH', `/api/projects/${SLUG}/roadmap/${found.id}`, { reviewed: true })).json;
+  ok('#496 — and a bare sign-off does NOT quietly commit to it',
+    r.committed === false, r.committed);
+  r = (await call('PATCH', `/api/projects/${SLUG}/roadmap/${found.id}`, { done: true })).json;
+  ok('#496 — nor does ticking it; being WORKED is the board test, not this column',
+    r.committed === false, r.committed);
+  await call('PATCH', `/api/projects/${SLUG}/roadmap/${found.id}`, { done: false, committed: true });
+
   // ---- #411 + #425 --------------------------------------------------------
   // LAST on purpose: these add rows, and several checks above assert an exact
   // item or area count. Creating them earlier makes those fail for a reason

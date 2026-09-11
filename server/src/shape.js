@@ -109,6 +109,13 @@ export function roadmapItemShape(row) {
 
     // ---- the Roadmap tab v2 ----
     parentId: row.parent_id ?? null,   // the feature this ticket belongs to (null = a feature itself)
+    // #496 — HAS SOMEBODY COMMITTED TO THIS? false = a signed-off idea, kept on
+    // the Roadmap rather than the board. The THIRD leg of which screen a row is
+    // on (the other two are `reviewed` and `parentId`), and true is the safe
+    // default: a row nobody has said anything about is board work. `!== false`
+    // rather than `!!` on purpose: a row read before the migration must not
+    // silently vanish off the board.
+    committed: row.committed !== false,
     // The scheduled bar, in MINUTES from the project's week zero (#401). null =
     // UNSCHEDULED, which is a state (the tray), never minute 0 — see schema.sql's
     // header. BIGINT comes back from pg as a STRING, so both fields need

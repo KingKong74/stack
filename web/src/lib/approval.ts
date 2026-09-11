@@ -11,13 +11,15 @@ import type { RoadmapItem } from '../types';
 // NEVER held, because blocking hand-written work is the failure mode this
 // feature must not have.
 //
-// THE ROADMAP TAB IS ITS CALLER AGAIN (#472, via `isIdea` in lib/plan.ts).
-// A held row is not merely flagged there — it is the whole reason the tab
-// exists: an unsigned `hook` or `fly` row that NOBODY HAS WORKED is an IDEA, so
-// it is drawn on Roadmap and kept off the board, and Promote is what signs it
-// off. Being held is not by itself an answer to WHICH SCREEN — a held row a
-// session has claimed or built is committed work, drawn on the board, and held
-// from the runner all the same; `isIdea` owns that line and this file does not.
+// FOR YOU'S AUTO-IDEAS PANE IS ITS CALLER (#496, via `homeOf` in lib/plan.ts).
+// A held row is not merely flagged there — it is the whole reason the pane
+// exists: an unsigned `hook` or `fly` row that NOBODY HAS WORKED is a session's
+// own idea, so it is drawn there and kept off BOTH planning screens, and the
+// pane's two promotions are what sign it off. Being held is not by itself an
+// answer to WHICH SCREEN — a held row a session has claimed or built is
+// committed work, drawn on the board, and held from the runner all the same;
+// `homeOf` owns that line and this file does not. (#472 had these rows on the
+// Roadmap tab; #496 moved them once the Keep/Promote split existed.)
 // The rule is written
 // three times (`server/src/`, `scripts/lib/`, here) because none of the three
 // packages can import another; `scripts/approval.test.mjs` keeps them honest.

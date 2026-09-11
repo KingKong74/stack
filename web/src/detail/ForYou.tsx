@@ -1,26 +1,58 @@
-// THE FOR-YOU SCREEN IS A MOCKUP (#444). All three panes read nothing and write nothing.
+// THE FOR-YOU SCREEN IS TWO MOCKUPS AND ONE WIRED PANE (#444, #496).
 //
-// This is `ui_kits/console/ForYouScreen.jsx` ported to TS, on the kit's OWN
-// sample rows (KING-18, king/col-virtualisation, AUTO-11…14). It is not a view
-// of this project. What it replaced, at the owner's request:
+// Overview and Activity are `ui_kits/console/ForYouScreen.jsx` ported to TS, on
+// the kit's OWN sample rows (KING-18, king/col-virtualisation) — they read
+// nothing and write nothing, and each says so on its own sub-tab rather than on
+// the rail row, because a chip over the whole screen would warn about the two
+// panes it is wrong for. AUTO-IDEAS IS REAL: it draws this project's rows and
+// it writes.
 //
-//  • `detail/Overview.tsx` — the progression spine, the verdict queue, the
-//    resume card, the three measured `pulse` bands, the north star, the
-//    directives, the deployment and tech-stack editors.
-//  • `detail/Activity.tsx` — the real per-push feed, with its Gemini notes and
-//    its commit highlight.
-//  • `detail/AutoIdeas.tsx` — the held queue and its ✓ Keep / ✕ Dismiss.
+// ---- Auto-ideas (#496) ----------------------------------------------------
 //
-// WHAT THAT COST, stated once so nobody has to rediscover it:
+// IT IS THE THIRD SCREEN A ROADMAP ROW CAN LIVE ON, and `homeOf` in lib/plan.ts
+// is the one function that decides which — read its header before touching this
+// pane or either of the other two. What lands here is a session's own output:
+// a `hook` row (the extractor read it off a push) or a `fly` row (a live
+// session opened it for work it was asked to do) that NOBODY HAS SIGNED OFF and
+// NOBODY HAS WORKED. The owner asked for exactly that separation: what a
+// machine thought of overnight is not the plan, so it does not sit on the board
+// among committed work and it does not pad the Roadmap's triage columns either.
 //
-//  • SIGNING OFF A HELD ROW HAS NO SURFACE ANYWHERE IN THE APP. Auto-ideas was
-//    the last screen that could clear `reviewed_at` on a `hook` or `fly` row,
-//    and dismissing one was the only way a browser could tombstone an extracted
-//    fingerprint. The predicate is untouched (`lib/approval.ts`, and the two
-//    copies it cannot import), so a held item is still held, still skipped
-//    silently by an unattended enqueue and still refused out loud by ▶ Run now
-//    — but nothing in a browser can now un-hold it. `./stack` and the API are
-//    the way back, exactly as they are for the board's park/unpark.
+// THE MOMENT SOMEBODY WORKS ONE IT IS BOARD WORK, sign-off or no sign-off — a
+// claim, a built note or a tick (`isWorked`). That is the other half of the
+// ask: only what we actually worked on goes to the board. A session that opens
+// its own card and builds it does not have to be promoted onto the board it
+// should never have left, and the hold it still carries is said and answered
+// there instead (Board.tsx's `held` chip and card menu).
+//
+// PROMOTING GOES TWO WAYS, and that is the whole reason `committed` exists:
+//
+//   → Roadmap   { reviewed: true, committed: false }   "keep this idea"
+//   → Board     { reviewed: true, committed: true, parentId: null }  "do this"
+//
+// Both sign the row off, so both release it to the overnight runner's approval
+// gate (#359). Only the second commits to it. Before the column they were one
+// write, which is why an idea you merely kept turned up on the board.
+//
+// DISMISS IS DELETE, and on a `hook` row it TOMBSTONES THE FINGERPRINT so the
+// next push cannot re-create it. That is what Dismiss has always meant and why
+// it has no undo; the second press is because the word does not say it alone.
+// Roadmap's Discard is the same write for the same reason.
+//
+// WHAT THIS RESTORES. #444 culled the real Auto-ideas screen and with it the
+// last place in any browser that could clear `reviewed_at` on a held row or
+// tombstone an extracted fingerprint — the predicate went untouched, so a held
+// item stayed held, stayed skipped silently by an unattended enqueue and stayed
+// refused out loud by ▶ Run now, with `./stack` and the API the only way back.
+// That is answerable from a browser again.
+//
+// ---- what the other two panes still cost -----------------------------------
+//
+// They replaced `detail/Overview.tsx` (the progression spine, the verdict
+// queue, the resume card, the three measured `pulse` bands, the north star, the
+// directives, the deployment and tech-stack editors) and `detail/Activity.tsx`
+// (the real per-push feed, with its Gemini notes and its commit highlight).
+//
 //  • THE PULSE IS NO LONGER READ BY ANY SCREEN. `GET /projects/:slug/pulse`,
 //    `pulse.js` and every partition it computes are all still there and still
 //    tested; nothing fetches them. The numbers in the Model usage and Tests
@@ -38,13 +70,18 @@
 //    dead-ends on the kit's feed — it was left pointing here on purpose rather
 //    than quietly rewired, because where it should point instead is a decision.
 //
-// The interactions below are the kit's own and are all local state: the working
-// copy's fold, the model list's open row and its Close. They persist nothing —
-// leaving the tab is the undo. The three PANES are NOT state: each is its own
-// route key and the strip in ProjectDetail writes it (see the Tab union there).
+// The interactions in those two are the kit's own and are all local state: the
+// working copy's fold, the model list's open row and its Close. They persist
+// nothing — leaving the tab is the undo. The three PANES are NOT state: each is
+// its own route key and the strip in ProjectDetail writes it (see the Tab union
+// there), so `hl` on Auto-ideas opens that row's card.
 
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { KitIcon, type KitIconName } from './kit/KitIcon';
+import type { RoadmapItem } from '../types';
+import { isAutoIdea } from '../lib/plan';
+import { priorityMeta, timeAgo } from '../lib/ui';
+import { patchRoadmapItem, deleteRoadmapItem } from '../store';
 
 type Tone = 'info' | 'danger' | 'success' | 'warning' | 'neutral';
 
@@ -245,41 +282,26 @@ const KIND_ICON: Record<string, KitIconName> = {
   push: 'arrow-up-right', check: 'circle-alert', pr: 'code', merge: 'git-branch', tag: 'bookmark',
 };
 
-const AUTO: { id: string; title: string; confidence: 'high' | 'medium' | 'low'; why: string; source: string; when: string; signal: string }[] = [
-  {
-    id: 'AUTO-14', title: 'Extract the diff bar into a component', confidence: 'high',
-    why: 'The same add/delete proportion bar was written three times in one session — working copy, pushes, tests.',
-    source: 'claude-sonnet-5 · session 4f2ac1d', when: '17m ago', signal: 'repeated 3× in one session',
-  },
-  {
-    id: 'AUTO-13', title: 'Snapshot tests need a token-rename codemod', confidence: 'high',
-    why: 'Two of the last three failing runs were the same class of failure: renamed token, stale snapshot.',
-    source: 'claude-opus-5 · run 4481', when: '41m ago', signal: '2 of last 3 failures',
-  },
-  {
-    id: 'AUTO-12', title: 'king/print-styles is going stale', confidence: 'medium',
-    why: 'No commits in 11 days and it now conflicts with the token split. Either rebase it or close it.',
-    source: 'nightly branch sweep', when: '6h ago', signal: '11 days idle · conflicts',
-  },
-  {
-    id: 'AUTO-11', title: 'Opus is doing work sonnet handles', confidence: 'low',
-    why: 'Opus carried 76.5% of tokens but most of its runs were single-file edits under 200 lines.',
-    source: 'usage rollup · last 12 weeks', when: 'Mon', signal: '$159 on small edits',
-  },
-];
-
-const CONF: Record<string, Tone> = { high: 'success', medium: 'warning', low: 'neutral' };
-
-/** What the For-you strip's Auto-ideas badge counts. A row's number and the
- *  screen behind it must agree or one of them is lying — so while this pane is
- *  the kit's rows, the badge counts the kit's rows. */
-export const AUTO_IDEA_COUNT = AUTO.length;
-
 export type ForYouPane = 'overview' | 'activity' | 'auto';
 
-export function ForYouMock({ pane }: { pane: ForYouPane }) {
+export function ForYou({ pane, slug, items, onRefresh, onEdit, highlightId }: {
+  pane: ForYouPane;
+  slug: string;
+  /** The project payload's own roadmap, flattened and in payload order — the
+   *  SAME list the board, Roadmap and Plans are given, so one list is
+   *  partitioned across four screens rather than four fetches disagreeing. */
+  items: RoadmapItem[];
+  onRefresh: () => void;
+  /** Open the item modal — note, title, area, sub-area and plan. */
+  onEdit: (it: RoadmapItem) => void;
+  /** A row id this pane may recognise; Overview and Activity ignore theirs. */
+  highlightId: string | null;
+}) {
   if (pane === 'activity') return <ActivityPane />;
-  if (pane === 'auto') return <AutoPane />;
+  if (pane === 'auto') {
+    return <AutoPane slug={slug} items={items} onRefresh={onRefresh} onEdit={onEdit}
+      highlightId={highlightId} />;
+  }
   return <OverviewPane />;
 }
 
@@ -613,38 +635,159 @@ function ActivityPane() {
 }
 
 /* ---------- Auto-ideas ---------- */
-// The rows reuse the `.ai-*` classes the real queue wore, because the kit's row
+// The rows keep the `.ai-*` classes the culled queue wore, because the kit's row
 // and Stack's were already the same shape: what it is, what it says, where it
-// came from, and the two answers. Keep and Dismiss are drawn and inert — the
-// header says what that cost.
+// came from, and the answers. What changed is that the answers are real, and
+// that there are THREE of them rather than the kit's two — see this file's
+// header for why "keep" and "do" had to stop being one button.
 
-function AutoPane() {
+function AutoPane({ slug, items, onRefresh, onEdit, highlightId }: {
+  slug: string; items: RoadmapItem[]; onRefresh: () => void;
+  onEdit: (it: RoadmapItem) => void; highlightId: string | null;
+}) {
+  // The local copy is what makes a promote feel instant: the row leaves this
+  // pane on the next render rather than on the re-read's round trip. `onRefresh`
+  // still runs, because the rail's three counts are read off the payload and a
+  // row that moved screens has to move in both places.
+  const [rows, setRows] = useState<RoadmapItem[]>(items);
+  useEffect(() => { setRows(items); }, [items]);
+  const [err, setErr] = useState('');
+  const [busy, setBusy] = useState<number | null>(null);
+  const [open, setOpen] = useState<number | null>(null);
+  const [confirming, setConfirming] = useState<number | null>(null);
+
+  useEffect(() => {
+    const n = Number(highlightId);
+    if (Number.isFinite(n) && n > 0) setOpen(n);
+  }, [highlightId]);
+
+  // ONE PREDICATE, SHARED WITH THE STRIP'S COUNT. `isAutoIdea` is `homeOf`
+  // asked one way; nothing here may re-derive the population from `source` and
+  // `reviewed`, or the badge and the pane can disagree about what is waiting.
+  //
+  // NEWEST FIRST, on the only stamp the row carries. A queue of things found
+  // overnight is read top-down and the freshest is the one you have context
+  // for; `id` breaks the tie because `updated_at` is written by every PATCH and
+  // two rows extracted from one push share a second.
+  const queue = useMemo(() => rows
+    .filter((it) => !it.archived && isAutoIdea(it))
+    .sort((a, b) => (Date.parse(b.updatedAt || '') || 0) - (Date.parse(a.updatedAt || '') || 0) || b.id - a.id),
+  [rows]);
+
+  const guard = async (id: number, fn: () => Promise<void>) => {
+    setBusy(id);
+    try { setErr(''); await fn(); }
+    catch (e) { setErr((e as Error)?.message || 'Something went wrong.'); }
+    finally { setBusy(null); }
+  };
+  const wrote = (updated: RoadmapItem) => {
+    setRows((r) => r.map((x) => (x.id === updated.id ? updated : x)));
+    onRefresh();
+  };
+
+  // THE TWO PROMOTIONS, and the only difference between them is `committed`
+  // (#496). Both write `reviewed: true`, which is the sign-off the overnight
+  // runner gates on (#359) — keeping an idea releases it too, because a row the
+  // owner has looked at and kept is no longer a machine's unreviewed guess.
+  // What the second one adds is the commitment that makes it board work.
+  const keep = (it: RoadmapItem) =>
+    guard(it.id, async () => {
+      wrote(await patchRoadmapItem(slug, it.id, { reviewed: true, committed: false }));
+    });
+  // `parentId: null` as well, exactly as Roadmap's Promote sends it: a row
+  // arriving on the board must not still hang off something, or it lands back
+  // on the Roadmap by the child leg of the same predicate.
+  const promote = (it: RoadmapItem) =>
+    guard(it.id, async () => {
+      wrote(await patchRoadmapItem(slug, it.id, { reviewed: true, committed: true, parentId: null }));
+    });
+  // DELETE, and on a `hook` row the server tombstones the fingerprint with it.
+  const dismiss = (it: RoadmapItem) =>
+    guard(it.id, async () => {
+      await deleteRoadmapItem(slug, it.id);
+      setRows((r) => r.filter((x) => x.id !== it.id));
+      onRefresh();
+    });
+
   return (
     <div className="ai">
       <div className="ai-lede">
-        Lifted from your last 30 sessions. Accepting one files it into Ideas.
+        What your sessions found and nobody has answered yet — read off a push, or opened by a
+        session for work it was doing. Nothing here is on the board or the Roadmap, and the
+        overnight runner leaves all of it alone until you answer. <b>Keep</b> files it on the
+        Roadmap as an idea; <b>Promote</b> puts it on the board as work.
       </div>
-      {AUTO.map((a) => (
-        <div className="ai-row" key={a.id}>
-          <span className={`ai-ico tone-${CONF[a.confidence]}`}><KitIcon name="terminal" size={13} /></span>
-          <div className="ai-body">
-            <div className="ai-top">
-              <span className="ai-title">{a.title}</span>
-              <span className="ai-when">{a.when}</span>
+
+      {err && <div className="km-err" role="alert">{err}</div>}
+
+      {queue.map((it) => {
+        const on = open === it.id;
+        const p = priorityMeta(it.bucket);
+        // WHERE IT CAME FROM, in the words the rest of the app uses. A `fly`
+        // row names its session when it had one — that is the tmux name on the
+        // running-sessions strip, so the sentence points at something real.
+        const src = it.source === 'hook'
+          ? 'read off a push'
+          : `opened by ${it.flySession || 'a session'}`;
+        return (
+          <div className={`ai-row${on ? ' open' : ''}`} key={it.id} data-hl={it.id}
+            onClick={() => { setOpen(on ? null : it.id); setConfirming(null); }}>
+            <span className={`ai-ico tone-${it.source === 'hook' ? 'info' : 'warning'}`}>
+              <KitIcon name={it.source === 'hook' ? 'arrow-up-right' : 'terminal'} size={13} />
+            </span>
+            <div className="ai-body">
+              <div className="ai-top">
+                <span className="ai-title">{it.title}</span>
+                <span className="ai-when">{timeAgo(it.updatedAt)}</span>
+              </div>
+              {it.note.trim() && <p className={`ai-why${on ? '' : ' clamp'}`}>{it.note}</p>}
+              <div className="ai-meta">
+                <span className="ai-src">#{it.id}</span>
+                <span className="ai-signal">{src}</span>
+                {it.area.trim() && <span className="k-tag">{it.area}</span>}
+                <span className="k-tag" style={{ color: p.color }} title={`Priority — ${p.label}`}>
+                  {p.glyph} {p.short}
+                </span>
+                {it.skipped && <span className="k-tag warning">parked</span>}
+              </div>
             </div>
-            <p className="ai-why">{a.why}</p>
-            <div className="ai-meta">
-              <span className="ai-src">{a.source}</span>
-              <span className="ai-signal">{a.signal}</span>
-              <span className={`k-tag ${CONF[a.confidence]}`}>{a.confidence} confidence</span>
+            <div className="ai-acts" onClick={(e) => e.stopPropagation()}>
+              <button className="k-btn secondary sm" disabled={busy === it.id} onClick={() => keep(it)}
+                title="Sign it off and file it on the Roadmap as an idea — not committed work">
+                <KitIcon name="bookmark" size={13} />Keep
+              </button>
+              <button className="k-btn accent sm" disabled={busy === it.id} onClick={() => promote(it)}
+                title="Sign it off and put it on the board as committed work">
+                <KitIcon name="arrow-up-right" size={13} />Promote
+              </button>
+              {on && (
+                <>
+                  <button className="k-btn ghost sm" onClick={() => onEdit(it)}>
+                    <KitIcon name="pencil" size={13} />Edit…
+                  </button>
+                  {/* On a `hook` row this TOMBSTONES the fingerprint, so the
+                      next push cannot bring it back. The second press is
+                      because "Dismiss" does not say that on its own. */}
+                  <button className="k-btn danger sm" disabled={busy === it.id}
+                    onClick={() => (confirming === it.id ? dismiss(it) : setConfirming(it.id))}>
+                    <KitIcon name="trash-2" size={13} />
+                    {confirming === it.id
+                      ? (it.source === 'hook' ? 'Really? No re-add' : 'Really?')
+                      : 'Dismiss'}
+                  </button>
+                </>
+              )}
             </div>
           </div>
-          <div className="ai-acts">
-            <button className="k-btn secondary sm"><KitIcon name="plus" size={13} />Keep</button>
-            <button className="k-btn ghost sm">Dismiss</button>
-          </div>
-        </div>
-      ))}
+        );
+      })}
+
+      {queue.length === 0 && (
+        <span className="im-empty">
+          Nothing waiting. A push files what it finds here, and so does a session opening a card
+          for its own work — until somebody works it, at which point it is board work.
+        </span>
+      )}
     </div>
   );
 }

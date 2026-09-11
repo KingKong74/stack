@@ -93,7 +93,7 @@
 // THE SIGN-OFF IS DRAWN ONLY ON A HELD CARD, and a held card is here at all
 // because BEING WORKED IS A COMMITMENT: a `fly` row a session opened for work
 // it was asked to do, then claimed a branch on and built, was landing in the
-// idea pile and had to be Promoted back onto this board by hand. `isIdea` in
+// idea pile and had to be Promoted back onto this board by hand. `homeOf` in
 // lib/plan.ts is where that line moved; what this screen owes it is saying the
 // hold out loud (the `held` chip) and being able to answer it (the menu),
 // because Roadmap's Promote can no longer see those rows.
@@ -108,7 +108,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { KitIcon } from './kit/KitIcon';
 import type { BoardArea, BoardList, Priority, RoadmapItem, Sprint } from '../types';
-import { listKeyOf, queueOrder, isIdea } from '../lib/plan';
+import { listKeyOf, queueOrder, isBoardWork } from '../lib/plan';
 import { isHeld } from '../lib/approval';
 import { PRIORITY_META, PRIORITY_DEFAULT, priorityMeta } from '../lib/ui';
 import {
@@ -227,12 +227,16 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, hi
     const needle = query.trim().toLowerCase();
     return rows
       .filter((it) => !it.archived)
-      // #472 — THE BOARD DRAWS COMMITTED WORK. An untouched held row and an
-      // untouched child idea both belong to the Roadmap tab; `isIdea` in
-      // lib/plan.ts is the one line between the two screens, so neither can
-      // claim a row the other draws. A row somebody has CLAIMED OR BUILT is
-      // committed work whatever its sign-off says, and lands here.
-      .filter((it) => !isIdea(it))
+      // #472 — THE BOARD DRAWS COMMITTED WORK. An untouched held row is For
+      // you's Auto-ideas pane now (#496) and an untouched child idea is the
+      // Roadmap tab's; `homeOf` in lib/plan.ts is the one line between the
+      // THREE screens, so no two can claim the same row. A row somebody has
+      // CLAIMED OR BUILT is committed work whatever its sign-off says, and
+      // lands here — which is the whole of "only what we worked on".
+      //
+      // `isBoardWork` and NOT `!isIdea`: with three surfaces the negation
+      // draws the Auto-ideas pile on the board, which is what #496 moved off.
+      .filter((it) => isBoardWork(it))
       .filter((it) => (hideParked ? !it.skipped : true))
       .filter((it) => !needle
         || it.title.toLowerCase().includes(needle)
@@ -335,7 +339,7 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, hi
     return m;
   }, [rows]);
 
-  const onBoard = rows.filter((it) => !it.archived && !isIdea(it));
+  const onBoard = rows.filter((it) => !it.archived && isBoardWork(it));
   const shown = sections.reduce((n, sec) => n + sec.count, 0);
   const parked = onBoard.filter((it) => it.skipped).length;
   // What the night would actually take out of the sprint in progress — the
@@ -369,6 +373,12 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, hi
     if (key === CATCH_ALL || listKeyOf(it) === key) return;
     return guard(async () => {
       wrote(await patchRoadmapItem(slug, it.id, { listKey: derivedKeyOf(it) === key ? '' : key }));
+      // THE FLASH IS FIRED BY THE ANSWER, NOT BY THE DROP. `wrote` is what
+      // actually moves the card, and firing on the drop instead would start the
+      // 900ms clock against a round trip — a slow one lands the card after its
+      // own animation has expired, and a FAILED one flashes a card that never
+      // moved. On this line the row is already in its new column.
+      land(it.id);
     });
   };
 
@@ -376,7 +386,7 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, hi
     guard(async () => { wrote(await patchRoadmapItem(slug, it.id, { skipped: !it.skipped })); });
   // THE SIGN-OFF IS BACK ON THIS SCREEN, because a held row can be on it again:
   // a `fly` or `hook` row a session claimed or built is committed work and is
-  // drawn here (`isIdea` in lib/plan.ts), while STILL being held out of the
+  // drawn here (`homeOf` in lib/plan.ts), while STILL being held out of the
   // overnight runner by #359. Roadmap's Promote cannot see it any more, so
   // without this the hold would be unanswerable from any browser — which is the
   // state #444 left and #359 called out by name.
@@ -447,6 +457,20 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, hi
   // editors on one board is two unsaved drafts and no way to tell them apart.
   const [inlineId, setInlineId] = useState<number | null>(null);
   const [over, setOver] = useState<string | null>(null);
+  // THE CARD THAT JUST LANDED, for as long as its animation runs. The only
+  // time-based state on this screen, and deliberately the only thing that may
+  // be: the write it celebrates has already landed by the time this is set, so
+  // a lapsed timer costs a flourish and never a row. The timer is cleared on
+  // unmount because a tab switched away mid-drop would otherwise set state on a
+  // screen that is gone.
+  const [landedId, setLandedId] = useState<number | null>(null);
+  const landTimer = useRef<number | null>(null);
+  const land = (id: number) => {
+    if (landTimer.current !== null) window.clearTimeout(landTimer.current);
+    setLandedId(id);
+    landTimer.current = window.setTimeout(() => { setLandedId(null); landTimer.current = null; }, 900);
+  };
+  useEffect(() => () => { if (landTimer.current !== null) window.clearTimeout(landTimer.current); }, []);
   const closeAll = () => { setMenu(null); setPriMenu(null); setCardMenu(null); };
 
   // A deep link SELECTS its row; the scroll to it is ProjectDetail's, off the
@@ -576,18 +600,37 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, hi
                   // (#267) — that is a decision with a modal behind it, not a
                   // side effect of moving a card to In Progress.
                   const takesDrop = !!dragged && col.real && areaKey(dragged) === sec.key;
+                  // THE COLUMN THE CARD IS ALREADY IN IS NOT A TARGET. `moveTo`
+                  // has always no-opped on it; what is new is that the drag
+                  // SAYS SO — no highlight, no preview, no landing flash — so
+                  // the one gesture that writes nothing is the one gesture that
+                  // never looks like it did. Membership, not `listKeyOf`:
+                  // a card in the catch-all lane derives into a key this board
+                  // has no column for, and every real column is a move for it.
+                  const isSource = dragId !== null && col.items.some((x) => x.id === dragId);
+                  const wouldMove = takesDrop && !isSource;
                   const overKey = `${sec.key}::${col.key}`;
+                  const isOver = over === overKey && wouldMove;
+                  // THE `dragleave` GUARD BELOW IS WHAT STOPS THE PREVIEW
+                  // STROBING. `dragleave` fires on this column every time the
+                  // cursor crosses onto one of its own cards — the same
+                  // bubbling `mouseout` has — and the `dragover` that follows
+                  // re-sets `over`. That was invisible while the state only
+                  // painted a border; it is a slot animation replaying on every
+                  // card boundary now that the state opens a space. Only a
+                  // leave off the COLUMN ITSELF counts, and a child-to-outside
+                  // exit still fires one of those.
                   return (
                     <div key={col.key}
-                      className={`km-col${over === overKey ? ' over' : ''}${col.real ? '' : ' catchall'}`}
-                      onDragOver={(e) => { if (takesDrop) { e.preventDefault(); setOver(overKey); } }}
-                      onDragLeave={() => setOver((o) => (o === overKey ? null : o))}
+                      className={`km-col${isOver ? ' over' : ''}${col.real ? '' : ' catchall'}${dragged && !isOver && !isSource ? ' dim' : ''}`}
+                      onDragOver={(e) => { if (wouldMove) { e.preventDefault(); setOver(overKey); } }}
+                      onDragLeave={(e) => { if (e.currentTarget === e.target) setOver((o) => (o === overKey ? null : o)); }}
                       onDrop={(e) => {
                         e.preventDefault();
                         setOver(null);
                         const it = dragged;
                         setDragId(null);
-                        if (it && takesDrop) moveTo(it, col.key);
+                        if (it && wouldMove) moveTo(it, col.key);
                       }}>
                       <ColumnHead col={col} first={ci === 0} last={ci === sec.cols.length - 1}
                         open={menu === overKey}
@@ -596,12 +639,26 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, hi
                         onMove={(d) => { setMenu(null); moveCol(col.key, d); }}
                         onDelete={() => { setMenu(null); dropCol(col.key); }} />
 
+                      {/* The drop preview, opening a space at the top of the
+                          column the way the kit draws it. The top is not a
+                          claim about WHERE the card lands — `queueOrder` decides
+                          that, and it is not a position this screen writes
+                          (decision 4) — it is where a space can open without
+                          moving the card under the cursor. */}
+                      {isOver && dragged && (
+                        <DropSlot
+                          from={sec.cols.find((c) => c.items.some((x) => x.id === dragged.id))?.name || 'No column'}
+                          to={col.name}
+                          shipped={col.key === 'shipped'} />
+                      )}
+
                       {col.items.map((it) => (
                         <IssueCard key={it.id} item={it} ideas={ideaCount.get(it.id) || 0}
                           sprint={boxes.find((b) => b.id === it.sprintId) || null}
                           selected={selected === it.id}
                           onSelect={() => setSelected(it.id)}
                           dragging={dragId === it.id}
+                          landed={landedId === it.id}
                           onDragStart={() => { closeAll(); setDragId(it.id); }}
                           onDragEnd={() => { setDragId(null); setOver(null); }}
                           editing={inlineId === it.id}
@@ -755,8 +812,37 @@ function ColumnHead({ col, first, last, open, onMenu, onRename, onMove, onDelete
   );
 }
 
+/**
+ * THE DROP PREVIEW — the kit's `TransitionSlot`, and the one piece of this
+ * screen that exists to SAY WHAT THE DROP WILL WRITE before it writes it.
+ * Two chips and an arrow, because the column pair is the whole of the change:
+ * a drop patches `list_key` and nothing else.
+ *
+ * WHICH IS WHY THE Done LANE CARRIES A LINE OF ITS OWN. Dropping a card on Done
+ * does not tick it (decision 3 in this file's header) — `done` is what
+ * `computeProgress` weighs and what a merge writes — and Done is precisely the
+ * column where somebody will expect the drop to mean more than it does. Keyed
+ * on `shipped` rather than on the name: THE KEYS OUTLIVE THE NAMES
+ * (server/src/lists.js), and this lane renames.
+ */
+function DropSlot({ from, to, shipped }: { from: string; to: string; shipped: boolean }) {
+  return (
+    <div className="km-slot" aria-hidden="true">
+      <div className="hop">
+        <span className="from">{from}</span>
+        <span className="arr"><KitIcon name="arrow-up-right" size={13} /></span>
+        <span className="to">{to}</span>
+      </div>
+      <div className="zone">
+        Drop to move it here
+        {shipped && <span className="n">Sets the column only — it does not tick the item</span>}
+      </div>
+    </div>
+  );
+}
+
 function IssueCard({
-  item, ideas, sprint, selected, onSelect, dragging, onDragStart, onDragEnd,
+  item, ideas, sprint, selected, onSelect, dragging, landed, onDragStart, onDragEnd,
   editing, onOpenInline, onInline, onCancelInline,
   priOpen, onPri, onPick, menuOpen, onMenu,
   onEdit, onSignOff, onPark, onArchive, onDerive, onDelete,
@@ -770,7 +856,11 @@ function IssueCard({
    *  the very screen that renames it (#477). */
   sprint: Sprint | null;
   selected: boolean; onSelect: () => void;
-  dragging: boolean; onDragStart: () => void; onDragEnd: () => void;
+  dragging: boolean;
+  /** True for the ~900ms after this card's own drop wrote. Drawn as the kit's
+   *  `card-land`, in the lime that means done everywhere else in the app. */
+  landed: boolean;
+  onDragStart: () => void; onDragEnd: () => void;
   editing: boolean; onOpenInline: () => void;
   onInline: (title: string) => void; onCancelInline: () => void;
   priOpen: boolean; onPri: (e: React.MouseEvent) => void; onPick: (v: Priority) => void;
@@ -784,7 +874,7 @@ function IssueCard({
 }) {
   const pri = priorityMeta(item.bucket);
   // A row a session made and worked, that nobody has signed off yet. It is on
-  // the board because it is real work (`isIdea`), and it says so on its face
+  // the board because it is real work (`homeOf`), and it says so on its face
   // because the alternative is a card the runner will silently never take.
   const held = isHeld(item);
   const [confirming, setConfirming] = useState(false);
@@ -795,7 +885,7 @@ function IssueCard({
     // eats the pointer inside a text input in Chromium — select-by-drag stops
     // working and the card starts flying instead — so the one gesture is
     // switched off for exactly as long as the other one is open.
-    <div className={`km-card${selected ? ' selected' : ''}${dragging ? ' dragging' : ''}${editing ? ' editing' : ''}`}
+    <div className={`km-card${selected ? ' selected' : ''}${dragging ? ' dragging' : ''}${landed ? ' landed' : ''}${editing ? ' editing' : ''}`}
       data-hl={item.id} onClick={onSelect} onDoubleClick={(e) => { e.stopPropagation(); onOpenInline(); }}
       draggable={!editing} onDragStart={onDragStart} onDragEnd={onDragEnd}>
       {editing
@@ -915,8 +1005,9 @@ function IssueCard({
           {/* SIGN OFF IS HERE AGAIN, and only on a card that is actually held.
               #472 took it off this screen because no held row was drawn here
               any more; a held row a session has claimed or built IS drawn here
-              now (`isIdea` in lib/plan.ts), and Roadmap's Promote — the same
-              write plus a detach — can no longer reach it. The wording says
+              now (`homeOf` in lib/plan.ts), and neither Promote — Roadmap's, or
+              Auto-ideas' (#496) — can reach it, because both read the rows
+              nobody has worked. The wording says
               what it releases, because "approve" on a change that is already
               built reads as a verdict, which this is emphatically not. */}
           {held && (
@@ -1149,9 +1240,9 @@ function CreateDialog({ onClose, onCreate }: { onClose: () => void; onCreate: (t
  *  is about who may run CONCURRENTLY rather than what is runnable at all, and
  *  cannot be answered without the other workers' state.
  *
- *  IT ASKS `isHeld` ITSELF rather than leaning on `isIdea`. The two used to be
- *  the same question and are not: a held row a session has already worked is
- *  board work now (see `isIdea`'s header), so a twin reading the SCREEN test
+ *  IT ASKS `isHeld` ITSELF rather than leaning on the SCREEN test. The two used
+ *  to be the same question and are not: a held row a session has already worked
+ *  is board work now (see `homeOf`'s header), so a twin reading the SCREEN test
  *  would count a row the server still refuses to enqueue. The approval gate is
  *  #359's, and this is where it is asked.
  *
@@ -1160,7 +1251,7 @@ function CreateDialog({ onClose, onCreate }: { onClose: () => void; onCreate: (t
  *  something tonight will take. */
 const runnable = (it: RoadmapItem): boolean =>
   !it.done && !it.skipped && !it.archived && !it.claimedBy.trim()
-  && !isIdea(it) && !isHeld(it);
+  && isBoardWork(it) && !isHeld(it);
 
 /**
  * THE COLUMN A ROW IS IN, resolved against the board's OWN lanes — its name and
@@ -1267,14 +1358,14 @@ function BacklogView({
 
   // THE ROWS THIS SCREEN RANKS. Committed work only — an idea belongs to the
   // Roadmap tab and cannot be dragged into a sprint from here, which is the
-  // same `isIdea` line the board above draws (#472). Done and archived rows
+  // same `isBoardWork` line the board above draws (#472, #496). Done and archived rows
   // are out too: this screen is about what is still to be built, and a
   // finished item in a box is history the sprint keeps rather than a row
   // anybody needs to rank again.
   const pool = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return rows
-      .filter((it) => !it.archived && !isIdea(it))
+      .filter((it) => !it.archived && isBoardWork(it))
       .filter((it) => (scope ? (it.area.trim() || UNTAGGED) === scope : true))
       .filter((it) => !needle
         || it.title.toLowerCase().includes(needle)
@@ -1410,7 +1501,7 @@ function BacklogView({
   // ---- the scope chips, the board's own ------------------------------------
   const chips = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const it of rows.filter((r) => !r.archived && !isIdea(r))) {
+    for (const it of rows.filter((r) => !r.archived && isBoardWork(r))) {
       const k = it.area.trim() || UNTAGGED;
       counts.set(k, (counts.get(k) || 0) + 1);
     }

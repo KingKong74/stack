@@ -160,6 +160,10 @@ export interface RoadmapItem {
 
   // ---- the Roadmap tab v2 ----
   parentId: number | null;  // the feature this ticket belongs to (null = it IS a feature)
+  // #496 — HAS SOMEBODY COMMITTED TO THIS? The third leg of which screen a row
+  // is on (lib/plan.ts homeOf). false = a signed-off idea kept on the Roadmap;
+  // true = board work, and true is what every row is born as.
+  committed: boolean;
   // The scheduled bar, in MINUTES from the project's week zero (#401). null =
   // UNSCHEDULED, a real state (the tray) and never minute 0.
   sched: SchedSpan | null;

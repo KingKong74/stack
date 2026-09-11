@@ -1016,46 +1016,87 @@ export function listKeyOf(it: RoadmapItem): string {
  * every row on 0.
  */
 /**
- * THE ONE LINE BETWEEN THE TWO SURFACES (#472), and it lives here so the board
- * and the Roadmap tab cannot disagree about where a row belongs. A row on both
- * is a row you act on twice; a row on neither is work that has silently
- * vanished, which is the worse of the two and the reason this is one function.
+ * THE ONE LINE BETWEEN THE THREE SURFACES (#472, widened by #496), and it lives
+ * here so the board, the Roadmap tab and For you's Auto-ideas pane cannot
+ * disagree about where a row belongs. A row on two of them is a row you act on
+ * twice; a row on none is work that has silently vanished, which is the worse of
+ * the two and the reason this is ONE function returning one of three values
+ * rather than three predicates that can drift apart.
  *
- * THE BOARD DRAWS COMMITTED WORK. Roadmap draws what is not committed yet, and
- * exactly two things are not — NEITHER OF THEM ONCE SOMEBODY HAS WORKED IT:
+ * Read it as three answers to "who has said yes to this, and how much":
  *
- *  • A HELD row — `hook` (the extractor read it off a push) or `fly` (a live
- *    session opened it for its own work) that nobody has signed off. #359 already
- *    keeps these out of the overnight runner; #472 keeps them off the board for
- *    the same reason, which is that nobody has said yes to them yet.
- *  • A CHILD row (`parentId` set) — an idea hanging off a feature. It is a note
- *    about work, not the work, and the board is the work.
+ *  • `'auto'` — NOBODY HAS. A HELD row (`hook`, the extractor read it off a
+ *    push, or `fly`, a live session opened it for its own work) that nobody has
+ *    signed off and nobody has worked. It is the session's own output, not the
+ *    owner's plan, so it sits in FOR YOU → AUTO-IDEAS and on neither of the two
+ *    planning screens. #359 already keeps these out of the overnight runner;
+ *    #472 kept them off the board; #496 takes them off the Roadmap too, because
+ *    a triage screen full of things a machine said last night is not a roadmap.
+ *  • `'roadmap'` — SOMEBODY KEPT IT, NOBODY COMMITTED TO IT. Either a CHILD row
+ *    (`parentId` set — an idea filed under something already on the board: a
+ *    note about work, and the board is the work) or a signed-off row that was
+ *    promoted TO THE ROADMAP rather than to the board (`committed` false, #496).
+ *  • `'board'` — COMMITTED WORK, and everything else is that. A hand-typed row
+ *    is committed the moment somebody writes it (a manual row is NEVER held —
+ *    blocking hand-written work is the failure mode approval must not have),
+ *    and so is anything promoted to the board.
  *
  * BEING WORKED IS ITSELF THE COMMITMENT, and leaving that out of this line put a
  * night's work in the idea pile. A session opens a `fly` card for what it was
  * just asked to do, claims a branch on it and builds it — and the card it made
  * and worked was drawn on Roadmap the whole time, so the owner had to press
  * Promote on their own instruction to get committed work onto the board it
- * should never have left. `isWorked` is that carve-out, and it applies to a
- * child row too: work filed under a feature is still work, and a built row the
- * board does not draw is the "vanished" half of the paragraph above.
+ * should never have left. `isWorked` is that carve-out, it is tested FIRST here,
+ * and it applies to a child row too: work filed under a feature is still work,
+ * and a built row the board does not draw is the "vanished" case above. It is
+ * also the whole of "only what we actually worked on goes to the board".
  *
  * THE SIGN-OFF IT IS STILL MISSING IS A DIFFERENT QUESTION. `isHeld` gates the
  * RUNNER (#359) and this function picks a SCREEN; the two were one test only
  * because a held row used to carry no work. A worked held row is drawn on the
  * board and STILL held from the night — the board's card menu is where that
- * sign-off is answered now, since Roadmap's Promote can no longer see it.
+ * sign-off is answered, since neither Promote can see it.
  *
- * PROMOTING IS THEREFORE ONE WRITE WITH ONE MEANING: `reviewed: true` and
- * `parentId: null` together say "this is committed work now", and it moves
- * across. Nothing else moves a row between the two screens.
+ * PROMOTING IS THEREFORE TWO WRITES WITH TWO MEANINGS, and #496 is the whole
+ * reason they can be told apart:
  *
- * `archived` is neither surface's — it is off the board and recoverable, and
- * `isIdea` deliberately says nothing about it so a caller cannot forget which
- * question it is asking.
+ *    to the Roadmap   { reviewed: true, committed: false }
+ *    to the board     { reviewed: true, committed: true, parentId: null }
+ *
+ * Both say "this is worth keeping"; only the second says "this is work now".
+ * Before `committed` existed they were the same write, which is why an idea you
+ * merely kept landed on the board beside things somebody had actually asked for.
+ *
+ * `archived` is none of the three surfaces' — it is off the board and
+ * recoverable, and `homeOf` deliberately says nothing about it so a caller
+ * cannot forget which question it is asking.
  */
-export const isIdea = (it: RoadmapItem): boolean =>
-  !isWorked(it) && (it.parentId !== null || isHeld(it));
+export type Home = 'auto' | 'roadmap' | 'board';
+
+export const homeOf = (it: RoadmapItem): Home => {
+  if (isWorked(it)) return 'board';
+  if (isHeld(it)) return 'auto';
+  // `=== false` AND NOT `!committed`. The server serves `row.committed !== false`
+  // for the same reason: a row that reached a client without the field — a
+  // cached payload, a fixture, an API read during the migration — must land on
+  // the BOARD, where it was before the column existed. `!undefined` files it on
+  // the Roadmap instead, which is a row silently leaving the board.
+  if (it.parentId !== null || it.committed === false) return 'roadmap';
+  return 'board';
+};
+
+/** A session's own idea, waiting in For you → Auto-ideas. */
+export const isAutoIdea = (it: RoadmapItem): boolean => homeOf(it) === 'auto';
+/** A kept idea, drawn on the Roadmap tab. */
+export const isIdea = (it: RoadmapItem): boolean => homeOf(it) === 'roadmap';
+/**
+ * COMMITTED WORK, drawn on the board — and the reason this exists rather than
+ * every caller writing `!isIdea`. That negation was correct while there were
+ * two screens and is a BUG with three: it draws the Auto-ideas pile on the
+ * board, which is the exact thing #496 moved off it. Renaming the board's test
+ * is what forced every call site to be looked at.
+ */
+export const isBoardWork = (it: RoadmapItem): boolean => homeOf(it) === 'board';
 
 /**
  * HAS ANYBODY ACTUALLY WORKED THIS ROW? A branch claim, a built note or a tick —

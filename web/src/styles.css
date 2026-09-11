@@ -3964,6 +3964,17 @@ body[data-mc-full] .totop { display: none; }
 .ai-src { font: var(--type-code); color: var(--text-link); }
 .ai-signal { font: var(--type-caption); color: var(--text-tertiary); }
 .ai-acts { display: flex; flex-direction: column; justify-content: center; gap: var(--space-3); flex: none; }
+/* #496 — the pane is wired now, so the row has an OPEN state: a closed row
+   clamps its note to two lines and shows the two answers, an open one shows the
+   whole note, Edit and Dismiss. The whole row is the hit target, which is why
+   the actions stop the click from folding it. */
+.ai-row { cursor: pointer; }
+.ai-row.open { background: var(--surface-card); border-color: var(--border-default); }
+.ai-why.clamp {
+  display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2;
+  -webkit-box-orient: vertical; overflow: hidden;
+}
+.ai-acts .k-btn { justify-content: flex-start; white-space: nowrap; }
 
 
 /* ==========================================================================
