@@ -118,6 +118,12 @@ const SCREENS = [
   // and an open inline title editor, which paints its own text over a card in
   // the focus state. Neither exists at first paint.
   { slug: 'board-scoped', hash: '#/p/{slug}/roadmap', press: ['.km-scope .im-chip:last-of-type'] },
+  // #453 — THE DRAG PAINTS TONE NO PRESS CAN REACH. A card in flight, the
+  // column under it and the drop preview inside that column exist only while a
+  // pointer is down, and the preview is a whole small surface of its own: two
+  // chips, an arrow and a dashed zone, on a --surface-selected ground this
+  // audit had never measured anything over. `drag` below is what gets there.
+  { slug: 'board-drag', hash: '#/p/{slug}/roadmap', drag: true },
   { slug: 'board-backlog', hash: '#/p/{slug}/roadmap', press: ['.km-tabs .k-tab:nth-child(2)'] },
   { slug: 'board-dev', hash: '#/p/{slug}/roadmap', press: ['.km-tabs .k-tab:nth-child(3)'] },
   { slug: 'activity', hash: '#/p/{slug}/activity' },
@@ -453,6 +459,61 @@ async function main() {
         }
       }
       if (!reached) { await page.close(); continue; }
+
+      // A DRAG IS NOT A PRESS AND CANNOT BE ONE. Chromium's native drag cannot
+      // be driven from a script, so the events React actually listens for are
+      // dispatched by hand — which is enough, because the tone under audit is
+      // painted by the class names those handlers set and by nothing else.
+      // The target is the LAST real column: it is the Done lane on a default
+      // board, and the preview says one extra line there (that a drop sets the
+      // column and does not tick the item), so aiming at it measures the whole
+      // surface rather than most of it. Failure is reported, never skipped —
+      // a drag that did not start is a screen nobody looked at.
+      if (screen.drag) {
+        const marked = await page.evaluate(() => {
+          for (const row of document.querySelectorAll('.km-cols')) {
+            const cols = [...row.querySelectorAll('.km-col')].filter((c) => !c.classList.contains('catchall'));
+            const src = cols.find((c) => c.querySelector('.km-card'));
+            const dst = [...cols].reverse().find((c) => c !== src);
+            if (!src || !dst) continue;
+            src.querySelector('.km-card').setAttribute('data-audit-drag', 'from');
+            dst.setAttribute('data-audit-drag', 'to');
+            return true;
+          }
+          return false;
+        });
+        // ONE EVENT PER CALL, and that is not a style choice. React treats a
+        // drag event as continuous priority and flushes its state update in a
+        // later task, so a `dragstart` and a `dragover` fired in one evaluate
+        // reach a `dragover` handler that still believes nothing is being
+        // dragged — no highlight, no preview, and an audit reporting a clean
+        // pass over a surface that never painted.
+        const fire = (sel, type) => page.evaluate(([sel, type]) => {
+          const el = document.querySelector(sel);
+          if (!el) return false;
+          el.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: new DataTransfer() }));
+          return true;
+        }, [sel, type]);
+        if (marked) {
+          await fire('[data-audit-drag="from"]', 'dragstart');
+          await page.waitForTimeout(120);
+          await fire('[data-audit-drag="to"]', 'dragover');
+          await page.waitForTimeout(120);
+        }
+        // THE DRAG IS VERIFIED, NOT ASSUMED. Both halves of the state are
+        // checked by the class names the tone hangs off, because every way
+        // this can fail fails SILENTLY — the events land, nothing paints, and
+        // the audit reports the resting screen under the dragging screen's
+        // name. Exactly the absence-mistaken-for-a-pass this tool exists for.
+        const began = marked && await page.evaluate(() =>
+          !!document.querySelector('.km-card.dragging') && !!document.querySelector('.km-col.over .km-slot'));
+        if (!began) {
+          findings.push({ screen: screen.slug, kind: 'unreachable', detail: 'the drag did not paint — no card in flight or no drop preview, nothing audited' });
+          await page.close();
+          continue;
+        }
+        await page.waitForTimeout(400);
+      }
 
       const res = await page.evaluate(auditInPage);
       audited++;

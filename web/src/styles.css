@@ -4067,6 +4067,10 @@ body[data-mc-full] .totop { display: none; }
   background: var(--surface-raised); border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg); padding: var(--space-4);
   display: flex; flex-direction: column; gap: var(--space-4);
+  transition: background-color var(--dur-normal) var(--ease-standard),
+              border-color var(--dur-normal) var(--ease-standard),
+              box-shadow var(--dur-normal) var(--ease-standard),
+              opacity var(--dur-normal) var(--ease-standard);
 }
 .km-colhead { display: flex; align-items: center; gap: var(--space-4); padding: 2px 4px; position: relative; }
 .km-colhead .nm { font: var(--type-label); color: var(--text-secondary); }
@@ -4078,8 +4082,61 @@ body[data-mc-full] .totop { display: none; }
    catch-all lane, an inline column rename, and the tags a real card carries.
    Every tone is a `:root` token — an inline hex here is what `run-palette-audit`
    exists to catch. */
-.km-col.over { border-color: var(--border-focus); background: var(--surface-overlay); }
+/* THE DRAG, AS THE KIT DRAWS IT (ui_kits/console/BoardScreen.jsx + the two
+   keyframes in its index.html). FOUR STATES, each answering a different
+   question the gesture asks, and the reason all four are worth their lines is
+   that a drop here writes silently: the row moves under the cursor, so a drop
+   that wrote nothing and a drop that wrote look identical the moment the hand
+   lets go.
+     .dragging  — WHAT IS MOVING. Tilt and lift, at 90% rather than the 45% this
+                  was: a card faded that far reads as one being deleted.
+     .over      — WHERE IT WOULD GO, and only ever on a column the drop would
+                  actually move it to (`wouldMove` in Board.tsx).
+     .dim       — WHERE IT WOULD NOT. Every other column, including every column
+                  of every other AREA, which is the #267 rule the board has said
+                  in prose since #469 and can now say in the gesture itself.
+     .landed    — IT WENT. In lime, which means done everywhere else in the app.
+   The rings are `color-mix` over the same tokens the borders use, never an
+   inline rgba(): the audit reads a literal tone as a stray one, and these two
+   are the focus blue and the accent lime BY CONSTRUCTION. */
+.km-col.over {
+  border-color: var(--border-focus); background: var(--surface-selected);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--border-focus) 22%, transparent);
+}
+.km-col.dim { opacity: 0.72; }
 .km-col.catchall { border-style: dashed; }
+
+/* The drop preview. `scaleY` on the way in is the space opening rather than a
+   panel appearing — it is the column's own height that changes, and animating
+   the thing that moves is what stops the cards below it looking shoved. */
+.km-slot {
+  border: 1px solid var(--border-focus); border-radius: var(--radius-lg);
+  background: var(--surface-selected); overflow: hidden;
+  animation: km-slot-in var(--dur-normal) var(--ease-out);
+}
+@keyframes km-slot-in {
+  from { opacity: 0; transform: translateY(-6px) scaleY(0.9); }
+  to { opacity: 1; transform: none; }
+}
+.km-slot .hop {
+  display: flex; align-items: center; justify-content: center;
+  gap: var(--space-4); padding: var(--space-4);
+}
+.km-slot .from, .km-slot .to {
+  height: 20px; padding: 0 8px; border-radius: var(--radius-sm);
+  font: var(--type-label); display: inline-flex; align-items: center;
+  min-width: 0; max-width: 42%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.km-slot .from { background: var(--status-neutral-bg); color: var(--status-neutral-fg); }
+.km-slot .to { background: var(--action-primary); color: var(--white); }
+.km-slot .arr { color: var(--blue-400); display: flex; flex: none; }
+.km-slot .zone {
+  min-height: 58px; margin: 0 var(--space-4) var(--space-4); padding: var(--space-4);
+  border: 1px dashed var(--blue-500); border-radius: var(--radius-md);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  text-align: center; font: var(--type-label); color: var(--blue-300);
+}
+.km-slot .zone .n { font: var(--type-caption); color: var(--text-tertiary); }
 .km-colempty {
   padding: var(--space-5) var(--space-4); text-align: center;
   font: var(--type-caption); color: var(--text-tertiary);
@@ -4142,7 +4199,13 @@ body[data-mc-full] .totop { display: none; }
   background: var(--surface-card); border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg); padding: var(--space-5);
   display: flex; flex-direction: column; gap: var(--space-4);
-  box-shadow: var(--shadow-sm); transition: var(--transition-control);
+  box-shadow: var(--shadow-sm);
+  /* `--transition-control` covers the four control properties and not the two
+     the drag moves, so the transform and the fade are named beside it rather
+     than instead of it. */
+  transition: var(--transition-control),
+              transform var(--dur-fast) var(--ease-out),
+              opacity var(--dur-fast) var(--ease-standard);
 }
 .km-card:hover { background: var(--surface-overlay); box-shadow: var(--shadow-md); }
 .km-card.selected { border-color: var(--border-focus); }
@@ -4152,7 +4215,26 @@ body[data-mc-full] .totop { display: none; }
 .km-cardmeta .id { font: var(--weight-medium) var(--text-xs)/1 var(--font-mono); color: var(--text-secondary); }
 .km-cardmeta .pts { font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-tertiary); }
 .km-cardmeta .right { margin-left: auto; display: flex; align-items: center; gap: var(--space-3); }
-.km-card.dragging { opacity: 0.45; }
+.km-card.dragging {
+  opacity: 0.9; cursor: grabbing;
+  border-color: var(--border-focus);
+  transform: rotate(1.4deg) scale(1.02);
+  box-shadow: var(--shadow-lg), 0 0 0 3px color-mix(in srgb, var(--border-focus) 28%, transparent);
+}
+/* The landed card. The animation runs once on the card's remount in its new
+   column; the ring outlasts it by the rest of the 900ms the screen holds
+   `landedId`, which is what makes the flash findable when the drop happened
+   further down a long column than the eye was. */
+.km-card.landed {
+  border-color: var(--border-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--action-accent) 30%, transparent);
+  animation: km-card-land var(--dur-slow) var(--ease-out);
+}
+@keyframes km-card-land {
+  0% { transform: scale(0.94) translateY(-6px); opacity: 0.5; }
+  60% { transform: scale(1.02) translateY(0); opacity: 1; }
+  100% { transform: none; opacity: 1; }
+}
 .km-card[draggable='true'] { cursor: grab; }
 .km-cardtags { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
 /* `max-width` AND `min-width: 0` are both needed: a flex item's default
