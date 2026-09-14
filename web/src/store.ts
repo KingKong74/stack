@@ -2,7 +2,7 @@ import type {
   Project, Resume, Activity, Bug, Roadmap, RoadmapItem, Check, CheckRun, CheckHistory, Overview,
   ProjectStatus, Priority, Severity, BugStatus, SearchResponse, Settings, AutopilotRun, PlanStep,
   AuthDevice, Sprint, ResumeSince, ProjectDebrief,
-  SchedSpan, ProjectPulse, BoardShape, BoardList, BoardArea,
+  SchedSpan, ProjectPulse, BoardShape, BoardList, BoardArea, ItemKind,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -1037,6 +1037,10 @@ export async function createRoadmapItem(
     // and every extraction stays. A size nobody chose must not read as one
     // somebody did.
     points?: number | null;
+    // #508 — a due DAY (`YYYY-MM-DD`) and a kind, both optional. Omitted means
+    // none and unset, which is what every lane-composer card stays.
+    dueOn?: string | null;
+    kind?: ItemKind;
     // NO `sprintId` HERE, and the server refuses one too (#477). Filing work
     // into a sprint is a commitment somebody makes by dragging it into a box;
     // a create that could land straight in the ACTIVE sprint would let the
@@ -1079,6 +1083,11 @@ export async function patchRoadmapItem(
     // #507 — the board's relative size. null (or '') CLEARS it back to unsized,
     // so a card given a size by mistake can be given none again.
     points: number | null;
+    // #508 — null, '' or any string that is not a real day all CLEAR the due
+    // date; `kind: ''` clears the kind. The server runs the same `cleanDate`
+    // sprints do, so an unparseable date can never become a deadline.
+    dueOn: string | null;
+    kind: ItemKind;
   }>,
 ): Promise<RoadmapItem> {
   return request<RoadmapItem>(`${roadmapBase(slug)}/${id}`, { method: 'PATCH', body: patch });

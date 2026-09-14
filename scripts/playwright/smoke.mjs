@@ -137,7 +137,11 @@ const ROADMAP_PANELS = [
     id: 'board-cardmenu',
     label: 'Board — card actions menu',
     click: '.km-col:has(.km-card) .km-card [aria-label^="More actions for #"]',
-    expect: 'body > .km-menu.card',
+    // `.km-kindrow` rather than the menu itself: it proves the menu opened AND
+    // that it still carries #508's kind/due block, which is the only coverage
+    // those two controls can have here — pressing either of them WRITES, and
+    // nothing in this harness may write to the owner's real board.
+    expect: 'body > .km-menu.card .km-kindrow',
   },
   {
     id: 'board-colmenu',

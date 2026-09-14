@@ -197,7 +197,28 @@ export interface RoadmapItem {
    * treats an unpointed card as absent, and says how many it left out.
    */
   points: number | null;
+  /**
+   * #508 — the owner's own deadline, as a bare `YYYY-MM-DD` DAY. null = none.
+   *
+   * A DAY, NEVER AN INSTANT. It is a DATE column and it is served through
+   * `dayOf` (server/src/shape.js, whose header carries the trap in full): a
+   * `toISOString()` anywhere on this value serves the previous day to every
+   * device east of Greenwich. Compare it as a string or through `dueState` in
+   * lib/ui.ts; never build a Date from it in local time.
+   *
+   * IT GATES NOTHING. What the overnight runner takes is decided by the sprint
+   * in progress and its rank (#477); a second, quieter deadline that could
+   * reorder the night would be a third answer to a question that has one.
+   */
+  dueOn: string | null;
+  /** #508 — '' = UNSET, which is most of the board: every row predating the
+   *  column, and every card the lane composer makes. The board draws a chip
+   *  only for the two real values. */
+  kind: ItemKind;
 }
+
+/** #508 — what a board item IS. '' is unset and is a first-class state. */
+export type ItemKind = '' | 'story' | 'task';
 
 /** A position on the timeline, both fields in MINUTES from week zero (#401). */
 export interface SchedSpan { start: number; len: number }

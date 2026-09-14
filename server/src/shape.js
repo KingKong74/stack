@@ -145,6 +145,14 @@ export function roadmapItemShape(row) {
     // (schema.sql says why the two are separate). null = unsized, which every
     // sum treats as absent rather than as a zero.
     points: row.points === null || row.points === undefined ? null : Number(row.points),
+    // #508 — the owner's own deadline, as the DAY it is. Through `dayOf`, never
+    // through toISOString(): a DATE has no instant, and giving it one serves the
+    // previous day everywhere east of Greenwich. null = no due date, and it
+    // gates nothing (schema.sql says why).
+    dueOn: dayOf(row.due_on),
+    // '' | 'story' | 'task'. '' is UNSET and is most of the board — every row
+    // that predates the column, and every card the lane composer makes.
+    kind: row.item_kind || '',
   };
 }
 
@@ -397,6 +405,24 @@ export function runCore(r) {
     ...agentReads(r),
   };
 }
+
+/**
+ * A YYYY-MM-DD day going IN, or null — the write half of `dayOf` below, which
+ * is the read half. The pair lives together because they are one contract about
+ * one kind of value, and it moved here from routes/sprints.js the moment a
+ * second table needed it (#508's `roadmap_items.due_on`): two copies of a date
+ * validator is two answers to "is 2026-02-31 a day".
+ *
+ * Rejects a well-formed string that is not a real day, which the regex happily
+ * passes and Postgres would answer with a 500.
+ */
+export const cleanDate = (v) => {
+  if (v === null || v === undefined) return null;
+  const t = String(v).trim().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(t)) return null;
+  const d = new Date(`${t}T00:00:00Z`);
+  return Number.isFinite(d.getTime()) && d.toISOString().slice(0, 10) === t ? t : null;
+};
 
 /**
  * A pg DATE as the bare YYYY-MM-DD day it actually is.

@@ -1193,6 +1193,29 @@ ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS estimate    NUMERIC(4,1);
 -- Fibonacci-ish set the picker offers is a UI convention, and a board that
 -- inherited a 4 from somewhere should render it rather than refuse it.
 ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS points      INTEGER;
+-- #508 — A DUE DATE AND A KIND, both set at creation and both changeable after.
+--
+-- `due_on` is a DATE and not a timestamp, deliberately: a due date is a DAY
+-- somebody named, it has no instant, and giving it one is how a card due on the
+-- 14th renders as the 13th for every host east of Greenwich. shape.js's `dayOf`
+-- carries that trap in full — read it before touching this column, and never
+-- put the value through `toISOString()`.
+--
+-- IT GATES NOTHING. Same rule as `sprints.starts_on`/`ends_on`: this is the
+-- owner's own intent, and the automation does not read it. What decides what
+-- runs tonight is the sprint in progress and its rank (#477), and a second,
+-- quieter deadline that could reorder the night would be a third answer to a
+-- question that already has one.
+ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS due_on      DATE;
+-- '' | 'story' | 'task'. '' = UNSET and is what every row that predates this
+-- column reads as, which is why the default is '' and not 'task': a backfill
+-- would put a word on five hundred rows nobody classified. The board draws a
+-- chip only for the two real values.
+--
+-- Named `item_kind` rather than `kind` because `test_kind` (#500) is already on
+-- this table and two columns a letter apart in the same SELECT is how the wrong
+-- one gets read. The payload calls it `kind`, where there is no such neighbour.
+ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS item_kind   TEXT NOT NULL DEFAULT '';
 CREATE INDEX IF NOT EXISTS roadmap_items_parent_idx ON roadmap_items (parent_id);
 
 -- #411 — a second, OPTIONAL level under `area`: roadmap -> timeline / scope /

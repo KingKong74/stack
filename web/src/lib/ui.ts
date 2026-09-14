@@ -80,6 +80,66 @@ export const FALLBACK_ADVISORS: ModelChoice[] = [
 export const modelLabel = (list: ModelChoice[], model: string, fallback = 'Default') =>
   list.find((m) => m.model === model)?.label ?? (model || fallback);
 
+// ---------------------------------------------------------------------------
+// #508 — HOW A DUE DATE READS.
+//
+// `dueOn` is a bare YYYY-MM-DD DAY with no instant (types.ts and the server's
+// `dayOf` both say why), and everything below keeps it that way. The two rules
+// that make this more than formatting:
+//
+//  • BOTH SIDES ARE COMPARED AT UTC MIDNIGHT, and neither is ever built from a
+//    local-time Date. "Today" is taken apart with the LOCAL getters — the
+//    viewer's own idea of what day it is, which is the right one — and then
+//    reassembled with Date.UTC. Parsing '2026-09-14' with `new Date(s)` gives
+//    UTC midnight while `new Date(y, m, d)` gives LOCAL midnight, and mixing
+//    the two is a whole day of error either side of Greenwich.
+//  • A DONE CARD NEVER SHOUTS. Work that landed late is not a thing to act on,
+//    so a finished card keeps its date and loses its tone. Colouring it would
+//    put red on the one column where nothing needs doing.
+//
+// Returns null for a card with no due date, which is most of them.
+// ---------------------------------------------------------------------------
+export type DueTone = 'none' | 'soon' | 'today' | 'late';
+export interface DueRead { days: number; tone: DueTone; label: string; title: string }
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** The day `d` is in the viewer's own zone, as UTC midnight — see above. */
+const utcDay = (d: Date) => Date.UTC(d.getFullYear(), d.getMonth(), d.getDate());
+
+export function dueRead(dueOn: string | null | undefined, done: boolean, today = new Date()): DueRead | null {
+  if (!dueOn || !/^\d{4}-\d{2}-\d{2}$/.test(dueOn)) return null;
+  const [y, m, d] = dueOn.split('-').map(Number);
+  const days = Math.round((Date.UTC(y, m - 1, d) - utcDay(today)) / 86400000);
+  // 5 Sep rather than 2026-09-05: a board is read at a glance and the year is
+  // noise on all but the handful of cards where it is the point — so it is
+  // added back only when the due date is not in the year the reader is in.
+  //
+  // A FIXED TABLE RATHER THAN `toLocaleDateString`, which is what this returned
+  // first. `en-AU` renders September as "Sept" on a current ICU and as "Sep" on
+  // an older one — five characters where the other eleven months take three, in
+  // a chip on a 272px card, decided by which browser is open. MONTHS is three
+  // letters always, and a test can then say what the label is.
+  const label = `${d} ${MONTHS[m - 1]}${y === today.getFullYear() ? '' : ` ${y}`}`;
+  if (done) return { days, tone: 'none', label, title: `Was due ${label}` };
+  if (days < 0) {
+    return { days, tone: 'late', label,
+      title: `Overdue — was due ${label}, ${-days} ${-days === 1 ? 'day' : 'days'} ago` };
+  }
+  if (days === 0) return { days, tone: 'today', label, title: `Due today (${label})` };
+  // THREE DAYS IS THE WINDOW, and it is a window rather than a countdown
+  // because the board is glanced at: "this week" and "not this week" is the
+  // whole of what a colour can usefully say.
+  if (days <= 3) {
+    return { days, tone: 'soon', label,
+      title: `Due in ${days} ${days === 1 ? 'day' : 'days'} (${label})` };
+  }
+  return { days, tone: 'none', label, title: `Due ${label}` };
+}
+
+/** The two real kinds and how they are written on a card (#508). */
+export const ITEM_KIND_LABEL: Record<string, string> = { story: 'Story', task: 'Task' };
+
 // Activity tags read as "accent" when they signal unfinished work.
 export const isAccentTag = (label: string) => /progress|needs|todo/i.test(label);
 

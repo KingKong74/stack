@@ -128,10 +128,10 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { KitIcon } from './kit/KitIcon';
-import type { BoardArea, BoardList, Priority, RoadmapItem, Sprint } from '../types';
+import type { BoardArea, BoardList, ItemKind, Priority, RoadmapItem, Sprint } from '../types';
 import { listKeyOf, queueOrder, isBoardWork } from '../lib/plan';
 import { isHeld } from '../lib/approval';
-import { PRIORITY_META, PRIORITY_DEFAULT, priorityMeta } from '../lib/ui';
+import { PRIORITY_META, PRIORITY_DEFAULT, priorityMeta, dueRead, ITEM_KIND_LABEL } from '../lib/ui';
 import {
   getBoardShape, createList, patchList, deleteList,
   createArea, patchArea, deleteArea,
@@ -486,6 +486,14 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
   const setPoints = (it: RoadmapItem, points: number | null) =>
     guard(async () => { wrote(await patchRoadmapItem(slug, it.id, { points })); });
 
+  // #508 — the same one-field-one-press shape. The menu STAYS OPEN for both:
+  // setting a kind and then a due date is one errand, and closing between them
+  // would make it two.
+  const setKind = (it: RoadmapItem, kind: ItemKind) =>
+    guard(async () => { wrote(await patchRoadmapItem(slug, it.id, { kind })); });
+  const setDue = (it: RoadmapItem, dueOn: string | null) =>
+    guard(async () => { wrote(await patchRoadmapItem(slug, it.id, { dueOn })); });
+
   // Double-click a card, retype its title, Enter. The PATCH names `title` and
   // nothing else, so an inline edit cannot touch a tier, a claim or a verdict —
   // the same partial-write property that made trimming the modal safe.
@@ -542,12 +550,13 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
   // anyway. Two calls rather than one because POST has no `listKey`.
   /**
    * `extra` is what the CREATE DIALOG can set and the lane composer cannot
-   * (#507). The composer is the fast path — a title and how necessary it is —
-   * and a card born through it stays UNSIZED, which is the honest default: a
-   * size nobody chose must not read as one somebody did.
+   * (#507, #508). The composer is the fast path — a title and how necessary it
+   * is — and a card born through it stays unsized, unkinded and undated, which
+   * is the honest default: a size or a deadline nobody chose must not read as
+   * one somebody did.
    */
   const add = (title: string, bucket: Priority, key: string, area: string,
-               extra: { points?: number | null } = {}) =>
+               extra: { points?: number | null; kind?: ItemKind; dueOn?: string | null } = {}) =>
     guard(async () => {
       // A card created inside an area section is BORN in that area. It is the
       // one place this screen writes `area` at all, and it is safe precisely
@@ -937,6 +946,8 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
                           onPoints={(v) => { setPtsMenu(null); setPoints(it, v); }}
                           menuOpen={cardMenu === it.id}
                           onMenu={(e) => { e.stopPropagation(); closeAll(); setCardMenu(cardMenu === it.id ? null : it.id); }}
+                          onKind={(v) => setKind(it, v)}
+                          onDue={(v) => setDue(it, v)}
                           onEdit={() => { setCardMenu(null); onEdit(it); }}
                           onSignOff={() => { setCardMenu(null); signOff(it); }}
                           onPark={() => { setCardMenu(null); park(it); }}
@@ -1230,7 +1241,7 @@ function IssueCard({
   item, ideas, sprint, selected, onSelect, dragging, landed, onDragStart, onDragEnd,
   editing, onOpenInline, onInline, onCancelInline,
   priOpen, onPri, onPick, ptsOpen, onPts, onPoints, menuOpen, onMenu,
-  onEdit, onSignOff, onPark, onArchive, onDerive, onDelete,
+  onKind, onDue, onEdit, onSignOff, onPark, onArchive, onDerive, onDelete,
 }: {
   item: RoadmapItem;
   /** How many `parent_id` children this item has — its ideas, on the Roadmap tab. */
@@ -1253,6 +1264,9 @@ function IssueCard({
    *  it hands the card back to unsized. */
   ptsOpen: boolean; onPts: (e: React.MouseEvent) => void; onPoints: (v: number | null) => void;
   menuOpen: boolean; onMenu: (e: React.MouseEvent) => void;
+  /** #508 — '' is a real choice on both: it clears the kind / the due date. */
+  onKind: (v: ItemKind) => void;
+  onDue: (v: string | null) => void;
   onEdit: () => void;
   /** Release the #359 hold on a `hook`/`fly` row. Only ever pressed on a held
    *  card, and the menu only draws it there. */
@@ -1266,6 +1280,11 @@ function IssueCard({
   // redeployed yet gets the field ABSENT, and `undefined` would render an empty
   // button and count as neither sized nor unsized. Absent means unsized.
   const pts = item.points ?? null;
+  // #508 — both read `?? ''`/`?? null` for the reason `pts` above does: a
+  // browser talking to a server that has not been redeployed yet gets these
+  // fields ABSENT, and absent must mean unset rather than render as undefined.
+  const kind: ItemKind = (item.kind ?? '') as ItemKind;
+  const due = dueRead(item.dueOn ?? null, item.done);
   // A row a session made and worked, that nobody has signed off yet. It is on
   // the board because it is real work (`homeOf`), and it says so on its face
   // because the alternative is a card the runner will silently never take.
@@ -1352,7 +1371,7 @@ function IssueCard({
         </span>
       </div>
 
-      {(held || fly || sprint || item.area || item.claimedBy || item.skipped || item.reviewTag) && (
+      {(held || fly || sprint || kind || due || item.area || item.claimedBy || item.skipped || item.reviewTag) && (
         <div className="km-cardtags">
           {/* HELD IS FIRST, ahead of even the sprint chip, because it OUTRANKS
               it: a held row in the box in progress still does not run, so a
@@ -1404,6 +1423,24 @@ function IssueCard({
               : 'Filed by a live session while it worked — not typed onto this board'}>
               <KitIcon name="terminal" size={11} />
               <span className="v">{item.flySession || 'session'}</span>
+            </span>
+          )}
+          {/* #508 — WHAT IT IS, and only for the two real values: '' is unset
+              and is most of the board (every row predating the column, and
+              every card the lane composer makes), so an unset card wears
+              nothing rather than a third word nobody chose. */}
+          {kind && (
+            <span className={`k-tag km-kind ${kind}`} title={`This is a ${kind}`}>
+              {ITEM_KIND_LABEL[kind]}
+            </span>
+          )}
+          {/* #508 — WHEN IT IS DUE. The tone is `dueRead`'s and not this
+              file's: overdue, today, within three days, or neither — and a
+              DONE card keeps its date and loses its tone, because red in the
+              Done column is red where nothing needs doing. */}
+          {due && (
+            <span className={`k-tag km-due ${due.tone}`} title={due.title}>
+              <KitIcon name="calendar" size={11} /><span className="v">{due.label}</span>
             </span>
           )}
           {item.area && <span className="k-tag">{item.area}</span>}
@@ -1498,6 +1535,39 @@ function IssueCard({
             </button>
           )}
           <button className="km-menuitem" onClick={onPark}>{item.skipped ? 'Unpark' : 'Park'}</button>
+          <span className="km-menusep" />
+          {/* #508 — BOTH ARE CHANGEABLE AFTER CREATION, and that is not a
+              nicety. The dialog is where they are set and the dialog is not
+              where most cards come from — the lane composer makes one in two
+              keystrokes and the extractor makes one off a push, and neither can
+              say either of these things. A field you can only ever set at birth
+              is one nobody uses, because by the time you know the answer the
+              moment has gone. */}
+          <span className="km-menulbl">Kind</span>
+          <span className="km-kindrow">
+            {(['task', 'story', ''] as ItemKind[]).map((k) => (
+              <button key={k || 'unset'} className={`km-kindopt${kind === k ? ' on' : ''}`}
+                onClick={() => onKind(k)}>
+                {k ? ITEM_KIND_LABEL[k] : 'Unset'}
+              </button>
+            ))}
+          </span>
+          <span className="km-menulbl">Due</span>
+          {/* A native date input inside the menu. `onChange` fires on a full,
+              valid date and gives back the `YYYY-MM-DD` the column takes, so
+              nothing is parsed on the way out — and clearing the field sends
+              '', which the server reads as "no due date". */}
+          <span className="km-duerow">
+            <input type="date" className="km-dueinput" value={item.dueOn ?? ''}
+              aria-label={`Due date for #${item.id}`}
+              onClick={(e) => e.stopPropagation()}
+              onChange={(e) => onDue(e.target.value || null)} />
+            {item.dueOn && (
+              <button className="km-colbtn" aria-label={`Clear the due date on #${item.id}`}
+                title="Clear the due date" onClick={() => onDue(null)}>×</button>
+            )}
+          </span>
+          <span className="km-menusep" />
           {item.listKey && (
             <button className="km-menuitem" onClick={onDerive}
               title="Drop the stored column and let this row's own state decide again">
@@ -1752,7 +1822,8 @@ function AddColumn({ onAdd }: { onAdd: (name: string) => void }) {
 // necessary it is — so it deliberately asks for nothing else.
 function CreateDialog({ onClose, onCreate }: {
   onClose: () => void;
-  onCreate: (title: string, bucket: Priority, extra: { points: number | null }) => void;
+  onCreate: (title: string, bucket: Priority,
+             extra: { points: number | null; kind: ItemKind; dueOn: string | null }) => void;
 }) {
   const [title, setTitle] = useState('');
   const [bucket, setBucket] = useState<Priority>(PRIORITY_DEFAULT);
@@ -1760,13 +1831,34 @@ function CreateDialog({ onClose, onCreate }: {
   // press from empty, and a size preselected here would be a number nobody
   // chose sitting in every total on the board.
   const [points, setPoints] = useState<number | null>(null);
-  const submit = () => { const t = title.trim(); if (t) onCreate(t, bucket, { points }); };
+  // #508 — TASK IS THE DEFAULT, and it is the one field here that does NOT
+  // default to unset. The ask was to be able to file a thing as "either a story
+  // or task", which is a binary somebody is choosing between rather than a
+  // property they might leave blank — and most things on a board are tasks. It
+  // costs nothing to be wrong: the chip is one press to change on the card.
+  // Nothing is backfilled, so every row that predates this stays unset.
+  const [kind, setKind] = useState<ItemKind>('task');
+  // '' = no due date, which is the default and stays the majority. A native
+  // date input, so the value is already the `YYYY-MM-DD` the column takes and
+  // no parsing happens on the way out.
+  const [dueOn, setDueOn] = useState('');
+  const submit = () => {
+    const t = title.trim();
+    if (t) onCreate(t, bucket, { points, kind, dueOn: dueOn || null });
+  };
   return (
     <div className="km-scrim" onClick={onClose}>
       <div className="km-dialog" onClick={(e) => e.stopPropagation()}>
         <div className="km-dialog-head">
           <span className="t">Create issue</span>
-          <span className="d">It lands in To Do, in this bucket, at the end of the queue.</span>
+          {/* The due date GATES NOTHING and the line says so, because a
+              deadline on a board with an overnight runner on it reads like one
+              that does. What the night takes is the sprint in progress and its
+              rank (#477). */}
+          <span className="d">
+            It lands in To Do, in this bucket, at the end of the queue. A due date is yours to
+            watch — it does not change what the overnight runner takes.
+          </span>
         </div>
         <label className="km-field">
           <span className="lbl">Summary</span>
@@ -1789,6 +1881,19 @@ function CreateDialog({ onClose, onCreate }: {
             <option value="">Unsized</option>
             {POINTS.map((n) => <option key={n} value={n}>{n}</option>)}
           </select>
+        </label>
+        <label className="km-field">
+          <span className="lbl">Kind</span>
+          <select className="km-select" value={kind} onChange={(e) => setKind(e.target.value as ItemKind)}>
+            <option value="task">Task</option>
+            <option value="story">Story</option>
+            <option value="">Unset</option>
+          </select>
+        </label>
+        <label className="km-field">
+          <span className="lbl">Due</span>
+          <input className="km-select" type="date" value={dueOn} aria-label="Due date"
+            onChange={(e) => setDueOn(e.target.value)} />
         </label>
         <div className="km-dialog-foot">
           <button className="k-btn ghost" onClick={onClose}>Cancel</button>

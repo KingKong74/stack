@@ -53,7 +53,7 @@
 import { Router } from 'express';
 import { pool, q } from '../db.js';
 import { projectBySlug } from '../resolve.js';
-import { sprintShape, dayOf } from '../shape.js';
+import { sprintShape, dayOf, cleanDate } from '../shape.js';
 import { numericId } from '../params.js';
 
 // Mounted at /api/projects/:slug/sprints.
@@ -84,15 +84,6 @@ const cleanName = (v) => String(v ?? '').trim().slice(0, 80);
  * the server already refuses. A date is an annotation, not a gate — nothing
  * downstream reads it — so the cost of losing one is a re-type.
  */
-const cleanDate = (v) => {
-  if (v === null || v === undefined) return null;
-  const t = String(v).trim().slice(0, 10);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(t)) return null;
-  // Reject a well-formed string that is not a real day (2026-02-31), which the
-  // regex above happily passes and Postgres would reject with a 500.
-  const d = new Date(`${t}T00:00:00Z`);
-  return Number.isFinite(d.getTime()) && d.toISOString().slice(0, 10) === t ? t : null;
-};
 
 /**
  * THE ACTIVE SPRINT OF ONE PROJECT, or null. The single reader every gate in

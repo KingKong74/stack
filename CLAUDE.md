@@ -35,8 +35,6 @@ A self-hosted side-project command centre. The point is **frictionless resume**:
 the "pick up where you left off" card tells you where you were. A push auto-extracts bugs and
 next-steps into the trackers; dashboard progress is computed, not hand-set.
 
-North star: an autonomous software house run from the director's chair — SessionStart states it in full.
-
 ## Layout
 
 ```
@@ -145,7 +143,9 @@ or the header of the file named in the pointer.
   `sched_len_min`, with `plan_start_min`/`plan_len_min` the write-once BASELINE a drag must never
   move. **Four packages must agree and none can import another**: `routes/roadmap.js`, `shape.js`
   (BIGINT arrives as a STRING), `lib/plan.ts`, `lib/spine.ts`. **`estimate` stays in WEEKS**, so
-  `defaultLen` in `lib/plan.ts` is the ONE place the two units may meet.
+  `defaultLen` in `lib/plan.ts` is the ONE place the two units may meet — and **`points` (#507) is
+  neither**: unitless, what a column head sums, NULL = unset and never a zero in a total.
+  **`due_on` (#508) is a DAY** (`dayOf`, never `toISOString`) and **gates nothing**.
 
 ### Which screen a row is on
 
@@ -401,7 +401,7 @@ ones whose meaning isn't obvious from the name:
 | `autopilotEnabled` | the ARM SWITCH. Nightly + scheduled jobs only enqueue while on; ▶ Run now stays manual-only |
 | `autopilotWorkers` | the FLEET-WIDE cap on concurrent jobs (0 = unlimited, default 3, clamped 1–8); per-project serialisation is separate and NOT tunable |
 | `autopilotExecutorModel` / `autopilotAdvisorModel` | #153, **inverted by #285**: the ADVISOR runs the session (main loop, plans, delegates, verifies, commits) and the EXECUTOR is exposed to it as a subagent with the write tools. Advisor unset = single-model on it |
-| `assistFields` / `assistGuidance` | what ✧ Fill-from-note may fill, and the owner's standing steer. Assist never overrides a value the human set. **branch/risk are dead toggles** — #469 took them off the modal, so the route answers them and nothing can land them. `tier` went with its column (#477); `priority` with the corner ＋ (#492) |
+| `assistFields` / `assistGuidance` | what ✧ Fill-from-note may fill, and the owner's standing steer. Assist never overrides a value the human set. **branch, risk, tier and priority are DEAD toggles** — the route answers them and nothing can land them (#469, #477, #492) |
 | `termIdleHours` | the idle reaper's threshold (0 = never); the host kills, fails SAFE, and **it switches BOTH reapers** — this and the daemon's 1-min unused sweep |
 | `accessPinSet` | PIN sign-in available; PATCH takes write-only `accessPin` ('' disables). Any change signs out every PIN-connected device |
 

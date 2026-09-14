@@ -29,7 +29,7 @@ const RISKS = ['low', 'normal', 'high'];
 // as a SINGLE-ITEM move (drag one card out of a box, or into the backlog); the
 // ordered kind goes through `PUT /sprints/:id/order`, which rewrites a whole
 // box at once and is the only way a rank stops being ambiguous.
-import { roadmapItemShape, groupRoadmap } from '../shape.js';
+import { roadmapItemShape, groupRoadmap, cleanDate } from '../shape.js';
 import { buildPrompt } from '../prompts.js';
 import { agentClient } from '../agents.js';
 import { readSettings } from '../settings.js';
@@ -83,6 +83,17 @@ roadmap.get('/', async (req, res) => {
 // Constrained rather than free text because it is rendered as a chip, parsed
 // back into a `term:` claim and matched against the running-sessions strip; a
 // name with a space in it would break all three quietly.
+// #508 — '' | 'story' | 'task'. '' is UNSET and is the default, which is what
+// every row predating the column and every lane-composer card reads as; the
+// board draws a chip only for the two real values. Anything else is coerced to
+// '' rather than stored, so a typo cannot invent a third kind that nothing in
+// the client knows how to draw.
+const ITEM_KINDS = ['', 'story', 'task'];
+const cleanKind = (v) => {
+  const k = String(v ?? '').trim().toLowerCase();
+  return ITEM_KINDS.includes(k) ? k : '';
+};
+
 const FLY_SESSION_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 
 // POST /  -> create a roadmap item (optionally pre-claimed to a lane)
@@ -202,6 +213,11 @@ roadmap.post('/', async (req, res) => {
   const points = Number.isFinite(Number(req.body?.points)) && req.body?.points !== null && req.body?.points !== ''
     ? Math.max(0, Math.min(999, Math.round(Number(req.body.points))))
     : null;
+  // #508 — a due DAY and a kind, both optional and both born empty by default.
+  // `cleanDate` returns null for anything that is not a real YYYY-MM-DD, so a
+  // malformed date lands as "no due date" rather than as a 500 out of Postgres.
+  const dueOn = cleanDate(req.body?.dueOn);
+  const kind = cleanKind(req.body?.kind);
   let schedStart = null; let schedLen = null;
   const s = req.body?.sched;
   if (s && Number.isFinite(s.start) && Number.isFinite(s.len)) {
@@ -219,10 +235,10 @@ roadmap.post('/', async (req, res) => {
     // straight in the ACTIVE sprint would let any caller — the extractor, a
     // fly card, a script — commission tonight's work by writing a title.
     `INSERT INTO roadmap_items (project_id, bucket, title, note, position, source, fingerprint, claimed_by, area, plan, risk, risk_source, agent_profile, fly_session,
-                                sched_start_min, sched_len_min, plan_start_min, plan_len_min, sub_area, points)
-     VALUES ($1,$2,$3,$4,$5,$13,$6,$7,$8,$9::jsonb,$10,$11,$12,$14,$15,$16,$15,$16,$17,$18) RETURNING *`,
+                                sched_start_min, sched_len_min, plan_start_min, plan_len_min, sub_area, points, due_on, item_kind)
+     VALUES ($1,$2,$3,$4,$5,$13,$6,$7,$8,$9::jsonb,$10,$11,$12,$14,$15,$16,$15,$16,$17,$18,$19,$20) RETURNING *`,
     [req.project.id, bucket, title, note, pos[0].p, fp, claimedBy, area, JSON.stringify(plan), risk, riskSource, agentProfile, source, flySession,
-      schedStart, schedLen, subArea, points]
+      schedStart, schedLen, subArea, points, dueOn, kind]
   );
   res.status(201).json(roadmapItemShape(rows[0]));
 });
@@ -530,6 +546,20 @@ roadmap.patch('/:id', async (req, res) => {
       sets.push(`points = $${i++}`);
       vals.push(Math.max(0, Math.min(999, Math.round(Number(pts)))));
     }
+  }
+  if (req.body?.dueOn !== undefined) {
+    // #508 — null, '' and anything that is not a real day all CLEAR it. That is
+    // deliberate rather than lax: `cleanDate` is the same validator sprints use
+    // and it already answers "2026-02-31" with null, so the only two outcomes
+    // here are a day Postgres will accept and no day at all. A date nobody can
+    // parse must never become a deadline nobody meant.
+    sets.push(`due_on = $${i++}`);
+    vals.push(cleanDate(req.body.dueOn));
+  }
+  if (req.body?.kind !== undefined) {
+    // '' clears it back to unset, which is a real state and most of the board.
+    sets.push(`item_kind = $${i++}`);
+    vals.push(cleanKind(req.body.kind));
   }
 
   if (!sets.length) return res.status(400).json({ error: 'Nothing to update.' });
