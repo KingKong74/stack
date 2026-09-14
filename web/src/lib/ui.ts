@@ -43,10 +43,20 @@ export const PRIORITY_META: {
   { key: 'low', label: 'Low', color: 'var(--blue-400)', short: 'Low', glyph: '⌄' },
   { key: 'lowest', label: 'Lowest', color: 'var(--blue-400)', short: 'Lowest', glyph: '⌄⌄' },
 ];
-/** The default a new item is born with — twin of BUCKET_DEFAULT in server/src/util.js. */
-export const PRIORITY_DEFAULT: Priority = 'high';
+/**
+ * The default a new item is born with — twin of BUCKET_DEFAULT in
+ * server/src/util.js, and 'medium' since #509. A thing nobody has ranked is
+ * Medium: that is the level the widening from four to five existed to add.
+ * It moved together with the progress WEIGHT over there, which is what stops a
+ * board of unranked work reading 0% for ever — read that header before
+ * changing this one.
+ */
+export const PRIORITY_DEFAULT: Priority = 'medium';
+/** The row's meta, falling back to the DEFAULT's rather than to a fixed index —
+ *  an unrecognised bucket reads as the level an unranked row is born at. */
 export const priorityMeta = (p: Priority) =>
-  PRIORITY_META.find((x) => x.key === p) || PRIORITY_META[1];
+  PRIORITY_META.find((x) => x.key === p)
+  || PRIORITY_META.find((x) => x.key === PRIORITY_DEFAULT)!;
 
 // Dual-model sessions (#153): the executor runs every turn, the advisor is the
 // stronger model it consults as a subagent. '' = CLI default / no advisor.

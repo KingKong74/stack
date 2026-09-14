@@ -95,10 +95,11 @@ either planning screen (#496). And the usage fields (`tokens_used`, `model_usage
 
 ## Progress model (`util.computeProgress`)
 
-The single definition of "how done is a project" — read the weighting off the function, whose header
-carries why #469 did NOT change it. What you would not guess: it is **capped at 90% while any
-critical/high bug is open**, and 0% with no Highest/High items at all. The Dashboard's "Progress by
-app" panel is this one — deliberately NOT a health score.
+Read the weighting off the function. **ALL FIVE count since #509** (3/2/1/1/1), it is
+**capped at 90% while any critical/high bug is open**, and 0% only on an empty board. **The default
+and the weights are ONE decision** — a row is born `medium`, so a `medium` outside the sum leaves
+every new board at 0% for ever; move one, move the other. The Dashboard's "Progress by app" panel is
+this — deliberately NOT a health score.
 
 ## Data rules (the non-obvious column semantics)
 
@@ -111,8 +112,8 @@ or the header of the file named in the pointer.
 
 - **`bucket` IS THE PRIORITY: five values since #469** — highest/high/medium/low/lowest (it held
   MoSCoW; the column keeps its name, `util.js`'s BUCKETS is the vocabulary and `schema.sql` the
-  convergent migration). **`medium` is the level MoSCoW never had**: nothing migrated in, and it
-  moves no progress bar. **It no longer gates the
+  convergent migration). **`medium` is the level MoSCoW never had**: nothing migrated in, and since
+  #509 it is **what a row is BORN as**. **It no longer gates the
   runner** (#477): being in the sprint in progress is the stronger commitment, and a gate that
   silently refused a `medium` somebody dragged into the box would make the box a lie. Bucket ORDERS
   candidates below the sprint rank; it excludes none.
@@ -462,7 +463,6 @@ One file per surface in `server/src/routes/` — `ls` is the index. All behind b
 - **A CAPPED PROMPT MUST STATE ITS OWN CAP, on the right axis** (#239, #364) — `prompts.js`'s header
   has the rule; it covers any list, and host-side material trimmed before it reaches a model: one
   that silently saw a tenth of a diff answers confidently about the other nine.
-- Status vocabulary: `live | building | paused | archived`; old `active` migrates to `live`.
 - The web Dockerfile is multi-stage (Vite build → nginx): SPA fallback, `/api` proxied to
   `server:4000`, `/term*` with upgrade headers; in local dev Vite proxies `/api`. **Host-side agent
   ops run far longer than a web request** — nginx's `/api` read timeout and each op's own timeout

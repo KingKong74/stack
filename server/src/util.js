@@ -29,10 +29,16 @@ export const BUCKETS = ['highest', 'high', 'medium', 'low', 'lowest'];
 // mapping: schema.sql migrates the data with it and the prompts describe it.
 // `medium` is the level MoSCoW never had — nothing migrates INTO it.
 export const LEGACY_BUCKET = { must: 'highest', should: 'high', could: 'low', wont: 'lowest' };
-// The default a row is born with. 'high' rather than 'medium' because it is
-// what 'should' translated to, and a default that stopped counting toward
-// progress (see WEIGHT) would move every project's headline number.
-export const BUCKET_DEFAULT = 'high';
+// The default a row is born with (#509 — was 'high'). 'high' was the MoSCoW
+// translation of 'should', kept through #469 so no project's headline number
+// moved under a rename; the owner's call is that a thing nobody has ranked is
+// MEDIUM, which is what the level was widened from four to five to say.
+//
+// It moved together with WEIGHT below, and that pairing is the whole of why it
+// is safe: a default that did not count toward progress would have every new
+// board reading 0% for ever. Change one of the two and you have to change the
+// other. `web/src/lib/ui.ts`'s PRIORITY_DEFAULT is the client twin.
+export const BUCKET_DEFAULT = 'medium';
 export const PROJECT_STATUSES = ['live', 'building', 'paused', 'archived'];
 // (#363) How much of a project's merging the Merge room's agent may do on one
 // press: auto = its clean branches are queued by ▶ Run; plan = they are in the
@@ -166,24 +172,34 @@ export function relativeTime(input) {
 // ---------------------------------------------------------------------------
 // Progress model — the single, tweakable definition of "how done is a project".
 //
-//   • Only Highest and High roadmap items count toward progress.
-//   • A done Highest counts double a done High (weight 2 against weight 1).
+//   • EVERY priority counts toward progress (#509) — all five, not two.
+//   • They are graded 3 / 2 / 1 / 1 / 1: a done Highest counts three times a
+//     done Low, and Medium, Low and Lowest weigh the same as each other.
 //   • progress = doneWeight / totalWeight, as a 0–100 integer.
 //   • While any critical or high bug is still open, progress is capped at 90%.
-//   • With no Highest/High items at all, progress is 0.
+//   • With no items at all, progress is 0.
 //
-// THE WEIGHTS ARE UNCHANGED BY #469, DELIBERATELY. MoSCoW became five levels
-// and `must`/`should` became `highest`/`high`, so every project's headline
-// number is EXACTLY the number it read before the migration. The consequence is
-// worth stating rather than discovering: `medium` — the level MoSCoW never had
-// — does not move the bar, exactly as `could` did not. Weighting all five is a
-// defensible change and it is a DIFFERENT change: it moves every number on
-// every dashboard, and it should be made on its own, not smuggled in under a
-// rename.
+// ALL FIVE COUNT SINCE #509, AND THAT WAS MADE AS ITS OWN DECISION — which is
+// exactly what the note here used to demand. #469 widened MoSCoW's four levels
+// to five and deliberately left the weights alone, so every project's headline
+// number survived the rename untouched; the consequence it recorded was that
+// `medium` did not move the bar. #509 then made `medium` the level a row is
+// BORN at (BUCKET_DEFAULT above), and those two facts cannot both stand: a
+// default outside the sum means every new board reads 0% for ever, however much
+// of it is finished. So the weights widened with the default, in the same
+// commit, and the owner signed off the consequence the old note predicted —
+// EVERY PROJECT'S NUMBER MOVED ONCE, on deploy.
+//
+// The grading rather than a flat 1 is what keeps the number meaning something:
+// five Lowest items finished is not the same news as the one Highest, and a
+// flat weight would have said it was. Low and Lowest share Medium's weight
+// because the distance between them is a RANK, not a claim that one is a third
+// of the other — the ramp is deliberately short at the bottom and steep at the
+// top.
 //
 // Tune the weights or the cap here and everywhere reflects it.
 // ---------------------------------------------------------------------------
-const WEIGHT = { highest: 2, high: 1 };
+const WEIGHT = { highest: 3, high: 2, medium: 1, low: 1, lowest: 1 };
 const PROGRESS_CAP_WITH_OPEN_SERIOUS_BUG = 90;
 
 export function computeProgress(roadmapItems, bugs) {
@@ -191,7 +207,7 @@ export function computeProgress(roadmapItems, bugs) {
   let done = 0;
   for (const it of roadmapItems) {
     const w = WEIGHT[it.bucket];
-    if (!w) continue; // medium/low/lowest don't move the bar
+    if (!w) continue; // an unknown bucket is out of the sum, never counted as 1
     total += w;
     if (it.done) done += w;
   }

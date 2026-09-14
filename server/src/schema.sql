@@ -142,7 +142,7 @@ CREATE INDEX IF NOT EXISTS idx_bugs_project ON bugs (project_id, created_at DESC
 CREATE TABLE IF NOT EXISTS roadmap_items (
   id          SERIAL PRIMARY KEY,
   project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  bucket      TEXT NOT NULL DEFAULT 'high',            -- highest | high | medium | low | lowest (#469)
+  bucket      TEXT NOT NULL DEFAULT 'medium',          -- highest | high | medium | low | lowest (#469); default medium since #509
   title       TEXT NOT NULL,
   note        TEXT,
   done        BOOLEAN NOT NULL DEFAULT false,
@@ -276,7 +276,9 @@ UPDATE roadmap_items SET bucket = 'highest' WHERE bucket = 'must';
 UPDATE roadmap_items SET bucket = 'high'    WHERE bucket = 'should';
 UPDATE roadmap_items SET bucket = 'low'     WHERE bucket = 'could';
 UPDATE roadmap_items SET bucket = 'lowest'  WHERE bucket = 'wont';
-ALTER TABLE roadmap_items ALTER COLUMN bucket SET DEFAULT 'high';
+-- #509 — an unranked row is born MEDIUM, not High. The column default and
+-- util.js's BUCKET_DEFAULT are the same statement said twice; keep them in step.
+ALTER TABLE roadmap_items ALTER COLUMN bucket SET DEFAULT 'medium';
 
 -- Per-project checks: HTTP probes run against the project's live application
 -- from the Bugs tab ("is the site up, does the API answer"). Run on demand;
