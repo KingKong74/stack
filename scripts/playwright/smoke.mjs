@@ -154,10 +154,42 @@ const ROADMAP_PANELS = [
     dblclick: true,
     expect: '.km-card.editing .km-inline',
   },
+  // #473 — THE AREA REGISTRY, and both presses only OPEN things, which is this
+  // harness's rule: no area is created, renamed, recoloured or deleted by a
+  // smoke run. The New area composer is left open on purpose — its blur commits
+  // an empty name, which `AddArea` drops before it reaches the wire.
+  //
+  // BOTH MUST COME BEFORE `board-scope`, and that is not tidiness. The scope
+  // press lands on the LAST chip, which is "No area" — and the untagged section
+  // deliberately has no area menu, because untagged is a real scope and not a
+  // row in `project_areas`. Run after it and the ⋯ this presses is genuinely
+  // not on screen, which is a true finding about the wrong thing.
+  {
+    id: 'board-newarea',
+    label: 'Board — + New area opens its name field',
+    click: '.km-addarea',
+    expect: '.km-addarea.open input',
+  },
+  {
+    // `.km-dots` is what tells this menu from the COLUMN menu above: both are
+    // `body > .km-menu`, and only the area's carries a colour row. The popover
+    // opens BELOW its section head, so it covers no chip — which is what makes
+    // the scope press below safe to run straight after it, and what closes it
+    // (a chip click bubbles to `.km`, whose own onClick is `closeAll`).
+    id: 'board-areamenu',
+    label: 'Board — area actions menu',
+    click: '[aria-label^="Area actions"]',
+    expect: 'body > .km-menu .km-dots',
+  },
   {
     // #469 — the area filter was a dropdown and is now the Roadmap tab's scope
     // chips. The LAST chip is the one that is provably not already selected:
     // "All areas" is first and starts on.
+    //
+    // #473 PUT A ＋ New area CONTROL IN THIS ROW, and it wears `.im-chip` like
+    // everything else there. It is deliberately drawn at the FRONT rather than
+    // the end so that this selector still lands on an area — read Board.tsx's
+    // note beside it before moving either.
     id: 'board-scope',
     label: 'Board — area scope chip',
     click: '.km-scope .im-chip:last-of-type',

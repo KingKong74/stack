@@ -146,6 +146,11 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
   // highlight is simply ignored, which is the board's `hl` situation exactly
   // and the right nothing to do (ForYouMock's header).
   const [highlightId, setHighlightId] = useState<string | null>(routeHighlight ?? null);
+  // #473 — the project's REGISTERED areas (`project_areas`), reported up by the
+  // Board, which is the only screen that reads the board's own shape. Empty
+  // until the Board has mounted once, and empty is correct: the item modal
+  // falls back to the areas actually in use, which is what it offered before.
+  const [boardAreas, setBoardAreas] = useState<string[]>([]);
 
   // Keep tab + highlight in sync when the route changes while staying on the
   // same project (e.g. opening another of this project's items from the palette).
@@ -262,6 +267,16 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
   // anywhere on the screen. The ORDER matters too: `queueOrder` uses payload
   // order as its last sort key, and this is the payload's order.
   const allRoadmap = useMemo(() => flatRoadmap(roadmap), [roadmap]);
+  // THE AREAS THE ITEM MODAL MAY OFFER: the ones IN USE, read off the cards —
+  // right for an area that arrived from a push and was never registered — plus
+  // the ones merely REGISTERED (#473). Without the second half, an area the
+  // owner registered on the board a moment ago would not be offered on the very
+  // item they registered it for, because the whole point of a fresh one is that
+  // no card carries it yet.
+  const areaChoices = useMemo(
+    () => [...new Set([...allRoadmap.map((i) => i.area), ...boardAreas])].filter(Boolean).sort(),
+    [allRoadmap, boardAreas],
+  );
   // #472, #496 — THE THREE POPULATIONS, off ONE list and by one function, so
   // the three counts on this screen partition the project rather than
   // overlapping. `homeOf` in lib/plan.ts is that function; nothing here may
@@ -700,6 +715,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
         {tab === 'roadmap' && (
           <Board slug={slug} projectName={project.name} items={allRoadmap} sprints={data.sprints}
             onRefresh={reread} highlightId={highlightId}
+            onAreas={setBoardAreas}
             onEdit={(it) => setRoadModal({ open: true, title: it.title, note: it.note, editing: it })} />
         )}
         {/* ROADMAP IS THE IDEA SURFACE and is wired (#472) — the rows the
@@ -739,7 +755,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
           initialArea={roadModal.editing?.area ?? roadModal.area ?? ''}
           initialSubArea={roadModal.editing?.subArea ?? ''}
           initialPlan={roadModal.editing?.plan ?? []}
-          areas={[...new Set(allRoadmap.map((i) => i.area))].filter(Boolean).sort()}
+          areas={areaChoices}
           subAreas={[...new Set(allRoadmap
             .filter((i) => i.area === (roadModal.editing?.area ?? roadModal.area ?? ''))
             .map((i) => i.subArea))].filter(Boolean).sort()}

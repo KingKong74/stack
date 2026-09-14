@@ -2,7 +2,7 @@ import type {
   Project, Resume, Activity, Bug, Roadmap, RoadmapItem, Check, CheckRun, CheckHistory, Overview,
   ProjectStatus, Priority, Severity, BugStatus, SearchResponse, Settings, AutopilotRun, PlanStep,
   AuthDevice, Sprint, ResumeSince, ProjectDebrief,
-  SchedSpan, ProjectPulse, BoardShape, BoardList,
+  SchedSpan, ProjectPulse, BoardShape, BoardList, BoardArea,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -1082,14 +1082,52 @@ export async function patchRoadmapItem(
 // Ten wrappers stood here until #443 made the board a mockup, and the note that
 // replaced them said a new surface writes the wrapper it NEEDS. This is that
 // surface, and these five are what it needs: the read, and the four writes the
-// board's column head can make. The area and label writers are still absent —
-// the board filters BY an area and never renames one, so `POST /board/areas`,
-// `/labels` and their siblings stay what they were, routes with no client. THE
-// ROUTES ARE THE RECORD of what a board can be asked; this file is only the
-// record of what one screen asks.
+// board's column head can make, plus the three AREA writers #473 added when the
+// board grew a surface for them. The LABEL writers are still absent — nothing
+// renders a label picker — so `POST /board/labels` and its sibling stay what
+// they were, routes with no client. THE ROUTES ARE THE RECORD of what a board
+// can be asked; this file is only the record of what one screen asks.
 export async function getBoardShape(slug: string): Promise<BoardShape> {
   return request<BoardShape>(`/projects/${encodeURIComponent(slug)}/board`);
 }
+// ---- areas (#473) ----------------------------------------------------------
+//
+// The routes have been there since the board's furniture was (routes/board.js);
+// what was missing was any way to reach them, which is what #473 was. Three
+// things to hold in mind, all of them the ROUTE's rules rather than these
+// wrappers':
+//
+//  • `roadmap_items.area` IS A FREE STRING and `project_areas` does not own it.
+//    Registering an area gives it a colour and an order; an area that exists
+//    only because a pushed-in row mentions it is a real area and comes back
+//    from the read with `registered: false`.
+//  • A RENAME REWRITES EVERY ROW carrying the old string, in the route's own
+//    transaction. Half a rename is a board that has quietly split one area in
+//    two — which is also why the client never does this as a read-modify-write.
+//  • A DELETE CLEARS THE TAG, IT DOES NOT DELETE WORK. The cards land in the
+//    board's untagged scope, which is the "unallocated" the ask named. Untagged
+//    is never an overnight lane (#267), so a deleted area also releases
+//    whatever lane it was holding — say that out loud wherever this is offered.
+//
+// Each answers with the WHOLE area list rather than the one row, because a
+// rename can move a row's position and a delete can reveal a mentioned area
+// that the registered one was shadowing.
+const areasBase = (slug: string) => `/projects/${encodeURIComponent(slug)}/board/areas`;
+export async function createArea(slug: string, name: string, dot?: string): Promise<BoardArea[]> {
+  const r = await request<{ areas: BoardArea[] }>(areasBase(slug), { method: 'POST', body: { name, dot } });
+  return r.areas;
+}
+export async function patchArea(
+  slug: string, name: string, patch: Partial<{ name: string; dot: string }>,
+): Promise<BoardArea[]> {
+  const r = await request<{ areas: BoardArea[] }>(`${areasBase(slug)}/${encodeURIComponent(name)}`, { method: 'PATCH', body: patch });
+  return r.areas;
+}
+export async function deleteArea(slug: string, name: string): Promise<BoardArea[]> {
+  const r = await request<{ areas: BoardArea[] }>(`${areasBase(slug)}/${encodeURIComponent(name)}`, { method: 'DELETE' });
+  return r.areas;
+}
+
 const listsBase = (slug: string) => `/projects/${encodeURIComponent(slug)}/board/lists`;
 export async function createList(slug: string, name: string): Promise<BoardList> {
   const r = await request<{ list: BoardList }>(listsBase(slug), { method: 'POST', body: { name } });

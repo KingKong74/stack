@@ -134,6 +134,7 @@ import { isHeld } from '../lib/approval';
 import { PRIORITY_META, PRIORITY_DEFAULT, priorityMeta } from '../lib/ui';
 import {
   getBoardShape, createList, patchList, deleteList,
+  createArea, patchArea, deleteArea,
   getBoardFolds, setBoardFolds,
   createRoadmapItem, patchRoadmapItem, deleteRoadmapItem,
   createSprint, patchSprint, putSprintOrder, deleteSprint,
@@ -163,7 +164,7 @@ const UNTAGGED = ' untagged';
  */
 const derivedKeyOf = (it: RoadmapItem): string => listKeyOf({ ...it, listKey: '' });
 
-export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, highlightId }: {
+export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, onAreas, highlightId }: {
   slug: string;
   projectName: string;
   /** The project payload's own roadmap, flattened and IN PAYLOAD ORDER — see
@@ -177,6 +178,10 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, hi
   onRefresh: () => void;
   /** Open the item modal — still the only writer of a human `risk`. */
   onEdit: (it: RoadmapItem) => void;
+  /** #473 — the project's REGISTERED areas, reported up whenever the board
+   *  reads its shape. The item modal offers areas that are in use; this is how
+   *  one registered a moment ago and used by nothing yet gets offered too. */
+  onAreas?: (names: string[]) => void;
   highlightId: string | null;
 }) {
   const [view, setView] = useState('board');
@@ -230,10 +235,22 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, hi
     if (folds.columns.includes(key)) writeFolds({ ...folds, columns: folds.columns.filter((k) => k !== key) });
   };
 
+  // The palette an area may wear, served rather than duplicated here so the
+  // picker can only offer what will actually store (routes/board.js). Empty
+  // until the shape lands, and an empty palette simply draws no swatches.
+  const [palette, setPalette] = useState<string[]>([]);
+
   const loadShape = useCallback(async () => {
     const shape = await getBoardShape(slug);
     setLists([...shape.lists].sort((a, b) => a.position - b.position || a.id - b.id));
     setAreas(shape.areas);
+    setPalette(shape.palette || []);
+    // #473 — hand the names UP. An area registered here a moment ago is on no
+    // card yet, so the item modal's combobox (which offers the areas actually
+    // IN USE) would not know about it — and "usable immediately on the item
+    // being edited" was half the ask. The board is the only screen that reads
+    // the registry, so it is the only screen that can report it.
+    onAreas?.(shape.areas.map((a) => a.name));
   }, [slug]);
 
   useEffect(() => {
@@ -352,12 +369,24 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, hi
           key: k,
           name: k === UNTAGGED ? 'No area' : k,
           dot: areas.find((a) => a.name === k)?.dot || '',
+          // #473 — is this area in `project_areas`, or does it exist only
+          // because some row mentions it? Both are real areas and both can be
+          // renamed and deleted; only a registered one survives losing its last
+          // card, which is what keeps a just-created area on screen.
+          registered: !!areas.find((a) => a.name === k)?.registered,
           untagged: k === UNTAGGED,
           holder,
           count: mine.length,
           cols,
         };
       })
+      // AN EMPTY AREA IS NOT A SECTION, REGISTERED OR NOT. Drawing every
+      // registered area whatever its count was the first cut of #473, and it
+      // put three four-column sections with nothing in them at the top of this
+      // board — `project_areas` outlives the features it was registered for.
+      // What a just-created area needs is not a permanent empty section but a
+      // way IN, and `addArea` scopes to it, which this same predicate then
+      // draws. Reachable, and not in the way.
       .filter((sec) => sec.count > 0 || !!scope);
   }, [visible, lists, areas, rows, scope, activeId]);
 
@@ -367,8 +396,11 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, hi
     for (const it of visible) counts.set(areaKey(it), (counts.get(areaKey(it)) || 0) + 1);
     const order = [...areas.map((a) => a.name)];
     for (const k of counts.keys()) if (k !== UNTAGGED && !order.includes(k)) order.push(k);
+    const registered = new Set(areas.filter((a) => a.registered).map((a) => a.name));
     const out = order
-      .filter((k) => counts.has(k))
+      // A registered area earns a chip at zero, for the same reason it earns a
+      // section — you cannot scope to an area the bar refuses to draw.
+      .filter((k) => counts.has(k) || registered.has(k))
       .map((k) => ({ key: k, name: k, dot: areas.find((a) => a.name === k)?.dot || '', n: counts.get(k) || 0 }));
     if (counts.has(UNTAGGED)) out.push({ key: UNTAGGED, name: 'No area', dot: '', n: counts.get(UNTAGGED) || 0 });
     return out;
@@ -503,9 +535,53 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, hi
   const addCol = (name: string) =>
     guard(async () => { await createList(slug, name); await loadShape(); });
 
+  // ---- area writes (#473) ---------------------------------------------------
+  //
+  // All three answer with the WHOLE list, so each sets `areas` from the reply
+  // rather than re-reading — but a RENAME and a DELETE both rewrite
+  // `roadmap_items.area`, so those two also call `onRefresh()`: the cards on
+  // screen carry the old string until the payload comes back, and a section
+  // drawn from a stale tag is a section the drop handler will file work into
+  // under a name that no longer exists.
+  // AND SCOPE TO IT. An area is registered with nothing in it by definition, and
+  // an empty area draws no section — so without this the create would land, the
+  // chip would appear, and the board would look exactly as it did. Scoping is
+  // what makes it "usable immediately": the section opens with its four columns
+  // and its composers, and the first card goes straight in. The key comes off
+  // the RESPONSE rather than off the typed string, because the server
+  // normalises a name (lowercase, trimmed to 40) and scoping to what was typed
+  // would miss.
+  const addArea = (name: string) =>
+    guard(async () => {
+      const before = new Set(areas.map((a) => a.name));
+      const next = await createArea(slug, name);
+      setAreas(next);
+      setScope(next.find((a) => !before.has(a.name))?.name ?? '');
+    });
+  // The board keeps its scope pinned to the area through a rename, so the
+  // owner is not silently thrown back to "All areas" by fixing a typo.
+  const renameArea = (from: string, to: string) =>
+    guard(async () => {
+      setAreas(await patchArea(slug, from, { name: to }));
+      setScope((sc) => (sc === from ? to.trim().toLowerCase() : sc));
+      onRefresh();
+    });
+  const recolourArea = (name: string, dot: string) =>
+    guard(async () => { setAreas(await patchArea(slug, name, { dot })); });
+  // THE CARDS DO NOT GO WITH IT — the route clears the tag and leaves the work,
+  // which lands it in the untagged scope. The scope follows it there rather
+  // than pointing at an area that no longer exists.
+  const dropArea = (name: string) =>
+    guard(async () => {
+      setAreas(await deleteArea(slug, name));
+      setScope((sc) => (sc === name ? UNTAGGED : sc));
+      onRefresh();
+    });
+
   // ---- transient UI ---------------------------------------------------------
   const [selected, setSelected] = useState<number | null>(null);
   const [menu, setMenu] = useState<string | null>(null);          // open column menu
+  const [areaMenu, setAreaMenu] = useState<string | null>(null);  // open area menu (#473)
   const [cardMenu, setCardMenu] = useState<number | null>(null);  // open card menu
   const [priMenu, setPriMenu] = useState<number | null>(null);
   const [composer, setComposer] = useState<string | null>(null);
@@ -529,7 +605,7 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, hi
     landTimer.current = window.setTimeout(() => { setLandedId(null); landTimer.current = null; }, 900);
   };
   useEffect(() => () => { if (landTimer.current !== null) window.clearTimeout(landTimer.current); }, []);
-  const closeAll = () => { setMenu(null); setPriMenu(null); setCardMenu(null); };
+  const closeAll = () => { setMenu(null); setPriMenu(null); setCardMenu(null); setAreaMenu(null); };
 
   // A deep link SELECTS its row; the scroll to it is ProjectDetail's, off the
   // `data-hl` each card now carries.
@@ -614,7 +690,16 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, hi
         <div className="im-bar km-scope">
           <AreaChip label="All areas" count={onBoard.length}
             active={scope === ''} onClick={() => setScope('')} />
-          {chips.length > 0 && <span className="im-chipsep" />}
+          <span className="im-chipsep" />
+          {/* #473 — the board could only ever FILTER by an area that already
+              existed; this registers one. It sits at the FRONT of the chips and
+              not the end, and that is load-bearing: it wears `.im-chip` so the
+              row stays one look with one stylesheet, which makes it the LAST
+              chip if it goes last — and `scripts/playwright/smoke.mjs` presses
+              "the last chip" precisely because that is provably an area nobody
+              has already selected. A create control answering to that is a
+              harness pressing New area and calling the scope filter broken. */}
+          <AddArea onAdd={addArea} />
           {chips.map((c) => (
             <AreaChip key={c.key} label={c.name} dot={c.dot} count={c.n}
               active={scope === c.key} onClick={() => setScope(c.key)} />
@@ -639,7 +724,7 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, hi
                     aria-expanded={!secFolded}
                     aria-label={`${secFolded ? 'Expand' : 'Collapse'} ${sec.name}`}
                     title={secFolded ? 'Expand this area' : 'Collapse this area'}
-                    onClick={(e) => { e.stopPropagation(); foldSection(sec.key); }}>
+                    onClick={(e) => { e.stopPropagation(); closeAll(); foldSection(sec.key); }}>
                     <KitIcon name={secFolded ? 'chevron-right' : 'chevron-down'} size={15} />
                   </button>
                 )}
@@ -668,6 +753,20 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, hi
                       : 'Lane free'}
                 </span>
                 <span className="n">{sec.count} {sec.count === 1 ? 'card' : 'cards'}</span>
+                {/* NOT ON THE UNTAGGED SECTION. Untagged is a REAL scope and
+                    not a missing one, but it is not a row in `project_areas`
+                    and never can be — there is nothing there to rename, colour
+                    or delete, and offering it would promise a write that has
+                    no target. */}
+                {!sec.untagged && (
+                  <AreaMenu name={sec.key} count={sec.count} holder={sec.holder}
+                    dot={sec.dot} palette={palette}
+                    open={areaMenu === sec.key}
+                    onOpen={(e) => { e.stopPropagation(); closeAll(); setAreaMenu(areaMenu === sec.key ? null : sec.key); }}
+                    onRename={(to) => { setAreaMenu(null); renameArea(sec.key, to); }}
+                    onColour={(dot) => { setAreaMenu(null); recolourArea(sec.key, dot); }}
+                    onDelete={() => { setAreaMenu(null); dropArea(sec.key); }} />
+                )}
               </div>
 
               {/* A FOLDED SECTION DRAWS NO COLUMNS AT ALL, rather than drawing
@@ -1364,6 +1463,132 @@ function Composer({ onClose, onAdd }: { onClose: () => void; onAdd: (text: strin
         </button>
       </div>
     </div>
+  );
+}
+
+/**
+ * ＋ NEW AREA — #473's first half, on the scope bar beside the chips.
+ *
+ * Shaped exactly like `AddColumn` below it, and deliberately so: they are the
+ * same gesture on the same screen (name a thing, press Enter), and two
+ * different affordances for one gesture is how a board stops being learnable.
+ *
+ * THE NAME IS NORMALISED BY THE SERVER, not here — lowercased and trimmed to 40
+ * (routes/board.js's `clean`) — so an area typed in Title Case comes back
+ * lowercase and the chip shows what actually stored rather than what was typed.
+ */
+function AddArea({ onAdd }: { onAdd: (name: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState('');
+  const commit = () => { const n = name.trim(); setOpen(false); setName(''); if (n) onAdd(n); };
+  if (!open) {
+    return (
+      <button className="im-chip km-addarea" onClick={(e) => { e.stopPropagation(); setOpen(true); }}
+        title="Register an area — it gets a colour, an order and a section of its own">
+        <KitIcon name="plus" size={13} />New area
+      </button>
+    );
+  }
+  return (
+    <span className="km-addarea open" onClick={(e) => e.stopPropagation()}>
+      <input className="km-colname" autoFocus value={name} placeholder="Area name" aria-label="New area name"
+        onChange={(e) => setName(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') commit();
+          else if (e.key === 'Escape') { setOpen(false); setName(''); }
+        }} />
+    </span>
+  );
+}
+
+/**
+ * THE AREA MENU — #473's other half, on each section head.
+ *
+ * Rename, recolour, delete. The ask was create and delete; RENAME is here
+ * because delete without it is a trap — an area typed wrongly could otherwise
+ * only be fixed by deleting it, which strips the tag off every card that
+ * carries it. A COLOUR because registering an area is what a colour is FOR: the
+ * dot is drawn on every chip and every section head, and an area with no stored
+ * one wears whatever its index happens to land on.
+ *
+ * WHAT THE DELETE SAYS IS THE POINT OF IT. Two presses, and the second one
+ * spells out both consequences, because neither is guessable from the word:
+ *
+ *   • THE CARDS STAY. `roadmap_items.area` is cleared, not the rows — the route
+ *     is explicit that deleting an area must never delete work — and they land
+ *     in the untagged scope, which is the "unallocated" the ask asked for.
+ *   • THE LANE GOES. `(project, area)` IS the overnight lane (#267) and untagged
+ *     is never a lane at all, so deleting an area with a claim on it releases
+ *     that hold. That is a change to what tonight may run, made from a menu
+ *     about a colour and a name, and it has to be said before it happens.
+ */
+function AreaMenu({ name, count, holder, dot, palette, open, onOpen, onRename, onColour, onDelete }: {
+  name: string; count: number; holder: string | null; dot: string; palette: string[];
+  open: boolean;
+  onOpen: (e: React.MouseEvent) => void;
+  onRename: (to: string) => void;
+  onColour: (dot: string) => void;
+  onDelete: () => void;
+}) {
+  const anchor = useRef<HTMLSpanElement | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(name);
+  const [confirming, setConfirming] = useState(false);
+  // Both sub-states die with the menu, or reopening it lands you mid-rename or
+  // one press from a delete you had walked away from.
+  useEffect(() => { if (!open) { setConfirming(false); setEditing(false); } }, [open]);
+
+  if (editing) {
+    const commit = () => {
+      const to = draft.trim();
+      setEditing(false);
+      if (to && to.toLowerCase() !== name) onRename(to);
+    };
+    return (
+      <span className="km-arearename" onClick={(e) => e.stopPropagation()}>
+        <input className="km-colname" autoFocus value={draft} aria-label={`Rename area — ${name}`}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') commit();
+            else if (e.key === 'Escape') { setDraft(name); setEditing(false); }
+          }} />
+      </span>
+    );
+  }
+
+  return (
+    <span className="km-areatools" ref={anchor}>
+      {/* Named apart from a card's ⋯ and a column's, for the reason the column
+          head already carries: the smoke presses all three, and three controls
+          answering to one `[aria-label^="…"]` has it press one of them thrice. */}
+      <button className={`km-colbtn${open ? ' on' : ''}`} aria-label={`Area actions — ${name}`} onClick={onOpen}>
+        <KitIcon name="ellipsis" size={15} />
+      </button>
+
+      {open && (
+        <Popover anchor={anchor.current} className="km-menu">
+          <button className="km-menuitem" onClick={() => { setDraft(name); setEditing(true); }}>
+            Rename area…
+          </button>
+          <span className="km-menusep" />
+          <span className="km-menulbl">Colour</span>
+          <span className="km-dots">
+            {palette.map((c) => (
+              <button key={c} className={`km-dotopt${c === dot ? ' on' : ''}`} style={{ background: c }}
+                aria-label={`Colour ${name} ${c}`} onClick={() => onColour(c)} />
+            ))}
+          </span>
+          <span className="km-menusep" />
+          <button className="km-menuitem danger" onClick={() => (confirming ? onDelete() : setConfirming(true))}>
+            {confirming
+              ? `Really delete? ${count} ${count === 1 ? 'card becomes' : 'cards become'} untagged${holder ? `, and the lane ${holder} holds is released` : ''}`
+              : 'Delete area'}
+          </button>
+        </Popover>
+      )}
+    </span>
   );
 }
 

@@ -4525,6 +4525,42 @@ body[data-mc-full] .totop { display: none; }
 
 /* Said on the count line while a search has every fold suspended. */
 .km-unfolded { color: var(--text-tertiary); }
+
+/* ---- AREAS AS A REGISTRY, NOT JUST A FILTER (#473) ---------------------
+   ＋ New area on the scope bar, and a ⋯ on each section head. The create
+   control is an `.im-chip` wearing a dashed ring, so it sits in the chip row as
+   one of them rather than as a button bolted on the end. */
+.km-addarea { box-shadow: inset 0 0 0 1px var(--border-default); border-style: dashed; }
+.km-addarea:not(.open) { color: var(--text-tertiary); }
+.km-addarea.open { display: inline-flex; align-items: center; width: 160px; flex: none; }
+.km-addarea.open .km-colname { height: 28px; }
+
+/* The section head's own tools. `.im-sechead .n` takes the `margin-left: auto`
+   that pushes the count right, so this sits after it and only needs its own
+   gap. */
+.km-areatools { position: relative; display: inline-flex; align-items: center; margin-left: var(--space-3); }
+.km-arearename { display: inline-flex; width: 180px; margin-left: var(--space-3); }
+
+/* The colour row inside the area menu. Every swatch is a `background` on a
+   CHILDLESS span-shaped button, which is the rule `.im-sechead .ico` learned
+   the hard way: an area's dot is DATA (`project_areas.dot`) and the palette
+   audit exempts a data tone only on the element whose own `style` names that
+   property — painting it as `color` leaks it onto children and onto
+   `borderTopColor`, whose initial value is `currentColor`. */
+.km-menulbl {
+  padding: 4px 9px 2px; font: var(--type-caption); color: var(--text-tertiary);
+}
+.km-dots {
+  display: grid; grid-template-columns: repeat(8, 1fr); gap: 5px; padding: 4px 9px 7px;
+}
+.km-dotopt {
+  width: 15px; height: 15px; border: 0; padding: 0; cursor: pointer;
+  border-radius: var(--radius-pill); outline-offset: 2px;
+  transition: var(--transition-control);
+}
+.km-dotopt:hover { transform: scale(1.18); }
+.km-dotopt.on { outline: 2px solid var(--text-primary); }
+.km-dotopt:focus-visible { outline: 2px solid var(--border-focus); }
 .km-colbtn {
   width: 24px; height: 24px; border: 0; background: transparent; cursor: pointer;
   border-radius: var(--radius-sm); display: inline-flex; align-items: center; justify-content: center;
