@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { Terminal as XTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
@@ -233,6 +233,44 @@ type Handle = { sendText: (s: string) => void; reconnect: () => void; focus: () 
 // away from it the component renders NOTHING (#492 dropped the floating dock
 // and its corner chip — a terminal pane docked over whatever screen you had
 // navigated to, and the running-sessions pill already says a session is live).
+// AN OPEN BLOCK IN THE RAIL COLLAPSES WHEN YOU CLICK OFF IT — the Settings
+// popover and the limits list both, because a thing you opened to read should
+// not still be open when you have gone back to the panes.
+//
+// `box` goes on the WHOLE block, its toggle button included, so the toggle
+// reads as "inside" and its own onClick does the closing: the other way round,
+// this fires first and the same click re-opens what it just shut. Escape
+// closes too, putting focus back on the button.
+//
+// NO scroll or resize dismissal, unlike MoreMenu: neither of these floats over
+// an anchor that can move out from under it — Settings is absolute inside a
+// footer pinned OUTSIDE the rail's scroller, and the limits list is inline —
+// and a capturing scroll listener would have xterm's own output collapsing
+// them mid-read.
+function useCollapseOnClickAway(
+  open: boolean,
+  close: () => void,
+  box: RefObject<HTMLElement | null>,
+  btn: RefObject<HTMLElement | null>,
+) {
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: MouseEvent) => {
+      if (!box.current?.contains(e.target as Node)) close();
+    };
+    const key = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { close(); btn.current?.focus(); }
+    };
+    document.addEventListener('mousedown', away);
+    document.addEventListener('keydown', key);
+    return () => {
+      document.removeEventListener('mousedown', away);
+      document.removeEventListener('keydown', key);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+}
+
 export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible = true }: {
   initialCwd?: string; initialAttach?: string; initialBrief?: boolean; visible?: boolean;
 }) {
@@ -898,31 +936,13 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
     setTyped((cur) => (cur[id] ? cur : { ...cur, [id]: text }));
   };
   const [setsOpen, setSetsOpen] = useState(false);
-  // A POPOVER CLOSES WHEN YOU CLICK OFF IT. The ref is on the whole footer, so
-  // the toggle button counts as "inside" and its own onClick does the closing
-  // rather than this firing first and the click re-opening it. Escape closes
-  // too and puts focus back on the button. NO scroll dismissal, unlike
-  // MoreMenu: this popover is absolute inside a footer pinned outside the
-  // rail's scroller, so nothing detaches it from its anchor — and a capturing
-  // scroll listener would have xterm's own output shutting it mid-read.
   const setsRef = useRef<HTMLDivElement | null>(null);
   const setsBtn = useRef<HTMLButtonElement | null>(null);
-  useEffect(() => {
-    if (!setsOpen) return;
-    const away = (e: MouseEvent) => {
-      if (!setsRef.current?.contains(e.target as Node)) setSetsOpen(false);
-    };
-    const key = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { setSetsOpen(false); setsBtn.current?.focus(); }
-    };
-    document.addEventListener('mousedown', away);
-    document.addEventListener('keydown', key);
-    return () => {
-      document.removeEventListener('mousedown', away);
-      document.removeEventListener('keydown', key);
-    };
-  }, [setsOpen]);
+  useCollapseOnClickAway(setsOpen, () => setSetsOpen(false), setsRef, setsBtn);
   const [limitsOpen, setLimitsOpen] = useState(false);
+  const limitsRef = useRef<HTMLDivElement | null>(null);
+  const limitsBtn = useRef<HTMLButtonElement | null>(null);
+  useCollapseOnClickAway(limitsOpen, () => setLimitsOpen(false), limitsRef, limitsBtn);
   const [limitIdx, setLimitIdx] = useState(0);
   // THE ORDER IS THE ORDER OF AUTHORITY, and the two human sources sit above
   // the machine one: the name stored against this tmux session, then this
@@ -2366,8 +2386,8 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                         estimate; when the daemon has no plan data the block is
                         absent rather than guessing. */}
                     {planLimits.length > 0 && (
-                      <div className="tc-limits">
-                        <button className="tl-head" aria-expanded={limitsOpen}
+                      <div className="tc-limits" ref={limitsRef}>
+                        <button ref={limitsBtn} className="tl-head" aria-expanded={limitsOpen}
                           onClick={() => setLimitsOpen((v) => !v)}>
                           <span className="c">{limitsOpen ? '▾' : '▸'}</span>
                           <span className="nm">{planLimits[limitIdx % planLimits.length].name}</span>
