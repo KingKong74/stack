@@ -327,7 +327,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   // THE PANE'S RECEIPT LINE. xterm draws to a canvas, so a gesture leaves
   // nothing on the page to look at — without a mark, a copy that worked and one
   // that silently failed look exactly alike, which is how "I can't copy from
-  // the terminal" survives a fix. #511 widened it from copies to any gesture
+  // the terminal" survives a fix. #513 widened it from copies to any gesture
   // the pane answers for, drops included, since they have the same problem.
   const [notice, setNotice] = useState<{ id: number; label: string } | null>(null);
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -2639,7 +2639,7 @@ function TermSession({ sess, visible, focused, fontSize, onStatus, onUsage, onTm
     // a claude session — out to the clipboard.
     const unwireClipboard = wireTermClipboard(term, (label) => onNotice(`⧉ ${label}`));
 
-    // #511 — DRAG A FILE ONTO THIS PANE AND ITS PATH IS TYPED INTO THE SESSION,
+    // #513 — DRAG A FILE ONTO THIS PANE AND ITS PATH IS TYPED INTO THE SESSION,
     // which is what dropping a screenshot on a native terminal does and the
     // only way to hand a claude tab an image. The bytes go to the host on this
     // session's own socket, the host writes them and answers with a path
@@ -2777,7 +2777,7 @@ function TermSession({ sess, visible, focused, fontSize, onStatus, onUsage, onTm
           model?: SessionModel | null;
           tokens?: number; resetAt?: number; resetLabel?: string; sched?: { runDate: string; atTime: string };
           totalTokens?: number; plan?: TermUsage['plan'];
-          // #511 — the answer to one 'drop': the host's path for the file, or
+          // #513 — the answer to one 'drop': the host's path for the file, or
           // why it has none. `id` is this pane's own counter, echoed back.
           id?: number; ok?: boolean; path?: string; name?: string; error?: string;
         };
@@ -2815,7 +2815,7 @@ function TermSession({ sess, visible, focused, fontSize, onStatus, onUsage, onTm
           onStatus('closed', `exited (${m.code})`);
           term.write('\r\n\x1b[90m[session ended — reconnect from the tab bar]\x1b[0m\r\n');
         }
-        // #511 — the host has written (or refused) a dropped file. On a good
+        // #513 — the host has written (or refused) a dropped file. On a good
         // answer the PATH is typed here, down the same 'in' frame a keystroke
         // takes: that is the whole gesture, and doing it on the reply rather
         // than optimistically means the pane never shows a path that does not

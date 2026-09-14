@@ -1,4 +1,4 @@
-// Where a file dragged onto a terminal pane lands on the host (#511).
+// Where a file dragged onto a terminal pane lands on the host (#513).
 //
 // Dropping an image on a native terminal types its PATH into the session —
 // that is the whole gesture, and it is how you hand Claude Code a screenshot.

@@ -1,4 +1,4 @@
-// Dragging a file onto a terminal pane (#511).
+// Dragging a file onto a terminal pane (#513).
 //
 // On a native terminal the gesture is: drop a screenshot, get its PATH typed
 // at the cursor. That is how anyone hands Claude Code an image, and a web

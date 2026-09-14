@@ -631,7 +631,7 @@ export function attachTerm(httpServer) {
         let m;
         try { m = JSON.parse(raw2.toString()); } catch { return; }
         if (m.t === 'in' || m.t === 'resize') send(agent, { ...m, sid });
-        // #511 — a file dragged onto this pane, on its way to becoming a real
+        // #513 — a file dragged onto this pane, on its way to becoming a real
         // file on the host. The relay does what it does with every other
         // frame: forwards it without looking inside. The ONE thing it checks
         // is the size, because this is the first frame a browser can make

@@ -2066,11 +2066,11 @@ a.tab { display: inline-block; }
 .term-holder {
   background: #211d19; border-radius: 14px; padding: 0;
   height: calc(100vh - 210px); min-height: 320px;
-  /* #511 — the ground the drop overlay is positioned against. */
+  /* #513 — the ground the drop overlay is positioned against. */
   position: relative;
 }
 .term-holder .xterm { height: 100%; padding: 12px; }
-/* #511 — DRAGGING A FILE OVER A PANE. The invitation is a pseudo-element
+/* #513 — DRAGGING A FILE OVER A PANE. The invitation is a pseudo-element
    rather than a node because xterm owns this element's children: React
    inserting a sibling into DOM the addon also mutates is a class of bug not
    worth inviting for an overlay that exists for two seconds. It also means
@@ -2673,7 +2673,7 @@ a.tab { display: inline-block; }
 /* The pane's receipt line. xterm draws to a canvas, so a gesture leaves no
    visible trace behind — without this, a copy that worked and one that
    silently failed look exactly alike, and a drop the host refused looks like
-   nothing happened at all. #511 widened it from copies to drops; it stays
+   nothing happened at all. #513 widened it from copies to drops; it stays
    `flex: none` and a single line, so a long message ELLIPSES rather than
    pushing the pane's own controls off the end of the title bar. */
 .pane-notice {

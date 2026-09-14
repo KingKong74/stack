@@ -1,4 +1,4 @@
-// Where a file dragged onto a terminal pane lands (#511), tested against the
+// Where a file dragged onto a terminal pane lands (#513), tested against the
 // REAL export and a real temp directory.
 //
 //   node server/test/drop-file.test.mjs      # exits non-zero on any failure

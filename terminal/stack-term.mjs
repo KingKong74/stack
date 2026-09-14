@@ -826,7 +826,7 @@ async function modelsRead(m) {
   });
 }
 
-// ---- drop — a file dragged onto a pane becomes a file on this host (#511) ---
+// ---- drop — a file dragged onto a pane becomes a file on this host (#513) ---
 //
 // The browser cannot hand a session a path, because the file it holds has never
 // been on this machine. It sends the bytes instead; this writes them (see
