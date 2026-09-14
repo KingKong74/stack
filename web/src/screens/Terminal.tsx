@@ -860,6 +860,30 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   const [renaming, setRenaming] = useState<{ id: number; where: 'rail' | 'pane' } | null>(null);
   const [draft, setDraft] = useState('');
   const [setsOpen, setSetsOpen] = useState(false);
+  // A POPOVER CLOSES WHEN YOU CLICK OFF IT. The ref is on the whole footer, so
+  // the toggle button counts as "inside" and its own onClick does the closing
+  // rather than this firing first and the click re-opening it. Escape closes
+  // too and puts focus back on the button. NO scroll dismissal, unlike
+  // MoreMenu: this popover is absolute inside a footer pinned outside the
+  // rail's scroller, so nothing detaches it from its anchor — and a capturing
+  // scroll listener would have xterm's own output shutting it mid-read.
+  const setsRef = useRef<HTMLDivElement | null>(null);
+  const setsBtn = useRef<HTMLButtonElement | null>(null);
+  useEffect(() => {
+    if (!setsOpen) return;
+    const away = (e: MouseEvent) => {
+      if (!setsRef.current?.contains(e.target as Node)) setSetsOpen(false);
+    };
+    const key = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { setSetsOpen(false); setsBtn.current?.focus(); }
+    };
+    document.addEventListener('mousedown', away);
+    document.addEventListener('keydown', key);
+    return () => {
+      document.removeEventListener('mousedown', away);
+      document.removeEventListener('keydown', key);
+    };
+  }, [setsOpen]);
   const [limitsOpen, setLimitsOpen] = useState(false);
   const [limitIdx, setLimitIdx] = useState(0);
   const labelOf = (s: Sess) =>
@@ -2196,8 +2220,8 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                         The design lists four fixtures; these are the real ones
                         this screen can answer for, and each says its own state
                         rather than a decorative "Enabled". */}
-                    <div className="tc-foot">
-                      <button className="tc-footbtn" aria-expanded={setsOpen}
+                    <div className="tc-foot" ref={setsRef}>
+                      <button ref={setsBtn} className="tc-footbtn" aria-expanded={setsOpen}
                         onClick={() => setSetsOpen((v) => !v)}>
                         <span className="ico">⚙</span>
                         <span className="lbl">Settings</span>
