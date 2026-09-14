@@ -574,7 +574,8 @@ export function attachTerm(httpServer) {
       // #503 — 'model' joins the allow-list: the daemon sends one when a
       // session's provider MOVES under it (a usage-limit switch-over), which is
       // the only time a live tab's answer changes without a new ready frame.
-      if (m.t === 'out' || m.t === 'ready' || m.t === 'err' || m.t === 'usage' || m.t === 'model') send(browser, m);
+      if (m.t === 'out' || m.t === 'ready' || m.t === 'err' || m.t === 'usage' || m.t === 'model'
+        || m.t === 'dropped') send(browser, m);
       if (m.t === 'exit') { send(browser, m); browser.close(); sessions.delete(m.sid); termMeta.delete(m.sid); broadcastStatus(); }
     });
     ws.on('close', () => {
@@ -630,6 +631,24 @@ export function attachTerm(httpServer) {
         let m;
         try { m = JSON.parse(raw2.toString()); } catch { return; }
         if (m.t === 'in' || m.t === 'resize') send(agent, { ...m, sid });
+        // #511 — a file dragged onto this pane, on its way to becoming a real
+        // file on the host. The relay does what it does with every other
+        // frame: forwards it without looking inside. The ONE thing it checks
+        // is the size, because this is the first frame a browser can make
+        // arbitrarily large, and a frame refused here is a receipt the pane
+        // can draw rather than a socket that dies mid-upload.
+        //
+        // The number MIRRORS DROP_MAX_BYTES in terminal/drop-file.mjs (10 MB,
+        // ~4/3 of that once base64'd) and cannot import it: the server runs in
+        // a container that has no terminal/ in it. The host re-checks the
+        // decoded length anyway — this is the cheap guard, not the rule.
+        if (m.t === 'drop') {
+          if (typeof m.data !== 'string' || m.data.length > 14_000_000) {
+            send(ws, { t: 'dropped', id: m.id, ok: false, error: 'that file is larger than the 10 MB drop limit' });
+          } else {
+            send(agent, { ...m, sid });
+          }
+        }
       });
       ws.on('close', () => {
         if (sessions.delete(sid)) send(agent, { t: 'kill', sid });

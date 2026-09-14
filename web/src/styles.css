@@ -2066,8 +2066,27 @@ a.tab { display: inline-block; }
 .term-holder {
   background: #211d19; border-radius: 14px; padding: 0;
   height: calc(100vh - 210px); min-height: 320px;
+  /* #511 — the ground the drop overlay is positioned against. */
+  position: relative;
 }
 .term-holder .xterm { height: 100%; padding: 12px; }
+/* #511 — DRAGGING A FILE OVER A PANE. The invitation is a pseudo-element
+   rather than a node because xterm owns this element's children: React
+   inserting a sibling into DOM the addon also mutates is a class of bug not
+   worth inviting for an overlay that exists for two seconds. It also means
+   the overlay cannot intercept the drop — there is nothing to hit-test — so
+   `pointer-events: none` is belt and braces rather than the mechanism.
+   The text is the whole point: "it takes the file" is obvious, "and types
+   its path into this session" is not, and that is what actually happens. */
+.term-holder.dropping::after {
+  content: 'Drop to attach — the path is typed into this session';
+  position: absolute; inset: 0; z-index: 5; pointer-events: none;
+  display: flex; align-items: center; justify-content: center;
+  text-align: center; padding: 16px;
+  font-family: var(--disp); font-size: 13px; font-weight: 600; color: var(--ink);
+  background: var(--scrim);
+  border: 2px dashed var(--accent); border-radius: 14px;
+}
 .btn-repo.sm { height: 30px; padding: 0 11px; font-size: 12px; }
 .lbl-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 /* drag-reorder on the board */
@@ -2651,12 +2670,16 @@ a.tab { display: inline-block; }
 .pane-btn.pin:hover { color: var(--live); background: var(--card); }
 .pane-btn.pin.on { opacity: 1; filter: none; }
 .pane-btn:disabled { opacity: 0.5; }
-/* The copy receipt. xterm draws to a canvas, so a copy leaves no visible
-   selection behind — without this, a copy that worked and one that silently
-   failed look exactly alike. */
-.pane-copied {
+/* The pane's receipt line. xterm draws to a canvas, so a gesture leaves no
+   visible trace behind — without this, a copy that worked and one that
+   silently failed look exactly alike, and a drop the host refused looks like
+   nothing happened at all. #511 widened it from copies to drops; it stays
+   `flex: none` and a single line, so a long message ELLIPSES rather than
+   pushing the pane's own controls off the end of the title bar. */
+.pane-notice {
   flex: none; font-family: var(--mono); font-size: 10px; color: var(--sage);
   background: var(--card); border-radius: 6px; padding: 2px 6px;
+  max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .term-pane-title .where {
   font-family: var(--mono); font-size: 10px; color: var(--fainter); flex: none;

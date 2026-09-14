@@ -57,6 +57,7 @@ import { tmuxAvailable, validName, generateName, sessionArgv, sessionExists, kil
 import { detectPrompt } from './prompt-scan.mjs';
 import { parseAutoName, readActivity } from './auto-scan.mjs';
 import { agentScratchDir, agentClaudeArgs } from './agent-run.mjs';
+import { writeDrop, DROP_MAX_BYTES } from './drop-file.mjs';
 import { createEditWatch } from './edit-watch.mjs';
 import { resolvedModelFor } from './session-model.mjs';
 import {
@@ -825,6 +826,26 @@ async function modelsRead(m) {
   });
 }
 
+// ---- drop — a file dragged onto a pane becomes a file on this host (#511) ---
+//
+// The browser cannot hand a session a path, because the file it holds has never
+// been on this machine. It sends the bytes instead; this writes them (see
+// drop-file.mjs for where and under what name) and answers with the path.
+//
+// THE DAEMON DOES NOT TYPE IT. The browser does, on the reply, down the same
+// 'in' frame every keystroke takes — so the path is typed by the human whose
+// pane it is, at the moment they can see it happen, and not by a host process
+// writing into a session on its own initiative. The receipt rides the session's
+// own sid so it reaches that pane and no other.
+function dropFile(m) {
+  const sid = m.sid;
+  const r = writeDrop({ name: m.name, mime: m.mime, data: m.data, maxBytes: DROP_MAX_BYTES });
+  log(r.ok
+    ? `drop: wrote ${r.name} (${r.bytes} bytes) for session ${sid}`
+    : `drop: refused ${String(m.name || '').slice(0, 60)} for session ${sid} — ${r.error}`);
+  sendUplink({ t: 'dropped', sid, id: m.id, ok: r.ok, path: r.path, name: r.name, bytes: r.bytes, error: r.error });
+}
+
 function startSession(msg) {
   const { sid } = msg;
   const failUplink = (m) => {
@@ -1364,6 +1385,7 @@ function connect() {
       }
       pushDetached();
     }
+    else if (m.t === 'drop' && sess) dropFile(m);
     else if (m.t === 'answerPrompt') answerPrompt(m);
     else if (m.t === 'claudeAsk') claudeAsk(m);
     else if (m.t === 'autoView') autoView(m);

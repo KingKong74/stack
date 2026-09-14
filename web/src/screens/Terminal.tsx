@@ -28,6 +28,7 @@ import { hrefTo } from '../lib/route';
 import { useAutoRefresh } from '../lib/autoRefresh';
 import { wireTermClipboard } from '../lib/termClipboard';
 import { newCapture, feedTyped } from '../lib/termName';
+import { DROP_MAX_BYTES, dropSizeLabel, fileToBase64, filesFrom, isFileDrag, pathAsInput } from '../lib/termDrop';
 // The wire codec and the palette are shared with the tab agents' consoles
 // (#379) — see lib/termWire.ts for why those three and nothing else.
 import { b64encode, b64decode, TERM_OPTIONS } from '../lib/termWire';
@@ -281,20 +282,27 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   // A session opened away from #/terminal must never strand the screen
   // full-screen over the rest of the app.
   useEffect(() => { if (!visible && full) setFull(false); }, [visible, full]);
-  // The copy receipt. xterm draws to a canvas, so a copy leaves nothing on the
-  // page to look at — without a mark, a working copy and a failed one look
-  // identical, which is how "I can't copy from the terminal" survives a fix.
-  const [copied, setCopied] = useState<{ id: number; label: string } | null>(null);
-  const copiedTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  // The label is composed by the clipboard layer, not here: it is the only
-  // thing that knows whether a gesture copied, pasted, or was refused by the
-  // browser, and a receipt that says "copied" for a refusal is worse than none.
-  const noteCopied = (id: number, label: string) => {
-    setCopied({ id, label });
-    clearTimeout(copiedTimer.current);
-    copiedTimer.current = setTimeout(() => setCopied(null), 1600);
+  // THE PANE'S RECEIPT LINE. xterm draws to a canvas, so a gesture leaves
+  // nothing on the page to look at — without a mark, a copy that worked and one
+  // that silently failed look exactly alike, which is how "I can't copy from
+  // the terminal" survives a fix. #511 widened it from copies to any gesture
+  // the pane answers for, drops included, since they have the same problem.
+  const [notice, setNotice] = useState<{ id: number; label: string } | null>(null);
+  const noticeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  // The label is composed by the layer that knows — the clipboard code is the
+  // only thing that can tell a copy from a refusal, the drop code the only
+  // thing that knows whether the host took the file — and it arrives with its
+  // own glyph. A receipt that says "copied" for a refusal is worse than none.
+  //
+  // `ms` because the two gestures are not the same length: a copy is over
+  // before the chip is read, while a drop is a round trip to the host and back
+  // and its answer is a PATH somebody may want to read.
+  const noteNotice = (id: number, label: string, ms = 1600) => {
+    setNotice({ id, label });
+    clearTimeout(noticeTimer.current);
+    noticeTimer.current = setTimeout(() => setNotice(null), ms);
   };
-  useEffect(() => () => clearTimeout(copiedTimer.current), []);
+  useEffect(() => () => clearTimeout(noticeTimer.current), []);
 
   // Token usage strip (#111) — fed by every session's usage frames (they all
   // report the same host-wide numbers; latest wins). The daily limit is a
@@ -1747,7 +1755,8 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                     for the terminal under it. */}
                 <div className="term-pane-title"
                   title={'Copy: drag to select in the terminal — releasing copies it (⌃⇧C, or ⌃C with a selection).\n'
-                    + 'Paste: ⌃V. Shift-drag selects in the browser instead of tmux.'}>
+                    + 'Paste: ⌃V. Shift-drag selects in the browser instead of tmux.\n'
+                    + 'Drop a file on the terminal and its path is typed in — that is how you hand a session an image.'}>
                   <span className={`dot ${s.status}`} />
                   {/* The tool mark, from the design: which runtime this pane
                       is. Two today (claude / shell); it is a lookup rather
@@ -1772,7 +1781,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                   <span className="where">
                     {`${s.cmd === 'claude' ? 'claude' : 'shell'} · ${s.cwd || '~'}`}
                   </span>
-                  {copied?.id === s.id && <span className="pane-copied">⧉ {copied.label}</span>}
+                  {notice?.id === s.id && <span className="pane-notice">{notice.label}</span>}
                   {/* #292 — pin this session against the idle reaper. On the
                       PANE because that is where you are when you realise the
                       thing you are half-way through should outlive the
@@ -1839,7 +1848,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                   onExit={(name) => noteTmuxEnded(s.cwd, name)}
                   onOutput={(bytes) => noteOutput(s.id, bytes)}
                   onTyped={(text) => noteTyped(s.id, text)}
-                  onCopied={(label) => noteCopied(s.id, label)}
+                  onNotice={(label, ms) => noteNotice(s.id, label, ms)}
                   register={(h) => { if (h) handles.current.set(s.id, h); else handles.current.delete(s.id); }} />
               </div>
               );
@@ -2507,7 +2516,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
 
 // One tab: an xterm instance + its websocket, kept mounted (hidden when
 // inactive) so the scrollback survives tab switches.
-function TermSession({ sess, visible, focused, fontSize, onStatus, onUsage, onTmux, onModel, onSid, onExit, onOutput, onTyped, onCopied, register }: {
+function TermSession({ sess, visible, focused, fontSize, onStatus, onUsage, onTmux, onModel, onSid, onExit, onOutput, onTyped, onNotice, register }: {
   sess: { id: number; cwd: string; cmd: 'shell' | 'claude'; tmux?: string };
   // Rendered on screen at all (it may be one of several panes)...
   visible: boolean;
@@ -2534,10 +2543,11 @@ function TermSession({ sess, visible, focused, fontSize, onStatus, onUsage, onTm
   // Fires at most once per session (lib/termName latches), so the parent may
   // treat it as an assignment rather than a stream.
   onTyped: (text: string) => void;
-  // A finished clipboard gesture, already worded — "copied 12 lines",
-  // "paste needs ⌃V here". With a canvas and no browser selection to look at,
-  // "did that work?" is otherwise unanswerable, so the pane says so.
-  onCopied: (label: string) => void;
+  // A finished gesture, already worded and already glyphed — "⧉ copied 12
+  // lines", "📎 shot.png → path typed". With a canvas and no browser selection
+  // to look at, "did that work?" is otherwise unanswerable, so the pane says
+  // so. `ms` is how long it is worth reading for.
+  onNotice: (label: string, ms?: number) => void;
   register: (h: Handle | null) => void;
 }) {
   const holderRef = useRef<HTMLDivElement>(null);
@@ -2599,7 +2609,86 @@ function TermSession({ sess, visible, focused, fontSize, onStatus, onUsage, onTm
     // ⌃⇧C copies explicitly, ⌃V pastes through the browser's own handler, and
     // OSC 52 carries a tmux copy-mode selection — the plain mouse drag inside
     // a claude session — out to the clipboard.
-    const unwireClipboard = wireTermClipboard(term, onCopied);
+    const unwireClipboard = wireTermClipboard(term, (label) => onNotice(`⧉ ${label}`));
+
+    // #511 — DRAG A FILE ONTO THIS PANE AND ITS PATH IS TYPED INTO THE SESSION,
+    // which is what dropping a screenshot on a native terminal does and the
+    // only way to hand a claude tab an image. The bytes go to the host on this
+    // session's own socket, the host writes them and answers with a path
+    // (terminal/drop-file.mjs), and the reply handler above types it.
+    //
+    // Three things about the gesture rather than the transfer:
+    //
+    //  • The listeners sit on the HOLDER, not the document: with six panes on
+    //    screen the drop has to mean "this session", and the pane under the
+    //    cursor is the only thing that can say which.
+    //  • dragenter/dragleave are COUNTED. They fire for every child element
+    //    the cursor crosses — and xterm's element is a stack of them — so a
+    //    single drag over one pane raises and lowers the highlight a dozen
+    //    times unless the depth is tracked.
+    //  • A drag carrying no files is left entirely alone: no preventDefault,
+    //    no highlight. Text dragged out of the page, and every draggable row
+    //    Stack has, would otherwise be swallowed by whichever pane was open.
+    const pendingDrops = new Map<number, string>();
+    let dropSeq = 0;
+    let dragDepth = 0;
+    const setDropping = (on: boolean) => holderRef.current?.classList.toggle('dropping', on);
+    const sendDrops = async (files: File[]) => {
+      for (const file of files) {
+        if (file.size > DROP_MAX_BYTES) {
+          onNotice(`📎 ${file.name} is over the ${dropSizeLabel()} drop limit`, 5000);
+          continue;
+        }
+        // Read, then re-check the socket: reading a 10 MB file is not
+        // instant, and a pane closed in between must not send into a dead one.
+        onNotice(`📎 sending ${file.name}…`, 60_000);
+        let data: string;
+        try {
+          data = await fileToBase64(file);
+        } catch {
+          onNotice(`📎 could not read ${file.name}`, 5000);
+          continue;
+        }
+        const live = wsRef.current;
+        if (live?.readyState !== WebSocket.OPEN) {
+          onNotice('📎 this session is not connected', 5000);
+          return;
+        }
+        const id = ++dropSeq;
+        pendingDrops.set(id, file.name);
+        live.send(JSON.stringify({ t: 'drop', id, name: file.name, mime: file.type || '', data }));
+      }
+    };
+    const onDragEnter = (ev: DragEvent) => {
+      if (!isFileDrag(ev.dataTransfer)) return;
+      ev.preventDefault();
+      dragDepth++;
+      setDropping(true);
+    };
+    const onDragOver = (ev: DragEvent) => {
+      if (!isFileDrag(ev.dataTransfer)) return;
+      // Without this the browser refuses the drop and navigates to the file.
+      ev.preventDefault();
+      if (ev.dataTransfer) ev.dataTransfer.dropEffect = 'copy';
+    };
+    const onDragLeave = (ev: DragEvent) => {
+      if (!isFileDrag(ev.dataTransfer)) return;
+      dragDepth = Math.max(0, dragDepth - 1);
+      if (!dragDepth) setDropping(false);
+    };
+    const onDropFiles = (ev: DragEvent) => {
+      if (!isFileDrag(ev.dataTransfer)) return;
+      ev.preventDefault();
+      dragDepth = 0;
+      setDropping(false);
+      const files = filesFrom(ev.dataTransfer);
+      if (files.length) void sendDrops(files);
+    };
+    const holderEl = holderRef.current;
+    holderEl?.addEventListener('dragenter', onDragEnter);
+    holderEl?.addEventListener('dragover', onDragOver);
+    holderEl?.addEventListener('dragleave', onDragLeave);
+    holderEl?.addEventListener('drop', onDropFiles);
 
     const connect = () => {
       wsRef.current?.close();
@@ -2660,6 +2749,9 @@ function TermSession({ sess, visible, focused, fontSize, onStatus, onUsage, onTm
           model?: SessionModel | null;
           tokens?: number; resetAt?: number; resetLabel?: string; sched?: { runDate: string; atTime: string };
           totalTokens?: number; plan?: TermUsage['plan'];
+          // #511 — the answer to one 'drop': the host's path for the file, or
+          // why it has none. `id` is this pane's own counter, echoed back.
+          id?: number; ok?: boolean; path?: string; name?: string; error?: string;
         };
         try { m = JSON.parse(ev.data); } catch { return; }
         // Every frame carries the relay's sid, so the first one names this tab
@@ -2694,6 +2786,27 @@ function TermSession({ sess, visible, focused, fontSize, onStatus, onUsage, onTm
           tmuxRef.current = null;
           onStatus('closed', `exited (${m.code})`);
           term.write('\r\n\x1b[90m[session ended — reconnect from the tab bar]\x1b[0m\r\n');
+        }
+        // #511 — the host has written (or refused) a dropped file. On a good
+        // answer the PATH is typed here, down the same 'in' frame a keystroke
+        // takes: that is the whole gesture, and doing it on the reply rather
+        // than optimistically means the pane never shows a path that does not
+        // exist. It deliberately does not go through term.onData, so a dropped
+        // path can never become the session's name (#512) — a name is what the
+        // human wrote, and this is a filename the host chose.
+        else if (m.t === 'dropped') {
+          const asked = (typeof m.id === 'number' ? pendingDrops.get(m.id) : '') || m.name || 'that file';
+          if (typeof m.id === 'number') pendingDrops.delete(m.id);
+          if (m.ok && m.path) {
+            const live = wsRef.current;
+            if (live?.readyState === WebSocket.OPEN) {
+              live.send(JSON.stringify({ t: 'in', data: b64encode(pathAsInput(m.path)) }));
+            }
+            onNotice(`📎 ${m.name || asked} → path typed`, 3200);
+            if (focused) term.focus();
+          } else {
+            onNotice(`📎 ${asked}: ${m.error || 'the host refused that drop'}`, 5000);
+          }
         }
         else if (m.t === 'err') { onStatus('error', m.msg || 'terminal error'); term.write(`\r\n\x1b[91m${m.msg || 'terminal error'}\x1b[0m\r\n`); }
       });
@@ -2789,6 +2902,10 @@ function TermSession({ sess, visible, focused, fontSize, onStatus, onUsage, onTm
       register(null);
       clearTimeout(resizeTimer);
       window.removeEventListener('resize', onResize);
+      holderEl?.removeEventListener('dragenter', onDragEnter);
+      holderEl?.removeEventListener('dragover', onDragOver);
+      holderEl?.removeEventListener('dragleave', onDragLeave);
+      holderEl?.removeEventListener('drop', onDropFiles);
       ro.disconnect();
       data.dispose();
       unwireClipboard();
