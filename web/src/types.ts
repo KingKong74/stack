@@ -187,6 +187,16 @@ export interface RoadmapItem {
   // position on a chart, and `defaultLen` in lib/plan.ts is the one place the
   // two units are allowed to meet.
   estimate: number | null;
+  /**
+   * #507 — STORY POINTS. The board's own relative size, and deliberately NOT
+   * `estimate` above: that one is WEEKS and drives the timeline's arithmetic,
+   * this one is unitless and is what a column head adds up. Folding them
+   * together would have a drag on the Gantt resize a story point.
+   *
+   * null = UNSIZED, which is a state and not a zero — every sum on the board
+   * treats an unpointed card as absent, and says how many it left out.
+   */
+  points: number | null;
 }
 
 /** A position on the timeline, both fields in MINUTES from week zero (#401). */

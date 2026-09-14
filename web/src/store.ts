@@ -1033,6 +1033,10 @@ export async function createRoadmapItem(
   input: {
     title: string; note: string; bucket: Priority; claimed_by?: string; area?: string; subArea?: string;
     plan?: PlanStep[]; risk?: RoadmapItem['risk'];
+    // #507 — omitted means UNSIZED, which is what every quick composer entry
+    // and every extraction stays. A size nobody chose must not read as one
+    // somebody did.
+    points?: number | null;
     // NO `sprintId` HERE, and the server refuses one too (#477). Filing work
     // into a sprint is a commitment somebody makes by dragging it into a box;
     // a create that could land straight in the ACTIVE sprint would let the
@@ -1072,6 +1076,9 @@ export async function patchRoadmapItem(
     listKey: string;             // '' returns the card to the derived column
     archived: boolean;
     estimate: number | null;     // null = unsized, which is not zero
+    // #507 — the board's relative size. null (or '') CLEARS it back to unsized,
+    // so a card given a size by mistake can be given none again.
+    points: number | null;
   }>,
 ): Promise<RoadmapItem> {
   return request<RoadmapItem>(`${roadmapBase(slug)}/${id}`, { method: 'PATCH', body: patch });

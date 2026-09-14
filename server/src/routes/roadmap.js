@@ -196,6 +196,12 @@ roadmap.post('/', async (req, res) => {
   // auto-placing a push's worth of unreviewed extractions would bury the chart
   // under work nobody has agreed to yet.
   const subArea = String(req.body?.subArea || '').trim().toLowerCase().slice(0, 40);
+  // #507 — a row may be born with a size. Omitted means NULL, which is unsized
+  // and is what every extraction and every quick composer entry stays: a size
+  // nobody chose must not read as a size somebody did.
+  const points = Number.isFinite(Number(req.body?.points)) && req.body?.points !== null && req.body?.points !== ''
+    ? Math.max(0, Math.min(999, Math.round(Number(req.body.points))))
+    : null;
   let schedStart = null; let schedLen = null;
   const s = req.body?.sched;
   if (s && Number.isFinite(s.start) && Number.isFinite(s.len)) {
@@ -213,10 +219,10 @@ roadmap.post('/', async (req, res) => {
     // straight in the ACTIVE sprint would let any caller — the extractor, a
     // fly card, a script — commission tonight's work by writing a title.
     `INSERT INTO roadmap_items (project_id, bucket, title, note, position, source, fingerprint, claimed_by, area, plan, risk, risk_source, agent_profile, fly_session,
-                                sched_start_min, sched_len_min, plan_start_min, plan_len_min, sub_area)
-     VALUES ($1,$2,$3,$4,$5,$13,$6,$7,$8,$9::jsonb,$10,$11,$12,$14,$15,$16,$15,$16,$17) RETURNING *`,
+                                sched_start_min, sched_len_min, plan_start_min, plan_len_min, sub_area, points)
+     VALUES ($1,$2,$3,$4,$5,$13,$6,$7,$8,$9::jsonb,$10,$11,$12,$14,$15,$16,$15,$16,$17,$18) RETURNING *`,
     [req.project.id, bucket, title, note, pos[0].p, fp, claimedBy, area, JSON.stringify(plan), risk, riskSource, agentProfile, source, flySession,
-      schedStart, schedLen, subArea]
+      schedStart, schedLen, subArea, points]
   );
   res.status(201).json(roadmapItemShape(rows[0]));
 });
@@ -506,6 +512,23 @@ roadmap.patch('/:id', async (req, res) => {
     else if (Number.isFinite(Number(e))) {
       sets.push(`estimate = $${i++}`);
       vals.push(Math.max(0, Math.min(99, Math.round(Number(e) * 10) / 10)));
+    }
+  }
+  if (req.body?.points !== undefined) {
+    // #507 — null or '' CLEARS it back to unsized, which is a state and not a
+    // zero: every sum on the board counts an unpointed card as absent, and a
+    // card that could only ever be given a size would make "unpointed" a thing
+    // you can enter and never leave.
+    //
+    // Rounded and clamped rather than validated against the picker's own list.
+    // The Fibonacci-ish set is a UI convention; a board that inherited a 4 from
+    // an import should keep it, and refusing one here would lose it silently on
+    // the next unrelated PATCH of the same row.
+    const pts = req.body.points;
+    if (pts === null || pts === '') { sets.push('points = NULL'); }
+    else if (Number.isFinite(Number(pts))) {
+      sets.push(`points = $${i++}`);
+      vals.push(Math.max(0, Math.min(999, Math.round(Number(pts)))));
     }
   }
 

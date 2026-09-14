@@ -141,6 +141,10 @@ export function roadmapItemShape(row) {
     // NUMERIC comes back from pg as a STRING, and null must survive as null:
     // an unsized ticket is not a zero-week one, and the drawer says so.
     estimate: row.estimate === null || row.estimate === undefined ? null : Number(row.estimate),
+    // #507 — the board's own relative size, unitless and NOT `estimate`'s weeks
+    // (schema.sql says why the two are separate). null = unsized, which every
+    // sum treats as absent rather than as a zero.
+    points: row.points === null || row.points === undefined ? null : Number(row.points),
   };
 }
 

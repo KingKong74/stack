@@ -121,6 +121,16 @@ const ROADMAP_PANELS = [
     expect: 'body > .km-prilist',
   },
   {
+    // #507 — the SIZE picker, on the same card and anchored the same way. It is
+    // drawn on every card including an unsized one (a control that appears only
+    // once a card has points is one nobody finds), so this never depends on the
+    // board happening to have a sized card on it.
+    id: 'board-points',
+    label: 'Board — card story-point picker',
+    click: '.km-col:has(.km-card) .km-card [aria-label^="Story points"]',
+    expect: 'body > .km-ptslist',
+  },
+  {
     // The same card: both popovers anchor to the card's own bottom edge (and
     // flip above it only when the window leaves no room), so each covers what
     // is under the card and never this card's own meta row.

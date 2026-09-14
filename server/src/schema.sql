@@ -1176,6 +1176,23 @@ ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS archived    BOOLEAN NOT NULL 
 -- its default length. NULL = unsized, which the drawer states rather than
 -- treating as zero — an unsized ticket is not a free one.
 ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS estimate    NUMERIC(4,1);
+-- #507 — STORY POINTS, and they are NOT `estimate` above.
+--
+-- The two live side by side because they answer different questions and are
+-- counted by different things. `estimate` is a size in WEEKS: it feeds the
+-- timeline's arithmetic and gives a scheduled bar its default length, which is
+-- why `defaultLen` in web/src/lib/plan.ts is the one place weeks and minutes
+-- may meet. `points` is the board's own relative size — the thing a column head
+-- adds up — and it is deliberately unitless. Folding one into the other would
+-- have a drag on the Gantt resize a story point, or a 5-point ticket claim five
+-- weeks of calendar.
+--
+-- NULL = UNSIZED, and that is a real and common state that must survive: an
+-- unpointed ticket is not a zero-point one, and every sum below treats it as
+-- absent rather than as nothing. Stored as a plain INTEGER with no CHECK: the
+-- Fibonacci-ish set the picker offers is a UI convention, and a board that
+-- inherited a 4 from somewhere should render it rather than refuse it.
+ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS points      INTEGER;
 CREATE INDEX IF NOT EXISTS roadmap_items_parent_idx ON roadmap_items (parent_id);
 
 -- #411 — a second, OPTIONAL level under `area`: roadmap -> timeline / scope /

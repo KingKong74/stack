@@ -158,6 +158,38 @@ const CATCH_ALL = ' unlisted';
 const UNTAGGED = ' untagged';
 
 /**
+ * #507 — THE STORY-POINT SCALE the picker offers. Fibonacci-ish, which is the
+ * convention this exists to match: the gaps widen as the number does, because
+ * the difference between a 1 and a 2 is knowable and the difference between a
+ * 13 and a 14 is not.
+ *
+ * IT IS A UI CONVENTION AND NOT A CONSTRAINT. The column stores a plain integer
+ * with no CHECK, and `PATCH /roadmap/:id` rounds and clamps rather than
+ * validating against this list — a board that inherited a 4 from an import
+ * renders it, because refusing it here would lose it on the next unrelated
+ * write to the same row.
+ *
+ * null is the SEVENTH option and the one the picker leads with, because
+ * unsized is where every card starts and has to be able to get back to.
+ */
+const POINTS: number[] = [1, 2, 3, 5, 8, 13];
+
+/**
+ * The points on a set of cards, and HOW MANY OF THEM HAD NONE. Both halves are
+ * returned because the sum alone lies: "8 points" across a column of nine cards
+ * reads as a small column, and it is one sized card next to eight nobody has
+ * looked at. Every head that shows the total says the gap beside it.
+ */
+const pointsOf = (list: RoadmapItem[]) => {
+  let sum = 0; let unsized = 0;
+  for (const it of list) {
+    if (it.points === null || it.points === undefined) unsized += 1;
+    else sum += it.points;
+  }
+  return { sum, unsized };
+};
+
+/**
  * Where a card would sit if it carried no override. `listKeyOf` returns the
  * stored `listKey` when there is one, which is right for DRAWING and wrong for
  * deciding whether a drop still needs an override — so blank it and ask again.
@@ -377,6 +409,7 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
           untagged: k === UNTAGGED,
           holder,
           count: mine.length,
+          pts: pointsOf(mine),
           cols,
         };
       })
@@ -447,6 +480,12 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
   const setBucket = (it: RoadmapItem, bucket: Priority) =>
     guard(async () => { wrote(await patchRoadmapItem(slug, it.id, { bucket })); });
 
+  // #507 — the size, or null to hand the card back to unsized. Same shape as
+  // the bucket write above, and for the same reason: the card picker is the
+  // board's own grammar for "one field, one press, written through".
+  const setPoints = (it: RoadmapItem, points: number | null) =>
+    guard(async () => { wrote(await patchRoadmapItem(slug, it.id, { points })); });
+
   // Double-click a card, retype its title, Enter. The PATCH names `title` and
   // nothing else, so an inline edit cannot touch a tier, a claim or a verdict —
   // the same partial-write property that made trimming the modal safe.
@@ -501,13 +540,20 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
   // A card born in a column that is not its derived one carries the override
   // from the start; one born in To Do does not, because it would derive there
   // anyway. Two calls rather than one because POST has no `listKey`.
-  const add = (title: string, bucket: Priority, key: string, area: string) =>
+  /**
+   * `extra` is what the CREATE DIALOG can set and the lane composer cannot
+   * (#507). The composer is the fast path — a title and how necessary it is —
+   * and a card born through it stays UNSIZED, which is the honest default: a
+   * size nobody chose must not read as one somebody did.
+   */
+  const add = (title: string, bucket: Priority, key: string, area: string,
+               extra: { points?: number | null } = {}) =>
     guard(async () => {
       // A card created inside an area section is BORN in that area. It is the
       // one place this screen writes `area` at all, and it is safe precisely
       // because the section header already said what the area means: it is a
       // lane, and adding a card to one cannot take it off another.
-      const made = await createRoadmapItem(slug, { title, note: '', bucket, ...(area ? { area } : {}) });
+      const made = await createRoadmapItem(slug, { title, note: '', bucket, ...(area ? { area } : {}), ...extra });
       const final = key && key !== CATCH_ALL && derivedKeyOf(made) !== key
         ? await patchRoadmapItem(slug, made.id, { listKey: key })
         : made;
@@ -584,6 +630,7 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
   const [areaMenu, setAreaMenu] = useState<string | null>(null);  // open area menu (#473)
   const [cardMenu, setCardMenu] = useState<number | null>(null);  // open card menu
   const [priMenu, setPriMenu] = useState<number | null>(null);
+  const [ptsMenu, setPtsMenu] = useState<number | null>(null);   // open points picker (#507)
   const [composer, setComposer] = useState<string | null>(null);
   const [dialog, setDialog] = useState(false);
   const [dragId, setDragId] = useState<number | null>(null);
@@ -605,7 +652,7 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
     landTimer.current = window.setTimeout(() => { setLandedId(null); landTimer.current = null; }, 900);
   };
   useEffect(() => () => { if (landTimer.current !== null) window.clearTimeout(landTimer.current); }, []);
-  const closeAll = () => { setMenu(null); setPriMenu(null); setCardMenu(null); setAreaMenu(null); };
+  const closeAll = () => { setMenu(null); setPriMenu(null); setPtsMenu(null); setCardMenu(null); setAreaMenu(null); };
 
   // A deep link SELECTS its row; the scroll to it is ProjectDetail's, off the
   // `data-hl` each card now carries.
@@ -753,6 +800,20 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
                       : 'Lane free'}
                 </span>
                 <span className="n">{sec.count} {sec.count === 1 ? 'card' : 'cards'}</span>
+                {/* #507 — THE TOTAL, AND HOW MUCH OF IT IS MISSING. A sum with
+                    no count of the unsized beside it reads as the size of the
+                    area; it is the size of the part of it somebody has looked
+                    at. Absent entirely when nothing in the area has points,
+                    because "0 pts" over a section of unpointed work is the same
+                    lie in fewer characters. */}
+                {sec.pts.sum > 0 && (
+                  <span className="n km-pts-total"
+                    title={sec.pts.unsized
+                      ? `${sec.pts.sum} points across this area, with ${sec.pts.unsized} card${sec.pts.unsized === 1 ? '' : 's'} unsized and not counted`
+                      : `${sec.pts.sum} points across this area — every card is sized`}>
+                    {sec.pts.sum} pts{sec.pts.unsized ? ` · ${sec.pts.unsized} unsized` : ''}
+                  </span>
+                )}
                 {/* NOT ON THE UNTAGGED SECTION. Untagged is a REAL scope and
                     not a missing one, but it is not a row in `project_areas`
                     and never can be — there is nothing there to rename, colour
@@ -871,6 +932,9 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
                           priOpen={priMenu === it.id}
                           onPri={(e) => { e.stopPropagation(); closeAll(); setPriMenu(priMenu === it.id ? null : it.id); }}
                           onPick={(v) => { setPriMenu(null); setBucket(it, v); }}
+                          ptsOpen={ptsMenu === it.id}
+                          onPts={(e) => { e.stopPropagation(); closeAll(); setPtsMenu(ptsMenu === it.id ? null : it.id); }}
+                          onPoints={(v) => { setPtsMenu(null); setPoints(it, v); }}
                           menuOpen={cardMenu === it.id}
                           onMenu={(e) => { e.stopPropagation(); closeAll(); setCardMenu(cardMenu === it.id ? null : it.id); }}
                           onEdit={() => { setCardMenu(null); onEdit(it); }}
@@ -912,7 +976,7 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
 
       {dialog && (
         <CreateDialog onClose={() => setDialog(false)}
-          onCreate={(title, bucket) => { setDialog(false); add(title, bucket, '', scope === UNTAGGED ? '' : scope); }} />
+          onCreate={(title, bucket, extra) => { setDialog(false); add(title, bucket, '', scope === UNTAGGED ? '' : scope, extra); }} />
       )}
     </>
   );
@@ -1038,6 +1102,7 @@ function ColumnHead({ col, first, last, open, folded, canFold, onFold, onMenu, o
   const [draft, setDraft] = useState(col.name);
   const [confirming, setConfirming] = useState(false);
   useEffect(() => { if (!open) setConfirming(false); }, [open]);
+  const pts = pointsOf(col.items);
 
   if (editing) {
     const commit = () => {
@@ -1072,6 +1137,22 @@ function ColumnHead({ col, first, last, open, folded, canFold, onFold, onMenu, o
       )}
       <span className="nm">{col.name}</span>
       <span className="k-badge">{col.items.length}</span>
+      {/* #507 — the column's own total, which is the number a standup actually
+          reads. Same rule as the section head's: it says how many cards it left
+          out, and it is absent rather than zero when nothing here is sized.
+          Hidden while the column is FOLDED — the strip is 46px wide and the
+          count badge is the one number that fits. */}
+      {!folded && pts.sum > 0 && (
+        <span className="lim km-pts-total"
+          title={pts.unsized
+            ? `${pts.sum} points in this column, with ${pts.unsized} card${pts.unsized === 1 ? '' : 's'} unsized and not counted`
+            : `${pts.sum} points in this column — every card is sized`}>
+          {/* Parallel to the section head's `12 pts · 1 unsized` right above it,
+              shortened to fit a 272px column — so the `?` is read in the light
+              of the full spelling one line up, and the title has it anyway. */}
+          {pts.sum} pts{pts.unsized ? ` · ${pts.unsized}?` : ''}
+        </span>
+      )}
 
       {/* THE CATCH-ALL IS NOT A COLUMN and has no menu: it is where cards land
           when the column they derive into has been deleted (decision 8). It
@@ -1148,7 +1229,7 @@ function DropSlot({ from, to, shipped }: { from: string; to: string; shipped: bo
 function IssueCard({
   item, ideas, sprint, selected, onSelect, dragging, landed, onDragStart, onDragEnd,
   editing, onOpenInline, onInline, onCancelInline,
-  priOpen, onPri, onPick, menuOpen, onMenu,
+  priOpen, onPri, onPick, ptsOpen, onPts, onPoints, menuOpen, onMenu,
   onEdit, onSignOff, onPark, onArchive, onDerive, onDelete,
 }: {
   item: RoadmapItem;
@@ -1168,6 +1249,9 @@ function IssueCard({
   editing: boolean; onOpenInline: () => void;
   onInline: (title: string) => void; onCancelInline: () => void;
   priOpen: boolean; onPri: (e: React.MouseEvent) => void; onPick: (v: Priority) => void;
+  /** #507 — the story-point picker. `null` is a real choice and not a cancel:
+   *  it hands the card back to unsized. */
+  ptsOpen: boolean; onPts: (e: React.MouseEvent) => void; onPoints: (v: number | null) => void;
   menuOpen: boolean; onMenu: (e: React.MouseEvent) => void;
   onEdit: () => void;
   /** Release the #359 hold on a `hook`/`fly` row. Only ever pressed on a held
@@ -1177,6 +1261,11 @@ function IssueCard({
   onArchive: () => void; onDerive: () => void; onDelete: () => void;
 }) {
   const pri = priorityMeta(item.bucket);
+  // #507 — `?? null`, not `item.points`, and for the same reason `committed` is
+  // read `!== false` (shape.js): a client talking to a server that has not been
+  // redeployed yet gets the field ABSENT, and `undefined` would render an empty
+  // button and count as neither sized nor unsized. Absent means unsized.
+  const pts = item.points ?? null;
   // A row a session made and worked, that nobody has signed off yet. It is on
   // the board because it is real work (`homeOf`), and it says so on its face
   // because the alternative is a card the runner will silently never take.
@@ -1236,6 +1325,20 @@ function IssueCard({
         </span>
         {ideas > 0 && <span className="pts" title="Ideas filed under this item">{ideas}</span>}
         <span className="id">#{item.id}</span>
+        {/* #507 — THE SIZE, AND IT IS ALWAYS DRAWN, unsized included. A control
+            that only appears once a card already has points is a control nobody
+            finds, and unsized is the state every card starts in — so the button
+            is there with a dash in it, which is also the honest reading: this
+            card has no size, rather than this card is small. NOT `estimate`
+            beside it: that one is WEEKS and belongs to the timeline. */}
+        <button className={`km-pts${ptsOpen ? ' on' : ''}${pts === null ? ' none' : ''}`}
+          aria-label={pts === null ? 'Story points — unsized' : `Story points — ${pts}`}
+          title={pts === null
+            ? 'No story points — unsized, and left out of every total on this board'
+            : `${pts} ${pts === 1 ? 'point' : 'points'}`}
+          onClick={onPts}>
+          {pts === null ? '–' : pts}
+        </button>
         {item.estimate !== null && <span className="pts" title="Estimate, in weeks">{item.estimate}w</span>}
 
         <span className="right">
@@ -1327,6 +1430,34 @@ function IssueCard({
             </span>
           )}
         </div>
+      )}
+
+      {ptsOpen && (
+        <Popover anchor={cardRef.current} className="km-prilist km-ptslist" inset={12}>
+          <span className="cur">
+            <span className="g">{pts === null ? '–' : pts}</span>
+            {pts === null ? 'Unsized' : `${pts} ${pts === 1 ? 'point' : 'points'}`}
+          </span>
+          <div className="opts">
+            {/* UNSIZED LEADS, and it is an option rather than a Clear at the
+                bottom: it is where every card starts, so it is the row a reader
+                is looking for to confirm what the dash on the card meant. */}
+            <button className={`opt${pts === null ? ' on' : ''}`} onClick={() => onPoints(null)}>
+              <span className="g">–</span>Unsized
+            </button>
+            {POINTS.map((n) => {
+              const on = pts === n;
+              return (
+                <button key={n} className={`opt${on ? ' on' : ''}`} onClick={() => onPoints(n)}>
+                  {/* The space is explicit: the flex gap separates these two
+                      visually, and nothing separates them in the accessible
+                      name the button computes from its own text. */}
+                  <span className="g">{n}</span>{' '}{n === 1 ? 'point' : 'points'}
+                </button>
+              );
+            })}
+          </div>
+        </Popover>
       )}
 
       {priOpen && (
@@ -1619,10 +1750,17 @@ function AddColumn({ onAdd }: { onAdd: (name: string) => void }) {
 // The item modal is the other way in, and it is the one that can set a tier, a
 // risk, an area and a plan. This dialog is the FAST way — a title and how
 // necessary it is — so it deliberately asks for nothing else.
-function CreateDialog({ onClose, onCreate }: { onClose: () => void; onCreate: (title: string, bucket: Priority) => void }) {
+function CreateDialog({ onClose, onCreate }: {
+  onClose: () => void;
+  onCreate: (title: string, bucket: Priority, extra: { points: number | null }) => void;
+}) {
   const [title, setTitle] = useState('');
   const [bucket, setBucket] = useState<Priority>(PRIORITY_DEFAULT);
-  const submit = () => { const t = title.trim(); if (t) onCreate(t, bucket); };
+  // #507 — UNSIZED IS THE DEFAULT and the first option. This dialog is one
+  // press from empty, and a size preselected here would be a number nobody
+  // chose sitting in every total on the board.
+  const [points, setPoints] = useState<number | null>(null);
+  const submit = () => { const t = title.trim(); if (t) onCreate(t, bucket, { points }); };
   return (
     <div className="km-scrim" onClick={onClose}>
       <div className="km-dialog" onClick={(e) => e.stopPropagation()}>
@@ -1642,6 +1780,14 @@ function CreateDialog({ onClose, onCreate }: { onClose: () => void; onCreate: (t
           <span className="lbl">Priority</span>
           <select className="km-select" value={bucket} onChange={(e) => setBucket(e.target.value as Priority)}>
             {PRIORITY_META.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
+          </select>
+        </label>
+        <label className="km-field">
+          <span className="lbl">Points</span>
+          <select className="km-select" value={points === null ? '' : String(points)}
+            onChange={(e) => setPoints(e.target.value === '' ? null : Number(e.target.value))}>
+            <option value="">Unsized</option>
+            {POINTS.map((n) => <option key={n} value={n}>{n}</option>)}
           </select>
         </label>
         <div className="km-dialog-foot">
