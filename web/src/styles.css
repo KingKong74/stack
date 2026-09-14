@@ -2571,6 +2571,53 @@ a.tab { display: inline-block; }
   background: var(--surface); border: 1px dashed var(--line-3); border-radius: 14px;
 }
 .term-pane.empty .term-empty { color: var(--fainter); font-size: 11px; }
+/* THE EMPTY CELL IS A BUTTON, so it has to lose every default a button brings
+   (its own background, border, font and centred inline layout) and keep the
+   dashed card the rule above draws — the resting state must look exactly like
+   the empty pane it replaced, or a shape with spare cells reads as a row of
+   controls rather than a row of holes. Only hover and focus say it is live. */
+.term-pane.empty .term-pane-new {
+  width: 100%; text-align: center; cursor: pointer;
+  padding: 0; appearance: none; gap: 4px;
+  transition: border-color .12s ease, background .12s ease, color .12s ease;
+}
+/* NO `font: inherit` HERE, which is the reflex reset for a button and is wrong
+   on this one: the shorthand would take the family off the .term-empty rule the
+   element also carries and inherit the page's sans from the pane, so the one
+   control that sits INSIDE a terminal grid would be the only thing in it not in
+   the terminal's own face. A UA button style loses to an author rule whatever
+   its specificity, so .term-empty's mono already wins; only the sizes need
+   saying, and the two tones are the measured secondary/tertiary pair rather
+   than the --fainter the label-only cell used. */
+.term-pane.empty .term-pane-new .plus { font-size: 20px; line-height: 1; color: var(--text-tertiary); }
+.term-pane.empty .term-pane-new .what { font-size: 12px; color: var(--text-secondary); }
+.term-pane.empty .term-pane-new .dim { font-size: 11px; color: var(--text-tertiary); }
+/* HOVER BRIGHTENS THE TEXT AND ACCENTS THE BORDER — it does NOT paint the
+   label --accent, which is the obvious move and makes the control HARDER to
+   read the moment you point at it: blue-600 measures 2.50:1 on this hover
+   ground against the resting label's 7.83:1, so the affordance would cost two
+   thirds of the contrast. The border is the accent (a hairline has no text to
+   fail) and the words go to --text-primary, 10.79:1. Same reasoning, same
+   numbers, for `.term-start` below. */
+.term-pane.empty .term-pane-new:hover,
+.term-pane.empty .term-pane-new:focus-visible {
+  border-color: var(--accent); background: var(--surface-hover);
+}
+.term-pane.empty .term-pane-new:hover .plus,
+.term-pane.empty .term-pane-new:hover .what,
+.term-pane.empty .term-pane-new:hover .dim,
+.term-pane.empty .term-pane-new:focus-visible .plus,
+.term-pane.empty .term-pane-new:focus-visible .what,
+.term-pane.empty .term-pane-new:focus-visible .dim { color: var(--text-primary); }
+/* The no-session-at-all holder gets the same offer, but as an ordinary button
+   on the black canvas — there is no cell to turn into one there. */
+.term-empty .term-start {
+  margin-top: 4px; font: inherit; font-size: 12px; cursor: pointer;
+  padding: 6px 12px; border-radius: 8px;
+  border: 1px solid var(--line-3); background: var(--surface); color: var(--text-secondary);
+}
+.term-empty .term-start:hover,
+.term-empty .term-start:focus-visible { border-color: var(--accent); color: var(--text-primary); }
 /* Inside a pane the holder gives up its own fixed height to the grid cell. */
 /* .gitbash sets its own fixed height further down at equal specificity, so
    this has to name it too or source order would win and every pane would be a

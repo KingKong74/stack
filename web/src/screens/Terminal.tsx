@@ -1073,9 +1073,12 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   // it filled looked exactly like panes you had opened. A control that starts
   // and joins real processes has to be a control you pressed for that.
   //
-  // An empty pane is now just an empty pane, and + New session is the only
-  // thing on this screen that starts one. Resuming a detached session is still
-  // one click, on its own row in the rail, where it says what it is resuming.
+  // An empty pane is now just an empty pane, and the only things on this
+  // screen that start a session are the two the human presses FOR that: the
+  // head bar's spawn button, and the empty cell itself, which spawns the same
+  // thing and names it the same way. Neither reaches onto the host for work it
+  // did not start — resuming a detached session is still one click, on its own
+  // row in the rail, where it says what it is resuming.
   const chooseLayout = (lay: TermLayout) => {
     // The pane COUNT rides along so a device that later loads an older build
     // lands on the nearest shape rather than on the default.
@@ -1799,7 +1802,11 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
             {sessions.length === 0 && (
               <div className="term-holder gitbash term-empty">
                 <span>No session open.</span>
-                <span className="dim">Resume one from the rail, or start a new one with + New session.</span>
+                <span className="dim">Resume one from the rail, or start one here.</span>
+                <button type="button" className="term-start" onClick={() => openSession()}
+                  title={`Open a ${mode === 'claude' ? 'Claude' : 'shell'} session in ~/${cwd.trim() || ''}`}>
+                  + {mode === 'claude' ? 'Claude' : 'Shell'} in ~/{cwd.trim()}
+                </button>
               </div>
             )}
             {/* THE SHAPE'S EMPTY PANES, drawn as empty rather than left as a
@@ -1812,9 +1819,34 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
               (_, i) => (
                 <div key={`empty-${i}`} className="term-pane empty"
                   style={{ order: shownIds.length + i }}>
-                  <div className="term-holder gitbash term-empty">
-                    <span className="dim">Empty pane</span>
-                  </div>
+                  {/* THE EMPTY CELL IS THE START BUTTON. Since a layout button
+                      stopped filling its spare panes for you, the way to fill
+                      one was the head bar at the top of the screen — which is
+                      the one place you are not looking when what you are
+                      looking at is the hole. The whole cell takes the click
+                      rather than a small button inside it: there is nothing
+                      else in an empty pane to hit by mistake.
+
+                      It spawns exactly what the head bar's own spawn button
+                      would — same tool, same directory — and SAYS SO, the
+                      #487 rule: a control that opens claude somewhere has to
+                      name the somewhere, or it is the wrong-project mistake
+                      waiting to happen.
+
+                      WHERE IT LANDS: in the FIRST free pane, which is only
+                      this one when this is the first of them. `slotsFor`
+                      keeps one slot per session, so a shape with three spare
+                      cells has no slot 3 to put a session in until slots 1
+                      and 2 are taken — the cells fill in order however you
+                      press them. All of them offer the start because a dead
+                      cell beside a live one would read as broken. */}
+                  <button type="button" className="term-holder gitbash term-empty term-pane-new"
+                    onClick={() => openSession()}
+                    title={`Open a ${mode === 'claude' ? 'Claude' : 'shell'} session in ~/${cwd.trim() || ''}`}>
+                    <span className="plus" aria-hidden="true">+</span>
+                    <span className="what">New {mode === 'claude' ? 'Claude' : 'shell'} session</span>
+                    <span className="dim">in ~/{cwd.trim()}</span>
+                  </button>
                 </div>
               ),
             )}
