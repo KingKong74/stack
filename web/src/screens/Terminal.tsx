@@ -233,20 +233,24 @@ type Handle = { sendText: (s: string) => void; reconnect: () => void; focus: () 
 // away from it the component renders NOTHING (#492 dropped the floating dock
 // and its corner chip — a terminal pane docked over whatever screen you had
 // navigated to, and the running-sessions pill already says a session is live).
-// AN OPEN BLOCK IN THE RAIL COLLAPSES WHEN YOU CLICK OFF IT — the Settings
-// popover and the limits list both, because a thing you opened to read should
-// not still be open when you have gone back to the panes.
+// AN OPEN BLOCK ON THIS SCREEN COLLAPSES WHEN YOU CLICK OFF IT — the rail's
+// Settings popover, its limits list, the model picker — because a thing you
+// opened to read should not still be open when you have gone back to the
+// panes. Use it for the next one too rather than writing the listener pair a
+// fourth time.
 //
 // `box` goes on the WHOLE block, its toggle button included, so the toggle
 // reads as "inside" and its own onClick does the closing: the other way round,
 // this fires first and the same click re-opens what it just shut. Escape
 // closes too, putting focus back on the button.
 //
-// NO scroll or resize dismissal, unlike MoreMenu: neither of these floats over
-// an anchor that can move out from under it — Settings is absolute inside a
-// footer pinned OUTSIDE the rail's scroller, and the limits list is inline —
-// and a capturing scroll listener would have xterm's own output collapsing
-// them mid-read.
+// NO scroll or resize dismissal, unlike MoreMenu: none of these floats over an
+// anchor that can move out from under it — Settings is absolute inside a footer
+// pinned OUTSIDE the rail's scroller, the limits list is inline, and the
+// picker hangs off a button in the composer bar, which does not scroll — and a
+// capturing scroll listener would have xterm's own output collapsing them
+// mid-read. The picker's own long menu scrolls INSIDE itself, which is a
+// scroll event this would otherwise treat as a reason to shut it.
 function useCollapseOnClickAway(
   open: boolean,
   close: () => void,
@@ -1340,6 +1344,9 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   const [modelPref, setModelPref] = useState<string>(() => getTermSessionPrefs().model);
   const [pinned, setPinned] = useState<string[]>(() => getTermSessionPrefs().pinnedModels);
   const [pickOpen, setPickOpen] = useState(false);
+  const pickRef = useRef<HTMLDivElement | null>(null);
+  const pickBtn = useRef<HTMLButtonElement | null>(null);
+  useCollapseOnClickAway(pickOpen, () => setPickOpen(false), pickRef, pickBtn);
   const [pinOpen, setPinOpen] = useState(false);
   const [pinQuery, setPinQuery] = useState('');
   // The catalogue, fetched ONCE when the picker is first opened rather than on
@@ -1495,8 +1502,9 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
               OmniRoute's 38 curated combos. Discovery lives in the pin dialog
               — searching is what you do once, picking is what you do daily. */}
           {mode === 'claude' && (
-            <div className="term-modelpick">
+            <div className="term-modelpick" ref={pickRef}>
               <button
+                ref={pickBtn}
                 className={`btn-repo sm term-model-btn${gwPref ? ' on' : ''}`}
                 aria-expanded={pickOpen}
                 title={gwPref
