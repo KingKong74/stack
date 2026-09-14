@@ -20,7 +20,8 @@ export type KitIconName =
   | 'list' | 'ellipsis' | 'circle-check' | 'bookmark' | 'calendar'
   | 'arrow-up-right' | 'pencil' | 'trash-2'
   | 'git-branch' | 'circle-alert' | 'file-text' | 'code' | 'terminal'
-  | 'clock' | 'check' | 'chart-no-axes-column' | 'settings';
+  | 'clock' | 'check' | 'chart-no-axes-column' | 'settings'
+  | 'chevron-down' | 'chevron-right';
 
 const PATHS: Record<KitIconName, ReactNode> = {
   plus: <><path d="M5 12h14" /><path d="M12 5v14" /></>,
@@ -105,6 +106,11 @@ const PATHS: Record<KitIconName, ReactNode> = {
   terminal: <><path d="M12 19h8" /><path d="m4 17 6-6-6-6" /></>,
   clock: <><circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" /></>,
   check: <path d="M20 6 9 17l-5-5" />,
+  // The two fold chevrons (#510, #511). Both spellings rather than one rotated
+  // by CSS: a `transform` on the <svg> turns its stroke caps with it, and at
+  // 14px on a column head that reads as a slightly different weight.
+  'chevron-down': <path d="m6 9 6 6 6-6" />,
+  'chevron-right': <path d="m9 18 6-6-6-6" />,
   'chart-no-axes-column': <><path d="M5 21v-6" /><path d="M12 21V3" /><path d="M19 21V9" /></>,
   settings: (
     <>

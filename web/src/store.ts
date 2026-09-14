@@ -847,25 +847,20 @@ export function clearTermTmuxName(cwd: string, name: string) {
 // its process died with the socket, so the pane comes back and the shell is
 // new. Order is the tab order, so the grid comes back the way it was left.
 export interface TermOpenTab { cwd: string; cmd: 'shell' | 'claude'; tmux?: string }
-// #487/#512 — THE FIRST THING THE OWNER SENT A SESSION, which is its name.
+// #487 — A NAME THE OWNER TYPED, overriding the labeller's.
 //
-// It was a hand-typed override for the Gemini labeller, written by a rename on
-// every rail row. #512 took the rename: the words you would have typed into
-// that editor are the words you already typed into the SESSION, so the browser
-// captures the first line on its way to the socket and stores it here instead.
-// Nothing else writes this map, and nothing rewrites an entry — a name is a
-// fact about a session's first moment, and the only way to get a different one
-// is a different session.
+// The Gemini labeller names a session from what it is doing, which is right
+// almost always and wrong exactly when you have decided a session is "the
+// migration one" regardless of what it is reading this minute. The design has
+// a rename on every rail row; this is where it lands.
 //
 // KEYED BY TMUX NAME, never by the tab id. A tab id is a per-mount counter, so
 // a name keyed on it would attach to a different session after a reload — and
-// a terminal wearing another session's name is worse than an unnamed one. A
-// session named before the daemon has reported its tmux name is held in the
-// screen's own per-mount map until it has one.
+// a terminal wearing another session's name is worse than an unnamed one.
+// A session with no tmux name yet cannot be renamed, which the row reflects.
 //
-// Device-local, like every other way-of-looking on this screen: this is what
-// YOU asked that session for, on this device, and the labeller's reading of a
-// session nobody here typed into is still there underneath.
+// Device-local, like every other way-of-looking on this screen: it is what YOU
+// call that session, and the labeller's answer is still there underneath.
 const TERM_NAMES_KEY = 'stack.termNames';
 export function getTermNames(): Record<string, string> {
   return readStoredJSON(TERM_NAMES_KEY, (v) => {
@@ -875,7 +870,7 @@ export function getTermNames(): Record<string, string> {
     return out;
   });
 }
-/** '' clears the stored name and hands the row back to the labeller. */
+/** '' clears the override and hands the row back to the labeller. */
 export function setTermName(key: string, name: string) {
   const m = getTermNames();
   if (name.trim()) m[key] = name.trim().slice(0, 60); else delete m[key];
@@ -1273,6 +1268,51 @@ export function getBoardLayout(slug: string): BoardLayout {
 export function setBoardLayout(slug: string, layout: BoardLayout) {
   try { localStorage.setItem(BOARD_LAYOUT_KEY(slug), JSON.stringify(layout)); }
   catch { /* storage full or unavailable — the layout is a nicety, never a blocker */ }
+}
+
+// ---- the board's folds (#512, #511) ----
+//
+// Which AREA SECTIONS and which COLUMNS are folded shut on one project's board.
+// Device-local and keyed by slug, for the same reason `BoardLayout` above is: it
+// describes how you like to look at THIS board on THIS screen, not anything
+// about the work — a laptop showing four columns and a phone showing one may
+// legitimately answer differently, and nothing here is a fact another device or
+// the overnight runner needs.
+//
+// THE TWO LISTS ARE KEYED DIFFERENTLY ON PURPOSE, and it is the one thing to
+// get right here:
+//
+//  • `sections` holds AREA keys, and an area section is a single thing on the
+//    screen — folding `terminal` folds the one place `terminal` is drawn.
+//  • `columns` holds COLUMN keys and is BOARD-WIDE, not per section. The same
+//    four columns are repeated inside every area section, so a fold scoped to
+//    one of them would have an owner with eight areas folding Done eight times
+//    and then unfolding it eight times. "Fold Done" is one decision about the
+//    board, so it is stored as one.
+//
+// Absent or corrupt storage falls back to EVERYTHING OPEN, which is the state
+// the board shipped in before it could fold at all — a fold is a nicety and
+// must never be the reason a card cannot be found.
+export interface BoardFolds {
+  /** Folded area sections, by `area` string (the board's own UNTAGGED sentinel included). */
+  sections: string[];
+  /** Folded columns, by `project_lists.key` — board-wide, not per section. */
+  columns: string[];
+}
+const BOARD_FOLDS_KEY = (slug: string) => `stack.boardFolds.${slug}`;
+const strings = (v: unknown): string[] => (
+  Array.isArray(v) ? [...new Set(v.filter((x): x is string => typeof x === 'string'))] : []
+);
+
+export function getBoardFolds(slug: string): BoardFolds {
+  return readStoredJSON(BOARD_FOLDS_KEY(slug), (p) => {
+    const o = (p && typeof p === 'object') ? p as Record<string, unknown> : {};
+    return { sections: strings(o.sections), columns: strings(o.columns) };
+  });
+}
+export function setBoardFolds(slug: string, folds: BoardFolds) {
+  try { localStorage.setItem(BOARD_FOLDS_KEY(slug), JSON.stringify(folds)); }
+  catch { /* storage full or unavailable — a fold is a nicety, never a blocker */ }
 }
 
 // ---- which rail sections are folded shut ----

@@ -163,6 +163,51 @@ const ROADMAP_PANELS = [
     click: '.km-scope .im-chip:last-of-type',
     expect: '.km-scope .im-chip:last-of-type.on',
   },
+  // THE FOLDS (#510, #511), AND THEY COME IN PAIRS ON PURPOSE. This harness is
+  // read-only, and a fold is the one press on this screen that persists
+  // anything: `stack.boardFolds.<slug>` in localStorage, which outlives the
+  // page and therefore reaches the NARROW pass that runs after this one. A
+  // folded column left behind would have the narrow run photographing a board
+  // nobody folded, and a folded SECTION would take every `.km-col` selector
+  // above it with it. So each fold is pressed and then pressed back, and the
+  // second press is a real assertion rather than a tidy-up: it is what proves
+  // the control toggles instead of only closing.
+  //
+  // THE COLUMN PAIR GOES FIRST. Folding a section unmounts its columns, so the
+  // other order would have the column press reporting a control that is not
+  // missing, only hidden behind a fold this harness itself just made.
+  //
+  // Column 3 rather than 1 or 2: those two carry the menu and composer presses
+  // above, and a column that has been folded and unfolded is a column whose
+  // popovers have all been closed.
+  {
+    id: 'board-colfold',
+    label: 'Board — a column folds to its head',
+    click: '.km-col:nth-child(3) .km-foldbtn',
+    expect: '.km-col.folded',
+  },
+  {
+    // …and back. `.km-add` is the proof: the Create button goes with the fold,
+    // and a fold is BOARD-WIDE, so while column 3 is folded there is no
+    // `.km-col:nth-child(3) .km-add` in any section to match early.
+    id: 'board-colunfold',
+    label: 'Board — the same column opens again',
+    click: '.km-col:nth-child(3) .km-foldbtn',
+    expect: '.km-col:nth-child(3) .km-add',
+  },
+  {
+    id: 'board-secfold',
+    label: 'Board — an area section folds shut',
+    click: '.im-sechead .km-foldbtn',
+    expect: '.im-section.km-folded',
+  },
+  {
+    // A folded section draws no columns at all, so their return is the proof.
+    id: 'board-secunfold',
+    label: 'Board — the same area opens again',
+    click: '.im-sechead .km-foldbtn',
+    expect: '.im-section:not(.km-folded) .km-cols',
+  },
   {
     // LAST of the board-view presses — it hides every parked row, and every
     // card `stack board-demo` seeds is parked.

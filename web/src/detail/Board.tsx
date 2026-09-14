@@ -134,9 +134,11 @@ import { isHeld } from '../lib/approval';
 import { PRIORITY_META, PRIORITY_DEFAULT, priorityMeta } from '../lib/ui';
 import {
   getBoardShape, createList, patchList, deleteList,
+  getBoardFolds, setBoardFolds,
   createRoadmapItem, patchRoadmapItem, deleteRoadmapItem,
   createSprint, patchSprint, putSprintOrder, deleteSprint,
 } from '../store';
+import type { BoardFolds } from '../store';
 
 // The five priorities, their glyphs and their tones come from `lib/ui.ts` —
 // ONE list, shared with the ＋ dock. This file carried its own copy of it while
@@ -203,6 +205,30 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, hi
   // from the board's closed palette (routes/board.js).
   const [areas, setAreas] = useState<BoardArea[]>([]);
   const [err, setErr] = useState('');
+
+  // ---- THE FOLDS (#510 sections, #511 columns) -----------------------------
+  //
+  // Device-local, per project, through `store.ts` like everything else that
+  // touches storage. Read ONCE per slug and written through on every toggle, so
+  // a fold survives a tab switch and a reload without a round trip — there is
+  // no server copy of this and there should not be: which columns you have
+  // folded is not a fact about the work.
+  //
+  // Columns are keyed BOARD-WIDE and sections by area — getBoardFolds' header
+  // says why the two are scoped differently, and it is the thing to read before
+  // changing either.
+  const [folds, setFolds] = useState<BoardFolds>(() => getBoardFolds(slug));
+  useEffect(() => { setFolds(getBoardFolds(slug)); }, [slug]);
+  const writeFolds = (next: BoardFolds) => { setFolds(next); setBoardFolds(slug, next); };
+  const toggle = (list: string[], key: string) =>
+    (list.includes(key) ? list.filter((k) => k !== key) : [...list, key]);
+  const foldSection = (key: string) => writeFolds({ ...folds, sections: toggle(folds.sections, key) });
+  const foldColumn = (key: string) => writeFolds({ ...folds, columns: toggle(folds.columns, key) });
+  // Unfold one column without toggling it — what a drop onto a folded column
+  // does. A card must never land somewhere the owner cannot see it.
+  const unfoldColumn = (key: string) => {
+    if (folds.columns.includes(key)) writeFolds({ ...folds, columns: folds.columns.filter((k) => k !== key) });
+  };
 
   const loadShape = useCallback(async () => {
     const shape = await getBoardShape(slug);
@@ -362,6 +388,17 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, hi
 
   const onBoard = rows.filter((it) => !it.archived && isBoardWork(it));
   const shown = sections.reduce((n, sec) => n + sec.count, 0);
+
+  // A SEARCH SUSPENDS EVERY FOLD, and the fold controls go with it. A filter
+  // that finds four cards and then draws them inside a folded strip has not
+  // found them, and leaving the chevrons live during a search means pressing
+  // one writes a fold whose effect you cannot see. Nothing stored is touched:
+  // the folds come straight back when the box is cleared, which is why this is
+  // a read-time override rather than a write.
+  const searching = !!query.trim();
+  const foldedSections = searching ? [] : folds.sections;
+  const foldedColumns = searching ? [] : folds.columns;
+  const foldsSuspended = searching && (folds.sections.length > 0 || folds.columns.length > 0);
   const parked = onBoard.filter((it) => it.skipped).length;
   // What the night would actually take out of the sprint in progress — the
   // Backlog tab's badge. `runnable` is the client twin of the runner's own
@@ -565,7 +602,10 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, hi
             <KitIcon name="layers" size={14} />{hideParked ? 'Parked hidden' : `Parked shown${parked ? ` (${parked})` : ''}`}
           </button>
 
-          <span className="km-count">{shown} of {onBoard.length} on the board</span>
+          <span className="km-count">
+            {shown} of {onBoard.length} on the board
+            {foldsSuspended && <span className="km-unfolded"> · folds suspended while searching</span>}
+          </span>
         </div>
 
         {/* THE SCOPE, and "All areas" is a scope like any other rather than the
@@ -582,9 +622,27 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, hi
         </div>
 
         <div className="im-sections">
-          {sections.map((sec) => (
-            <section className="im-section" key={sec.key}>
+          {sections.map((sec) => {
+          const secFolded = foldedSections.includes(sec.key);
+          return (
+            <section className={`im-section${secFolded ? ' km-folded' : ''}`} key={sec.key}>
+              {/* THE FOLD LIVES ON THE BOARD, NOT ON THE FURNITURE (#510).
+                  `.im-sechead` is SHARED with detail/Roadmap.tsx — that is the
+                  whole reason the two screens look alike — so the chevron is a
+                  `.km-*` child inside it and the folded state is a `.km-folded`
+                  class the Roadmap never sets. Roadmap can adopt both the day
+                  it wants them; what it must not do is grow a second
+                  stylesheet for the same look. */}
               <div className="im-sechead">
+                {!searching && (
+                  <button className="km-foldbtn"
+                    aria-expanded={!secFolded}
+                    aria-label={`${secFolded ? 'Expand' : 'Collapse'} ${sec.name}`}
+                    title={secFolded ? 'Expand this area' : 'Collapse this area'}
+                    onClick={(e) => { e.stopPropagation(); foldSection(sec.key); }}>
+                    <KitIcon name={secFolded ? 'chevron-right' : 'chevron-down'} size={15} />
+                  </button>
+                )}
                 {/* THE DOT IS A LEAF, and that is not cosmetic. An area's colour
                     is DATA (`project_areas.dot`), and the palette audit exempts a
                     data tone only on the element whose own `style` names that
@@ -612,8 +670,14 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, hi
                 <span className="n">{sec.count} {sec.count === 1 ? 'card' : 'cards'}</span>
               </div>
 
-              <div className="km-cols">
+              {/* A FOLDED SECTION DRAWS NO COLUMNS AT ALL, rather than drawing
+                  them empty: the header already carries the count, and the
+                  point of the fold is the vertical space the four columns take.
+                  Unmounting also takes every drop target with it, so a card
+                  cannot be dragged into an area whose cards are not on screen. */}
+              {!secFolded && <div className="km-cols">
                 {sec.cols.map((col, ci) => {
+                  const colFolded = foldedColumns.includes(col.key);
                   const dragged = dragId === null ? null : rows.find((x) => x.id === dragId) || null;
                   // A DROP LANDS ONLY INSIDE THE CARD'S OWN AREA. Letting one
                   // cross would have a column drag re-file the row, and
@@ -643,7 +707,7 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, hi
                   // exit still fires one of those.
                   return (
                     <div key={col.key}
-                      className={`km-col${isOver ? ' over' : ''}${col.real ? '' : ' catchall'}${dragged && !isOver && !isSource ? ' dim' : ''}`}
+                      className={`km-col${colFolded ? ' folded' : ''}${isOver ? ' over' : ''}${col.real ? '' : ' catchall'}${dragged && !isOver && !isSource ? ' dim' : ''}`}
                       onDragOver={(e) => { if (wouldMove) { e.preventDefault(); setOver(overKey); } }}
                       onDragLeave={(e) => { if (e.currentTarget === e.target) setOver((o) => (o === overKey ? null : o)); }}
                       onDrop={(e) => {
@@ -651,10 +715,24 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, hi
                         setOver(null);
                         const it = dragged;
                         setDragId(null);
-                        if (it && wouldMove) moveTo(it, col.key);
+                        if (it && wouldMove) {
+                          moveTo(it, col.key);
+                          // A FOLDED COLUMN STILL TAKES A DROP, AND OPENS TO
+                          // SHOW IT. It is a target like any other — a fold is
+                          // about screen space, not about what the board will
+                          // accept — but a card that lands behind a closed
+                          // strip has been filed somewhere the owner cannot
+                          // see, which is the one outcome a drop must never
+                          // have. Unfold, never toggle: dropping on an OPEN
+                          // column must not close it.
+                          unfoldColumn(col.key);
+                        }
                       }}>
                       <ColumnHead col={col} first={ci === 0} last={ci === sec.cols.length - 1}
                         open={menu === overKey}
+                        folded={colFolded}
+                        canFold={!searching}
+                        onFold={() => { closeAll(); foldColumn(col.key); }}
                         onMenu={(e) => { e.stopPropagation(); closeAll(); setMenu(menu === overKey ? null : overKey); }}
                         onRename={(name) => { setMenu(null); renameCol(col.key, name); }}
                         onMove={(d) => { setMenu(null); moveCol(col.key, d); }}
@@ -666,14 +744,19 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, hi
                           that, and it is not a position this screen writes
                           (decision 4) — it is where a space can open without
                           moving the card under the cursor. */}
-                      {isOver && dragged && (
+                      {isOver && dragged && !colFolded && (
                         <DropSlot
                           from={sec.cols.find((c) => c.items.some((x) => x.id === dragged.id))?.name || 'No column'}
                           to={col.name}
                           shipped={col.key === 'shipped'} />
                       )}
 
-                      {col.items.map((it) => (
+                      {/* THE CARDS, THE EMPTY LINE AND THE COMPOSER ALL GO WITH
+                          THE FOLD (#511). The head stays, and it keeps its
+                          count — a folded column says how much is in it, so
+                          nothing about the board's totals has to be
+                          reconstructed from what happens to be drawn. */}
+                      {!colFolded && col.items.map((it) => (
                         <IssueCard key={it.id} item={it} ideas={ideaCount.get(it.id) || 0}
                           sprint={boxes.find((b) => b.id === it.sprintId) || null}
                           selected={selected === it.id}
@@ -699,9 +782,9 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, hi
                           onDelete={() => { setCardMenu(null); remove(it); }} />
                       ))}
 
-                      {col.items.length === 0 && <span className="km-colempty">Nothing here</span>}
+                      {!colFolded && col.items.length === 0 && <span className="km-colempty">Nothing here</span>}
 
-                      {col.real && (composer === overKey ? (
+                      {!colFolded && col.real && (composer === overKey ? (
                         <Composer onClose={() => setComposer(null)}
                           onAdd={(text, bucket) => { setComposer(null); add(text, bucket, col.key, sec.untagged ? '' : sec.key); }} />
                       ) : (
@@ -714,9 +797,10 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, hi
                 })}
 
                 {lists && <AddColumn onAdd={addCol} />}
-              </div>
+              </div>}
             </section>
-          ))}
+          );
+          })}
 
           {sections.length === 0 && (
             <div className="km-colempty">
@@ -831,9 +915,16 @@ function Popover({ anchor, className, inset = 0, children }: {
   );
 }
 
-function ColumnHead({ col, first, last, open, onMenu, onRename, onMove, onDelete }: {
+function ColumnHead({ col, first, last, open, folded, canFold, onFold, onMenu, onRename, onMove, onDelete }: {
   col: { key: string; name: string; items: RoadmapItem[]; real: boolean };
   first: boolean; last: boolean; open: boolean;
+  /** #511 — folded to its own head. The COUNT stays visible either way. */
+  folded: boolean;
+  /** False while a search is running, which suspends every fold — see the
+   *  board's `foldedColumns`. The chevron goes with the suspension rather than
+   *  sitting there writing a state nothing on screen reflects. */
+  canFold: boolean;
+  onFold: () => void;
   onMenu: (e: React.MouseEvent) => void;
   onRename: (name: string) => void;
   onMove: (dir: -1 | 1) => void;
@@ -871,6 +962,15 @@ function ColumnHead({ col, first, last, open, onMenu, onRename, onMove, onDelete
 
   return (
     <div className="km-colhead" ref={headRef}>
+      {canFold && (
+        <button className="km-foldbtn"
+          aria-expanded={!folded}
+          aria-label={`${folded ? 'Expand' : 'Collapse'} column — ${col.name}`}
+          title={folded ? 'Expand this column' : 'Collapse this column, on every area'}
+          onClick={(e) => { e.stopPropagation(); onFold(); }}>
+          <KitIcon name={folded ? 'chevron-right' : 'chevron-down'} size={14} />
+        </button>
+      )}
       <span className="nm">{col.name}</span>
       <span className="k-badge">{col.items.length}</span>
 
