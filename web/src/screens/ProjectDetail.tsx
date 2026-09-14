@@ -13,6 +13,7 @@ import { go, hrefTo } from '../lib/route';
 import { TopBar } from '../components/TopBar';
 import { ConsoleNav, NavIcons, SpaceDot, type NavSection } from '../detail/ConsoleNav';
 import { absoluteHref, type MenuOption } from '../components/MoreMenu';
+import { TerminalNavFoot } from '../components/Asking';
 import { Quality } from '../detail/Quality';
 import { qualityAttention } from '../lib/quality';
 import { ForYou } from '../detail/ForYou';
@@ -562,12 +563,14 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
         {/* THE RAIL'S SELECTION IS THE SCREEN, NOT THE ROUTE KEY. Activity and
             Auto-ideas are For-you tabs, so all three light the same row —
             otherwise pressing a strip tab silently deselects the rail. */}
-        <ConsoleNav active={isForYou(tab) ? 'overview' : tab} sections={navSections} footer={
-          <a className="con-navitem" href={hrefTo.terminal(slug)}>
-            <span className="con-navico">{NavIcons.terminal}</span>
-            <span className="con-navlabel">Terminal</span>
-          </a>
-        } />
+        {/* THE FOOT IS THE TERMINAL ROW AND WHAT IS WAITING ON YOU. It was a
+            bare link; a claude session that has stopped for a permission answer
+            is the most time-sensitive thing Stack knows and the only surface
+            that said so was the terminal screen itself — the one you go to once
+            you already suspect it. components/Asking.tsx owns the rule,
+            including why the rows are NOT scoped to this project. */}
+        <ConsoleNav active={isForYou(tab) ? 'overview' : tab} sections={navSections}
+          footer={<TerminalNavFoot slug={slug} />} />
 
       {/* No `wide` modifier any more (#483): the console fills its column on
           every tab, so the board no longer needs carving out of a cap that was

@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { hrefTo } from '../lib/route';
 import { Brandmark } from './Brandmark';
+import { AskingChip } from './Asking';
 
 // THE HEADER, merged (#432). Six screens each drew their own topbar out of the
 // same three or four pieces, in a different order, at a different height — so
@@ -85,6 +86,15 @@ export function TopBar({ crumb, onSearch, searchLabel = 'Search…', actions, da
 
       <div className="right">
         {actions}
+        {/* A SESSION THAT HAS STOPPED TO ASK YOU SOMETHING, on every screen
+            that has no rail already saying so — the bar is the only thing on
+            all of them, so it is the only place the fact can be told once. It
+            is rendered HERE rather than passed in `actions` because a caller
+            that forgets it is a screen that silently goes quiet, and the chip
+            draws nothing at all when nothing is waiting (components/Asking.tsx
+            says why that silence is not a claim). The showcase has no host and
+            no session — `noAvatar` is that reader, and it gets neither. */}
+        {!noAvatar && <AskingChip />}
         {!noAvatar && (
           <a className="avatar" href={hrefTo.settings} aria-label="Settings"><GearMark /></a>
         )}

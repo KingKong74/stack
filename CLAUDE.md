@@ -13,7 +13,7 @@ it, and a rule here is read by everyone else once. Headers that carry their own:
 `lanes.js`, `terminal/agent-run.mjs`, `terminal/model-switch.mjs`, `terminal/cli-registry.mjs`, `scripts/lib/autoverdict.mjs`, `scripts/lib/refine.mjs`,
 `scripts/stack-autopilot-dispatch.mjs`, `lib/branch.ts`, `lib/plan.ts`, `styles.css`,
 `components/Brandmark.tsx`, `detail/Board.tsx`, `detail/Roadmap.tsx`, `detail/ForYou.tsx`,
-`detail/Plans.tsx` and `components/RoadmapModal.tsx`. **Adding a rule here that belongs in one of those is how this file got to 40 KB.**
+`detail/Plans.tsx`, `components/RoadmapModal.tsx` and `components/Asking.tsx`. **Adding a rule here that belongs in one of those is how this file got to 40 KB.**
 
 **GONE, so you don't go looking** (owner's calls, and what went with each): **Mission Control**'s
 seven rooms (`/api/control`, `/api/review`, `/api/merge`) · **Polaris** (Futures tab, galaxy,
@@ -418,7 +418,7 @@ One file per surface in `server/src/routes/` — `ls` is the index. All behind b
 ## Conventions
 
 - **en-AU spelling** everywhere. Frontend is **strict TS** with `noUnusedLocals`/`noUnusedParameters`
-  on, and persistence and network stay behind `store.ts`.
+  on.
 - **No secrets in the repo.** `.env` (server) and `~/.stack/env` (hooks) are gitignored and load at
   runtime. The hooks never read tokens from the shell profile or settings.json, and never print them.
 - **No PAID external AI APIs.** (Owner's decision 2026-07-16.) Gemini on the free tier is sanctioned
