@@ -82,18 +82,27 @@ function readStackEnv() {
 const SCREENS = [
   { slug: 'dashboard', hash: '#/' },
   // MISSION CONTROL IS SEVEN TABS OF TONE AND FIRST PAINT REACHES ONE, so each
-  // of the other six is walked as its own row. Three presses go a layer deeper
-  // for grounds a shut screen never shows: a fold's open body under a lightened
-  // header, the "never written" empty state, and the Edit button in its ACCENT
-  // state — the kit's lime with a DARK label, which is the --ink trap #432
-  // sprang twice and the one button on this screen that could re-spring it.
+  // of the other six is walked as its own row. #514 wired three of them, which
+  // changed which grounds are reachable and how: the Agents fold and the first
+  // provider fold now open at FIRST PAINT (so pressing one would SHUT the body
+  // this exists to measure — the same trap #497 left a note about on Quality),
+  // and the Context tree is three real docs rather than the kit's six.
+  //
+  // Two presses still go a layer deeper for grounds a shut screen never shows:
+  // the AGENT doc, which is the only one carrying an Edit button, and that
+  // button pressed into its ACCENT state — the kit's lime with a DARK label,
+  // which is the --ink trap #432 sprang twice and the one button on this screen
+  // that could re-spring it. `control-context` at rest is the session-defaults
+  // doc, which is the read-only shape (no Edit button at all) plus the source
+  // pane's own gutter tones.
+  // First paint is AGENTS, not Overview: the screen opens on a wired tab rather
+  // than on four tabs' worth of the kit's sample rows.
   { slug: 'control', hash: '#/control' },
-  { slug: 'control-agents', hash: '#/control', press: ['.mcx-tabs .k-tab:nth-child(2)'] },
-  { slug: 'control-agent-open', hash: '#/control', press: ['.mcx-tabs .k-tab:nth-child(2)', '.mcx-fold:last-child .mcx-agenthead'] },
+  { slug: 'control-overview', hash: '#/control', press: ['.mcx-tabs .k-tab:nth-child(1)'] },
   { slug: 'control-models', hash: '#/control', press: ['.mcx-tabs .k-tab:nth-child(3)'] },
   { slug: 'control-context', hash: '#/control', press: ['.mcx-tabs .k-tab:nth-child(4)'] },
-  { slug: 'control-context-edit', hash: '#/control', press: ['.mcx-tabs .k-tab:nth-child(4)', '.mcx-docviewhead .k-btn'] },
-  { slug: 'control-context-empty', hash: '#/control', press: ['.mcx-tabs .k-tab:nth-child(4)', '.mcx-docrow:nth-of-type(6)'] },
+  { slug: 'control-context-agent', hash: '#/control', press: ['.mcx-tabs .k-tab:nth-child(4)', '.mcx-docrow:nth-of-type(2)'] },
+  { slug: 'control-context-edit', hash: '#/control', press: ['.mcx-tabs .k-tab:nth-child(4)', '.mcx-docrow:nth-of-type(2)', '.mcx-docviewhead .acts .k-btn'] },
   { slug: 'control-loops', hash: '#/control', press: ['.mcx-tabs .k-tab:nth-child(5)'] },
   { slug: 'control-connections', hash: '#/control', press: ['.mcx-tabs .k-tab:nth-child(6)'] },
   { slug: 'control-settings', hash: '#/control', press: ['.mcx-tabs .k-tab:nth-child(7)'] },

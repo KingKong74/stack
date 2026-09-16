@@ -616,3 +616,133 @@ export interface ProjectPulse {
   tests: PulseTests;
   runs: PulseRuns;
 }
+
+// ---- Mission Control: the Agents room (GET /api/agents) ----
+//
+// The tab-agent registry as the room reads it. Everything here is either a
+// REGISTRY FACT (which tab, which ops, which backend — code, in
+// server/src/agents.js) or a CONFIG FIELD the owner may write. The screen has
+// to be able to tell them apart, which is why they arrive in one shape but are
+// rendered as two very different things: an op is a statement, its switch is a
+// control, and nothing in a browser may add or remove one.
+export interface AgentOpRow {
+  op: string;
+  label: string;
+  hint: string;
+  /** Which backend this op runs on. A refusal must NAME the missing one. */
+  backend: 'claude' | 'gemini';
+  enabled: boolean;   // the owner's per-op switch (`ops_off`)
+}
+export interface AgentRow {
+  key: string;
+  name: string;
+  tab: string;
+  tabLabel: string;
+  surface: string;
+  blurb: string;
+  remit: string;
+  enabled: boolean;
+  model: string;      // '' = the CLI's own default
+  guidance: string;   // the owner's standing steer, prefixed to every op prompt
+  ops: AgentOpRow[];
+  runs: number;
+  costUsd: number;    // 0 = has not spent, NEVER "does not cost"
+  lastRunAt: string | null;
+  lastOp: string;
+  lastOutcome: string;
+}
+export interface AgentsRoom {
+  /** The host daemon — what a Claude-backed op needs. */
+  hostReady: boolean;
+  /** GEMINI_API_KEY — what a Gemini-backed op needs. A different fix entirely. */
+  geminiReady: boolean;
+  defaultModel: string;
+  models: { model: string; label: string }[];
+  agents: AgentRow[];
+}
+
+// ---- Mission Control: the Models room (GET /api/models) ----
+export interface ModelRow {
+  model: string;
+  label: string;
+  tokens: number;
+  costUsd: number | null;  // null = UNPRICED — a transcript carries no cost
+  sessions: number;        // interactive sessions it appeared in
+  runs: number;            // autopilot runs it appeared in
+  share: number;           // 0-100, TOKEN-based
+  lastAt: string;
+  /** 'executor' / 'advisor' — matched from the policy alias, never stored. */
+  roles: string[];
+}
+export interface ModelProvider {
+  key: string;
+  name: string;
+  kind: string;
+  reach: string;    // how Stack gets to it — a subscription, a key, or not at all
+  detail: string;
+  state: string;
+  tone: 'success' | 'warning' | 'neutral';
+  tokens: number;
+  share: number;
+  models: ModelRow[];
+}
+export interface ModelsRoom {
+  windowDays: number;
+  hostReady: boolean;
+  geminiReady: boolean;
+  policy: {
+    executor: string;
+    advisor: string;
+    executorCatalogue: { model: string; label: string }[];
+    advisorCatalogue: { model: string; label: string }[];
+    geminiCatalogue: { model: string; label: string; note?: string }[];
+  };
+  totals: {
+    measured: boolean;   // false = NOTHING in the window; draw it ABSENT
+    tokens: number;
+    interactiveTokens: number;  // the human's own work — not answerable to the policy
+    autoTokens: number;         // autopilot runs — what the policy governs
+    sessions: number;
+    runs: number;
+    costUsd: number;     // priced runs ONLY; never the whole bill
+    pricedRuns: number;
+    delegations: { calls: number; recorded: number };
+  };
+  providers: ModelProvider[];
+}
+
+// ---- Mission Control: the Context room (GET /api/context) ----
+//
+// NOT a CLAUDE.md library — read server/src/routes/context.js's header before
+// touching anything here. These are the three kinds of prompt text this
+// installation actually puts in front of a model, and only the two that are the
+// owner's own words carry an `edit`.
+export type ContextDocKind = 'root' | 'agent' | 'assist';
+export interface ContextDocEdit {
+  kind: 'agent-guidance' | 'assist-guidance';
+  agentKey?: string;
+  value: string;
+  label: string;
+  hint: string;
+}
+export interface ContextDoc {
+  id: string;
+  path: string;
+  kind: ContextDocKind;
+  scope: string;
+  inherits: boolean;
+  summary: string;
+  meta: string;
+  body: string;
+  words: number;
+  /** null = NOBODY COUNTS THIS. A dash, never a 0. */
+  reads: number | null;
+  readsLabel: string;
+  /** null = a statement of what the code does, and it has no Edit button. */
+  edit: ContextDocEdit | null;
+  note: string;
+}
+export interface ContextRoom {
+  windowDays: number;
+  docs: ContextDoc[];
+}

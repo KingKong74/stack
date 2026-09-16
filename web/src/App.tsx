@@ -3,7 +3,7 @@ import { useRoute } from './lib/route';
 import { Dashboard } from './screens/Dashboard';
 import { ProjectDetail } from './screens/ProjectDetail';
 import { Settings } from './screens/Settings';
-import { ControlMock } from './screens/ControlMock';
+import { MissionControl } from './screens/MissionControl';
 import { Timeline } from './screens/Timeline';
 
 // xterm.js is heavy and only the terminal needs it — loaded on first visit.
@@ -63,7 +63,7 @@ export default function App() {
       ) : route.name === 'timeline' ? (
         <Timeline />
       ) : route.name === 'control' ? (
-        <ControlMock />
+        <MissionControl />
       ) : route.name === 'terminal' ? (
         null /* the persistent dock below renders it */
       ) : route.name === 'skills' ? (

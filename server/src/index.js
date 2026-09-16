@@ -26,6 +26,8 @@ import { triage } from './routes/triage.js';
 import { tips } from './routes/tips.js';
 import { skills } from './routes/skills.js';
 import { agents } from './routes/agents.js';
+import { models } from './routes/models.js';
+import { context } from './routes/context.js';
 import { worktrees } from './routes/worktrees.js';
 import { agentProfiles } from './routes/agent-profiles.js';
 import { attachTerm } from './term.js';
@@ -92,6 +94,10 @@ app.use('/api/skills', requireToken, skills);
 // #361 — the tab agents (the Curator, on the Roadmap tab). The REGISTRY of who
 // may act on which surface. App-wide, no slug.
 app.use('/api/agents', requireToken, agents);
+// Mission Control's two read layers (#514) — the Models room's policy + measured
+// spend, and the Context room's prompt text. App-wide, no slug.
+app.use('/api/models', requireToken, models);
+app.use('/api/context', requireToken, context);
 // #334 — a different thing that arrived under the same name: the catalogue of
 // SPAWN PROFILES the autopilot hands to `claude --agents`. Nothing to do with
 // the surface registry above — it customises the subagents a RUN spawns — so

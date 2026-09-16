@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 
-// Mission Control was culled: `#/control` renders screens/ControlMock.tsx, the
-// placeholder standing in for the rooms until they are rebuilt. The room
-// segment and the `?hl=` row handoff went with them, but the PATH still parses
-// with anything after `/control` ignored rather than 404ing — `#/control/review`
-// and `#/control/nights` are in live bookmarks and in the topbars of six
-// screens' worth of history, and landing them on the placeholder is what says
-// "this is being rebuilt" instead of "this app is broken".
+// Mission Control was culled and is being rebuilt: `#/control` renders
+// screens/MissionControl.tsx, three of whose seven tabs read this installation
+// (#514) and four of which are still the kit's mockup. The room segment and the
+// `?hl=` row handoff went with the old rooms, but the PATH still parses with
+// anything after `/control` ignored rather than 404ing — `#/control/review` and
+// `#/control/nights` are in live bookmarks and in the topbars of six screens'
+// worth of history, and landing them on the screen is what says "this is being
+// rebuilt" instead of "this app is broken".
 export type Route =
   | { name: 'dashboard' }
   | { name: 'settings' }

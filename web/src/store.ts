@@ -3,6 +3,7 @@ import type {
   ProjectStatus, Priority, Severity, BugStatus, SearchResponse, Settings, AutopilotRun, PlanStep,
   AuthDevice, Sprint, ResumeSince, ProjectDebrief,
   SchedSpan, ProjectPulse, BoardShape, BoardList, BoardArea, ItemKind,
+  AgentsRoom, AgentRow, ModelsRoom, ContextRoom,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -1566,4 +1567,45 @@ export interface TriageResult {
 // existing Keep/Dismiss handlers. 503 when the server has no Gemini key.
 export async function triageInbox(): Promise<TriageResult> {
   return request<TriageResult>('/triage', { method: 'POST' });
+}
+
+
+// ---- MISSION CONTROL's three wired rooms (#514) ----
+//
+// Three reads and one write, and the write is deliberately the SMALLEST one the
+// server already offers. Which tab an agent is bound to and which ops it owns
+// are registry facts in `server/src/agents.js`; nothing here can widen either,
+// and `PATCH /api/agents/:key` refuses anything outside its short list.
+
+/** The Agents room: the registry, each agent's config row, and BOTH backends. */
+export async function getAgentsRoom(): Promise<AgentsRoom> {
+  return request<AgentsRoom>('/agents');
+}
+
+/**
+ * The only write the Agents room makes. `op` + `opEnabled` toggles ONE op
+ * without sending the whole set back, so two tabs open on this screen cannot
+ * clobber each other's switches.
+ */
+export async function patchAgent(key: string, patch: {
+  enabled?: boolean; model?: string; guidance?: string;
+  op?: string; opEnabled?: boolean;
+}): Promise<AgentRow> {
+  return request<AgentRow>(`/agents/${encodeURIComponent(key)}`, { method: 'PATCH', body: patch });
+}
+
+/** The Models room: the executor/advisor policy plus twelve weeks of spend. */
+export async function getModelsRoom(): Promise<ModelsRoom> {
+  return request<ModelsRoom>('/models');
+}
+
+/**
+ * The Context room: the prompt text this installation actually puts in front of
+ * a model. NOT a CLAUDE.md library — `server/src/routes/context.js`'s header
+ * says at length why that surface stays culled. Its two editable docs are
+ * written through `patchAgent` and `patchSettings`, which is the point: there is
+ * no context-writing endpoint to grow a schedule on.
+ */
+export async function getContextRoom(): Promise<ContextRoom> {
+  return request<ContextRoom>('/context');
 }

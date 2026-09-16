@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { termAgentConnected } from '../term.js';
+import { geminiEnabled } from '../gemini.js';
 import { AGENT_MODELS, agentByKey, agentShape, agentsForClient, readAgents, readAgent, writeAgent } from '../agents.js';
 
 // The TAB AGENTS surface (#361) — app-wide, no slug, read by Mission Control's
@@ -26,6 +27,14 @@ agents.get('/', async (_req, res) => {
     // three healthy agents. (`geminiReady` is deliberately gone from this
     // payload rather than left lying: it stopped being this room's question.)
     hostReady: termAgentConnected(),
+    // #514 — and `geminiReady` IS BACK, for a reason that did not exist when it
+    // was dropped. It was removed because the agents had moved to Claude on the
+    // host and one backend meant one question; then `backend: 'gemini'` landed
+    // (#375) and an agent's ops now sit on TWO backends at once. The room draws
+    // a per-op readiness, and gateDecision is emphatic that NAMING THE WRONG
+    // BACKEND sends the owner to investigate something that is fine — so the
+    // room needs both answers or it cannot render either honestly.
+    geminiReady: geminiEnabled(),
     defaultModel: '',
     models: AGENT_MODELS,
     agents: all.map(agentShape),

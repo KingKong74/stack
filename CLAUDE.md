@@ -18,8 +18,8 @@ it, and a rule here is read by everyone else once. Headers that carry their own:
 **GONE, so you don't go looking** (owner's calls, and what went with each): **Mission Control**'s
 seven rooms (`/api/control`, `/api/review`, `/api/merge`) · **Polaris** (Futures tab, galaxy,
 `futures`) · the **instructions tree** (managed CLAUDE.md library + host sync) · the **Workbench**
-(canvas tab, `/api/…/workbench`, `workbench_*`, the Drafter, and `notes` — its only reader, with
-its table, route and ⌘K scope) · the **three corner docks** (#492 — the ＋, the terminal's
+(canvas tab, `/api/…/workbench`, `workbench_*`, the Drafter, and `notes` — its table,
+route and ⌘K scope) · the **three corner docks** (#492 — the ＋, the terminal's
 chip/float, the sessions pill; `/term-status` unwatched) · the Roadmap **Timeline** (#428) and
 **strip** (Scope/Tiers/Parked/Arrange, `lib/curatorTasks.ts`) · the **TAB AGENTS' CONSOLES**
 (#379/#380, `console_off` kept in the DB) and the **Auditor**. THEN THE SCREENS: every project tab
@@ -174,13 +174,13 @@ or the header of the file named in the pointer.
   scoped to the BUCKET, still PATCHable, **written by nothing in the client** — and the kanban has no
   within-column drag because its columns cut across buckets.
 - **THE REST ARE MOCKUPS AND SAY SO ON THEIR OWN FACE** (#443–#497): TWO OF `ForYou.tsx`'s THREE
-  panes (#496 wired Auto-ideas), `ControlMock` (7 tabs), `DevelopmentView` at the foot of `Board.tsx`,
-  and FOUR OF `Plans.tsx`'s SIX sub-views (#482). Each wears a **Mock chip** — on the rail row, or,
-  where a tab is part wired, **on the sub-tab itself** (`TabStrip`'s `mock`, `Plans`' own strip),
-  because a chip covering a wired default view warns about the wrong one. **A number and the screen behind it must agree**: a wired
-  row's badge is its real count, a mockup's counts the MOCKUP. Still UNREACHABLE from a browser, with
-  `./stack` and the API the way in: a **verdict**, **labels**, the **⎇ claim**, **`automode`** and
-  **WRITING the stored schedule** (#451; Plans reads it, #482).
+  panes (#496 wired Auto-ideas), FOUR OF `MissionControl`'s SEVEN (#514), `DevelopmentView` at the
+  foot of `Board.tsx`, and FOUR OF `Plans.tsx`'s SIX (#482). Each wears a **Mock chip** — on the rail
+  row, or **on the sub-tab itself** where a tab is part wired (`TabStrip`'s `mock`, or a screen's own
+  strip), since a chip over a wired view warns about the wrong one. **A number must agree with the
+  screen behind it**: a wired badge is a real count, a mockup's counts the MOCKUP. Still UNREACHABLE
+  from a browser, with `./stack` and the API the way in: a **verdict**, **labels**, the **⎇ claim**,
+  **`automode`** and **WRITING the stored schedule** (#451; Plans, #482).
 - **QUALITY'S FIVE SEVERITIES ARE DERIVED, NEVER A COLUMN** (#497) — `lib/quality.ts`'s header owns
   the mapping. The half that reaches past it: **no grade of rank ≤ 3 may depend on `check_results`**,
   or the rail's badge (`qualityAttention`, off the payload) and the screen (which fetches the history)
@@ -203,8 +203,7 @@ or the header of the file named in the pointer.
   may run and each says "the sprint in progress" — two rows would have them building from different
   boxes with nothing saying so. **`roadmap_items.sprint_rank` is the order inside one box, 0 = top =
   what the night takes first** — dense, rewritten whole on every drop (`PUT /sprints/:id/order`),
-  scoped to the SPRINT and **not** `position`, which is scoped to the bucket. `sprint_id` NULL is the
-  BACKLOG and is the majority. Three spellings, none able to import another: the fan-out's `JOIN
+  scoped to the SPRINT, not the bucket. `sprint_id` NULL is the BACKLOG and is the majority. Three spellings, none able to import another: the fan-out's `JOIN
   sprints … status = 'active'` in `routes/autopilot.js`, the runner's own pick, and `queueOrder`.
   **NO ACTIVE SPRINT MEANS THE NIGHT DOES NOTHING** — a real state, reported out loud on the backlog
   and in the runner's log, never a fallback to the board.
@@ -290,10 +289,10 @@ or the header of the file named in the pointer.
   `claude -p` on the owner's own subscription, so the no-paid-external-AI rule holds. **The sandbox
   that makes that safe is `terminal/agent-run.mjs`, and its header is the thing to read before
   changing anything about it** — an agent prompt is assembled from tracker rows, which is text
-  somebody else wrote. Two consequences that reach past it: **readiness is the DAEMON, not a key** (a
-  switched-off agent is reported before an offline host), and **`ask()` returns PARSED JSON**
-  (`parseAgentJson`, fence-tolerant). **Gemini is not gone**: the per-push review note, check
-  assertions, labelling and triage are still Gemini, still key-gated.
+  somebody else wrote. Two consequences: **a Claude op's readiness is the DAEMON** (and a switched-off
+  agent is reported before an offline host), and **`ask()` returns PARSED JSON** (`parseAgentJson`,
+  fence-tolerant). **Gemini is not gone**: the review note, check assertions, labelling and triage
+  are still Gemini, key-gated.
 - **AN AGENT ANNOTATES A VERDICT; IT NEVER GIVES ONE (#375).** Whatever reads a change next answers
   with a CALL (approve / look / send-back) drawn in the accent and never in a verdict tone, carries
   **`blind[]`** (what it could not see) rendered hardest under an `approve`, and **`read[]`** (what
@@ -322,7 +321,8 @@ or the header of the file named in the pointer.
 - **A repo's CLAUDE.md is the repo's.** Stack used to write each from its own copy every five
   minutes, authoritatively — a stale DB copy silently reverted THIS file for several sessions
   running, each filed as a mystery blocker. Nothing writes a CLAUDE.md now; if something starts to,
-  it needs an off switch before a schedule.
+  it needs an off switch before a schedule. Mission Control's **Context tab is not that
+  library** (#514; `routes/context.js` says what it is).
 
 ## Fail-safe direction (get this right or you delete work)
 
