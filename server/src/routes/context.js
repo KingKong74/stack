@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { q } from '../db.js';
 import { readSettings, SESSION_DEFAULTS, sessionDefaultLines } from '../settings.js';
-import { agentPreamble, readAgents } from '../agents.js';
+import { mergeProfiles } from '../agent-profiles.js';
 import { PULSE_DAYS } from '../pulse.js';
 
 // THE CONTEXT ROOM (Mission Control → Context) — app-wide, one GET.
@@ -26,11 +26,14 @@ import { PULSE_DAYS } from '../pulse.js';
 //     only text here that genuinely is root context. The catalogue is CODE and
 //     which lines are on is a Settings switch, so this room shows it and sends
 //     you there — it is deliberately not editable from two places.
-//   • AGENT — each registered agent's PREAMBLE (`agentPreamble`), which is its
-//     identity, its remit and the owner's standing guidance, prefixed in front
-//     of every op prompt it ever runs. The preamble's shape is code; the
-//     guidance is the owner's, is already a `PATCH /api/agents/:key` field, and
-//     is the one thing on this screen that the Edit button writes.
+//   • AGENT — each SPAWN PROFILE's `prompt` (`agent_profiles`), which is the
+//     system prompt the overnight runner hands `claude --agents` for that
+//     subagent. #520 re-aimed this row: it used to be the tab-agent registry's
+//     PREAMBLE, and that registry is culled. The replacement is a better fit
+//     than the thing it replaces — a preamble was code with one editable line
+//     folded into it, where a profile's prompt is the owner's words end to end,
+//     already a `PATCH /api/agent-profiles/:key` field, and is genuinely the
+//     largest block of text Stack puts in front of a model.
 //   • ASSIST — `settings.assist_guidance`, the standing steer folded into ✧
 //     Fill-from-note. Also the owner's, also already a PATCH field.
 //
@@ -41,17 +44,31 @@ import { PULSE_DAYS } from '../pulse.js';
 //
 // `reads` IS A REAL COUNT OR IT IS NULL. The kit puts a read count on every
 // row; Stack can count sessions in the window (the root block went into each of
-// them) and an agent's own `runs` ledger, and it cannot count the ✧ steer at
-// all. A null renders as a dash, never as 0 — a thing nobody can measure is not
-// a thing nobody read.
+// them) and the open items that would SPAWN a given profile, and it cannot
+// count the ✧ steer at all. A null renders as a dash, never as 0 — a thing
+// nobody can measure is not a thing nobody read.
+//
+// AND A PROFILE'S COUNT IS WHAT `resolveSpawn` WOULD ACTUALLY DO, which is why
+// the executor's takes `agent_profile = ''` as well as its own key: an item
+// that names no profile spawns the executor, so counting only the explicit
+// assignments would report Stack's busiest subagent as its least used. The
+// same asymmetry is why no other profile may claim the blanks.
 export const context = Router();
 
 const words = (s) => String(s || '').trim().split(/\s+/).filter(Boolean).length;
 
 context.get('/', async (_req, res) => {
-  const [settings, agents, sessionCount] = await Promise.all([
+  const [settings, storedProfiles, profileUse, sessionCount] = await Promise.all([
     readSettings(),
-    readAgents(),
+    q('SELECT * FROM agent_profiles ORDER BY key').then((r) => r.rows).catch(() => []),
+    // How many OPEN items would spawn each profile. Open and un-archived,
+    // because a done item is not work anything is going to build tonight.
+    q(
+      `SELECT COALESCE(NULLIF(r.agent_profile, ''), 'executor') AS key, count(*)::int AS n
+         FROM roadmap_items r JOIN projects p ON p.id = r.project_id
+        WHERE p.deleted_at IS NULL AND NOT r.done AND NOT r.archived
+        GROUP BY 1`
+    ).then((r) => r.rows).catch(() => []),
     q(
       `SELECT count(*)::int AS n FROM sessions s JOIN projects p ON p.id = s.project_id
         WHERE p.deleted_at IS NULL AND s.created_at > now() - interval '${PULSE_DAYS} days'`
@@ -64,6 +81,15 @@ context.get('/', async (_req, res) => {
   // when every default is off, which is a real state the client draws as "not
   // written yet" rather than as an empty file.
   const rootBody = lines.join('\n\n');
+
+  // The builtins live in code and are merged in at read time, exactly as
+  // GET /api/agent-profiles does it — so a fresh install with an empty table
+  // still has two rows on this screen rather than none.
+  const profiles = mergeProfiles(storedProfiles.map((r) => ({
+    key: r.key, name: r.name, description: r.description, prompt: r.prompt,
+    model: r.model, tools: r.tools || [], enabled: r.enabled,
+  })));
+  const useByKey = new Map(profileUse.map((r) => [r.key, r.n]));
 
   const docs = [
     {
@@ -83,28 +109,33 @@ context.get('/', async (_req, res) => {
       edit: null,
       note: 'The catalogue is code (server/src/settings.js). Which lines are on is a switch in Settings → Session defaults, and that is the only place it is set.',
     },
-    ...agents.map(({ agent, config }) => {
-      const body = agentPreamble(agent, config.guidance).trimEnd();
+    ...profiles.map((p) => {
+      const body = String(p.prompt || '');
       return {
-        id: `agent:${agent.key}`,
-        path: `agents/${agent.key}.md`,
+        id: `agent:${p.key}`,
+        path: `agents/${p.key}.md`,
         kind: 'agent',
-        scope: agent.remit,
-        // Every op prompt gets the preamble AND, through the session, the root
-        // block — so "inherits" is a fact here rather than the kit's decoration.
-        inherits: true,
-        summary: agent.blurb,
-        meta: config.model ? `pinned to ${config.model}` : 'CLI default model',
+        scope: p.description || `The ${p.name} subagent, on every run that spawns it`,
+        // A subagent's context is ISOLATED — that is the whole point of the
+        // #285 arrangement — so it does NOT get the session's root block. The
+        // kit's inherit flag is a fact on this screen, and here the fact is no.
+        inherits: false,
+        summary: p.description || '',
+        meta: [
+          p.enabled ? null : 'switched off',
+          p.model ? `pinned to ${p.model}` : 'inherits the executor model',
+          `${(p.tools || []).length} tools`,
+        ].filter(Boolean).join(' · '),
         body,
         words: words(body),
-        reads: config.runs,
-        readsLabel: 'runs',
+        reads: useByKey.get(p.key) ?? 0,
+        readsLabel: 'open items',
         edit: {
-          kind: 'agent-guidance',
-          agentKey: agent.key,
-          value: config.guidance,
-          label: 'Standing guidance',
-          hint: 'Folded into the preamble in front of every op this agent runs. Blank is fine — it keeps its identity and its remit either way. The rest of the text above is code.',
+          kind: 'profile-prompt',
+          agentKey: p.key,
+          value: body,
+          label: 'System prompt',
+          hint: 'The whole of what this subagent is told before it starts. Unlike the rest of this screen there is no code wrapped around it — what you write here is what the model reads.',
         },
         note: '',
       };

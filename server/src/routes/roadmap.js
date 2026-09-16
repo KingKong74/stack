@@ -31,7 +31,7 @@ const RISKS = ['low', 'normal', 'high'];
 // box at once and is the only way a rank stops being ambiguous.
 import { roadmapItemShape, groupRoadmap, cleanDate } from '../shape.js';
 import { buildPrompt } from '../prompts.js';
-import { agentClient } from '../agents.js';
+import { askGemini, geminiEnabled } from '../gemini.js';
 import { readSettings } from '../settings.js';
 import { numericId } from '../params.js';
 
@@ -49,25 +49,40 @@ roadmap.use(async (req, res, next) => {
   next();
 });
 
-// #361 — every ✧ surface on this file is the CURATOR, the Roadmap tab's agent,
-// and it is bound once here. The client refuses any op the Curator does not own
-// (a culled agent's op — the Auditor's audit, Polaris's judge — resolves to
-// nobody at all), so the board cannot quietly become somebody else's
-// workspace, and it carries the agent's switch, model and standing guidance.
-const curator = agentClient('curator');
+// THE ✧ BUTTONS ARE PLAIN GEMINI ROUTES AGAIN (#520). They were the CURATOR's,
+// the Roadmap tab's agent, bound once here through a registry (`agents.js`) — a
+// registry that gave every ✧ surface in the app an identity, one switch and one
+// choke point. That registry is gone: the cull it was built to survive finally
+// reached it, and what it governed at the end was these two buttons. Six
+// hundred lines of binding over two call sites is not a restriction, it is a
+// place for a rule to hide.
+//
+// So the two ops that had a button keep working and the shape underneath them
+// is the pre-#361 one: a key check, a prompt, askGemini. What is NOT restored is
+// the thing #361 was right about — eight loose routes each opening with their
+// own `if (!geminiEnabled())` and nothing naming them. There are two, they are
+// side by side, and they share this gate.
+//
+// ON GEMINI AND NOT ON CLAUDE-VIA-HOST, which is a real change and an
+// improvement: a `claude -p` round trip through the daemon took seventy-plus
+// seconds on this host where Gemini answers in two, and it went dark whenever
+// the daemon did. A ✧ button in a modal is a suggestion the owner is waiting on
+// with the dialog open. (This is the same call #375 made for the board's two
+// reads, for the same two reasons.)
+//
+// The rule both routes still obey: GEMINI ANNOTATES, THE HUMAN DISPOSES.
+// Neither writes a row — they answer with fields the modal prefills and the
+// owner saves, or doesn't.
 
-// The Curator's gate, as a response. `true` = it refused and the reply is
-// already sent, so the route returns. This replaced the `if (!geminiEnabled())`
-// line each ✧ route used to open with: a missing key is now one of several
-// reasons an agent may not act, and the agent is the thing that knows them all.
-const refused = async (op, res) => {
-  try {
-    await curator.gate(op);
-    return false;
-  } catch (err) {
-    res.status(err.httpStatus || 503).json({ error: err.message });
-    return true;
-  }
+// `true` = no key, the 503 is already sent and the route returns. The sentence
+// is the one every Gemini surface in the app gives, because the fix is the same
+// one: GEMINI_API_KEY on the server.
+const noGemini = (res) => {
+  if (geminiEnabled()) return false;
+  res.status(503).json({
+    error: 'Gemini is not configured on this server, so this pass cannot run (GEMINI_API_KEY is unset).',
+  });
+  return true;
 };
 
 // GET  /  -> the roadmap, grouped by priority (#469 — five keys, was four)
@@ -574,11 +589,10 @@ roadmap.patch('/:id', async (req, res) => {
   res.json(roadmapItemShape(rows[0]));
 });
 
-// POST /suggest-title  -> the Curator titles an item from its note (the ✧
-// button in the modal). Suggestion only — the human applies or ignores it.
-// 503 if the host is unreachable.
+// POST /suggest-title  -> Gemini titles an item from its note (the ✧ button in
+// the modal). Suggestion only — the human applies or ignores it. 503 with no key.
 roadmap.post('/suggest-title', async (req, res) => {
-  if (await refused('titler', res)) return;
+  if (noGemini(res)) return;
   const note = String(req.body?.note || '').trim().slice(0, 2000);
   if (!note) return res.status(400).json({ error: 'Write the note first — the title comes from it.' });
   const prompt = buildPrompt('titler', {
@@ -588,19 +602,19 @@ roadmap.post('/suggest-title', async (req, res) => {
       : '',
   });
   try {
-    const answer = await curator.ask('titler', prompt, { timeoutMs: 20_000 });
+    const answer = await askGemini(prompt, { timeoutMs: 20_000 });
     const title = String(answer?.title || '').trim().slice(0, 300);
-    if (!title) return res.status(502).json({ error: 'The Curator returned nothing usable.' });
+    if (!title) return res.status(502).json({ error: 'Gemini returned nothing usable.' });
     res.json({ title });
   } catch (err) {
-    res.status(err.httpStatus || 502).json({ error: err.message || "The Curator's call failed." });
+    res.status(err.httpStatus || 502).json({ error: err.message || 'That call failed.' });
   }
 });
 
-// POST /assist  -> the Curator fills the whole item from its note (the
-// modal's ✧ button): title, tidied note, area, branch claim, priority and
-// risk. Suggestion only — it prefills the fields and the human saves (or
-// doesn't). 503 if the host is unreachable.
+// POST /assist  -> Gemini fills the whole item from its note (the modal's ✧
+// button): title, tidied note, area, branch claim, priority and risk.
+// Suggestion only — it prefills the fields and the human saves (or doesn't).
+// 503 with no key.
 //
 // IT DOES NOT PROPOSE A SPRINT, and never will. #277 let it propose a desire
 // tier and #298 then carved S back out again on the grounds that the top of
@@ -609,7 +623,7 @@ roadmap.post('/suggest-title', async (req, res) => {
 // the whole rule: sprint membership IS what the machine works tonight, so a
 // field that filled it would be the assist commissioning work.
 roadmap.post('/assist', async (req, res) => {
-  if (await refused('assist', res)) return;
+  if (noGemini(res)) return;
   const note = String(req.body?.note || '').trim().slice(0, 4000);
   if (!note) return res.status(400).json({ error: 'Write the note first — everything comes from it.' });
   const [{ rows: areaRows }, { rows: branchRows }] = await Promise.all([
@@ -640,9 +654,9 @@ roadmap.post('/assist', async (req, res) => {
       : '',
   });
   try {
-    const answer = await curator.ask('assist', prompt, { timeoutMs: 25_000 });
+    const answer = await askGemini(prompt, { timeoutMs: 25_000 });
     const title = String(answer?.title || '').trim().slice(0, 300);
-    if (!title) return res.status(502).json({ error: 'The Curator returned nothing usable.' });
+    if (!title) return res.status(502).json({ error: 'Gemini returned nothing usable.' });
     // A switched-off field comes back empty — the modal leaves it untouched.
     res.json({
       title,
@@ -656,267 +670,18 @@ roadmap.post('/assist', async (req, res) => {
         ? String(answer.risk).trim().toLowerCase() : '',
     });
   } catch (err) {
-    res.status(err.httpStatus || 502).json({ error: err.message || "The Curator's call failed." });
+    res.status(err.httpStatus || 502).json({ error: err.message || 'That call failed.' });
   }
 });
 
-// POST /cleanup  -> the Curator reviews the OPEN board and suggests fixes:
-// areas for untagged items, cleaned titles, honest buckets. Suggestions only —
-// the client shows them for the human to apply through the normal PATCH.
-// 503 if the host is unreachable.
-// POST /arrange -> the Curator reads the timeline and proposes an ORDER.
-//
-// NO CLIENT CALLS THIS, NOR /cleanup, NOR /allocate. Their surfaces are culled —
-// the Timeline (#428), then the Tiers board and the Arrange panel with it — and
-// the three routes are kept as the record of what the Curator can still be
-// asked, exactly as the branch-preview route is. Read that as "unsurfaced", not
-// as "unused by accident": a new board that wants one of these writes its own
-// client wrapper, and the ops are still in the registry with their switches.
-//
-// PROPOSES ONLY. It returns {moves:[{id,start,why}]} and writes nothing: the
-// timeline ghosts each move in the accent and the owner applies or discards.
-// That is what keeps "Gemini annotates, the human disposes" true of a button
-// whose whole job is rearranging a plan.
-//
-// SCOPED BY AREA, because the panel that called it was. `{area}` narrows the read
-// to one area and `{untagged:true}` to the items carrying none; neither is the
-// client's UNALLOCATED sentinel, which stays a client filter value. The rows the
-// model may MOVE are the rows it is SHOWN — a model handed the whole board and
-// asked to move part of it will move the part it was not asked about.
-roadmap.post('/arrange', async (req, res) => {
-  if (await refused('arrange', res)) return;
-  const area = String(req.body?.area || '').trim().toLowerCase();
-  const untagged = req.body?.untagged === true;
-  const scope = untagged ? " AND COALESCE(area, '') = ''" : area ? ' AND area = $2' : '';
-  const { rows } = await q(
-    `SELECT id, bucket, area, title, note, sched_start_min, sched_len_min, estimate
-       FROM roadmap_items
-      WHERE project_id = $1 AND NOT done AND NOT archived${scope}
-      ORDER BY sched_start_min NULLS LAST, bucket, position`,
-    area && !untagged ? [req.project.id, area] : [req.project.id]
-  );
-  // Two bars cannot be ordered against each other, and one cannot be ordered at
-  // all. Say so rather than spending a call to be told the same — and name the
-  // filter when there is one, or a full board reads as an empty one.
-  const where = untagged ? ' in unallocated' : area ? ` in ${area}` : ' on the board';
-  if (rows.length < 2) return res.json({ moves: [], note: `Not enough${where} to order.` });
-
-  const byId = new Map(rows.map((r) => [r.id, r]));
-  // THE MODEL IS SHOWN WEEKS, AND THE COLUMN IS MINUTES (#401). Deliberately:
-  // this read answers "what must come before what", which is an ordering
-  // question a week is the right grain for, and a prompt quoting six-figure
-  // minute offsets asks a model to do arithmetic instead of reading. The
-  // conversion happens at both boundaries below, and NOTHING about a bar's
-  // LENGTH round-trips through it — the prompt already forbids changing one, and
-  // a sub-week bar rounded to weeks on the way out would come back resized.
-  const weekOf = (min) => (min === null || min === undefined ? null : Math.floor(Number(min) / MIN_PER_WEEK));
-  const prompt = buildPrompt('arrange', {
-    NOW_WEEK: SCHED_NOW_WEEK,
-    ITEMS: rows.map((r) => [
-      r.id, r.area || '-', r.bucket,
-      r.sched_len_min === null
-        ? (r.estimate === null ? '-' : Math.max(1, Math.round(Number(r.estimate))))
-        : Math.max(1, Math.round(Number(r.sched_len_min) / MIN_PER_WEEK)),
-      weekOf(r.sched_start_min) ?? '-',
-      r.title, (r.note || '-').slice(0, 200),
-    ].join(' | ')).join('\n'),
-    NORTH_STAR_LINE: req.project.north_star
-      ? `For context, the project's north star: "${String(req.project.north_star).slice(0, 400)}"`
-      : '',
-  });
-
-  try {
-    const answer = await curator.ask('arrange', prompt, { timeoutMs: 45_000 });
-    const moves = (Array.isArray(answer?.moves) ? answer.moves : [])
-      .map((m) => {
-        const cur = byId.get(Number(m?.id));
-        if (!cur) return null;
-        // The bar KEEPS ITS OWN LENGTH, in minutes, exactly as it is stored. An
-        // unscheduled row has none, so it gets its estimate (weeks) or a
-        // fortnight — the only place a length is invented here.
-        const len = Math.max(MIN_SCHED_LEN, Number(cur.sched_len_min)
-          || (cur.estimate === null ? 2 : Math.round(Number(cur.estimate))) * MIN_PER_WEEK
-          || 2 * MIN_PER_WEEK);
-        // The answer is a week index; the column is minutes. Clamped the same
-        // way a drag is, and never earlier than now: a model is allowed to be
-        // wrong about the week, not to schedule the past.
-        const week = Math.trunc(Number(m.start));
-        if (!Number.isFinite(week)) return null;
-        const start = Math.max(SCHED_NOW_WEEK * MIN_PER_WEEK,
-          Math.min(SCHED_MINUTES - len, week * MIN_PER_WEEK));
-        // A no-op is not a move. Numbers either side: BIGINT arrives as a string.
-        if (Number(cur.sched_start_min) === start && Number(cur.sched_len_min) === len) return null;
-        return { id: cur.id, title: cur.title, sched: { start, len }, why: String(m.why || '').trim().slice(0, 200) };
-      })
-      .filter(Boolean)
-      .slice(0, 8);
-    res.json({ moves });
-  } catch (err) {
-    res.status(err.httpStatus || 502).json({ error: err.message || "The Curator's call failed." });
-  }
-});
-
-// POST /allocate -> the Curator reads the UNTAGGED items and proposes an area
-// for each. The other half of /arrange: that one says WHEN a row runs, this one
-// says WHERE it belongs, and neither is arithmetic — an area is a reading of
-// what the work is about, which is why no sum over the board can do it.
-//
-// PROPOSES ONLY, like everything else the Curator does: a caller ghosts the
-// picks and the owner applies or discards. Nothing here writes an area.
-//
-// IT IS NOT SCOPED BY THE AREA CHIP, and that is not an oversight — untagged IS
-// the population, so narrowing it to an area would leave nothing to work on.
-// Whatever surfaces this next has to say so at the button rather than proposing
-// zero picks and letting the filter take the blame.
-//
-// THE MODEL MAY COIN AN AREA, and each pick says whether it did (`isNew`). A
-// board with no areas yet would otherwise get an empty answer to the one
-// question it most needs asked, and `roadmap_items.area` is a free string that
-// becomes a real area the moment a row mentions it (routes/board.js). Coining
-// is still the exception the prompt discourages, and the human sees the tag
-// before applying — an invented lane is a thing you should have to notice.
-//
-// THE CAP IS ABOUT THE PROMPT, NOT THE WAIT — which is a change of reason, so
-// it is written down. Thirty was chosen when this op ran `claude -p` on the
-// host and a 44-item read did not answer inside 45s; the op has since moved to
-// the Gemini backend, where that round trip is gone. What survives the move is
-// the other half: a long list of items in one prompt is a list a model reads
-// less carefully at the end than at the start, and thirty of them with short
-// notes is a question it can actually answer. The timeout below is now a
-// ceiling rather than a fitted number — it clears nginx's 300s (web/nginx.conf)
-// and Gemini should not come near it.
-//
-// What is left over is not lost: the cut is stated in the prompt on the axis it
-// was made (#239) and again in the panel's summary, and the next press picks up
-// what was left.
-const ALLOCATE_CAP = 30;
-// The buckets in the order the owner reads them, so a cap cuts the Lowests
-// before it cuts the Highests. #469 — five levels, and the ELSE is `lowest`
-// plus anything unrecognised, which sorts last either way.
-const BUCKET_RANK = "CASE bucket WHEN 'highest' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END";
-
-roadmap.post('/allocate', async (req, res) => {
-  if (await refused('allocate', res)) return;
-  const [{ rows }, { rows: areaRows }, { rows: registered }] = await Promise.all([
-    // COUNT(*) OVER () is the pre-LIMIT total: the cap has to be stated in the
-    // prompt (and on the right axis), and it cannot be stated without it.
-    q(
-      `SELECT id, bucket, title, note, COUNT(*) OVER ()::int AS total
-         FROM roadmap_items
-        WHERE project_id = $1 AND NOT done AND NOT archived AND COALESCE(area, '') = ''
-        ORDER BY ${BUCKET_RANK}, position, id
-        LIMIT $2`,
-      [req.project.id, ALLOCATE_CAP]
-    ),
-    q(
-      `SELECT area, COUNT(*)::int AS n FROM roadmap_items
-        WHERE project_id = $1 AND NOT done AND NOT archived AND COALESCE(area, '') <> ''
-        GROUP BY area`,
-      [req.project.id]
-    ),
-    q('SELECT name FROM project_areas WHERE project_id = $1 ORDER BY position, id', [req.project.id]),
-  ]);
-  const total = rows.length ? rows[0].total : 0;
-  if (!rows.length) {
-    return res.json({ picks: [], seen: 0, total: 0, note: 'Nothing is unallocated — every open item already carries an area.' });
-  }
-
-  // A registered area with nothing in it is still a real area to file into —
-  // the same union readAreas() does, for the same reason.
-  const counts = new Map(areaRows.map((r) => [r.area, r.n]));
-  registered.forEach((r) => { if (!counts.has(r.name)) counts.set(r.name, 0); });
-  const known = new Set(counts.keys());
-  const areaList = [...counts.entries()]
-    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-    .map(([name, n]) => `- ${name} (${n} open)`)
-    .join('\n');
-
-  const prompt = buildPrompt('allocate', {
-    AREAS: areaList || '(none yet — this project has never used an area, so every one you give will be new)',
-    // #239 — a capped list says it is capped, and names the axis it was cut on.
-    CAP_LINE: total > rows.length
-      ? `Only the first ${rows.length} of ${total} untagged items are listed, taken in priority order (Highest first). File the ones you can see; the rest come round again next time.\n\n`
-      : '',
-    ITEMS: rows.map((r) =>
-      `${r.id} | ${r.bucket} | ${r.title} | ${(r.note || '-').slice(0, 200)}`).join('\n'),
-    NORTH_STAR_LINE: req.project.north_star
-      ? `For context, the project's north star: "${String(req.project.north_star).slice(0, 400)}"`
-      : '',
-  });
-
-  try {
-    const answer = await curator.ask('allocate', prompt, { timeoutMs: 150_000 });
-    const byId = new Map(rows.map((r) => [r.id, r]));
-    const seen = new Set();
-    const picks = (Array.isArray(answer?.picks) ? answer.picks : [])
-      .map((p) => {
-        const cur = byId.get(Number(p?.id));
-        if (!cur || seen.has(cur.id)) return null; // unknown row, or answered twice
-        const area = String(p?.area || '').trim().toLowerCase().slice(0, 40);
-        // A non-answer dressed as one. "unallocated" is the worst of them: the
-        // client's chip for untagged work is a SENTINEL that is safe only
-        // because no stored area can spell it (lib/plan.ts), and an area
-        // literally called unallocated would sit beside it meaning something
-        // else entirely.
-        if (!area || ['unallocated', 'none', 'n/a', 'unknown', 'other', '-'].includes(area)) return null;
-        seen.add(cur.id);
-        return {
-          id: cur.id,
-          title: cur.title,
-          area,
-          isNew: !known.has(area),
-          why: String(p?.why || '').trim().slice(0, 200),
-        };
-      })
-      .filter(Boolean);
-    res.json({ picks, seen: rows.length, total });
-  } catch (err) {
-    res.status(err.httpStatus || 502).json({ error: err.message || "The Curator's call failed." });
-  }
-});
-
-roadmap.post('/cleanup', async (req, res) => {
-  if (await refused('cleanup', res)) return;
-  const { rows } = await q(
-    `SELECT id, bucket, area, title, note FROM roadmap_items
-      WHERE project_id = $1 AND NOT done ORDER BY bucket, position`,
-    [req.project.id]
-  );
-  if (!rows.length) return res.json({ items: [] });
-  const openById = new Map(rows.map((r) => [r.id, r]));
-  const prompt = buildPrompt('cleanup', {
-    ITEMS: rows.map((r) =>
-      `${r.id} | ${r.bucket} | ${r.area || '-'} | ${r.title} | ${(r.note || '-').slice(0, 300)}`).join('\n'),
-    AREAS: [...new Set(rows.map((r) => r.area).filter(Boolean))].join(', ') || '(none yet)',
-    NORTH_STAR_LINE: req.project.north_star
-      ? `For context, the project's north star: "${String(req.project.north_star).slice(0, 400)}"`
-      : '',
-  });
-  try {
-    const answer = await curator.ask('cleanup', prompt, { timeoutMs: 30_000 });
-    const items = (Array.isArray(answer?.items) ? answer.items : [])
-      .filter((s) => openById.has(Number(s?.id)))
-      .map((s) => {
-        const cur = openById.get(Number(s.id));
-        const area = String(s.area || '').trim().toLowerCase().slice(0, 40);
-        const title = String(s.title || '').trim().slice(0, 300);
-        const bucket = BUCKETS.includes(s.bucket) ? s.bucket : '';
-        return {
-          id: cur.id,
-          currentTitle: cur.title,
-          // Only echo fields that actually change something.
-          ...(area && area !== (cur.area || '') ? { area } : {}),
-          ...(title && title !== cur.title ? { title } : {}),
-          ...(bucket && bucket !== cur.bucket ? { bucket } : {}),
-          why: String(s.why || '').trim().slice(0, 200),
-        };
-      })
-      .filter((s) => s.area || s.title || s.bucket);
-    res.json({ items });
-  } catch (err) {
-    res.status(err.httpStatus || 502).json({ error: err.message || "The Curator's call failed." });
-  }
-});
+// THE CURATOR'S OTHER THREE OPS WENT WITH THE REGISTRY (#520): POST /arrange
+// (propose a timeline order), /allocate (file the untagged into areas) and
+// /cleanup (tidy the open board). All three had lost their SURFACES long
+// before — the Timeline (#428), then the Tiers board and the Arrange panel —
+// and were kept as the record of what the Curator could still be asked. With
+// no Curator there is nothing to ask, so the record goes too. What survives
+// above is the two ops that had a BUTTON, and they are plain Gemini routes
+// again; their prompt templates went from prompts.js in the same commit.
 
 // #375 — POST /:id/review-brief and POST /:id/refine-draft LIVED HERE. They
 // moved to routes/review.js with the ops themselves, which are the Foreman's

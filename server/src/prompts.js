@@ -92,73 +92,8 @@ Use en-AU spelling. Respond with ONLY this JSON:
 { "title": "…", "note": "…", "area": "…", "branch": "…", "priority": "highest|high|medium|low|lowest",
   "risk": "low|normal|high|" }`;
 
-DEFAULTS.cleanup = `You are tidying a side project's roadmap board. Below are its OPEN items
-(id | bucket | area | title | note). Known areas: {{AREAS}}
-{{NORTH_STAR_LINE}}
 
-Suggest fixes ONLY where something is actually off — an empty list is a fine answer:
-- Missing area (area is "-"): suggest one, lowercase, one or two words; prefer known areas.
-- Sloppy title: typos, vague one-worders, or missing the surface it targets — suggest a cleaned
-  short imperative that keeps the author's intent.
-- Clearly mis-prioritised: suggest the honest one ("highest|high|medium|low|lowest").
-Never invent new work, never merge or drop items, and only include a field you are changing.
 
-THE ITEMS:
-{{ITEMS}}
-
-Use en-AU spelling. Respond with ONLY this JSON:
-{ "items": [ { "id": 123, "area": "…", "title": "…", "bucket": "…",
-               "why": "one plain sentence, under 15 words" } ] }`;
-
-DEFAULTS.arrange = `You are sequencing a side project's timeline. Below are its scheduled and
-unscheduled items (id | area | bucket | weeks | start | title | note). "start" is a WEEK INDEX from
-the project's own week zero, or "-" when the item is not scheduled. Week {{NOW_WEEK}} is now.
-{{NORTH_STAR_LINE}}
-
-Arithmetic already handles the packing — closing gaps, stacking a lane, fitting a budget. Your job
-is the ONE thing arithmetic cannot do: read what these items actually are and say what must come
-BEFORE what. A pipeline before the dashboard that reads it. A data model before the feature built
-on it. A migration before the code that assumes it.
-
-Propose a start week for an item ONLY when its ORDER is wrong — an item scheduled before something
-it depends on, or a dependency left unscheduled while its dependant is booked. Say nothing about
-items whose order is already fine. AN EMPTY LIST IS THE RIGHT ANSWER for a board that is already
-correctly ordered, and is much better than shuffling things to look busy.
-
-Rules: never move an item earlier than week {{NOW_WEEK}}; never change how long something takes;
-keep every item in its own area; and never propose more than eight moves.
-
-THE ITEMS:
-{{ITEMS}}
-
-Use en-AU spelling. Respond with ONLY this JSON:
-{ "moves": [ { "id": 123, "start": 12,
-               "why": "one plain sentence naming what it depends on, under 20 words" } ] }`;
-
-DEFAULTS.allocate = `You are filing a side project's untagged roadmap items into its AREAS. An area
-is the part of the product a piece of work belongs to — it is what the timeline draws as a lane and
-what every board filters by, so an item carrying none is in no lane and behind no chip.
-{{NORTH_STAR_LINE}}
-
-The areas this project already uses, with how many open items each one holds:
-{{AREAS}}
-
-{{CAP_LINE}}THE UNTAGGED ITEMS (id | bucket | title | note):
-{{ITEMS}}
-
-Give each item the area it belongs to. Rules:
-- PREFER AN EXISTING AREA. Reach for one of the areas above whenever the work plausibly sits in it;
-  the point of this is to fill the lanes the project already has, not to redraw them.
-- Coin a new area only when a real group of items has no home above — lowercase, one or two words,
-  and never one that is a near-synonym of an existing area.
-- LEAVE AN ITEM OUT when you genuinely cannot tell what it is about. A short honest list beats a
-  complete one full of guesses: an item left out stays exactly as it is now, and the owner files it
-  by hand. AN EMPTY LIST IS A VALID ANSWER.
-- Never rename, re-bucket, re-word, merge or drop anything. The only thing you decide is the area.
-
-Use en-AU spelling. Respond with ONLY this JSON:
-{ "picks": [ { "id": 123, "area": "…",
-               "why": "one plain sentence naming what the item touches, under 15 words" } ] }`;
 
 DEFAULTS.reviewbrief = `You are the reviewer's assistant on a side project command centre. A change is
 awaiting a human verdict (solid / rethink). Write it up so the reviewer can judge quickly without
@@ -235,17 +170,15 @@ const ENV_KEYS = {
   pushnote: 'GEMINI_PUSHNOTE_PROMPT',
   titler: 'GEMINI_TITLER_PROMPT',
   assist: 'GEMINI_ASSIST_PROMPT',
-  cleanup: 'GEMINI_CLEANUP_PROMPT',
   reviewbrief: 'GEMINI_REVIEWBRIEF_PROMPT',
-  // The Curator's two board reads. They were coined STACK_ when they ran
-  // `claude -p` on the host and they have since moved to the Gemini backend
-  // (agents.js) — the keys stay put, because a live deploy may have an override
-  // set against them and a rename would silently drop it. STACK_ has stopped
-  // meaning "reads on Claude" and now means what it should have meant all
-  // along: Stack's own op, whichever backend answers it.
-  arrange: 'STACK_ARRANGE_PROMPT',
-  allocate: 'STACK_ALLOCATE_PROMPT',
   triage: 'GEMINI_TRIAGE_PROMPT',
+  // GONE with the agent registry (#520): `cleanup` (GEMINI_CLEANUP_PROMPT) and
+  // the Curator's two board reads, `arrange` and `allocate` (STACK_ARRANGE_PROMPT,
+  // STACK_ALLOCATE_PROMPT). All three had lost their surfaces years of commits
+  // before they lost their routes. An override still set against one of those
+  // env vars on a live deploy now does nothing — that is the whole cost of
+  // removing a key, and it is why the two that SURVIVE keep their misnamed
+  // GEMINI_ prefix rather than being tidied into something accurate.
 };
 
 export function buildPrompt(name, vars) {

@@ -291,7 +291,7 @@ export function projectListShape(p, { progress, metaLine, pushesThisWeek }) {
   };
 }
 
-export function projectDetailShape(p, { progress, metaLine, pushesThisWeek, cadence, activity, bugs, roadmap, checks, sprints, keepResumeCard, sessionDefaults, staleItemDays, liveBranches, geminiReady, agents, since }) {
+export function projectDetailShape(p, { progress, metaLine, pushesThisWeek, cadence, activity, bugs, roadmap, checks, sprints, keepResumeCard, sessionDefaults, staleItemDays, liveBranches, geminiReady, since }) {
   const latest = activity[0];
   return {
     ...projectListShape(p, { progress, metaLine, pushesThisWeek }),
@@ -301,14 +301,11 @@ export function projectDetailShape(p, { progress, metaLine, pushesThisWeek, cade
     // #278 — is a Gemini key configured on this server. The Quality page reads
     // it to make its AI surfaces ABSENT rather than dead when there's no key:
     // no error, no button that can only 503.
+    // #520 — and it is the whole answer again. A per-agent `agents` map rode
+    // beside it while the tab-agent registry existed, so a tab could say WHICH
+    // of several reasons had killed its ✧; with the registry culled there is
+    // one reason left and this is it.
     geminiReady: geminiReady !== false,
-    // #361 — the TAB AGENTS' live state, keyed by agent: { name, tab, enabled,
-    // ops[] }. Same job as geminiReady one level down: a tab reads its own
-    // agent here and renders its ✧ surfaces absent-with-a-reason rather than
-    // offering a button whose only possible answer is a 409. Absent (an older
-    // server) reads as "no agent switches", i.e. everything on, which is what
-    // the missing-row default means server-side too.
-    agents: agents || {},
     liveBranches: liveBranches || [],         // branches with a live session now (board lock, BUG-2)
     // #477 — the project's SPRINTS, in board order, riding the one payload
     // every tab already renders from. The board needs them to draw its boxes,

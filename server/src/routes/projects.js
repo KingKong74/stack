@@ -12,7 +12,6 @@ import {
 import { readUsage, readTests, readRuns, PULSE_DAYS } from '../pulse.js';
 import { readSettings, sessionDefaultLines } from '../settings.js';
 import { geminiEnabled } from '../gemini.js';
-import { agentsForClient } from '../agents.js';
 
 export const projects = Router();
 
@@ -112,9 +111,6 @@ projects.get('/:slug', async (req, res) => {
   const p = rows[0];
 
   const appSettings = await readSettings();
-  // #361 — the tab agents' live state rides the detail payload (one small read,
-  // the same trip that already carries geminiReady).
-  const tabAgents = await agentsForClient();
   const [sessions, bugs, road, checks, sprintRows, weekly, cadence, live] = await Promise.all([
     q(
       // `authored` rides along for resumeSince(): which of these pushes actually
@@ -175,10 +171,11 @@ projects.get('/:slug', async (req, res) => {
       // Roadmap tab's Parked view ages items without a second settings fetch.
       staleItemDays: appSettings.stale_item_days,
       liveBranches: live.rows.map((r) => r.branch || 'main'),
-      // #278 — the Quality page hides its Gemini surfaces entirely when keyless.
+      // #278 — the Quality page hides its Gemini surfaces entirely when keyless,
+      // and since #520 so does the Roadmap modal's ✧: the per-agent `agents` map
+      // that used to ride beside this is gone with the registry, and this one
+      // boolean is the whole answer again for every ✧ in the app.
       geminiReady: geminiEnabled(),
-      // #361 — and which of its tab agents may act at all.
-      agents: tabAgents,
       // The resume card's provenance: pushes that landed after the checkpoint
       // that wrote it, so a stale card reads as stale.
       since: resumeSince(sessions.rows),

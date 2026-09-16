@@ -25,7 +25,6 @@ import { terminal } from './routes/terminal.js';
 import { triage } from './routes/triage.js';
 import { tips } from './routes/tips.js';
 import { skills } from './routes/skills.js';
-import { agents } from './routes/agents.js';
 import { models } from './routes/models.js';
 import { context } from './routes/context.js';
 import { worktrees } from './routes/worktrees.js';
@@ -91,19 +90,18 @@ app.use('/api/terminal', requireToken, terminal);
 app.use('/api/triage', requireToken, triage);
 app.use('/api/tips', requireToken, tips);
 app.use('/api/skills', requireToken, skills);
-// #361 — the tab agents (the Curator, on the Roadmap tab). The REGISTRY of who
-// may act on which surface. App-wide, no slug.
-app.use('/api/agents', requireToken, agents);
 // Mission Control's two read layers (#514) — the Models room's policy + measured
 // spend, and the Context room's prompt text. App-wide, no slug.
 app.use('/api/models', requireToken, models);
 app.use('/api/context', requireToken, context);
-// #334 — a different thing that arrived under the same name: the catalogue of
-// SPAWN PROFILES the autopilot hands to `claude --agents`. Nothing to do with
-// the surface registry above — it customises the subagents a RUN spawns — so
-// it keeps its own module (agent-profiles.js) and its own mount rather than
-// colliding on /api/agents and server/src/agents.js, which is what the two
-// branches did to each other.
+// THE AGENTS, and since #520 the only ones: the catalogue of SPAWN PROFILES the
+// autopilot hands to `claude --agents`. It kept this longer mount because for
+// two years there was a DIFFERENT thing on /api/agents — the tab-agent registry
+// (#361), which two branches coined the same word for and which is now culled.
+// The path stays `/api/agent-profiles` rather than taking the vacated one: it
+// is in Mission Control's fetch, in the runner's read and in `./stack`, and a
+// rename would buy a shorter URL for the cost of a silent 404 on a deploy that
+// updates one half.
 app.use('/api/agent-profiles', requireToken, agentProfiles);
 app.use('/api/worktrees', requireToken, worktrees);
 app.use('/api/projects', requireToken, projects);
