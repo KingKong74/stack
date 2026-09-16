@@ -552,6 +552,11 @@ a { color: inherit; }
   display: inline-flex; align-items: center; gap: var(--space-4); white-space: nowrap;
   transition: var(--transition-control);
 }
+/* Both of these are worn by ANCHORS as well as buttons — a nav button needs a
+   real href so middle-click and ⌘-click work — and an anchor underlines by
+   default, which draws a button that reads as a link. Said once, here, rather
+   than at each of the five call sites. */
+a.btn-repo, a.k-btn { text-decoration: none; }
 .btn-repo .blk { width: 12px; height: 12px; border-radius: 50%; background: var(--text-secondary); flex: none; }
 .btn-repo:hover { background: var(--surface-overlay); border-color: var(--border-strong); }
 .btn-repo:active { background: var(--surface-press); }
@@ -3860,6 +3865,22 @@ body[data-mc-full] .totop { display: none; }
   position: sticky; top: var(--topbar-h); align-self: flex-start;
   height: calc(100vh - var(--topbar-h)); overflow-y: auto;
 }
+/* ---------- the rail's own fold (#515) ---------- */
+/* The handle sits above everything, hard against the rail's inner edge, so it
+   lands in the same place in both states — a control that moves when you press
+   it is a control you have to hunt for twice. Everything else is wrapped so
+   `.con-navfoot`'s `margin-top: auto` still has a column to push against. */
+.con-nav { --sidebar-mini-w: 52px; transition: width var(--dur-fast) var(--ease-out); }
+.con-railtoggle {
+  align-self: flex-end; flex: none;
+  display: flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; border: 0; background: transparent;
+  border-radius: var(--radius-sm); cursor: pointer;
+  color: var(--text-tertiary); transition: var(--transition-control);
+}
+.con-railtoggle:hover { background: var(--surface-hover); color: var(--text-primary); }
+.con-railtoggle svg { transition: transform var(--dur-fast) var(--ease-out); }
+.con-railbody { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: var(--space-2); }
 .con-navgroup { display: flex; flex-direction: column; gap: var(--space-2); }
 .con-navitems { display: flex; flex-direction: column; gap: var(--space-2); }
 /* A section folds from its label, so the label is a button — same type and
@@ -3917,6 +3938,49 @@ body[data-mc-full] .totop { display: none; }
 .con-navmore { position: absolute; right: 3px; opacity: 0; }
 .con-navrow:hover .con-navmore, .con-navmore:focus-visible, .con-navmore.on { opacity: 1; }
 .con-spacedot { width: 8px; height: 8px; border-radius: var(--radius-xs); flex: none; display: inline-block; }
+
+/* ---------- folded to its icons (#515) ---------- */
+/* EVERY RULE HERE IS INSIDE THE WIDE QUERY, so the narrow layout below needs
+   to know nothing about mini: down there the rail is already a sideways strip,
+   where "narrower" means nothing and a rail folded on the desktop would arrive
+   on a phone as a row of unlabelled glyphs. */
+@media (min-width: 901px) {
+  .con-nav.mini { width: var(--sidebar-mini-w); padding-left: var(--space-2); padding-right: var(--space-2); overflow-x: hidden; }
+  .con-nav.mini .con-railtoggle { align-self: center; }
+  .con-nav.mini .con-railtoggle svg { transform: rotate(180deg); }
+  /* A section label is its fold handle AND the only thing naming a run of
+     rows. With no room for either, the sections are told apart by a rule
+     between them, and every item shows whatever the wide rail had folded shut
+     — the narrow layout makes the same call for the same reason. */
+  .con-nav.mini .con-seclabel { display: none; }
+  .con-nav.mini .con-navgroup.shut .con-navitems { display: flex; }
+  .con-nav.mini .con-navgroup + .con-navgroup { border-top: 1px solid var(--border-subtle); padding-top: var(--space-3); }
+  .con-nav.mini .con-navitem {
+    position: relative; justify-content: center; gap: 0; padding: 0;
+  }
+  /* The indent said "under the row above" when there was a row above to be
+     under; with no labels there is no hierarchy left to draw. */
+  .con-nav.mini .con-navitem.d1, .con-nav.mini .con-navrow > .con-navitem { padding-left: 0; padding-right: 0; }
+  .con-nav.mini .con-navlabel, .con-nav.mini .con-navsoon { display: none; }
+  /* The ⋯ is a hover affordance needing a slot the row no longer has, and both
+     of its moves (open in a tab, copy the link) are on the row itself. */
+  .con-nav.mini .con-navmore { display: none; }
+  /* A count keeps its tone and loses its slot: over the icon's corner, because
+     the label it sat beside is gone. */
+  .con-nav.mini .con-navcount { position: absolute; top: 1px; right: 1px; }
+  /* The foot's two rows. A waiting session keeps its pulsing dot and its
+     warning edge — the two things that say a session is stopped — and drops
+     the name and the age to the tooltip AskRow already carries. */
+  .con-nav.mini .ask-count {
+    position: absolute; top: 0; right: 0; padding: 0; gap: 1px;
+    background: transparent; font-size: 9px;
+  }
+  .con-nav.mini .con-navitem.ask-navrow {
+    width: 100%; margin-left: 0; padding-left: 0; gap: 0;
+    border-radius: var(--radius-sm);
+  }
+  .con-nav.mini .ask-rowtext, .con-nav.mini .ask-age { display: none; }
+}
 
 /* ==========================================================================
    "A SESSION IS ASKING" — components/Asking.tsx.
@@ -6611,6 +6675,9 @@ body[data-mc-full] .totop { display: none; }
      real anchor, so a long-press still offers the browser's own version. */
   .con-navrow > .con-navitem { padding-right: 10px; }
   .con-navmore { display: none; }
+  /* Nothing to fold: the rail is already a strip. */
+  .con-railtoggle { display: none; }
+  .con-railbody { flex-direction: row; align-items: center; gap: var(--space-2); }
   .con-navitem { width: auto; }
   .con-navitem.d1 { padding-left: 10px; }
   .con-navfoot { margin-top: 0; padding-top: 0; flex-direction: row; }
@@ -6822,7 +6889,10 @@ body[data-mc-full] .totop { display: none; }
 .mcx-agenthead .name, .mcx-provhead .name { font: var(--weight-medium) var(--text-md)/1 var(--font-sans); color: var(--text-primary); }
 .mcx-agenthead .role { font: var(--type-caption); color: var(--text-secondary); text-wrap: pretty; }
 .mcx-agenthead .model { flex: 0 0 140px; font: var(--weight-regular) var(--text-2xs)/1.5 var(--font-mono); color: var(--text-link); }
-.mcx-agenthead .autonomy { flex: 0 0 96px; font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-secondary); }
+.mcx-agenthead .autonomy {
+  flex: 0 0 104px; white-space: nowrap;
+  font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-secondary);
+}
 .mcx-agenthead .spend { flex: 0 0 46px; text-align: right; font: var(--weight-medium) var(--text-xs)/1 var(--font-mono); color: var(--text-primary); }
 
 .mcx-provhead .name { flex: 0 0 150px; }

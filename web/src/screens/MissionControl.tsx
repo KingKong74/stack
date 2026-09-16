@@ -742,8 +742,17 @@ function Models() {
                         {/* "unassigned" is an ANSWER, not decoration, so it does
                             not take the kit's --text-disabled: that tone
                             measures under AA, and the Plans dash refused it for
-                            the same reason. */}
-                        <span className={`c-pick${m.roles.length ? ' picked' : ''}`}>
+                            the same reason.
+                            THE MATCH IS BY ALIAS AND THE TOOLTIP SAYS SO. The
+                            policy holds 'sonnet' and a transcript records the id
+                            the CLI resolved it to, so a role lands on every
+                            sonnet the window saw — which is the truth about what
+                            the setting covers, and misreads as a claim about one
+                            model unless the alias is named. */}
+                        <span className={`c-pick${m.roles.length ? ' picked' : ''}`}
+                          title={m.roles.length
+                            ? m.roles.map((r) => `${r} = "${r === 'executor' ? room.policy.executor : room.policy.advisor}"`).join(' · ')
+                            : 'Neither policy alias matches this id'}>
                           {m.roles.length ? m.roles.join(' + ') : 'unassigned'}
                         </span>
                       </div>
