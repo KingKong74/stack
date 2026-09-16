@@ -3865,7 +3865,7 @@ body[data-mc-full] .totop { display: none; }
   position: sticky; top: var(--topbar-h); align-self: flex-start;
   height: calc(100vh - var(--topbar-h)); overflow-y: auto;
 }
-/* ---------- the rail's own fold (#515) ---------- */
+/* ---------- the rail's own fold (#516) ---------- */
 /* The handle sits above everything, hard against the rail's inner edge, so it
    lands in the same place in both states — a control that moves when you press
    it is a control you have to hunt for twice. Everything else is wrapped so
@@ -3939,7 +3939,7 @@ body[data-mc-full] .totop { display: none; }
 .con-navrow:hover .con-navmore, .con-navmore:focus-visible, .con-navmore.on { opacity: 1; }
 .con-spacedot { width: 8px; height: 8px; border-radius: var(--radius-xs); flex: none; display: inline-block; }
 
-/* ---------- folded to its icons (#515) ---------- */
+/* ---------- folded to its icons (#516) ---------- */
 /* EVERY RULE HERE IS INSIDE THE WIDE QUERY, so the narrow layout below needs
    to know nothing about mini: down there the rail is already a sideways strip,
    where "narrower" means nothing and a rail folded on the desktop would arrive
@@ -3980,6 +3980,9 @@ body[data-mc-full] .totop { display: none; }
     border-radius: var(--radius-sm);
   }
   .con-nav.mini .ask-rowtext, .con-nav.mini .ask-age { display: none; }
+  /* A project's tint is the only thing telling two Spaces rows apart once the
+     names are gone, so the dot is the row rather than a marker beside it. */
+  .con-nav.mini .con-spacedot { width: 10px; height: 10px; }
 }
 
 /* ==========================================================================
@@ -6677,7 +6680,7 @@ body[data-mc-full] .totop { display: none; }
   .con-navmore { display: none; }
   /* Nothing to fold: the rail is already a strip. */
   .con-railtoggle { display: none; }
-  .con-railbody { flex-direction: row; align-items: center; gap: var(--space-2); }
+  .con-railbody { flex-direction: row; gap: var(--space-2); }
   .con-navitem { width: auto; }
   .con-navitem.d1 { padding-left: 10px; }
   .con-navfoot { margin-top: 0; padding-top: 0; flex-direction: row; }

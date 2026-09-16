@@ -1391,6 +1391,24 @@ export function setNavFolded(ids: string[]) {
   catch { /* storage full or unavailable — a fold is a nicety, never a blocker */ }
 }
 
+// ---- whether the whole rail is folded down to its icons ----
+//
+// Device-local and NOT per-project, for the same reasons as the section folds
+// above: it describes how wide you want the rail on THIS screen, and the rail
+// is the same rail in every app. Stored as a plain flag rather than a width —
+// there are two states, and a number would invite a drag handle nobody asked
+// for. Absent or corrupt storage falls back to OPEN, which is the state the
+// rail shipped in before it could fold at all.
+const NAV_MINI_KEY = 'stack.navMini';
+
+export function getNavMini(): boolean {
+  return readStoredJSON(NAV_MINI_KEY, (p) => p === true);
+}
+export function setNavMini(mini: boolean) {
+  try { localStorage.setItem(NAV_MINI_KEY, JSON.stringify(mini)); }
+  catch { /* storage full or unavailable — a fold is a nicety, never a blocker */ }
+}
+
 // #297 — the last project a detail page loaded successfully, device-local:
 // the BROWSER is what did the viewing, so a phone and the desktop may
 // legitimately answer differently (same reasoning as `stack.autoRefresh`).

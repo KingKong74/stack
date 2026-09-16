@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { getNavFolded, setNavFolded } from '../store';
+import { getNavFolded, setNavFolded, getNavMini, setNavMini } from '../store';
 import { MoreMenu, type MenuOption } from '../components/MoreMenu';
 
 // THE CONSOLE'S LEFT RAIL (#432) — the kit's AppShell nav, carrying Stack's
@@ -33,6 +33,20 @@ import { MoreMenu, type MenuOption } from '../components/MoreMenu';
 // the row's face is the only thing that stops a mockup being read as data —
 // every one of these screens looks exactly like the real thing, which was the
 // point of porting them. The chip comes off when a screen is wired.
+//
+// THE WHOLE RAIL FOLDS TOO, down to its icons rather than away (#516). Away
+// was the other option and it is the wrong one: a rail that vanishes takes
+// every way out of the current screen with it, so the only move left is the
+// browser's back button. Folded to icons, every row is still one click away
+// and still says which one you are on.
+//
+// Two things follow from there being no labels in that state. A SECTION'S
+// LABEL IS ITS FOLD HANDLE, so a section folded shut on the wide rail would be
+// stranded where nothing could reopen it — the mini rail shows every item,
+// exactly as the narrow layout does and for exactly that reason. And a row's
+// NAME has to survive somewhere, so it moves into the row's `title`, chips and
+// all: a bare icon that turns out to be a mockup is the one thing the Mock
+// chip exists to prevent.
 //
 // THE ⋯ IS A SIBLING OF THE ROW, never inside it: the row is itself a button
 // or an anchor, and a button nested in either is invalid and unreachable by
@@ -82,20 +96,40 @@ function Chevron() {
   );
 }
 
+/** The rail's own handle — one chevron that turns, never two icons: the
+ *  control is the same control in both states and swapping the glyph makes it
+ *  read as two different buttons. */
+function RailChevron() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <polyline points="15 18 9 12 15 6" />
+    </svg>
+  );
+}
+
 export function ConsoleNav({ sections, active, footer }: {
   sections: NavSection[];
   active: NavKey;
   footer?: ReactNode;
 }) {
   const [folded, setFolded] = useState<string[]>(getNavFolded);
+  const [mini, setMini] = useState<boolean>(getNavMini);
   const toggle = (id: string) => {
     const next = folded.includes(id) ? folded.filter((f) => f !== id) : [...folded, id];
     setFolded(next);
     setNavFolded(next);
   };
+  const toggleRail = () => { const next = !mini; setMini(next); setNavMini(next); };
+  const railWord = mini ? 'Expand the sidebar' : 'Collapse the sidebar';
 
   return (
-    <nav className="con-nav" aria-label="Project sections">
+    <nav className={`con-nav${mini ? ' mini' : ''}`} aria-label="Project sections">
+      <button className="con-railtoggle" onClick={toggleRail} title={railWord}
+        aria-label={railWord} aria-expanded={!mini} aria-controls="con-railbody">
+        <RailChevron />
+      </button>
+      <div className="con-railbody" id="con-railbody">
       {sections.map((sec) => {
         const shut = !!sec.label && folded.includes(sec.id);
         return (
@@ -124,12 +158,18 @@ export function ConsoleNav({ sections, active, footer }: {
                   </>
                 );
                 const cls = `con-navitem${on ? ' on' : ''}${it.depth ? ' d1' : ''}${it.soon ? ' soon' : ''}`;
-                if (it.soon) return <div key={it.key} className={cls}>{inner}</div>;
+                // Folded to icons, the label and both chips are off the screen,
+                // so the whole row has to be sayable in a tooltip. Only then —
+                // a tooltip repeating a label you can already read is noise.
+                const tip = mini
+                  ? `${it.label}${it.soon ? ' — Soon' : ''}${it.mock ? ' — Mock' : ''}${it.count ? ` (${it.count})` : ''}`
+                  : undefined;
+                if (it.soon) return <div key={it.key} className={cls} title={tip}>{inner}</div>;
                 // An anchor where there is a real URL, so middle-click still opens
                 // a tab; a button where the move is state-only.
                 const row = it.href
-                  ? <a className={cls} href={it.href} aria-current={on ? 'page' : undefined}>{inner}</a>
-                  : <button className={cls} onClick={it.onClick} aria-current={on ? 'page' : undefined}>{inner}</button>;
+                  ? <a className={cls} href={it.href} title={tip} aria-current={on ? 'page' : undefined}>{inner}</a>
+                  : <button className={cls} onClick={it.onClick} title={tip} aria-current={on ? 'page' : undefined}>{inner}</button>;
                 return (
                   <div className="con-navrow" key={it.key}>
                     {row}
@@ -145,6 +185,7 @@ export function ConsoleNav({ sections, active, footer }: {
         );
       })}
       {footer && <div className="con-navfoot">{footer}</div>}
+      </div>
     </nav>
   );
 }
