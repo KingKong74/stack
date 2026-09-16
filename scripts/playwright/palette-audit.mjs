@@ -447,7 +447,17 @@ async function main() {
       await page.waitForTimeout(1200);
       // A screen still sitting on the token gate has not been audited — say so
       // rather than reporting its handful of clean elements as a pass.
-      const gated = await page.evaluate(() => !!document.querySelector('.gate, .token-gate'));
+      //
+      // `.land` IS THE GATE and neither of the other two has ever existed
+      // (components/TokenGate.tsx renders `.land` / `.land-hero`). So this check
+      // never fired: a wrong --token audited the LANDING PAGE on every screen
+      // and reported it clean, which is this tool's own fail-LOUD rule broken in
+      // the one place it matters — "could not look" rendered as "looked and
+      // found nothing". Found while auditing against a local server with a
+      // different token from ~/.stack/env's. Keep all three selectors: the two
+      // dead ones cost nothing and a gate that gets renamed again should still
+      // be caught by one of them.
+      const gated = await page.evaluate(() => !!document.querySelector('.land, .gate, .token-gate'));
       if (gated) {
         findings.push({ screen: screen.slug, kind: 'unreachable', detail: 'token gate — not audited' });
         await page.close();

@@ -3,7 +3,7 @@ import type {
   ProjectStatus, Priority, Severity, BugStatus, SearchResponse, Settings, AutopilotRun, PlanStep,
   AuthDevice, Sprint, ResumeSince, ProjectDebrief,
   SchedSpan, ProjectPulse, BoardShape, BoardList, BoardArea, ItemKind,
-  AgentsRoom, AgentRow, ModelsRoom, ContextRoom,
+  AgentProfile, AgentProfilesRoom, ModelsRoom, ContextRoom,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -422,8 +422,7 @@ export interface ProjectDetailData {
   sprints: Sprint[];
   keepResumeCard: boolean;
   staleItemDays: number;   // parked-item stale threshold in days (#247) — ages the Parked view
-  geminiReady: boolean;    // #278 — a key is configured; keyless hides the Quality page's AI surfaces
-  agents: TabAgentState;   // #361 — which tab agent may act on this project's tabs, and which of its ops
+  geminiReady: boolean;    // #278/#520 — a key is configured. The WHOLE answer for every ✧ in the app: the per-agent map that rode beside this went with the registry
   shareToken: string;
   liveBranches: string[];  // branches with a live session right now — backs the board's in-progress lock
   // The Overview spine's cadence strip: 28 UTC days, oldest first, zero-filled
@@ -437,7 +436,7 @@ export async function getProjectDetail(slug: string): Promise<ProjectDetailData>
   const d = await request<ProjectPayload & {
     activity: Activity[]; bugs: Bug[]; roadmap: Roadmap;
     checks?: Check[]; sprints?: Sprint[]; keepResumeCard?: boolean; shareToken?: string; liveBranches?: string[];
-    staleItemDays?: number; geminiReady?: boolean; agents?: TabAgentState;
+    staleItemDays?: number; geminiReady?: boolean;
     cadence?: { day: string; n: number }[]; lastPushAt?: string | null;
   }>(`/projects/${encodeURIComponent(slug)}`);
   return {
@@ -455,10 +454,6 @@ export async function getProjectDetail(slug: string): Promise<ProjectDetailData>
     // Default TRUE: an older server that doesn't report it keeps the AI surfaces
     // visible (they 503 honestly), rather than hiding features that do work.
     geminiReady: d.geminiReady !== false,
-    // #361 — same default direction one level down: an older server sends no
-    // agent state, and `agentCan()` reads an absent agent as able to act, so a
-    // tab never hides a feature the server would happily have run.
-    agents: d.agents || {},
     shareToken: d.shareToken || '',
     liveBranches: d.liveBranches || [],
     cadence: d.cadence || [],
@@ -1467,99 +1462,6 @@ export async function deleteSkill(id: number): Promise<void> {
   await request<{ ok: boolean }>(`/skills/${id}`, { method: 'DELETE' });
 }
 
-// ---- the TAB AGENTS (#361) ----
-//
-// Named specialists bound to one project tab — the Curator (Roadmap) is the
-// one left. The binding is the SERVER's — agents.js owns which agent may run
-// which op — so nothing here invents an agent or widens one; this is the read
-// of that registry plus the things the owner may tune.
-// The cull took the other six with their surfaces: 'polaris' (the Futures
-// tab), 'merger' (Mission Control's Merge room), 'foreman' (the Review room),
-// 'scribe' (the instructions tree), 'drafter' (the Workbench tab) and the
-// 'auditor', whose whole surface on Quality was the live session the tab
-// consoles gave it. ONE SURFACE, ONE SWITCH cuts both ways — an agent whose
-// only surface is gone has nothing left to switch, so it leaves the registry
-// rather than lingering as a toggle that governs nothing.
-export type TabAgentKey = 'curator';
-
-export interface TabAgentOp {
-  op: string;
-  label: string;
-  hint: string;
-  enabled: boolean;
-}
-
-// #418 — the same per-op readiness map the project detail payload carries, on
-// its own so an APP-WIDE surface can read it. The corner ＋ has no project
-// loaded and pulling a whole detail payload (activity, bugs, board, funnel,
-// checks) to decide whether to draw two buttons would be absurd. Same shape,
-// same `agentCan`/`agentOffReason` below — never a second answer.
-export async function getAgentState(): Promise<TabAgentState> {
-  return request<TabAgentState>('/agents/state');
-}
-
-// The compact per-project read that rides the detail payload: which agents may
-// act, and which of their ops. Keyed by agent.
-export type TabAgentState = Partial<Record<TabAgentKey, {
-  name: string; tab: string; enabled: boolean; ready?: boolean; ops: string[];
-  /**
-   * The ops whose BACKEND is up. An agent with ops on two backends has no
-   * single answer to "is it ready" — the Curator's two board reads run on
-   * Gemini while its titler and assist run Claude on the host — so anything
-   * asking about one op reads this and not `ready`. Absent from an older
-   * server, which is what makes `ready` still the fallback rather than dead
-   * code.
-   */
-  opsReady?: string[];
-  /** Which of them are Gemini-backed, so a refusal names the right backend. */
-  opsGemini?: string[];
-}>>;
-
-// May this tab's agent run this op right now? UNKNOWN MEANS YES — an older
-// server sends no agent state at all, and hiding a working feature because the
-// payload is quiet would be worse than offering one that answers honestly.
-// Only an agent the server has actually reported as off (or an op it has
-// reported as off) hides anything.
-export function agentCan(state: TabAgentState | undefined, key: TabAgentKey, op: string): boolean {
-  const a = state?.[key];
-  if (!a) return true;
-  // #364 — `ready` is the BACKEND, `enabled` is the owner's switch. Both are
-  // required to offer a ✧, and they are kept apart so the reason below can say
-  // which one is missing.
-  //
-  // PER-OP FIRST. `ready` is one boolean for the host daemon, and an agent
-  // whose ops sit on two backends cannot be described by one boolean: with the
-  // daemon down, the Curator's Gemini reads are fine and only its Claude ops
-  // are not. `opsReady` is the answer for the op actually being asked about;
-  // the agent-wide `ready` is the fallback for a server that predates it.
-  return a.enabled
-    && (a.opsReady ? a.opsReady.includes(op) : a.ready !== false)
-    && a.ops.includes(op);
-}
-
-// What to say instead. Reads the same state, so the reason is never invented:
-// '' when the agent can act.
-export function agentOffReason(state: TabAgentState | undefined, key: TabAgentKey, op: string): string {
-  const a = state?.[key];
-  if (!a || agentCan(state, key, op)) return '';
-  // Order matches the server's gate: the owner's switch is reported before the
-  // backend, so somebody who turned an agent off is not sent to investigate a
-  // host that is fine.
-  if (!a.enabled) return `The ${a.name} is switched off.`;
-  // The op is registered but its BACKEND is down — and which backend it is
-  // decides where the owner goes to fix it, so it has to be named. Same order
-  // and same two sentences as the server's gateDecision.
-  if (a.opsReady && a.ops.includes(op) && !a.opsReady.includes(op)) {
-    return a.opsGemini?.includes(op)
-      ? `This pass runs on Gemini, and Gemini is not configured on this server (GEMINI_API_KEY is unset).`
-      : `The ${a.name} runs Claude on the host, and the host daemon is not connected.`;
-  }
-  if (!a.opsReady && a.ready === false) {
-    return `The ${a.name} runs Claude on the host, and the host daemon is not connected.`;
-  }
-  return `The ${a.name} can still work here, but this one is switched off.`;
-}
-
 // ---- inbox triage (#76 — Gemini's cross-project review assist) ----
 
 // One annotation entry in the triage result, keyed by ref (kind:slug:id).
@@ -1587,29 +1489,42 @@ export async function triageInbox(): Promise<TriageResult> {
   return request<TriageResult>('/triage', { method: 'POST' });
 }
 
-
-// ---- MISSION CONTROL's three wired rooms (#514) ----
+// ---- MISSION CONTROL's three wired rooms (#514, Agents re-aimed by #520) ----
 //
-// Three reads and one write, and the write is deliberately the SMALLEST one the
-// server already offers. Which tab an agent is bound to and which ops it owns
-// are registry facts in `server/src/agents.js`; nothing here can widen either,
-// and `PATCH /api/agents/:key` refuses anything outside its short list.
+// Three reads and two writes. The Agents room reads the SPAWN PROFILES now —
+// the catalogue the overnight runner hands `claude --agents` — because the
+// tab-agent registry it used to read is culled and this is what the word means
+// in Stack from here.
 
-/** The Agents room: the registry, each agent's config row, and BOTH backends. */
-export async function getAgentsRoom(): Promise<AgentsRoom> {
-  return request<AgentsRoom>('/agents');
+/** The Agents room: the profile catalogue, the model policy and the resolved spawn. */
+export async function getAgentProfiles(): Promise<AgentProfilesRoom> {
+  return request<AgentProfilesRoom>('/agent-profiles');
 }
 
 /**
- * The only write the Agents room makes. `op` + `opEnabled` toggles ONE op
- * without sending the whole set back, so two tabs open on this screen cannot
- * clobber each other's switches.
+ * A PARTIAL update over the profile as it stands — the server merges over the
+ * builtin's own fields, so patching one thing cannot blank the rest. Sending a
+ * single field is what lets two tabs open on this screen leave each other's
+ * edits alone.
  */
-export async function patchAgent(key: string, patch: {
-  enabled?: boolean; model?: string; guidance?: string;
-  op?: string; opEnabled?: boolean;
-}): Promise<AgentRow> {
-  return request<AgentRow>(`/agents/${encodeURIComponent(key)}`, { method: 'PATCH', body: patch });
+export async function patchAgentProfile(key: string, patch: Partial<Pick<AgentProfile,
+  'name' | 'description' | 'prompt' | 'model' | 'tools' | 'enabled'>>): Promise<AgentProfile> {
+  return request<AgentProfile>(`/agent-profiles/${encodeURIComponent(key)}`, { method: 'PATCH', body: patch });
+}
+
+/** Create a profile, or replace one wholesale by key. */
+export async function createAgentProfile(profile: Pick<AgentProfile,
+  'key' | 'name' | 'description' | 'prompt' | 'model' | 'tools'> & { enabled?: boolean }): Promise<AgentProfile> {
+  return request<AgentProfile>('/agent-profiles', { method: 'POST', body: profile });
+}
+
+/**
+ * A custom profile is removed; a BUILT-IN is reset to factory and handed back,
+ * because the spawn path always needs 'executor' to exist. The caller cannot
+ * tell the two apart from the status alone, so it reloads either way.
+ */
+export async function deleteAgentProfile(key: string): Promise<void> {
+  await request<unknown>(`/agent-profiles/${encodeURIComponent(key)}`, { method: 'DELETE' });
 }
 
 /** The Models room: the executor/advisor policy plus twelve weeks of spend. */
@@ -1621,8 +1536,8 @@ export async function getModelsRoom(): Promise<ModelsRoom> {
  * The Context room: the prompt text this installation actually puts in front of
  * a model. NOT a CLAUDE.md library — `server/src/routes/context.js`'s header
  * says at length why that surface stays culled. Its two editable docs are
- * written through `patchAgent` and `patchSettings`, which is the point: there is
- * no context-writing endpoint to grow a schedule on.
+ * written through `patchAgentProfile` and `patchSettings`, which is the point:
+ * there is no context-writing endpoint to grow a schedule on.
  */
 export async function getContextRoom(): Promise<ContextRoom> {
   return request<ContextRoom>('/context');

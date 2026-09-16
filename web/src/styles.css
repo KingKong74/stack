@@ -7147,11 +7147,18 @@ body[data-mc-full] .totop { display: none; }
 
 .mcx-backends { display: flex; gap: var(--space-3); flex-wrap: wrap; }
 
-/* ---- Agents ---- */
+/* ---- Agents ----
+   THE ROOM IS THE SPAWN PROFILES NOW (#520). It drew the tab-agent registry
+   until that was culled, and most of these rules survive the swap unchanged
+   because the two screens are the same shape: a fold per agent, a row per
+   switchable thing, a note saying what the switches cannot do. What changed is
+   which way that last note points — an OP was code and the switch could only
+   turn one off; a TOOL is data and this screen is where it is granted. The
+   rules added below are the ones that inversion needed. */
 
-/* An op row: a switch, what the op is, which backend it needs. The LIST is code
-   and cannot be added to here (see ControlMock's note and server/src/agents.js);
-   the switch writes `ops_off`, which is the owner saying "not this one". */
+/* A tool row: a switch and a name. Same geometry the op rows had, because a
+   grant and an op switch are read the same way — the difference is in what the
+   note above them says, not in how they look. */
 .mcx-oprows { display: flex; flex-direction: column; gap: var(--space-4); }
 .mcx-oprow { display: flex; align-items: flex-start; gap: var(--space-4); }
 .mcx-oprow .k-switch-label { display: none; }
@@ -7171,6 +7178,102 @@ body[data-mc-full] .totop { display: none; }
 /* A DOWN BACKEND IS THE WARNING TONE, never a danger one: nothing has failed,
    the op simply cannot run until the daemon or the key comes back. */
 .mcx-oprow .chip.backend.down { color: var(--status-warning-fg); box-shadow: inset 0 0 0 1px var(--status-warning-fg); }
+
+/* THE TOOL LADDER. Grouped, worst-last, with the group's meaning beside its
+   name — eight flat checkboxes read as eight equal preferences and three of
+   these change what a subagent can DO to a checkout. */
+.mcx-tiers { display: flex; flex-direction: column; gap: var(--space-5); }
+.mcx-tier { display: flex; flex-direction: column; gap: var(--space-3); }
+.mcx-tier > .head { display: flex; align-items: baseline; gap: var(--space-3); flex-wrap: wrap; }
+.mcx-tier > .head .l {
+  font: var(--type-eyebrow); letter-spacing: var(--tracking-caps);
+  text-transform: uppercase; color: var(--text-secondary);
+}
+.mcx-tier > .head .n {
+  font: var(--weight-regular) var(--text-2xs)/1.5 var(--font-mono);
+  color: var(--text-tertiary); text-wrap: pretty;
+}
+/* WHAT THE GRANT MEANS, in words, above the checkboxes that make it. Three
+   tones and none of them is danger: granting write access is a decision, not a
+   fault, and spending the danger tone here leaves nothing louder for a run that
+   actually failed (the same call the asking rail makes). */
+.mcx-grant {
+  padding: var(--space-3) var(--space-4); border-radius: var(--radius-md);
+  font: var(--weight-regular) var(--text-2xs)/1.5 var(--font-mono); text-wrap: pretty;
+  background: var(--surface-raised); color: var(--text-secondary);
+}
+.mcx-grant.t-warning { background: var(--status-warning-bg); color: var(--status-warning-fg); }
+.mcx-grant.t-info { background: var(--status-info-bg); color: var(--status-info-fg); }
+
+/* THE FRAME STRIP — the policy a profile is read against, above the folds. Not
+   a panel: it is one line of facts the catalogue below is meaningless without. */
+.mcx-frame {
+  display: flex; align-items: center; gap: var(--space-6); flex-wrap: wrap;
+  padding: var(--space-4) var(--space-5); border-radius: var(--radius-lg);
+  background: var(--surface-sunken); box-shadow: inset 0 0 0 1px var(--border-subtle);
+}
+.mcx-framebit { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.mcx-framebit.grow { flex: 1; min-width: 180px; }
+.mcx-framebit .l {
+  font: var(--type-eyebrow); letter-spacing: var(--tracking-caps);
+  text-transform: uppercase; color: var(--text-tertiary);
+}
+.mcx-framebit .v { font: var(--weight-medium) var(--text-sm)/1.2 var(--font-mono); color: var(--text-primary); }
+.mcx-framebit .note {
+  font: var(--weight-regular) var(--text-2xs)/1.4 var(--font-mono);
+  color: var(--text-tertiary); text-wrap: pretty;
+}
+/* NO ADVISOR = NOTHING BELOW SPAWNS, and it takes the whole width rather than a
+   pill in the strip: every switch under it is inert, so this is not one fact
+   among four. Warning and not danger — the installation is not broken, it is
+   configured single-model. */
+.mcx-framewarn {
+  display: flex; align-items: flex-start; gap: var(--space-4);
+  padding: var(--space-4) var(--space-5); border-radius: var(--radius-lg);
+  background: var(--status-warning-bg);
+}
+.mcx-framewarn .t {
+  font: var(--weight-regular) var(--text-2xs)/1.6 var(--font-mono);
+  color: var(--status-warning-fg); text-wrap: pretty;
+}
+.mcx-framewarn a { color: inherit; }
+.mcx-framewarn code {
+  font: var(--weight-medium) var(--text-2xs)/1 var(--font-mono);
+  padding: 1px 4px; border-radius: var(--radius-xs); background: var(--surface-raised);
+}
+
+/* An editable prompt. The textarea is the one place on this screen where what
+   you type is verbatim what a model reads, so it gets room rather than a row. */
+.mcx-promptfield { display: flex; flex-direction: column; gap: var(--space-3); }
+.mcx-promptfield .eyebrow {
+  font: var(--type-eyebrow); letter-spacing: var(--tracking-caps);
+  text-transform: uppercase; color: var(--text-tertiary);
+}
+.mcx-promptfield textarea.field-input { resize: vertical; height: auto; padding: var(--space-3) 13px; line-height: 1.6; }
+/* The prompt gets room; the description is two rows of prose and should not be
+   dragged up to the prompt's floor. */
+.mcx-promptfield textarea.field-input[rows="7"] { min-height: 96px; }
+.mcx-promptfield .hint {
+  font: var(--weight-regular) var(--text-2xs)/1.5 var(--font-mono);
+  color: var(--text-tertiary); text-wrap: pretty;
+}
+.mcx-newgrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-5); }
+.mcx-newgrid .hint {
+  font: var(--weight-regular) var(--text-2xs)/1.5 var(--font-mono);
+  color: var(--text-tertiary); text-wrap: pretty;
+}
+/* The head's two derived columns. `nowrap` because "0 items" broke across two
+   lines in the kit's narrow spend column, and a count that wraps reads as two
+   numbers. */
+.mcx-agenthead .autonomy, .mcx-agenthead .spend { white-space: nowrap; }
+
+/* A built-in's marker, on the fold head beside its name. */
+.mcx-agenthead .name .chip {
+  margin-left: var(--space-3); height: 18px; padding: 0 6px; border-radius: var(--radius-sm);
+  box-shadow: inset 0 0 0 1px var(--border-default);
+  font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-tertiary);
+  display: inline-flex; align-items: center; vertical-align: middle;
+}
 .mcx-capnote, .mcx-modelnote {
   font: var(--weight-regular) var(--text-2xs)/1.5 var(--font-mono);
   color: var(--text-tertiary); text-wrap: pretty;

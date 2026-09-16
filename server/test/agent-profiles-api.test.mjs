@@ -98,6 +98,31 @@ async function apiReachable() {
   check('reviewer is flagged builtin', byKey(fresh.profiles, 'reviewer')?.builtin, true);
   checkTrue('knownTools is non-empty', Array.isArray(fresh.knownTools) && fresh.knownTools.length > 0);
 
+  // ---- The ROOM's frame (#520) ---------------------------------------
+  //
+  // Mission Control's Agents tab reads this payload, and the three blocks below
+  // are the ones it cannot render honestly without. They are asserted here
+  // rather than in the pure test because every one of them is composed from
+  // SETTINGS or from the database — resolveSpawn's own rules are unit 1's job.
+  //
+  // `defaultSpawn.keys` NON-EMPTY IS THE INVARIANT WITH TEETH: a spawn always
+  // gets at least one building agent, because one with no builder does not fail
+  // loudly — it quietly makes the expensive director model do all the building.
+  checkTrue('defaultSpawn resolves at least one profile',
+    Array.isArray(fresh.defaultSpawn?.keys) && fresh.defaultSpawn.keys.length > 0);
+  checkTrue('defaultSpawn says WHY it resolved what it did',
+    typeof fresh.defaultSpawn?.reason === 'string' && fresh.defaultSpawn.reason.length > 0);
+  // The policy frame. `spawnsAgents` is the whole reason the room leads with a
+  // warning instead of a footnote: `--agents` is passed only when an advisor is
+  // set, so with none every profile on that screen is inert.
+  checkTrue('policy carries both models', typeof fresh.policy?.executorModel === 'string'
+    && typeof fresh.policy?.advisorModel === 'string');
+  check('spawnsAgents tracks the advisor', fresh.policy?.spawnsAgents, Boolean(fresh.policy?.advisorModel));
+  // The use count is a MAP, and an empty one is a real answer on a fresh
+  // install — what must not happen is the key being absent, which the client
+  // would read as 0 for every profile rather than as "nothing to count yet".
+  checkTrue('usage is a keyed map', fresh.usage !== null && typeof fresh.usage === 'object' && !Array.isArray(fresh.usage));
+
   // b. the agent_profiles table is empty at this point — the builtins come
   // from code, not a seed. Via a direct DB query if we have DATABASE_URL,
   // else fall back to inference from the API (a customised model would show

@@ -5,7 +5,7 @@ import {
   createRoadmapItem, patchRoadmapItem,
   patchProject, createShareLink, deleteShareLink,
   assistRoadmapItem,
-  agentCan, setLastViewedProject,
+  setLastViewedProject,
   getProjects,
 } from '../store';
 import type { Project } from '../types';
@@ -761,7 +761,12 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
             .map((i) => i.subArea))].filter(Boolean).sort()}
           mode={roadModal.editing ? 'edit' : 'add'}
           onClose={() => setRoadModal(roadModalClosed)}
-          onAssist={agentCan(data.agents, 'curator', 'assist') ? (note) => assistRoadmapItem(slug, note) : undefined}
+          // #520 — ONE QUESTION AGAIN. This read `agentCan(data.agents,
+          // 'curator', 'assist')` while the tab-agent registry existed and a ✧
+          // could be dead for four different reasons; the registry is culled and
+          // a key is the only one left. Undefined draws no button at all
+          // (ABSENT, not disabled) — the rule every Gemini surface obeys.
+          onAssist={data.geminiReady ? (note) => assistRoadmapItem(slug, note) : undefined}
           onSubmit={submitRoad} />
       )}
       {shareOpen && (

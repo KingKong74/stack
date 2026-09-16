@@ -109,41 +109,43 @@ function suiteFor(slug, ORIGIN) {
     // read it to decide whether to render their ✧ surfaces at all, so a
     // payload that stops carrying it doesn't error — it quietly reads as
     // "no switches", and every agent surface renders on regardless of what
-    // the owner set. Assert the shape, never a state: `enabled` is a switch
-    // the owner is meant to flip, so a check on its VALUE would go red the
-    // moment the feature was used as intended. The `tab` binding is the one
-    // thing that is not supposed to move.
-    { name: 'Agents — the registry is served', url: u('/api/agents'), auth: true, json_path: 'agents.0.key' },
-    { name: 'Agents — each one names its tab', url: u('/api/agents'), auth: true, json_path: 'agents.0.tab' },
-    // Agent 0 is the CURATOR — the only agent left, and the index moved when
-    // the Auditor was culled with the tab consoles. This check twice pinned an
-    // index rather than a name: it read `agents.0.ops.0.op` while agent 0 was
-    // the op-less Auditor and spent its life asserting that a documented empty
-    // list was not empty. The Curator's ops are CLOSED and code-defined, so
-    // the only thing that can empty them is a commit that should be revisiting
-    // this line anyway.
-    { name: 'Agents — the ops list is served', url: u('/api/agents'), auth: true, json_path: 'agents.0.ops.0.op' },
-    // #364 moved the tab agents onto Claude on the host, so what frames this
-    // room is whether the DAEMON is on the line — not whether a key exists.
-    // `geminiReady` went out of the payload deliberately; this check kept
-    // asserting it and only failed once the suite was actually seeded, which
-    // is the argument for seeding a check in the same commit that adds it.
-    { name: 'Agents — the host flag frames the room', url: u('/api/agents'), auth: true, json_path: 'hostReady' },
-    { name: 'Agents — auth gate closed', url: u('/api/agents'), expect_status: 401 },
-    // #418 — the app-wide readiness map the corner ＋ reads. It fails the way
-    // every readiness read fails: SILENTLY. A payload that stops carrying
-    // `curator.opsReady` leaves the dock unable to tell "switched off" from
-    // "backend down", and the ✧ that should have said which one just stops
-    // being drawn — a feature disappearing with nothing anywhere to notice.
-    // `opsReady` and not `enabled`, for the reason the block above gives: the
-    // switch is the owner's to flip, the SHAPE is the contract.
-    { name: 'Agents — the app-wide readiness map', url: u('/api/agents/state'), auth: true, json_path: 'curator.opsReady' },
-    { name: 'Agents — readiness names the Gemini-backed ops', url: u('/api/agents/state'), auth: true, json_path: 'curator.opsGemini' },
-    { name: 'Agents — state gate closed', url: u('/api/agents/state'), expect_status: 401 },
-    // The per-project read the tabs actually use — a different route with its
-    // own shape, and the one whose absence hides the switch rather than the
-    // feature.
-    { name: 'Project — tab agent state', url: u(`/api/projects/${slug}`), auth: true, json_path: 'agents.curator.enabled' },
+    // the owner set. Assert the SHAPE, never a state: `enabled` is a switch the
+    // owner is meant to flip, so a check on its VALUE would go red the moment
+    // the feature was used as intended.
+    //
+    // NINE CHECKS AGAINST /api/agents AND /api/agents/state LIVED HERE and went
+    // with the tab-agent registry (#520). They pinned the Curator's ops, its
+    // tab binding, the host flag framing the room and the per-project readiness
+    // map that let a ✧ say WHICH reason it was dead for. None of those exist —
+    // a ✧ is a plain Gemini route now and `geminiReady` is the whole answer.
+    // What replaces them is below: the same shape-not-state discipline aimed at
+    // the surface that survived.
+    //
+    // `defaultSpawn.keys.0` IS THE ONE WITH TEETH. resolveSpawn always returns
+    // at least one profile — that is the invariant the whole feature rests on,
+    // because a spawn with no builder does not fail loudly, it quietly makes
+    // the expensive director model do all the building. An empty array here is
+    // that invariant broken, and nothing else in the app would say so.
+    { name: 'Agents — a spawn always resolves a builder', url: u('/api/agent-profiles'), auth: true, json_path: 'defaultSpawn.keys.0' },
+    // The frame the room cannot render honestly without: with no advisor,
+    // `--agents` is never passed and every profile is inert. A payload that
+    // stopped carrying this would have the screen draw live-looking switches
+    // over an installation that spawns nothing — silent, and expensive.
+    { name: 'Agents — the spawn policy frames the room', url: u('/api/agent-profiles'), auth: true, json_path: 'policy.spawnsAgents' },
+    // A profile's TOOL GRANT. It is the field that decides what a subagent may
+    // do to a checkout, and it is validated server-side against `knownTools` —
+    // losing either end turns a grant into an open string.
+    { name: 'Agents — a profile carries its tool grant', url: u('/api/agent-profiles'), auth: true, json_path: 'profiles.0.tools.0' },
+    { name: 'Agents — the tool vocabulary is served', url: u('/api/agent-profiles'), auth: true, json_path: 'knownTools.0' },
+    { name: 'Agents — auth gate closed', url: u('/api/agent-profiles'), expect_status: 401 },
+    // #520 — the registry's route is GONE, and a deploy that still answers it
+    // is a deploy running the old server. Asserted as a 404 rather than left
+    // untested: a half-updated deploy is exactly when the client would call it.
+    { name: 'Agents — the culled registry route is gone', url: u('/api/agents'), auth: true, expect_status: 404 },
+    // The ✧ pair's gate is `geminiReady` in the detail payload now — the
+    // per-agent `agents` map that used to answer this went with the registry,
+    // and this one boolean is what makes the modal draw a ✧ at all.
+    { name: 'Project — the ✧ gate', url: u(`/api/projects/${slug}`), auth: true, json_path: 'geminiReady' },
     { name: 'Search — grouped counts', url: u('/api/search?q=roadmap'), auth: true, json_path: 'counts.total' },
     { name: 'Search — empty query is empty', url: u('/api/search?q='), auth: true, json_path: 'counts.total', json_expect: '0' },
     // BUG-2 — ⌘K's counts and its RESULTS are two different keys, and only the

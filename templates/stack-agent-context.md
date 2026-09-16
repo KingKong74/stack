@@ -61,19 +61,17 @@ The block is a snapshot. For the current state at any moment, read the API:
   direction and pull your work towards it. If it carries **directives**, they
   are standing instructions from the owner — honour them before anything else,
   and don't remove them yourself (they're cleared from the dashboard).
-- `GET /api/agents` — Stack's own in-app agents (the Curator, on the Roadmap
-  tab, is the one left).
-  **These are not you**: they are the ✧ buttons on that surface, each restricted
-  to its own ops, and any of them can be switched off. There is nothing else to
-  them — an agent used to carry a `console` too, a live Claude session in the
-  project's checkout opened from a strip on its own tab, and that is culled
-  (with the Auditor, whose whole surface it was). Worth reading only to explain
-  why a ✧ surface is missing, or why one of those routes answered 409 (switched
-  off) or 503 (the backend is down — since #364 they run `claude -p` on the host
-  through the terminal daemon, so that daemon is their backend rather than an
-  API key; the Curator's read-only board reads are the exception and run on
-  Gemini, so a 503 there means the key, not the daemon — each op reports which
-  in `backend`).
+- `GET /api/agent-profiles` — Stack's agents, and since #520 the only thing the
+  word means here: the SPAWN PROFILES an overnight run hands `claude --agents`.
+  Each is a subagent with its own prompt, model and granted tools.
+  **These are not you** — you are the session; these are what a *run* delegates
+  to. Worth reading to explain what an overnight build actually spawned, or why
+  it spawned nothing: `--agents` is passed only when an ADVISOR model is set, so
+  on a single-model install every profile is inert. `policy.spawnsAgents` says
+  which, and `defaultSpawn` is the server resolving a real one.
+  There was a second, unrelated agents surface — a registry of ✧ buttons on
+  `/api/agents`, each with its own switch. It is culled. **A ✧ is now a plain
+  Gemini route**, so a 503 from one means `GEMINI_API_KEY`, never a daemon.
 
 **A repo's CLAUDE.md is the repo's.** Stack used to manage a tree of them and
 write each one from its own copy on a five-minute sync; that surface is culled,

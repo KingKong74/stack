@@ -529,14 +529,29 @@ const CONTROL_PANELS = [
     click: '.mcx-tabs .k-tab:nth-child(1)',
     expect: '.mcx-pulseitem',
   },
-  // `.mcx-oprow` rather than `.mcx-agenthead`: the head renders from the
-  // registry alone, and the op rows are the part that proves the config row and
-  // both backends came back.
+  // THE AGENTS TAB IS THE SPAWN PROFILES NOW (#520) and both selectors survived
+  // the swap, which is worth stating rather than leaving to look like luck: the
+  // tool rows reuse `.mcx-oprow` because a grant and an op switch are read the
+  // same way. What they PROVE changed completely — it was the config row and
+  // two backends, and it is now that a profile's `tools` array arrived.
   {
     id: 'control-agents',
     label: 'Mission Control — Agents tab',
     click: '.mcx-tabs .k-tab:nth-child(2)',
     expect: '.mcx-oprow',
+  },
+  // THE FRAME, SEPARATELY, because its absence is the silent expensive one. The
+  // room is meaningless without the spawn policy: a profile's `model: ''`
+  // inherits the executor, and `--agents` is passed only when an advisor is
+  // set — with none, every switch on that screen is inert. Exactly one of these
+  // two is always present (the strip when an advisor is set, the warning when
+  // not), so `.mcx-frame, .mcx-framewarn` witnesses the payload either way and
+  // pins neither state: which one shows is the owner's setting, not a contract.
+  {
+    id: 'control-agents-frame',
+    label: 'Mission Control — the Agents tab states its spawn policy',
+    click: '.mcx-tabs .k-tab:nth-child(2)',
+    expect: '.mcx-frame, .mcx-framewarn',
   },
   // Likewise the model TABLE, not the provider head — a head with no rows under
   // it is what an unmeasured window looks like.

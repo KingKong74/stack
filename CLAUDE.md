@@ -9,7 +9,7 @@ keep under the 40 KB budget (`node scripts/context-budget.test.mjs`).
 **WHERE A RULE GOVERNS ONE FILE IT LIVES IN THAT FILE'S HEADER**, and this file keeps only the
 pointer and the cross-cutting half: a rule beside the code it governs is read by whoever is changing
 it, and a rule here is read by everyone else once. Headers that carry their own: `routes/ingest.js`, `prompts.js`, `routes/checks.js`, `routes/worktrees.js`,
-`routes/terminal.js`, `routes/autopilot.js`, `routes/sprints.js`, `agent-profiles.js`, `agents.js`, `pulse.js`,
+`routes/terminal.js`, `routes/autopilot.js`, `routes/sprints.js`, `agent-profiles.js`, `pulse.js`,
 `lanes.js`, `terminal/agent-run.mjs`, `terminal/model-switch.mjs`, `terminal/cli-registry.mjs`, `scripts/lib/autoverdict.mjs`, `scripts/lib/refine.mjs`,
 `scripts/stack-autopilot-dispatch.mjs`, `lib/branch.ts`, `lib/plan.ts`, `styles.css`,
 `components/Brandmark.tsx`, `detail/Board.tsx`, `detail/Roadmap.tsx`, `detail/ForYou.tsx`,
@@ -22,12 +22,14 @@ seven rooms (`/api/control`, `/api/review`, `/api/merge`) · **Polaris** (Future
 route and ⌘K scope) · the **three corner docks** (#492 — the ＋, the terminal's
 chip/float, the sessions pill; `/term-status` unwatched) · the Roadmap **Timeline** (#428) and
 **strip** (Scope/Tiers/Parked/Arrange, `lib/curatorTasks.ts`) · the **TAB AGENTS' CONSOLES**
-(#379/#380, `console_off` kept in the DB) and the **Auditor**. THEN THE SCREENS: every project tab
+(#379/#380, `console_off` kept in the DB) · the **Auditor** · and the whole **TAB-AGENT REGISTRY**
+(#520 — `agents.js`, `/api/agents`, the Curator, `agent_configs` as a reader, and the
+`arrange`/`allocate`/`cleanup` ops with their prompts). THEN THE SCREENS: every project tab
 became a kit mockup (#443–#451) and is being wired back one at a time; the item modal lost
 Priority/Tier/Risk/Branch (#469).
 
-Two things that leaves: the **CURATOR is the only agent**, and only its `assist` op has a caller
-(`arrange`, `allocate`, `cleanup`, `titler` are registered and unsurfaced). Rules that outlived their surface SAY SO.
+What that leaves: **AGENT MEANS ONE THING NOW — a spawn profile** (`agent_profiles`). Rules that
+outlived their surface SAY SO.
 
 ## What Stack is
 
@@ -280,19 +282,17 @@ or the header of the file named in the pointer.
   survive a DELETE. The invariant with teeth: **a spawn always gets at least one building agent** (no
   profiles, all disabled, an unknown key all fall back to the executor), or the expensive director
   model silently does the building.
-- **AN AGENT'S BINDING IS CODE, NOT DATA (#361, #375)** — `src/agents.js` is the registry and its
-  header carries the shape. What reaches past it: **one surface, one switch**, both ways, so an op
-  MOVES with its surface and an unregistered op cannot run at all; **a missing config row means ON**,
-  as with `readSettings()`; and an op's `backend` may be `'gemini'`, so a surface with two backends
-  still has ONE switch and only the refusal differs — it must NAME the missing backend.
-- **THE TAB AGENTS RUN CLAUDE ON THE HOST (#364), not Gemini** — through the daemon's uplink to
-  `claude -p` on the owner's own subscription, so the no-paid-external-AI rule holds. **The sandbox
-  that makes that safe is `terminal/agent-run.mjs`, and its header is the thing to read before
-  changing anything about it** — an agent prompt is assembled from tracker rows, which is text
-  somebody else wrote. Two consequences: **a Claude op's readiness is the DAEMON** (and a switched-off
-  agent is reported before an offline host), and **`ask()` returns PARSED JSON** (`parseAgentJson`,
-  fence-tolerant). **Gemini is not gone**: the review note, check assertions, labelling and triage
-  are still Gemini, key-gated.
+- **AN AGENT IS A SPAWN PROFILE AND NOTHING ELSE (#520).** A tab-agent REGISTRY (#361) wore the word
+  too, binding every ✧ to one agent with one switch; it governed two buttons by the end and is
+  culled. So **a ✧ is a plain Gemini route and `geminiReady` is the WHOLE answer to "may it run"**.
+  Mission Control's **Agents room is `agent_profiles`** — hold the inversion: an op was CODE and a
+  browser could only switch one OFF, where **a profile's tools are DATA and that screen GRANTS
+  them**. **`--agents` is passed only when an advisor is set**: with none every profile is inert and
+  a surface drawing them must say so.
+- **The host uplink survives, unsurfaced**: `askClaudeOnHost` + **`terminal/agent-run.mjs`, whose
+  sandbox is the thing to read before touching it** — it ran prompts built from tracker rows (text
+  somebody else wrote) with every tool off and a cwd that is not a repo. Nothing calls it; kept so
+  the next host-side model call does not write a worse one.
 - **AN AGENT ANNOTATES A VERDICT; IT NEVER GIVES ONE (#375).** Whatever reads a change next answers
   with a CALL (approve / look / send-back) drawn in the accent and never in a verdict tone, carries
   **`blind[]`** (what it could not see) rendered hardest under an `approve`, and **`read[]`** (what
@@ -401,7 +401,7 @@ ones whose meaning isn't obvious from the name:
 | `autopilotEnabled` | the ARM SWITCH. Nightly + scheduled jobs only enqueue while on; ▶ Run now stays manual-only |
 | `autopilotWorkers` | the FLEET-WIDE cap on concurrent jobs (0 = unlimited, default 3, clamped 1–8); per-project serialisation is separate and NOT tunable |
 | `autopilotExecutorModel` / `autopilotAdvisorModel` | #153, **inverted by #285**: the ADVISOR runs the session (main loop, plans, delegates, verifies, commits) and the EXECUTOR is exposed to it as a subagent with the write tools. Advisor unset = single-model on it |
-| `assistFields` / `assistGuidance` | what ✧ Fill-from-note may fill, and the owner's standing steer. Assist never overrides a value the human set. **branch, risk, tier and priority are DEAD toggles** — the route answers them and nothing can land them (#469, #477, #492) |
+| `assistFields` / `assistGuidance` | what ✧ Fill-from-note may fill, and the owner's steer. Never overrides a value the human set. **branch, risk, tier and priority are DEAD toggles** — answered, unlandable (#469, #477, #492) |
 | `termIdleHours` | the idle reaper's threshold (0 = never); the host kills, fails SAFE, and **it switches BOTH reapers** — this and the daemon's 1-min unused sweep |
 | `accessPinSet` | PIN sign-in available; PATCH takes write-only `accessPin` ('' disables). Any change signs out every PIN-connected device |
 
@@ -428,6 +428,8 @@ One file per surface in `server/src/routes/` — `ls` is the index. All behind b
     exception, machine verdicts on low-risk all-green runs; #274 carves out an exception to THAT.)
   • **Absent key = silent degrade.** Every Gemini surface no-ops or 503s cleanly without
     `GEMINI_API_KEY`, and the client renders it ABSENT rather than disabled, keyed off `geminiReady`.
+  • **The ✧ modal pair (`assist`, `titler`) is Gemini, not the host** (#520). On `claude -p` a round
+    trip took 70s+ where Gemini answers in two, and it went dark with the daemon.
   • **An empty answer is a valid answer, and the prompt has to invite one.** The ✎ Refine draft
     returns `draft: ""` when the record doesn't evidence a change — a model told to produce a delta
     will otherwise produce one, and what comes back is "verify it works" dressed as a finding. Any

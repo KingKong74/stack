@@ -17,16 +17,18 @@
 // a MAPPING DECISION rather than a rename for each. Here is what the three
 // wired ones decided, and what the four left owe:
 //
-//  • AGENTS (wired) is the tab-agent REGISTRY plus its config row —
-//    `server/src/agents.js` and `agent_configs`. It is NOT `agent_profiles`,
-//    which is the autopilot's spawn catalogue and a different thing that
-//    arrived under the same word; merging the two is the trap the port's header
-//    named and this screen does not go near it. The Curator is the only agent
-//    left, so the room is one fold: five ops, two backends, one switch each.
-//    THE "CAN DO" LIST IS STILL NOT EDITABLE. An op is CODE. What the switches
-//    do is turn one OFF (`ops_off`), which is a real server field whose own
-//    refusal sentence says "(Mission Control → Agents)" — this screen is the
-//    surface that sentence has been pointing at.
+//  • AGENTS (wired, and RE-AIMED by #520) is `agent_profiles` — the spawn
+//    catalogue the overnight runner hands `claude --agents`. It used to be the
+//    other thing that arrived under the same word: the tab-agent REGISTRY
+//    (`server/src/agents.js` + `agent_configs`), and this header used to warn
+//    that merging the two was the trap. They were never merged — the registry
+//    was CULLED and the tab went to the survivor. What is left is the half that
+//    decides how every night gets built.
+//    THE "CAN DO" LIST IS EDITABLE NOW, and that inversion is the whole
+//    difference between the two: an op was CODE, so a browser could only switch
+//    one off, where a profile's tools are DATA and this screen is where they are
+//    granted. So the kit's New button is back and honest, and `grantLine` exists
+//    because eight checkboxes cannot say what ticking one hands a model.
 //  • MODELS (wired) is the executor/advisor policy (#153, inverted by #285)
 //    plus twelve weeks of measured spend, and the rule the kit's single share
 //    bar could not hold: TWO POPULATIONS THAT MUST NOT BE MIXED. The bar at the
@@ -41,9 +43,10 @@
 //    five minutes and a stale DB copy silently reverted this project's own file
 //    for several sessions running. So the tab answers the honest version of the
 //    kit's question — what text actually reaches a model here — over the three
-//    things that really do: the session defaults, each agent's preamble, and the
-//    ✧ assist steer. Two of those are the owner's own words and carry the Edit
-//    button; the rest is code and has no button at all.
+//    things that really do: the session defaults, each SPAWN PROFILE's prompt
+//    (#520 re-aimed this from the culled registry's preambles) and the ✧ assist
+//    steer. Two of those are the owner's own words and carry the Edit button;
+//    the rest is code and has no button at all.
 //    `server/src/routes/context.js`'s header is the long version.
 //  • OVERVIEW (mock) is `autopilot_runs`, and the kit's "runs today / landed /
 //    failed" strip is THREE of the four buckets a night partitions into.
@@ -67,6 +70,13 @@
 //    automation that destroys does nothing when it cannot reach the API, and
 //    neither has been thought through in those terms yet.
 //
+// THE HEADER FLAG CHANGED WITH THE TAB. It reported the HOST DAEMON, because
+// that was the frame around every tab-agent switch. The daemon belongs to the
+// terminal and to Models now, and this screen's frame is whether an ADVISOR is
+// set — with none, `--agents` is never passed and every profile on the Agents
+// tab is inert. Same rule one layer in: state the thing that makes the screen
+// below it true or false.
+//
 // NOTHING ON A MOCK TAB IS A FACT ABOUT THIS INSTALLATION — every tone on one
 // (green pills, an amber bar, a red danger zone) is the kit's sample data, and
 // the four switches on them are local state that leaving the page undoes. A
@@ -80,10 +90,11 @@
 
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import type {
-  AgentRow, AgentsRoom, ContextRoom, ModelsRoom,
+  AgentProfile, AgentProfilesRoom, ContextRoom, ModelsRoom,
 } from '../types';
 import {
-  getAgentsRoom, getContextRoom, getModelsRoom, patchAgent, patchSettings,
+  getAgentProfiles, getContextRoom, getModelsRoom, patchAgentProfile,
+  createAgentProfile, deleteAgentProfile, patchSettings,
 } from '../store';
 import { compactTokens } from '../lib/spine';
 import { hrefTo } from '../lib/route';
@@ -247,29 +258,26 @@ const usd = (n: number) => `$${(Math.round(n * 100) / 100).toFixed(2)}`;
 /** null = UNPRICED. A dash, never $0.00: a transcript carries no cost. */
 const money = (n: number | null) => (n === null ? '—' : usd(n));
 
-/** "3 days ago" / "just now", off an ISO stamp. '' for a missing one. */
-function ago(iso: string | null): string {
-  if (!iso) return '';
-  const then = new Date(iso).getTime();
-  if (!Number.isFinite(then)) return '';
-  const mins = Math.round((Date.now() - then) / 60000);
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.round(mins / 60);
-  if (hrs < 48) return `${hrs}h ago`;
-  return `${Math.round(hrs / 24)}d ago`;
-}
+// `ago()` LIVED HERE and went with the Agents room's ledger (#520). The tab
+// agents carried `runs` / `last_run_at` / `last_outcome` in `agent_configs` and
+// the fold drew all three; a spawn profile has no such ledger, because
+// `autopilot_runs` records the RUN and not which subagents it spawned. So the
+// room reports how many open items would spawn a profile — a real number — and
+// says out loud that it cannot report how often one actually has. An invented
+// "last run" would have been the easier thing to draw.
 
 export function MissionControl() {
   const [tab, setTab] = useState<McTab>('agents');
-  // The Agents room rides at screen level because the HEADER reads it too: the
-  // host daemon is the frame around every switch on this screen, and a page
-  // that says "2 agents running" while the daemon is down is the sample-data
-  // lie the kit port's header was written about.
-  const [agents, agentsErr, agentsBusy, reloadAgents] = useRoom<AgentsRoom>(getAgentsRoom);
+  // The Agents room rides at screen level because the HEADER reads it too, and
+  // since #520 it reads a different fact: not "is the host daemon up" (the tab
+  // agents' frame, and they are culled) but WHETHER A RUN SPAWNS SUBAGENTS AT
+  // ALL. A page saying "2 agents on" over an installation with no advisor set —
+  // where `--agents` is never passed and every profile is inert — is the same
+  // sample-data lie the kit port's header was written about, one layer in.
+  const [agents, agentsErr, agentsBusy, reloadAgents] = useRoom<AgentProfilesRoom>(getAgentProfiles);
 
-  const live = agents?.agents.filter((a) => a.enabled).length ?? 0;
-  const hostReady = agents?.hostReady ?? false;
+  const live = agents?.profiles.filter((p) => p.enabled).length ?? 0;
+  const spawns = agents?.policy.spawnsAgents ?? false;
 
   return (
     <div className="mcx-ground">
@@ -290,16 +298,19 @@ export function MissionControl() {
             <h1>Mission Control</h1>
           </div>
           <span className="mcx-headacts">
-            {/* The one fact worth stating on every tab: can anything run at all.
-                A Claude-backed op needs the daemon and a Gemini-backed one needs
-                the key, and they are fixed in completely different places, so
-                both are named rather than reduced to one light. */}
+            {/* The one fact worth stating on every tab: does the fleet this
+                screen configures actually exist. `--agents` is passed only when
+                an advisor model is set, so with none there is no subagent on
+                this installation and no switch on the Agents tab does anything.
+                (The host daemon, which this flag used to report, belongs to the
+                terminal and to Models — it stopped being this screen's frame
+                when the tab agents went.) */}
             {agents && (
-              <span className={`mcx-liveflag${hostReady ? '' : ' off'}`}>
+              <span className={`mcx-liveflag${spawns ? '' : ' off'}`}>
                 <span className="dot" />
-                {hostReady
-                  ? `Host connected · ${live} agent${live === 1 ? '' : 's'} on`
-                  : 'Host daemon offline — no Claude-backed op can run'}
+                {spawns
+                  ? `Director ${agents?.policy.advisorModel} · ${live} profile${live === 1 ? '' : 's'} on`
+                  : 'No advisor set — a run spawns no subagents at all'}
               </span>
             )}
             <a className="k-btn sm secondary" href={hrefTo.settings}>
@@ -413,92 +424,249 @@ function MockNote({ children }: { children: ReactNode }) {
 
 /* ---------- Agents (WIRED) ---------- */
 
-function Agents({ room, onChanged }: { room: AgentsRoom; onChanged: () => void }) {
-  const [open, setOpen] = useState<string | null>(room.agents[0]?.key ?? null);
+// THE AGENTS ARE THE SPAWN PROFILES (#520). This room drew the tab-agent
+// REGISTRY until the cull that finally reached it; what it draws now is the
+// catalogue the overnight runner hands `claude --agents` — the subagents a
+// build actually spawns, on the models they run on, with the tools they are
+// granted. That is the other thing two branches called "agents", and it is the
+// one with teeth: the registry governed two ✧ buttons at the end, this decides
+// how every night gets built.
+//
+// THE KIT'S "NEW AGENT" BUTTON IS BACK, and its return is the clearest marker
+// of what changed. It was removed rather than left inert because an agent used
+// to be a registry entry in code and there was no write a browser could make
+// that would create one. A profile is DATA — a row in `agent_profiles` — so the
+// button is honest now.
+//
+// FOUR THINGS THIS SCREEN HAS TO SAY THAT THE CATALOGUE ALONE CANNOT:
+//
+//  1. WHETHER ANY OF IT SPAWNS AT ALL. `--agents` is passed only when an
+//     ADVISOR model is set; with none, the runner resolves a spawn and throws
+//     the answer away. Every switch below would then be decoration, so the
+//     warning goes at the TOP of the room rather than in a footnote.
+//  2. WHAT A RUN ACTUALLY RESOLVES TO, not what is in the catalogue. A profile
+//     nothing requests never spawns, and a catalogue of those is this feature's
+//     failure mode — `defaultSpawn` is the server resolving one for real,
+//     `reason` and all.
+//  3. WHAT A TOOL GRANT MEANS, in a sentence, per profile. `tools` is eight
+//     checkboxes and a reader cannot see the difference between a reviewer that
+//     cannot write and one that can. `grantLine` says it in words.
+//  4. THAT THE EXECUTOR CANNOT BE LOST. resolveSpawn falls back to the built-in
+//     executor when nothing survives filtering, because a spawn with no builder
+//     silently makes the expensive director do all the building itself. The
+//     room states the invariant rather than letting the fallback be a surprise.
+//
+// A BUILT-IN IS RESET, NEVER DELETED, and the button says which — DELETE on a
+// builtin drops its stored override and hands the factory profile back, so a
+// "Delete" label there would promise something the server will not do.
+
+/** '' = inherit the spawn's executor model. The rest are the CLI's own aliases. */
+const PROFILE_MODELS: { model: string; label: string }[] = [
+  { model: '', label: 'Inherit the executor model' },
+  { model: 'haiku', label: 'Haiku' },
+  { model: 'sonnet', label: 'Sonnet' },
+  { model: 'opus', label: 'Opus' },
+];
+
+// The tool ladder. `tools` arrives as eight flat names and a flat list of eight
+// checkboxes reads as eight equal preferences — they are not: three of them
+// change what a subagent can DO to a checkout, and the rest only change how
+// much it can see. Grouped, worst-last, so the grant is legible before it is
+// made.
+//
+// KEYED OFF THE SERVER'S `knownTools`, never off this list: a tool the server
+// knows and this file does not lands in "Other" rather than vanishing, which is
+// the same rule the Models room's `providerOf` follows for an unrecognised
+// model id. A grant that disappears from a screen is a grant nobody revokes.
+const TOOL_TIERS: { id: string; label: string; note: string; tools: string[] }[] = [
+  { id: 'read', label: 'Read', note: 'Look at the checkout. Cannot change it.', tools: ['Read', 'Grep', 'Glob'] },
+  { id: 'run', label: 'Run', note: 'Shell commands — builds, tests, git. Can change the tree.', tools: ['Bash'] },
+  { id: 'write', label: 'Write', note: 'Edit and create files directly.', tools: ['Edit', 'Write'] },
+  { id: 'reach', label: 'Reach out', note: 'Leaves the machine — fetches URLs and searches.', tools: ['WebFetch', 'WebSearch'] },
+];
+
+const WRITING_TOOLS = ['Edit', 'Write'];
+
+/**
+ * What this grant MEANS, as one sentence. Derived, never stored — the whole
+ * point is that it cannot drift from the checkboxes above it.
+ *
+ * The no-write case is the one worth spelling out: the built-in Reviewer's own
+ * description promises "it never writes: no Edit or Write tool, so nothing it
+ * says can land without a human or the executor acting on it", and a screen
+ * that let you tick Edit while leaving that sentence on the card would have
+ * broken a documented promise in silence.
+ */
+function grantLine(tools: string[]): { text: string; tone: Tone } {
+  const writes = tools.some((t) => WRITING_TOOLS.includes(t));
+  const runs = tools.includes('Bash');
+  const reaches = tools.some((t) => t === 'WebFetch' || t === 'WebSearch');
+  const out = tools.some((t) => t === 'WebFetch' || t === 'WebSearch') ? ', and can reach the network' : '';
+  if (writes) return { text: `Writes files${runs ? ' and runs commands' : ''}${out}. Anything it does lands in the worktree.`, tone: 'warning' };
+  if (runs) return { text: `Runs commands but cannot edit a file${out}. A build or a test can still change the tree.`, tone: 'info' };
+  if (reaches) return { text: 'Reads only, and can reach the network. Nothing it says can land on its own.', tone: 'neutral' };
+  return { text: 'Reads only. Nothing it says can land without something else acting on it.', tone: 'neutral' };
+}
+
+function Agents({ room, onChanged }: { room: AgentProfilesRoom; onChanged: () => void }) {
+  const [open, setOpen] = useState<string | null>(room.profiles[0]?.key ?? null);
   const [busy, setBusy] = useState('');
   const [err, setErr] = useState('');
+  const [adding, setAdding] = useState(false);
 
-  const write = async (key: string, patch: Parameters<typeof patchAgent>[1], token: string) => {
+  const run = async (token: string, fn: () => Promise<unknown>) => {
     setBusy(token); setErr('');
-    try { await patchAgent(key, patch); onChanged(); }
+    try { await fn(); onChanged(); }
     catch (e) { setErr((e as Error)?.message || 'That did not save.'); }
     finally { setBusy(''); }
   };
 
-  const on = room.agents.filter((a) => a.enabled).length;
+  const on = room.profiles.filter((p) => p.enabled).length;
 
   return (
     <div className="mcx-stack tight">
       <div className="mcx-intro">
         <span className="lede">
-          {room.agents.length === 1 ? 'One agent' : `${room.agents.length} agents`} · {on} on.
-          An agent is bound to ONE surface and cannot act anywhere else, and its op list is code —
-          what you set here is whether it runs, on which model, and which of its ops are switched off.
+          {room.profiles.length === 1 ? 'One profile' : `${room.profiles.length} profiles`} · {on} on.
+          A profile is a SUBAGENT an overnight run spawns: its own prompt, its own model and its own
+          tools, with a context isolated from the director's. What you set here is what
+          `claude --agents` is handed.
         </span>
-        {/* The kit's "New agent" button is gone rather than inert: an agent is a
-            registry entry in server/src/agents.js, so there is no write a
-            browser could make that would create one. What the slot carries
-            instead is the thing every switch below depends on. */}
         <span className="mcx-backends">
-          <Pill tone={room.hostReady ? 'success' : 'warning'}>
-            {room.hostReady ? 'Host daemon connected' : 'Host daemon offline'}
-          </Pill>
-          <Pill tone={room.geminiReady ? 'success' : 'neutral'}>
-            {room.geminiReady ? 'Gemini key set' : 'Gemini absent'}
-          </Pill>
+          {/* The kit's New button, and it is honest again — a profile is a row,
+              not a registry entry in code. */}
+          <button className="k-btn sm" onClick={() => setAdding(true)}>New profile</button>
         </span>
       </div>
 
+      {/* THE FRAME, FIRST. Not a footnote: with no advisor nothing below spawns
+          at all, and a screen of live-looking switches over that is the most
+          expensive lie this room could tell. */}
+      {!room.policy.spawnsAgents ? (
+        <div className="mcx-framewarn">
+          <Pill tone="warning">No advisor</Pill>
+          <span className="t">
+            Nothing on this screen spawns. A run only passes <code>--agents</code> when an ADVISOR
+            model is set; with none, it is a single-model session on the executor and the director
+            does its own building. Set one in <a href={hrefTo.settings}>Settings → Autopilot models</a>.
+          </span>
+        </div>
+      ) : (
+        <div className="mcx-frame">
+          <span className="mcx-framebit">
+            <span className="l">Director</span>
+            <span className="v">{room.policy.advisorModel}</span>
+          </span>
+          <span className="mcx-framebit">
+            <span className="l">Executor</span>
+            <span className="v">{room.policy.executorModel || 'CLI default'}</span>
+            <span className="note">what a profile inherits</span>
+          </span>
+          <span className="mcx-framebit grow">
+            <span className="l">A run naming no profile spawns</span>
+            <span className="v">{room.defaultSpawn.keys.join(', ') || '—'}</span>
+            <span className="note">{room.defaultSpawn.reason}</span>
+          </span>
+          {/* The fallback is not an error and must not be drawn as one — it is
+              the invariant working. It is still worth saying out loud, because
+              the profile that spawned is not the one the catalogue implies. */}
+          {room.defaultSpawn.fallback && (
+            <Pill tone="info">Fell back to the built-in executor</Pill>
+          )}
+        </div>
+      )}
+
       {err && <div className="action-error">{err}</div>}
 
-      {room.agents.map((a) => (
-        <AgentFold key={a.key} a={a} room={room} open={open === a.key}
-          onToggle={() => setOpen(open === a.key ? null : a.key)}
-          busy={busy} write={write} />
+      {adding && (
+        <NewProfile knownTools={room.knownTools} busy={busy === 'new'}
+          onCancel={() => setAdding(false)}
+          onCreate={async (p) => {
+            await run('new', () => createAgentProfile(p));
+            setAdding(false);
+            setOpen(p.key);
+          }} />
+      )}
+
+      {room.profiles.map((p) => (
+        <ProfileFold key={p.key} p={p} room={room} open={open === p.key}
+          onToggle={() => setOpen(open === p.key ? null : p.key)}
+          busy={busy} run={run} />
       ))}
+
+      <p className="mcx-capnote">
+        Nothing here reports how often a profile has actually spawned. `autopilot_runs` records the
+        RUN, not which subagents it used, so the counts above are open items that WOULD spawn one —
+        the honest number this installation can answer. A "last run" column would have been
+        invented.
+      </p>
+
+      <p className="mcx-capnote">
+        A spawn ALWAYS gets at least one building agent. If nothing survives — every profile off, or
+        a run naming one that no longer exists — the runner falls back to the built-in executor and
+        logs why. That is deliberate: a spawn with no builder does not fail loudly, it quietly makes
+        the expensive director model do all the building itself.
+      </p>
     </div>
   );
 }
 
-/**
- * An agent's state in one word. FOUR answers, not two, because "on" and "able
- * to act" are different questions and the owner fixes them in different places:
- * the switch is theirs, the backend is the host's or the key's. An agent whose
- * ops straddle two backends can be HALF ready, and saying "ready" there sends
- * somebody to press a button that 503s.
- */
-function agentState(a: AgentRow, room: AgentsRoom): { label: string; tone: Tone } {
-  if (!a.enabled) return { label: 'Switched off', tone: 'neutral' };
-  const live = a.ops.filter((o) => o.enabled);
-  if (!live.length) return { label: 'Every op off', tone: 'neutral' };
-  const runnable = live.filter((o) => (o.backend === 'gemini' ? room.geminiReady : room.hostReady));
-  if (!runnable.length) return { label: 'No backend', tone: 'warning' };
-  if (runnable.length < live.length) return { label: 'Partly ready', tone: 'info' };
-  return { label: 'Ready', tone: 'success' };
+/** A profile's state in one word, on the same four-answer principle the room has
+ *  always used: "on" and "would actually spawn" are different questions. */
+function profileState(p: AgentProfile, room: AgentProfilesRoom): { label: string; tone: Tone } {
+  if (!room.policy.spawnsAgents) return { label: 'Inert — no advisor', tone: 'warning' };
+  if (!p.enabled) return { label: 'Switched off', tone: 'neutral' };
+  if (room.defaultSpawn.keys.includes(p.key)) return { label: 'Spawns by default', tone: 'success' };
+  const named = room.usage[p.key] ?? 0;
+  if (named > 0) return { label: `${named} item${named === 1 ? '' : 's'} ask for it`, tone: 'info' };
+  // On, spawnable, and nothing asks for it. Not an error — but it is the state
+  // this feature fails in, so it is named rather than drawn as ready.
+  return { label: 'Nothing requests it', tone: 'neutral' };
 }
 
-function AgentFold({ a, room, open, onToggle, busy, write }: {
-  a: AgentRow; room: AgentsRoom; open: boolean; onToggle: () => void; busy: string;
-  write: (key: string, patch: Parameters<typeof patchAgent>[1], token: string) => void;
+function ProfileFold({ p, room, open, onToggle, busy, run }: {
+  p: AgentProfile; room: AgentProfilesRoom; open: boolean; onToggle: () => void; busy: string;
+  run: (token: string, fn: () => Promise<unknown>) => Promise<void>;
 }) {
-  const state = agentState(a, room);
-  const live = a.ops.filter((o) => o.enabled).length;
+  const [prompt, setPrompt] = useState(p.prompt);
+  const [desc, setDesc] = useState(p.description);
+  // The server is the source of truth: a reload after somebody else's write has
+  // to win over a draft nobody has touched.
+  useEffect(() => { setPrompt(p.prompt); setDesc(p.description); }, [p.prompt, p.description]);
+
+  const state = profileState(p, room);
+  const grant = grantLine(p.tools);
+  const used = room.usage[p.key] ?? 0;
+  const dirty = prompt !== p.prompt || desc !== p.description;
+
+  const toggleTool = (tool: string, want: boolean) => {
+    const next = want ? [...p.tools, tool] : p.tools.filter((t) => t !== tool);
+    // The engine refuses an empty grant (a profile that can do nothing is a
+    // silent no-op, not a customisation) — say so here rather than letting the
+    // 400 be the first anyone hears of it.
+    if (!next.length) return;
+    void run(`${p.key}:tools`, () => patchAgentProfile(p.key, { tools: next }));
+  };
+
+  // Keyed off the SERVER's vocabulary — anything it knows that TOOL_TIERS does
+  // not still gets a row (see the ladder's comment).
+  const tiered = new Set(TOOL_TIERS.flatMap((t) => t.tools));
+  const others = room.knownTools.filter((t) => !tiered.has(t));
 
   return (
     <section className={`mcx-fold${open ? ' on' : ''}`}>
       <header className="mcx-foldhead mcx-agenthead" onClick={onToggle}>
         <span className="caret">{open ? '▾' : '▸'}</span>
         <div className="body">
-          <span className="name">{a.name}</span>
-          <span className="role">{a.blurb}</span>
+          <span className="name">
+            {p.name}
+            {p.builtin && <span className="chip">built-in</span>}
+          </span>
+          <span className="role">{p.description || <em>no description</em>}</span>
         </div>
-        <span className="model">{a.model || 'CLI default'}</span>
-        {/* The kit's "autonomy" column, answered by the rule rather than by a
-            setting: an agent ANNOTATES and the human disposes. Nothing an agent
-            returns writes a tracker row, and there is no level above this one to
-            promote it to — so it is a fact, not a control. */}
-        <span className="autonomy">annotates only</span>
-        <span className="spend">{usd(a.costUsd)}</span>
+        <span className="model">{p.model || room.policy.executorModel || 'CLI default'}</span>
+        <span className="autonomy">{p.tools.length} tools</span>
+        <span className="spend">{used} item{used === 1 ? '' : 's'}</span>
         <span className="end"><Pill tone={state.tone}>{state.label}</Pill></span>
       </header>
 
@@ -506,12 +674,10 @@ function AgentFold({ a, room, open, onToggle, busy, write }: {
         <div className="mcx-foldbody">
           <div className="mcx-facts">
             {([
-              ['Surface', `${a.tabLabel} ${a.surface}`],
-              ['Runs', String(a.runs)],
-              ['Last run', a.lastRunAt ? `${a.lastOp || '—'} · ${ago(a.lastRunAt)}` : 'never'],
-              // 0 is "has not spent", not "does not cost". Gemini ops record a
-              // real 0 because the free tier prices nothing.
-              ['Spend', usd(a.costUsd)],
+              ['Key', p.key],
+              ['Model', p.model ? `pinned to ${p.model}` : `inherits ${room.policy.executorModel || 'the CLI default'}`],
+              ['Open items asking for it', String(used)],
+              ['Context', 'isolated from the director'],
             ] as [string, string][]).map(([l, v]) => (
               <div className="fact" key={l}>
                 <span className="l">{l}</span>
@@ -520,79 +686,217 @@ function AgentFold({ a, room, open, onToggle, busy, write }: {
             ))}
           </div>
 
-          {a.lastOutcome && a.lastOutcome !== 'ok' && (
-            <div className="mcx-lastfail">Last answer: {a.lastOutcome}</div>
-          )}
-
           <div className="mcx-caps">
-            <span className="eyebrow">Can do · {live} of {a.ops.length} on</span>
-            {/* AN OP IS CODE. `server/src/agents.js` is the registry and it is
-                the whole restriction #361 is about — a route binds to one agent
-                and throws on anybody else's op. So this list cannot be added to
-                or taken from here; each row's switch writes `ops_off`, which is
-                the owner saying "not this one", and is the field gateDecision's
-                refusal already points at this screen for. */}
-            <span className="mcx-oprows">
-              {a.ops.map((o) => {
-                const backendUp = o.backend === 'gemini' ? room.geminiReady : room.hostReady;
-                const token = `${a.key}:${o.op}`;
+            <span className="eyebrow">Tools · {p.tools.length} of {room.knownTools.length} granted</span>
+            {/* WHAT THE GRANT MEANS, IN WORDS. The checkboxes below are the
+                control; this is the only thing on the screen that says what
+                ticking one actually hands a model. */}
+            <span className={`mcx-grant t-${grant.tone}`}>{grant.text}</span>
+            <span className="mcx-tiers">
+              {TOOL_TIERS.map((tier) => {
+                const tools = tier.tools.filter((t) => room.knownTools.includes(t));
+                if (!tools.length) return null;
                 return (
-                  <span className="mcx-oprow" key={o.op}>
-                    <Switch checked={o.enabled} label={o.label} disabled={busy === token}
-                      onChange={(v) => write(a.key, { op: o.op, opEnabled: v }, token)} />
-                    <span className="body">
-                      <span className="line">
-                        <span className={`name${o.enabled ? '' : ' off'}`}>{o.label}</span>
-                        <span className="chip">{o.op}</span>
-                        {/* WHICH BACKEND, NAMED. A Gemini op needs a key on the
-                            server and a Claude op needs the host on the line;
-                            one "cannot run" sends the owner to restart a daemon
-                            that was never involved. */}
-                        <span className={`chip backend${backendUp ? '' : ' down'}`}>
-                          {o.backend === 'gemini' ? 'Gemini' : 'Claude · host'}
-                          {backendUp ? '' : ' · down'}
+                  <span className="mcx-tier" key={tier.id}>
+                    <span className="head">
+                      <span className="l">{tier.label}</span>
+                      <span className="n">{tier.note}</span>
+                    </span>
+                    {tools.map((t) => (
+                      <span className="mcx-oprow" key={t}>
+                        <Switch checked={p.tools.includes(t)} label={t}
+                          disabled={busy === `${p.key}:tools`}
+                          onChange={(v) => toggleTool(t, v)} />
+                        <span className="body">
+                          <span className="line"><span className={`name${p.tools.includes(t) ? '' : ' off'}`}>{t}</span></span>
                         </span>
                       </span>
-                      <span className="hint">{o.hint}</span>
-                    </span>
+                    ))}
                   </span>
                 );
               })}
+              {others.length > 0 && (
+                <span className="mcx-tier" key="other">
+                  <span className="head">
+                    <span className="l">Other</span>
+                    <span className="n">This server knows these and this screen does not group them.</span>
+                  </span>
+                  {others.map((t) => (
+                    <span className="mcx-oprow" key={t}>
+                      <Switch checked={p.tools.includes(t)} label={t}
+                        disabled={busy === `${p.key}:tools`}
+                        onChange={(v) => toggleTool(t, v)} />
+                      <span className="body">
+                        <span className="line"><span className={`name${p.tools.includes(t) ? '' : ' off'}`}>{t}</span></span>
+                      </span>
+                    </span>
+                  ))}
+                </span>
+              )}
             </span>
             <span className="mcx-capnote">
-              An agent's ops are code (server/src/agents.js) — these switches turn one off, they
-              cannot add one. A switched-off op refuses with that sentence rather than failing quietly.
+              A grant is validated server-side against its own list — an unknown tool is a 400, never
+              a silent drop. The last tool cannot be removed: a profile with none can do nothing, and
+              an empty grant is a no-op rather than a customisation.
             </span>
           </div>
+
+          <label className="mcx-promptfield">
+            <span className="eyebrow">System prompt</span>
+            <textarea className="field-input" rows={7} value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              placeholder="What this subagent is told before it starts…" />
+            <span className="hint">
+              The whole of what this subagent reads before it starts. No code is wrapped around it —
+              unlike the session defaults, what you write here is exactly what the model sees.
+            </span>
+          </label>
+
+          {/* A TEXTAREA AND NOT AN INPUT, because this field holds PROSE — the
+              built-in executor's own description is 120 characters of it. In a
+              single-line input all but the first few words scroll out of sight,
+              so the field the director actually reads is the one field nobody
+              editing it can see. (The UI smoke caught this as an overflow-x
+              finding, which is the shape that bug takes from the outside.) */}
+          <label className="mcx-promptfield">
+            <span className="eyebrow">Description</span>
+            <textarea className="field-input" rows={2} value={desc}
+              onChange={(e) => setDesc(e.target.value)}
+              placeholder="What the director reads when deciding whether to delegate to it…" />
+            <span className="hint">
+              This is what the DIRECTOR sees in its agent list — it is how the model decides whether
+              to delegate at all, so it is a working field and not a label.
+            </span>
+          </label>
 
           <div className="mcx-foldacts">
             <label className="k-field inline">
               <span className="k-field-label">Model</span>
-              <select className="k-select" value={a.model} disabled={busy === `${a.key}:model`}
-                onChange={(e) => write(a.key, { model: e.target.value }, `${a.key}:model`)}>
-                {room.models.map((m) => <option key={m.model} value={m.model}>{m.label}</option>)}
+              <select className="k-select" value={p.model} disabled={busy === `${p.key}:model`}
+                onChange={(e) => run(`${p.key}:model`, () => patchAgentProfile(p.key, { model: e.target.value }))}>
+                {/* A model set through the API that this catalogue does not list
+                    still shows, rather than being silently rewritten on the next
+                    save — same rule as the tool ladder's "Other". */}
+                {(PROFILE_MODELS.some((m) => m.model === p.model)
+                  ? PROFILE_MODELS
+                  : [...PROFILE_MODELS, { model: p.model, label: `${p.model} (set elsewhere)` }]
+                ).map((m) => <option key={m.model} value={m.model}>{m.label}</option>)}
               </select>
             </label>
-            {/* The pin is a CLAUDE alias and is not forwarded to a Gemini op —
-                handing 'sonnet' to Gemini 404s the call — so an agent with ops
-                on both backends has to be told the pick only covers one. */}
-            {a.ops.some((o) => o.backend === 'gemini') && (
-              <span className="mcx-modelnote">Covers its Claude ops only; the Gemini reads keep the server default.</span>
-            )}
-            <span className="mcx-spacer" />
-            <Switch checked={a.enabled} label={a.enabled ? 'On' : 'Off'} disabled={busy === `${a.key}:enabled`}
-              onChange={(v) => write(a.key, { enabled: v }, `${a.key}:enabled`)} />
-          </div>
 
-          <div className="mcx-remit">
-            <span className="eyebrow">Remit</span>
-            <span className="t">{a.remit}</span>
+            <button className="k-btn sm" disabled={!dirty || busy === `${p.key}:text`}
+              onClick={() => run(`${p.key}:text`, () => patchAgentProfile(p.key, { prompt, description: desc }))}>
+              {busy === `${p.key}:text` ? 'Saving…' : 'Save text'}
+            </button>
+
+            {/* RESET, NOT DELETE, on a built-in — DELETE drops its stored
+                override and hands the factory profile back, because the spawn
+                path always needs 'executor' to exist. A "Delete" label would
+                promise something the server will not do. */}
+            <button className="k-btn sm secondary" disabled={busy === `${p.key}:del`}
+              onClick={() => run(`${p.key}:del`, () => deleteAgentProfile(p.key))}>
+              {p.builtin ? 'Reset to factory' : 'Delete profile'}
+            </button>
+
+            <span className="mcx-spacer" />
+            <Switch checked={p.enabled} label={p.enabled ? 'On' : 'Off'} disabled={busy === `${p.key}:enabled`}
+              onChange={(v) => run(`${p.key}:enabled`, () => patchAgentProfile(p.key, { enabled: v }))} />
           </div>
         </div>
       )}
     </section>
   );
 }
+
+/** The New-profile form. A key is permanent (it is what a roadmap item names),
+ *  so it is only ever set here and never edited on a fold. */
+function NewProfile({ knownTools, busy, onCancel, onCreate }: {
+  knownTools: string[]; busy: boolean; onCancel: () => void;
+  onCreate: (p: { key: string; name: string; description: string; prompt: string; model: string; tools: string[] }) => void;
+}) {
+  const [key, setKey] = useState('');
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [prompt, setPrompt] = useState('');
+  // A NEW PROFILE OPENS READ-ONLY, deliberately. The engine's own default for an
+  // unspecified `tools` is the full building set, which is the right default for
+  // the executor it was written for and the wrong one for a form: a screen that
+  // opens with write access ticked grants it to everybody who never looked.
+  const [tools, setTools] = useState<string[]>(['Read', 'Grep', 'Glob']);
+  const grant = grantLine(tools);
+
+  const ok = /^[a-z][a-z0-9-]{1,39}$/.test(key) && prompt.trim().length > 0 && tools.length > 0;
+
+  return (
+    <section className="mcx-fold on">
+      <header className="mcx-foldhead mcx-agenthead">
+        <span className="caret">＋</span>
+        <div className="body"><span className="name">New profile</span>
+          <span className="role">A subagent an overnight run can be told to spawn.</span></div>
+      </header>
+      <div className="mcx-foldbody">
+        <div className="mcx-newgrid">
+          <label className="k-field">
+            <span className="k-field-label">Key</span>
+            <input className="field-input sm" value={key} placeholder="reviewer-strict"
+              onChange={(e) => setKey(e.target.value.toLowerCase())} />
+            <span className="hint">Permanent — it is what a roadmap item names. Lowercase, digits and hyphens.</span>
+          </label>
+          <label className="k-field">
+            <span className="k-field-label">Name</span>
+            <input className="field-input sm" value={name} placeholder="Strict reviewer"
+              onChange={(e) => setName(e.target.value)} />
+            <span className="hint">Blank falls back to the key.</span>
+          </label>
+        </div>
+        <label className="mcx-promptfield">
+          <span className="eyebrow">Description</span>
+          <textarea className="field-input" rows={2} value={description}
+            placeholder="What the director reads when deciding whether to delegate to it…"
+            onChange={(e) => setDescription(e.target.value)} />
+        </label>
+        <label className="mcx-promptfield">
+          <span className="eyebrow">System prompt</span>
+          <textarea className="field-input" rows={6} value={prompt}
+            placeholder="You are…"
+            onChange={(e) => setPrompt(e.target.value)} />
+          <span className="hint">Required. A profile with no prompt is a blank, not a customisation.</span>
+        </label>
+        <div className="mcx-caps">
+          <span className="eyebrow">Tools · {tools.length} of {knownTools.length} granted</span>
+          <span className={`mcx-grant t-${grant.tone}`}>{grant.text}</span>
+          <span className="mcx-tiers">
+            {TOOL_TIERS.map((tier) => {
+              const ts = tier.tools.filter((t) => knownTools.includes(t));
+              if (!ts.length) return null;
+              return (
+                <span className="mcx-tier" key={tier.id}>
+                  <span className="head"><span className="l">{tier.label}</span><span className="n">{tier.note}</span></span>
+                  {ts.map((t) => (
+                    <span className="mcx-oprow" key={t}>
+                      <Switch checked={tools.includes(t)} label={t}
+                        onChange={(v) => setTools(v ? [...tools, t] : tools.filter((x) => x !== t))} />
+                      <span className="body"><span className="line">
+                        <span className={`name${tools.includes(t) ? '' : ' off'}`}>{t}</span></span></span>
+                    </span>
+                  ))}
+                </span>
+              );
+            })}
+          </span>
+        </div>
+        <div className="mcx-foldacts">
+          <button className="k-btn sm" disabled={!ok || busy}
+            onClick={() => onCreate({ key, name, description, prompt, model: '', tools })}>
+            {busy ? 'Creating…' : 'Create profile'}
+          </button>
+          <button className="k-btn sm secondary" onClick={onCancel}>Cancel</button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 
 /* ---------- Models (WIRED) ---------- */
 
@@ -892,8 +1196,8 @@ function Context() {
     if (!doc.edit) return;
     setSaving(true); setSaveErr('');
     try {
-      if (doc.edit.kind === 'agent-guidance' && doc.edit.agentKey) {
-        await patchAgent(doc.edit.agentKey, { guidance: draft });
+      if (doc.edit.kind === 'profile-prompt' && doc.edit.agentKey) {
+        await patchAgentProfile(doc.edit.agentKey, { prompt: draft });
       } else {
         await patchSettings({ assistGuidance: draft });
       }
@@ -912,7 +1216,7 @@ function Context() {
         <span className="lede">
           {room.docs.length} pieces of prompt text · {words.toLocaleString()} words. This is what
           Stack itself puts in front of a model — the session block every session starts with, each
-          agent's preamble, and the ✧ steer. It is NOT a copy of any repo's CLAUDE.md.
+          spawn profile's prompt, and the ✧ steer. It is NOT a copy of any repo's CLAUDE.md.
         </span>
       </div>
 

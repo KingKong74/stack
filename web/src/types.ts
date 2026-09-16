@@ -617,48 +617,54 @@ export interface ProjectPulse {
   runs: PulseRuns;
 }
 
-// ---- Mission Control: the Agents room (GET /api/agents) ----
+// ---- Mission Control: the Agents room (GET /api/agent-profiles) ----
 //
-// The tab-agent registry as the room reads it. Everything here is either a
-// REGISTRY FACT (which tab, which ops, which backend — code, in
-// server/src/agents.js) or a CONFIG FIELD the owner may write. The screen has
-// to be able to tell them apart, which is why they arrive in one shape but are
-// rendered as two very different things: an op is a statement, its switch is a
-// control, and nothing in a browser may add or remove one.
-export interface AgentOpRow {
-  op: string;
-  label: string;
-  hint: string;
-  /** Which backend this op runs on. A refusal must NAME the missing one. */
-  backend: 'claude' | 'gemini';
-  enabled: boolean;   // the owner's per-op switch (`ops_off`)
-}
-export interface AgentRow {
+// THE AGENTS ARE THE SPAWN PROFILES (#520). This room used to draw the tab-agent
+// REGISTRY on /api/agents — a different thing that arrived under the same word
+// — and that registry is culled. What it draws now is the catalogue the
+// overnight runner hands `claude --agents`: the subagents a build spawns.
+//
+// The shape splits the same way the old one did, and the screen still has to
+// tell the halves apart: a profile's FIELDS are the owner's (prompt, model,
+// tools, enabled) and everything under `policy`, `usage` and `defaultSpawn` is
+// a FACT the server computed and no browser may write.
+export interface AgentProfile {
   key: string;
   name: string;
-  tab: string;
-  tabLabel: string;
-  surface: string;
-  blurb: string;
-  remit: string;
+  description: string;
+  /** The system prompt, end to end. No code is wrapped around it. */
+  prompt: string;
+  /** '' = inherit the spawn's executor model. */
+  model: string;
+  /** A GRANT, validated server-side against knownTools — never an open string. */
+  tools: string[];
   enabled: boolean;
-  model: string;      // '' = the CLI's own default
-  guidance: string;   // the owner's standing steer, prefixed to every op prompt
-  ops: AgentOpRow[];
-  runs: number;
-  costUsd: number;    // 0 = has not spent, NEVER "does not cost"
-  lastRunAt: string | null;
-  lastOp: string;
-  lastOutcome: string;
+  /** A built-in cannot be DELETED, only reset: resolveSpawn needs 'executor'. */
+  builtin: boolean;
 }
-export interface AgentsRoom {
-  /** The host daemon — what a Claude-backed op needs. */
-  hostReady: boolean;
-  /** GEMINI_API_KEY — what a Gemini-backed op needs. A different fix entirely. */
-  geminiReady: boolean;
-  defaultModel: string;
-  models: { model: string; label: string }[];
-  agents: AgentRow[];
+export interface AgentProfilePolicy {
+  /** What a profile with `model: ''` inherits. '' = the CLI's own default. */
+  executorModel: string;
+  /** '' = no advisor, and therefore no subagents at all — see `spawnsAgents`. */
+  advisorModel: string;
+  /**
+   * FALSE MEANS NOTHING ON THIS SCREEN EVER SPAWNS. `--agents` is only passed
+   * when an advisor is set; with none the runner resolves a spawn and throws
+   * the answer away. A room that drew switches over that would be lying in the
+   * most expensive direction there is, so the screen leads with it.
+   */
+  spawnsAgents: boolean;
+}
+export interface AgentProfilesRoom {
+  profiles: AgentProfile[];
+  /** The whole tool vocabulary. A grant outside it is a 400, not a silent drop. */
+  knownTools: string[];
+  /** Open items that would spawn each profile, keyed. The executor's includes
+   *  every item naming NO profile, because that is what resolveSpawn does. */
+  usage: Record<string, number>;
+  /** What a run with no requested profile actually resolves to, and why. */
+  defaultSpawn: { keys: string[]; fallback: boolean; reason: string };
+  policy: AgentProfilePolicy;
 }
 
 // ---- Mission Control: the Models room (GET /api/models) ----
@@ -719,7 +725,8 @@ export interface ModelsRoom {
 // owner's own words carry an `edit`.
 export type ContextDocKind = 'root' | 'agent' | 'assist';
 export interface ContextDocEdit {
-  kind: 'agent-guidance' | 'assist-guidance';
+  kind: 'profile-prompt' | 'assist-guidance';
+  /** The agent_profiles key, on a 'profile-prompt' edit. */
   agentKey?: string;
   value: string;
   label: string;
