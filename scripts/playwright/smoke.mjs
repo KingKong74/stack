@@ -505,35 +505,54 @@ const PLANS_PANELS = [
   },
 ];
 
-// Mission Control's seven tabs, plus the four presses that prove a tab did more
-// than paint. They run in sequence on one page, so each entry assumes the state
-// the one before it left — the fold presses pick the LAST card on purpose,
-// because the first is already open at first paint and pressing it would prove
-// only that something can be closed.
+// Mission Control's seven tabs, plus the presses that prove a tab did more than
+// paint. They run in sequence on one page, so each entry assumes the state the
+// one before it left.
+//
+// #514 WIRED THREE OF THE SEVEN, and that changed what is reachable here twice
+// over. FIRST PAINT IS AGENTS now, not Overview, so Overview is a press like
+// every other tab. And the first card of a fold list OPENS at first paint on
+// both wired tabs — one agent and the backend carrying 98% of the tokens are
+// the things you came to read — so a press on either would prove only that
+// something can be CLOSED, which no `expect` selector can witness.
+//
+// So the Agents tab is proved by its own rows appearing rather than by a fold,
+// and the fold press moved to the LAST provider, which is shut. This harness is
+// READ-ONLY and the wired tabs are full of controls that write — every op
+// switch, both policy selects, the Context Save — so not one of them is pressed
+// here. The Context Edit button is, because it only OPENS the editor; nothing
+// below ever submits one.
 const CONTROL_PANELS = [
+  {
+    id: 'control-overview',
+    label: 'Mission Control — Overview tab',
+    click: '.mcx-tabs .k-tab:nth-child(1)',
+    expect: '.mcx-pulseitem',
+  },
+  // `.mcx-oprow` rather than `.mcx-agenthead`: the head renders from the
+  // registry alone, and the op rows are the part that proves the config row and
+  // both backends came back.
   {
     id: 'control-agents',
     label: 'Mission Control — Agents tab',
     click: '.mcx-tabs .k-tab:nth-child(2)',
-    expect: '.mcx-agenthead',
+    expect: '.mcx-oprow',
   },
-  {
-    id: 'control-agent-fold',
-    label: 'Agents — a shut agent folds open',
-    click: '.mcx-fold:last-child .mcx-agenthead',
-    expect: '.mcx-fold:last-child .mcx-foldbody',
-  },
+  // Likewise the model TABLE, not the provider head — a head with no rows under
+  // it is what an unmeasured window looks like.
   {
     id: 'control-models',
     label: 'Mission Control — Models tab',
     click: '.mcx-tabs .k-tab:nth-child(3)',
-    expect: '.mcx-provhead',
+    expect: '.mcx-modelrow',
   },
+  // The last provider is OmniRoute, which is shut at first paint and whose body
+  // is the one card on this screen that says "Stack cannot see this from here".
   {
     id: 'control-provider-fold',
     label: 'Models — a shut provider folds open',
     click: '.mcx-fold:last-child .mcx-provhead',
-    expect: '.mcx-fold:last-child .mcx-modelrow',
+    expect: '.mcx-fold:last-child .mcx-provdetail',
   },
   {
     id: 'control-context',
@@ -541,13 +560,22 @@ const CONTROL_PANELS = [
     click: '.mcx-tabs .k-tab:nth-child(4)',
     expect: '.mcx-doctree',
   },
-  // The sixth row is the one context file with no body, so its empty state is
-  // something only a real selection can put on screen.
+  // The second row is an AGENT doc, and the viewer carries the doc's kind as a
+  // class — so the selection landing is witnessable without depending on
+  // whether this installation happens to have written that file.
   {
     id: 'control-doc-select',
-    label: 'Context — picking an unwritten file',
-    click: '.mcx-docrow:nth-of-type(6)',
-    expect: '.mcx-docempty',
+    label: 'Context — picking an agent’s preamble',
+    click: '.mcx-docrow:nth-of-type(2)',
+    expect: '.mcx-docview.kind-agent',
+  },
+  // The one editable doc's Edit button. It OPENS the editor and nothing here
+  // ever presses Save — see the read-only note above.
+  {
+    id: 'control-doc-edit',
+    label: 'Context — the editor opens on an editable doc',
+    click: '.mcx-docviewhead .acts .k-btn',
+    expect: '.mcx-doceditor',
   },
   {
     id: 'control-loops',
@@ -556,7 +584,8 @@ const CONTROL_PANELS = [
     expect: '.mcx-looprow',
   },
   // The panel note counts the active loops, so it is the one place a toggle
-  // that did nothing cannot hide.
+  // that did nothing cannot hide. Safe to press: the Loops tab is a mockup and
+  // its switches are local state that leaving the page undoes.
   {
     id: 'control-loop-toggle',
     label: 'Loops — a switch changes the active count',
