@@ -361,6 +361,27 @@ export async function hangupAutopilotJob(id: string): Promise<AutopilotJob> {
   return request<AutopilotJob>(`/autopilot/jobs/${id}`, { method: 'PATCH', body: { status: 'paused' } });
 }
 
+// ▶ BUILD NOW (#521) — queue a manual autopilot job for ONE item, from the card
+// that names it. `POST /autopilot/start` is the same route Mission Control's Run
+// now pressed, and it is deliberately NOT sprint-gated: what the sprint gates is
+// the automation CHOOSING work for itself, and a human pointing at one card is
+// the same commitment dragging it into the box would have been
+// (routes/autopilot.js says so at the route).
+//
+// TWO ANSWERS ARE BOTH SUCCESS, and a caller has to tell them apart. A project
+// with a job already queued, claimed or running gets that job back with a 200
+// rather than a second one stacked on top — so the card must say "already
+// building" instead of claiming it started something. `queued` on the returned
+// job is what distinguishes them: a job this call created is always fresh.
+//
+// AND A HELD ROW IS REFUSED OUT LOUD, 409 with the reason and the ids (#359).
+// That is the whole point of pressing it here rather than letting an unattended
+// enqueue drop it silently — `request()` throws on a 409 with the server's own
+// sentence, which names the hold, so nothing here has to compose one.
+export async function startBuild(slug: string, itemId: number): Promise<AutopilotJob> {
+  return request<AutopilotJob>('/autopilot/start', { method: 'POST', body: { slug, itemId } });
+}
+
 // The job queue, read per project by the Terminal's pending-resume chip.
 export async function getAutopilotJobs(slug?: string, limit = 20): Promise<AutopilotJob[]> {
   const qs = `${slug ? `slug=${encodeURIComponent(slug)}&` : ''}limit=${limit}`;

@@ -138,6 +138,7 @@ import {
   getBoardFolds, setBoardFolds,
   createRoadmapItem, patchRoadmapItem, deleteRoadmapItem,
   createSprint, patchSprint, putSprintOrder, deleteSprint,
+  startBuild,
 } from '../store';
 import type { BoardFolds } from '../store';
 
@@ -242,6 +243,12 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
   // from the board's closed palette (routes/board.js).
   const [areas, setAreas] = useState<BoardArea[]>([]);
   const [err, setErr] = useState('');
+  // #521 — what a write DID, when the answer is not visible on the board. A
+  // queued build changes nothing you can see (the card stays where it is; the
+  // dispatcher has not polled yet), so a silent success is indistinguishable
+  // from a dead button. Separate from `err` because it is not one, and cleared
+  // by the same presses.
+  const [note, setNote] = useState('');
 
   // ---- THE FOLDS (#510 sections, #511 columns) -----------------------------
   //
@@ -297,7 +304,7 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
   }, [loadShape]);
 
   const guard = async (fn: () => Promise<void>) => {
-    try { setErr(''); await fn(); }
+    try { setErr(''); setNote(''); await fn(); }
     catch (e) { setErr((e as Error)?.message || 'Something went wrong.'); }
   };
 
@@ -534,6 +541,46 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
   // would lose the filing somebody chose.
   const signOff = (it: RoadmapItem) =>
     guard(async () => { wrote(await patchRoadmapItem(slug, it.id, { reviewed: true })); });
+  // ▶ BUILD NOW and + ADD TO SPRINT (#521) — the two ways a card leaves the
+  // board and becomes work, and they are DIFFERENT COMMITMENTS rather than one
+  // action with a delay. Build now queues a job the dispatcher takes on its next
+  // poll; Add to sprint puts the row in the box the NIGHT works from. Both were
+  // reachable only through `./stack` or the API before this, which is the state
+  // CLAUDE.md lists them in.
+  //
+  // NEITHER IS SPRINT-GATED IN THE SAME WAY, and that is the route's rule not
+  // this screen's: what the sprint gates is the automation CHOOSING work, so a
+  // human naming one card is exactly the carve-out `POST /start` documents. A
+  // project with no active sprint can still Build now; only Add has nothing to
+  // add to, and the menu says so instead of offering a dead press.
+  //
+  // A HELD ROW IS REFUSED BY THE SERVER, OUT LOUD (#359), and that refusal is
+  // the reason to press this here: an unattended enqueue drops a held item
+  // silently, and `guard` puts the server's own sentence — which NAMES the hold
+  // — on the board's error line. Nothing here pre-empts it with a guess.
+  const buildNow = (it: RoadmapItem) =>
+    guard(async () => {
+      const job = await startBuild(slug, it.id);
+      // A 200 means a job for this project was ALREADY open and came back
+      // instead of a second one stacking. Saying "queued" there would claim
+      // this press did something it did not — the runner serialises per project
+      // (CLAIM_NEXT_SQL), so the honest answer is which item is actually in
+      // front of this one.
+      const mine = String(job.itemId || '') === String(it.id);
+      setNote(mine && job.status === 'queued'
+        ? `Queued a build for #${it.id}. The dispatcher picks it up on its next poll.`
+        : `This project already has a job ${job.status}${job.itemTitle ? ` — ${job.itemTitle}` : ''}. Runs are serialised per project, so #${it.id} waits for it.`);
+      onRefresh();
+    });
+  const addToSprint = (it: RoadmapItem, sprintId: number) =>
+    guard(async () => {
+      wrote(await patchRoadmapItem(slug, it.id, { sprintId }));
+      // The BOTTOM of the box, which is the route's own choice (`sprint_rank =
+      // MAX + 1`) and the right one: a card added from here has been committed
+      // to, not promoted over everything somebody already ordered.
+      setNote(`#${it.id} joined the sprint, at the bottom of its queue.`);
+    });
+
   const archive = (it: RoadmapItem) =>
     guard(async () => { wrote(await patchRoadmapItem(slug, it.id, { archived: true })); });
   const derive = (it: RoadmapItem) =>
@@ -710,6 +757,11 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
         </div>
 
         {err && <div className="km-err" role="alert">{err}</div>}
+        {/* #521 — the receipt for a write with no visible effect. `status` and
+            not `alert`: it is confirmation, not a problem, and an assertive
+            live region would interrupt a screen reader mid-sentence to say
+            something went RIGHT. */}
+        {note && <div className="km-note" role="status">{note}</div>}
 
         {view === 'backlog' && (
           <BacklogView slug={slug} rows={rows} boxes={boxes} activeId={activeId} areas={areas}
@@ -950,6 +1002,9 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
                           onDue={(v) => setDue(it, v)}
                           onEdit={() => { setCardMenu(null); onEdit(it); }}
                           onSignOff={() => { setCardMenu(null); signOff(it); }}
+                          activeSprint={boxes.find((b) => b.id === activeId) || null}
+                          onBuildNow={() => { setCardMenu(null); buildNow(it); }}
+                          onAddToSprint={(sid) => { setCardMenu(null); addToSprint(it, sid); }}
                           onPark={() => { setCardMenu(null); park(it); }}
                           onArchive={() => { setCardMenu(null); archive(it); }}
                           onDerive={() => { setCardMenu(null); derive(it); }}
@@ -1242,6 +1297,7 @@ function IssueCard({
   editing, onOpenInline, onInline, onCancelInline,
   priOpen, onPri, onPick, ptsOpen, onPts, onPoints, menuOpen, onMenu,
   onKind, onDue, onEdit, onSignOff, onPark, onArchive, onDerive, onDelete,
+  activeSprint, onBuildNow, onAddToSprint,
 }: {
   item: RoadmapItem;
   /** How many `parent_id` children this item has — its ideas, on the Roadmap tab. */
@@ -1251,6 +1307,13 @@ function IssueCard({
    *  name copied onto the row would be stale the moment a box is renamed, on
    *  the very screen that renames it (#477). */
   sprint: Sprint | null;
+  /** The project's sprint in progress, or null when none is open (#521). It is
+   *  what "Add to sprint" ADDS TO, and when it is null the menu says there is
+   *  no sprint rather than offering a press with nowhere to land. Resolved by
+   *  the caller for the same reason `sprint` above is. */
+  activeSprint: Sprint | null;
+  onBuildNow: () => void;
+  onAddToSprint: (sprintId: number) => void;
   selected: boolean; onSelect: () => void;
   dragging: boolean;
   /** True for the ~900ms after this card's own drop wrote. Drawn as the kit's
@@ -1533,6 +1596,35 @@ function IssueCard({
               title="Clears the #359 hold: the row counts as agreed work, and the overnight runner may pick it up if there is still anything to build">
               Sign off — clear the hold
             </button>
+          )}
+          <span className="km-menusep" />
+          {/* THE TWO WAYS A CARD BECOMES WORK (#521), and they are separated
+              from Edit/Sign off by a rule because they are the only items in
+              this menu that spend anything.
+              ▶ BUILD NOW queues a job against this one card. Not sprint-gated —
+              see the board's `buildNow`. It is offered on a HELD row too, and
+              deliberately: the server refuses one out loud and names the hold,
+              which is more useful than a hidden button, and Sign off is two
+              rows above it.
+              + ADD TO SPRINT is the commitment, not the trigger. It is absent
+              rather than disabled when the row is already in the box or there
+              is no box — a menu item that cannot do anything is a menu item
+              somebody presses twice — and the line below says which. */}
+          <button className="km-menuitem" onClick={onBuildNow}
+            title="Queues a build for this item now. The dispatcher picks it up on its next poll; runs are serialised per project, so it waits for anything already running.">
+            ▶ Build now
+          </button>
+          {activeSprint && item.sprintId !== activeSprint.id ? (
+            <button className="km-menuitem" onClick={() => onAddToSprint(activeSprint.id)}
+              title={`Commits this item to ${activeSprint.name} — the box the overnight runner works from. It joins at the bottom of the queue.`}>
+              ＋ Add to {activeSprint.name}
+            </button>
+          ) : (
+            <span className="km-menunote">
+              {!activeSprint
+                ? 'No sprint in progress — the night does nothing until one is open.'
+                : 'Already in the sprint in progress.'}
+            </span>
           )}
           <button className="km-menuitem" onClick={onPark}>{item.skipped ? 'Unpark' : 'Park'}</button>
           <span className="km-menusep" />

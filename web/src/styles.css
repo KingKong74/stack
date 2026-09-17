@@ -4461,6 +4461,17 @@ body[data-mc-full] .totop { display: none; }
   color: var(--status-danger-fg);
   font: var(--type-body-sm);
 }
+/* #521 — the receipt beside the error line, in the INFO pair and not the
+   accent: it confirms a write nobody can see the result of (a queued build
+   changes nothing on the board until the dispatcher polls), and the accent is
+   this app's "something landed" tone. Same box as `.km-err` so the two read as
+   one slot that says either kind of thing. */
+.km-note {
+  padding: var(--space-4) var(--space-5); border-radius: var(--radius-md);
+  border: 1px solid var(--status-info-fg); background: var(--status-info-bg);
+  color: var(--status-info-fg);
+  font: var(--type-body-sm);
+}
 .km-composer-pick { display: inline-flex; align-items: center; gap: var(--space-3); }
 .km-composer-pick button {
   border: 0; background: transparent; cursor: pointer;
@@ -4745,6 +4756,15 @@ body[data-mc-full] .totop { display: none; }
 .km-menuitem:disabled { color: var(--text-disabled); cursor: not-allowed; }
 .km-menuitem.danger { color: var(--status-danger-fg); }
 .km-menusep { height: 1px; background: var(--border-subtle); margin: 4px 0; }
+/* A STATEMENT INSIDE A MENU, where an item would be a dead press (#521). It is
+   deliberately not a `.km-menuitem:disabled`: a greyed-out row still looks like
+   a control and gets clicked, where a line of prose reads as the answer to the
+   question the missing item would have raised. Not focusable, not hoverable. */
+.km-menunote {
+  display: block; padding: 6px 10px;
+  font: var(--weight-regular) var(--text-2xs)/1.45 var(--font-mono);
+  color: var(--text-tertiary); text-wrap: pretty;
+}
 
 /* ---- the issue card ---- */
 .km-card {
