@@ -617,6 +617,47 @@ export interface ProjectPulse {
   runs: PulseRuns;
 }
 
+// ---- The Planner (POST /api/projects/:slug/sprints/:id/plan) ----
+//
+// A PROPOSAL, and nothing in this shape is a write. "Agents never write
+// sprint_id or sprint_rank" is the standing rule — sprint membership IS what
+// the machine works tonight, so a model that could edit the box would be
+// commissioning its own work. Applying is `putSprintOrder`, the same call a
+// drag makes, pressed by a human.
+export interface PlannedRow {
+  id: number;
+  title: string;
+  area: string;
+  points: number | null;
+  bucket: Priority;
+  dueOn: string | null;
+  /** Coming FROM the backlog, rather than already in the sprint. */
+  adding: boolean;
+  /** Its area is locked by an open claim right now, so it cannot run until
+   *  that branch merges — a FACT off `lanes.js`, not the model's opinion. */
+  laneHeld: boolean;
+  why: string;
+}
+export interface SprintPlan {
+  sprintId: number;
+  sprintName: string;
+  /** The WHOLE intended sprint, top first. Empty is a real answer: a sprint
+   *  already in a sensible shape needs no change, and the prompt invites it. */
+  order: PlannedRow[];
+  /** What applying would push back to the backlog — `PUT /:id/order` treats the
+   *  body as the whole box, so a row the plan omits leaves it. Never a
+   *  surprise: the screen states these before the press. */
+  drops: { id: number; title: string; area: string }[];
+  /** Areas locked by an open claim. Nothing in them can run until a merge. */
+  heldLanes: { area: string; by: string }[];
+  capacity: { target: number; points: number; unsized: number };
+  /** How much of the backlog the model was actually shown, so the screen can
+   *  say so — a capped list read as complete is the #239 trap. */
+  backlogShown: number;
+  backlogTotal: number;
+  summary: string;
+}
+
 // ---- Mission Control: the Agents room (GET /api/agent-profiles) ----
 //
 // THE AGENTS ARE THE SPAWN PROFILES (#520). This room used to draw the tab-agent

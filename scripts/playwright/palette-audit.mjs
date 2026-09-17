@@ -134,6 +134,15 @@ const SCREENS = [
   // audit had never measured anything over. `drag` below is what gets there.
   { slug: 'board-drag', hash: '#/p/{slug}/roadmap', drag: true },
   { slug: 'board-backlog', hash: '#/p/{slug}/roadmap', press: ['.km-tabs .k-tab:nth-child(2)'] },
+  // #522 — THE PLANNER'S PANEL IS DELIBERATELY NOT A SCREEN HERE, and the
+  // reason is this file's own honesty rule rather than laziness. It only exists
+  // after a Gemini call: a screen that pressed ✧ Plan would spend one on every
+  // audit run, measure a different set of rows each time, and — on any install
+  // with no key — report "could not be pressed" for ever, which is a standing
+  // false finding in the tool whose whole job is not manufacturing those. Its
+  // tones were measured by hand once when it landed and were clean; they are
+  // all ramp tokens by construction (`--surface-card`, `.k-tag.warning`,
+  // `--action-accent`), and `styles.css` is where a drift would show.
   { slug: 'board-dev', hash: '#/p/{slug}/roadmap', press: ['.km-tabs .k-tab:nth-child(3)'] },
   { slug: 'activity', hash: '#/p/{slug}/activity' },
   { slug: 'auto', hash: '#/p/{slug}/auto' },

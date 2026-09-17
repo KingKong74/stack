@@ -164,10 +164,9 @@ or the header of the file named in the pointer.
 - **PROMOTING IS TWO WRITES WITH TWO MEANINGS** (#496) and `committed` tells them apart: Roadmap
   `{reviewed:true, committed:false}` ("keep this"), board `{reviewed:true, committed:true,
   parentId:null}` ("do this"). Both sign off for #359; only the second commits. **It defaults TRUE,
-  is read `!== false` both sides** (a row arriving without the field belongs on the BOARD, where it
-  was before the column), is settable alone, and **no other PATCH branch may touch it**. Still **no
-  free-floating capture on Roadmap**: a manual row is never held, so it is committed work by
-  definition and the board's composer is where it goes; ＋ on a board item files an idea.
+  is read `!== false` both sides**, is settable alone, and **no other PATCH branch may touch it**.
+  Still **no free-floating capture on Roadmap**: a manual row is never held, so it is committed work
+  and the board's composer is where it goes; ＋ on a board item files an idea.
 - **The SPRINT order IS the run queue** (#477). `queueOrder` (`lib/plan.ts`) is the client twin of
   the runner's sort: **the active sprint's rows by `sprint_rank`, then bucket, then PAYLOAD ORDER** —
   a stable sort over arrays the server already ordered. It is **curried on the active sprint's id**
@@ -176,11 +175,11 @@ or the header of the file named in the pointer.
   scoped to the BUCKET, still PATCHable, **written by nothing in the client** — and the kanban has no
   within-column drag because its columns cut across buckets.
 - **THE REST ARE MOCKUPS AND SAY SO ON THEIR OWN FACE** (#443–#497): TWO OF `ForYou.tsx`'s THREE
-  panes (#496 wired Auto-ideas), FOUR OF `MissionControl`'s SEVEN (#514), `DevelopmentView` at the
-  foot of `Board.tsx`, and FOUR OF `Plans.tsx`'s SIX (#482). Each wears a **Mock chip** — on the rail
-  row, or **on the sub-tab itself** where a tab is part wired (`TabStrip`'s `mock`, or a screen's own
-  strip), since a chip over a wired view warns about the wrong one. **A number must agree with the
-  screen behind it**: a wired badge is a real count, a mockup's counts the MOCKUP. Still UNREACHABLE
+  panes, FOUR OF `MissionControl`'s SEVEN (#514), `DevelopmentView` at the foot of `Board.tsx`, and
+  FOUR OF `Plans.tsx`'s SIX (#482). Each wears a **Mock chip** — on the rail row, or **on the sub-tab
+  itself** where a tab is part wired (`TabStrip`'s `mock`, or a screen's own strip), since a chip
+  over a wired view warns about the wrong one. **A number must agree with the screen behind it**: a
+  wired badge is a real count, a mockup's counts the MOCKUP. Still UNREACHABLE
   from a browser, with `./stack` and the API the way in: a **verdict**, **labels**, the **⎇ claim**,
   **`automode`** and **WRITING the stored schedule** (#451; Plans, #482).
 - **QUALITY'S FIVE SEVERITIES ARE DERIVED, NEVER A COLUMN** (#497) — `lib/quality.ts`'s header owns
@@ -188,13 +187,13 @@ or the header of the file named in the pointer.
   or the rail's badge (`qualityAttention`, off the payload) and the screen (which fetches the history)
   stop counting the same rows.
 - **A verdict is `verdict_source` / `verdict_at` / `verdict_evidence` (#263, owner-sanctioned)** — the
-  one place a machine may verdict instead of the human. **The sanction has three conditions and
-  `scripts/lib/autoverdict.mjs`'s header carries them**, including that the VISIBLE leg is unmet and
-  is a debt. Two exclusions are not negotiable: a refine round and a limit-hit run.
+  one place a machine may verdict instead of the human. **The sanction's three conditions are in
+  `scripts/lib/autoverdict.mjs`'s header**, including that the VISIBLE leg is unmet and is a debt.
+  Two exclusions are not negotiable: a refine round and a limit-hit run.
 - **A refine round is never machine-closed** (#274): no auto-merge, no auto-verdict — closing one on
   a green run discards the judgement the send-back asked for. It continues the item's OWN branch
-  (`scripts/lib/refine.mjs`), and `refine_note` surviving to the tick is what makes "is this an
-  unclosed round" answerable.
+  (`scripts/lib/refine.mjs`), and `refine_note` surviving to the tick is what answers "is this round
+  still open".
 
 ### Who may run, and where
 
@@ -215,7 +214,12 @@ or the header of the file named in the pointer.
   writing a title. Deleting a sprint **releases its items** (ON DELETE SET NULL); finishing one
   **leaves its unfinished rows in it**, because a done sprint is the record of what was committed to.
   `starts_on`/`ends_on` are the owner's PLANNED window and **gate nothing** — a second pair beside
-  `started_at`/`ended_at` (when it actually ran), because those are different questions. **Agents never write `sprint_id` or `sprint_rank`.**
+  `started_at`/`ended_at` (when it actually ran), because those are different questions. **Agents
+  never write `sprint_id` or `sprint_rank`**, which is what makes the **✧ Planner** (#522,
+  `POST /sprints/:id/plan`) a proposal — Apply is the drag's own `PUT /:id/order`. **It exists for
+  the AREA LANE, not the ranking**: a sprint of one area stalls after the first build, so spreading
+  areas is the one thing a sort cannot do. Lane holders are read off **every open row** — a held row
+  claims a lane just as hard.
 - **"Approved for the auto runner" is `source NOT IN ('hook','fly') OR reviewed_at IS NOT NULL`**
   (#359, widened by #381), with no column of its own — an `approved` flag would be a second, drifting
   truth. TWO origins need a human's sign-off: `hook` (off a push) and `fly` (a live session's own
@@ -239,9 +243,9 @@ or the header of the file named in the pointer.
   in BOTH the runner and the dispatcher's kill path and `stack-autopilot-dispatch.mjs` says what
   diverging costs; and `heldByArea` reports only LANE holds, so a job waiting on the cap is not held
   by an area.
-- **`claimed_by` is the branch claim** (#277; the `lane/` git ref prefix is unchanged). Claim before starting; a terminal tab's claim is
-  `term:<name>`. It is the don't-re-pick marker, injected by SessionStart as "Branch claims —
-  respect these", and stays until a human merges and ticks.
+- **`claimed_by` is the branch claim** (#277; the `lane/` git ref prefix is unchanged). Claim before
+  starting; a terminal tab's is `term:<name>`. The don't-re-pick marker, injected by SessionStart as
+  "Branch claims — respect these", and it stays until a human merges and ticks.
 - **Branch names are `<kind>/<id>-<summary>`** (#363; feat · fix · ui · refactor · perf · test · docs ·
   chore). `scripts/lib/lane.mjs` is the canonical namer AND parser; `web/src/lib/branch.ts` is its
   client twin, kept in step by discipline, not a shared test. **The old flat `auto/item-N-<slug>`
@@ -252,8 +256,8 @@ or the header of the file named in the pointer.
   whose header carries the guesses that cost the first cut its correctness). The one to hold in mind:
   **`unprobed` is not `clean`** — the same NO PASS RAN rule as a NULL `review_verdict`.
 - **`projects.merge_autonomy` is not `automode`** (#363 — auto | plan | off, default plan). `automode`
-  says whether a project is BUILT unattended; this says how much of its MERGING one press of ▶ Run
-  covers. None of the three relaxes the conflict probe, the #212 risk gate or the confirm.
+  says whether a project is BUILT unattended; this says how much of its MERGING one ▶ Run covers.
+  None of the three relaxes the conflict probe, the #212 risk gate or the confirm.
 
 ### Spend, agents and the ledger
 
@@ -277,7 +281,7 @@ or the header of the file named in the pointer.
   `architect_verdict` renders as NO REVIEW, never green — anywhere an agent's opinion is stored.
 - **`autopilot_jobs.branch` is a real column; a merge job's branch still round-trips through free-text
   `detail`** (#243) — three places re-parse it, so merge's contract was left alone. The `advise` lane
-  matches on the column; its `advice` NULL means NO PASS RAN, never "no conflicts".
+  matches on the column; `advice` NULL means NO PASS RAN, never "no conflicts".
 - **`agent_profiles` holds only OVERRIDES** and `server/src/agent-profiles.js` says how the built-ins
   survive a DELETE. The invariant with teeth: **a spawn always gets at least one building agent** (no
   profiles, all disabled, an unknown key all fall back to the executor), or the expensive director
@@ -303,26 +307,24 @@ or the header of the file named in the pointer.
 ### Elsewhere
 
 - **`DELETE /api/projects/:slug` is SOFT** — stamps `deleted_at`, clears the share link, keeps every
-  row; deleted projects vanish from live queries and their collections 404. `/purge` is the cascade,
-  valid only on binned projects.
+  row; binned projects vanish from live queries and 404. `/purge` is the cascade, binned only.
 - **`checks.auth`, `checks.external` and what an edit clears are in `routes/checks.js`'s header.**
   The cross-cutting half: `/report` writes `check_results` but NOT a `check_runs` row, because
-  `check_runs` is the SUITE's ledger #212 auto-merge and #263 auto-verdict spend against — one
-  reported result would read as a suite of 1/1 passed, a green light manufacturable from outside.
+  `check_runs` is the SUITE's ledger #212 and #263 spend against — one reported result would read as
+  a suite of 1/1 passed, a green light manufacturable from outside.
 - **The `worktrees` table is a REGISTER, not a manager** (#229; `routes/worktrees.js` says why). Two
-  things reach past that file: `session_name` keeps the `stack-term-` prefix, which is what puts a
-  session on the running-sessions strip and what the host reapers key off; and trees live at
+  things reach past it: `session_name` keeps the `stack-term-` prefix, which is what puts a session on
+  the running-sessions strip and what the host reapers key off; and trees live at
   `~/.stack/worktrees/<key>`, inside the $HOME cwd jail the daemon enforces — move the root outside
   $HOME and browser access breaks silently.
 - **An autopilot `stack-auto-*` session is READABLE from the browser and still not mirrorable,
-  killable or typeable-into** (#366; the rest is in `routes/terminal.js`'s header). Widening
+  killable or typeable-into** (#366; `routes/terminal.js`'s header has the rest). Widening
   `listStackSessions` to cover both lists is the obvious tidy-up, and hands the browser a kill button
   for a session running with `--dangerously-skip-permissions`.
 - **A repo's CLAUDE.md is the repo's.** Stack used to write each from its own copy every five
-  minutes, authoritatively — a stale DB copy silently reverted THIS file for several sessions
-  running, each filed as a mystery blocker. Nothing writes a CLAUDE.md now; if something starts to,
-  it needs an off switch before a schedule. Mission Control's **Context tab is not that
-  library** (#514; `routes/context.js` says what it is).
+  minutes — a stale DB copy silently reverted THIS file for several sessions running, each filed as a
+  mystery blocker. Nothing writes a CLAUDE.md now; if something starts to, it needs an off switch
+  before a schedule. Mission Control's **Context tab is not that library** (#514; `routes/context.js`).
 
 ## Fail-safe direction (get this right or you delete work)
 
@@ -401,7 +403,7 @@ ones whose meaning isn't obvious from the name:
 | `autopilotEnabled` | the ARM SWITCH. Nightly + scheduled jobs only enqueue while on; ▶ Run now stays manual-only |
 | `autopilotWorkers` | the FLEET-WIDE cap on concurrent jobs (0 = unlimited, default 3, clamped 1–8); per-project serialisation is separate and NOT tunable |
 | `autopilotExecutorModel` / `autopilotAdvisorModel` | #153, **inverted by #285**: the ADVISOR runs the session (main loop, plans, delegates, verifies, commits) and the EXECUTOR is exposed to it as a subagent with the write tools. Advisor unset = single-model on it |
-| `assistFields` / `assistGuidance` | what ✧ Fill-from-note may fill, and the owner's steer. Never overrides a value the human set. **branch, risk, tier and priority are DEAD toggles** — answered, unlandable (#469, #477, #492) |
+| `assistFields` / `assistGuidance` | what ✧ Fill-from-note may fill + the owner's steer. Never overrides a human's value. **branch, risk, tier, priority are DEAD toggles** (#469, #477, #492) |
 | `termIdleHours` | the idle reaper's threshold (0 = never); the host kills, fails SAFE, and **it switches BOTH reapers** — this and the daemon's 1-min unused sweep |
 | `accessPinSet` | PIN sign-in available; PATCH takes write-only `accessPin` ('' disables). Any change signs out every PIN-connected device |
 
@@ -410,8 +412,8 @@ ones whose meaning isn't obvious from the name:
 One file per surface in `server/src/routes/` — `ls` is the index. All behind bearer auth except
 `GET /api/health`, `POST /api/auth/login`, `GET /api/public/:slug/:token`. What filenames don't say:
 
-- **Read layers** (`overview`, `search`, `timeline`, `public`) are computed in a handful of aggregate
-  queries — **never one per project**.
+- **Read layers** (`overview`, `search`, `timeline`, `public`) are a handful of aggregate queries —
+  **never one per project**.
 - Per-project collections mount under `/api/projects/:slug/…` with `mergeParams`;
   `GET /api/projects/:slug` is the combined detail payload the SessionStart hook reads back.
 
@@ -434,11 +436,11 @@ One file per surface in `server/src/routes/` — `ls` is the index. All behind b
     returns `draft: ""` when the record doesn't evidence a change — a model told to produce a delta
     will otherwise produce one, and what comes back is "verify it works" dressed as a finding. Any
     prompt asked for a judgement needs the same escape hatch, or it manufactures one.
-- **The OMNIROUTE GATEWAY is local, and Stack's use of it is FREE BY DEFAULT** (#481). No paid API is
-  called unless `OMNIROUTE_MODEL` names a paid model — one deliberate line in `~/.stack/env`. It is
-  loopback-only by DOCKER's `-p 127.0.0.1:`, because it binds 0.0.0.0 whatever its own host vars say.
-  **Host-side only**: the server is in a container and cannot reach `localhost:20128`, so routing
-  `gemini.js` through it needs a compose service — a decision, not a tidy-up.
+- **The OMNIROUTE GATEWAY is local and FREE BY DEFAULT** (#481). No paid API is called unless
+  `OMNIROUTE_MODEL` names a paid model — one deliberate line in `~/.stack/env`. Loopback-only by
+  DOCKER's `-p 127.0.0.1:`, because it binds 0.0.0.0 whatever its own vars say. **Host-side only**:
+  the server is in a container and cannot reach `localhost:20128`, so routing `gemini.js` through it
+  needs a compose service — a decision, not a tidy-up.
 - **A LAUNCH-ONLY RUNTIME IS NOT A STACK SESSION** (#481). The half that reaches past
   `cli-registry.mjs`'s header: **branch claims are NOT injected into a non-Claude session**, so the
   lane discipline every other surface enforces is, in that one runtime, on the human. Say it out loud.
@@ -461,7 +463,7 @@ One file per surface in `server/src/routes/` — `ls` is the index. All behind b
 
 ## Gotchas
 
-- `server` retries its first Postgres connection — it survives compose order, so don't "fix" it.
+- `server` retries its first Postgres connection — survives compose order, so don't "fix" it.
 - **A CAPPED PROMPT MUST STATE ITS OWN CAP, on the right axis** (#239, #364) — `prompts.js`'s header
   has the rule; it covers any list, and host-side material trimmed before it reaches a model: one
   that silently saw a tenth of a diff answers confidently about the other nine.
@@ -470,8 +472,8 @@ One file per surface in `server/src/routes/` — `ls` is the index. All behind b
   ops run far longer than a web request** — nginx's `/api` read timeout and each op's own timeout
   must both clear `claude -p` (a 60s cut made a 240s agent read unreachable, silently, for weeks),
   and Cloudflare cuts at ~100s regardless.
-- Both closure counts in `totals` lean on `updated_at`, the only stamp either table carries — read
-  them as MOVEMENT, not a ledger.
+- Both closure counts in `totals` lean on `updated_at`, the only stamp either table carries — read as
+  MOVEMENT, not a ledger.
 - **`autopilot.js`'s `JOB_SELECT` names its columns on purpose** (#243) — `SELECT j.*` ships the
   kilobyte `advice` text on every job poll AND leaves `adviceReady` false for ever.
 - `stack-autopilot.mjs` still inlines its own `git worktree add/remove` rather than calling

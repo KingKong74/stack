@@ -128,7 +128,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { KitIcon } from './kit/KitIcon';
-import type { BoardArea, BoardList, ItemKind, Priority, RoadmapItem, Sprint } from '../types';
+import type { BoardArea, BoardList, ItemKind, Priority, RoadmapItem, Sprint, SprintPlan } from '../types';
 import { listKeyOf, queueOrder, isBoardWork } from '../lib/plan';
 import { isHeld } from '../lib/approval';
 import { PRIORITY_META, PRIORITY_DEFAULT, priorityMeta, dueRead, ITEM_KIND_LABEL } from '../lib/ui';
@@ -138,7 +138,7 @@ import {
   getBoardFolds, setBoardFolds,
   createRoadmapItem, patchRoadmapItem, deleteRoadmapItem,
   createSprint, patchSprint, putSprintOrder, deleteSprint,
-  startBuild,
+  startBuild, planSprint,
 } from '../store';
 import type { BoardFolds } from '../store';
 
@@ -2128,6 +2128,112 @@ function windowLabel(startsOn: string | null, endsOn: string | null): string {
   return '';
 }
 
+// ✧ THE PLANNER (#522) — the proposal, and the one press that applies it.
+//
+// IT PROPOSES; THE HUMAN DISPOSES, and here that is structural rather than
+// polite: the route writes nothing, and Apply is `putSprintOrder` — the very
+// call a drag makes. The standing rule is that agents never write `sprint_id`
+// or `sprint_rank`, because sprint membership IS what the machine works
+// tonight, so a model that could edit the box would be commissioning its own
+// work.
+//
+// THREE THINGS THIS PANEL MUST SAY THAT THE ORDER ALONE DOES NOT:
+//
+//  · WHAT APPLYING REMOVES. `PUT /:id/order` treats the body as the WHOLE box,
+//    so a row the plan leaves out goes back to the backlog. That is the drag's
+//    own semantics and it is fine — but finding out afterwards is not, so the
+//    drops are listed above the button, not explained after it.
+//  · WHICH ROWS CANNOT RUN ANYWAY. A row whose area is locked by an open claim
+//    is unreachable until that branch merges, however high it sits. That is a
+//    fact off lanes.js, not the model's opinion, so it is drawn as a chip on
+//    the row rather than folded into the reason.
+//  · HOW MUCH OF THE BACKLOG IT ACTUALLY SAW. The list is capped, and a reader
+//    who thinks the model weighed everything will read an omission as a
+//    judgement (#239). One line, under the summary.
+function PlannerPanel({ plan, busy, onApply, onDismiss }: {
+  plan: SprintPlan; busy: boolean; onApply: () => void; onDismiss: () => void;
+}) {
+  const adds = plan.order.filter((r) => r.adding).length;
+  return (
+    <section className="km-plan">
+      <div className="km-planhead">
+        <span className="lbl">✧ Proposed order for {plan.sprintName}</span>
+        <span className="n">
+          {plan.order.length} item{plan.order.length === 1 ? '' : 's'}
+          {adds > 0 ? ` · ${adds} from the backlog` : ''}
+          {' · '}{plan.capacity.points} of ~{plan.capacity.target} points
+          {plan.capacity.unsized > 0 ? ` · ${plan.capacity.unsized} unsized` : ''}
+        </span>
+        <span className="rule" />
+        <button className="k-btn sm ghost" onClick={onDismiss}>Dismiss</button>
+        <button className="k-btn sm accent" onClick={onApply}
+          disabled={busy || plan.order.length === 0}>
+          {busy ? 'Applying…' : 'Apply this order'}
+        </button>
+      </div>
+
+      {plan.summary && <p className="km-plansay">{plan.summary}</p>}
+
+      {/* THE CAP, STATED. A reader who believes the model saw the whole backlog
+          reads what it left out as a decision. */}
+      {plan.backlogShown < plan.backlogTotal && (
+        <p className="km-plannote">
+          It was shown the {plan.backlogShown} highest-priority backlog rows of {plan.backlogTotal}.
+          Anything below that is lower priority with no nearer deadline, and was not considered.
+        </p>
+      )}
+
+      {plan.heldLanes.length > 0 && (
+        <p className="km-plannote">
+          Locked {plan.heldLanes.length === 1 ? 'area' : 'areas'}:{' '}
+          {plan.heldLanes.map((l) => `${l.area} (${l.by})`).join(', ')} — nothing in{' '}
+          {plan.heldLanes.length === 1 ? 'it' : 'them'} can run until that branch merges and is ticked.
+        </p>
+      )}
+
+      {plan.order.length === 0 ? (
+        <p className="km-plansay">Nothing to change — it reads this sprint as already in a sensible order.</p>
+      ) : (
+        <ol className="km-planlist">
+          {plan.order.map((r, i) => (
+            <li className={`km-planrow${r.adding ? ' adding' : ''}`} key={r.id}>
+              <span className="rank">{i + 1}</span>
+              <span className="body">
+                <span className="line">
+                  <span className="t">{r.title}</span>
+                  <span className="k-tag mono">#{r.id}</span>
+                  {r.area && <span className="k-tag">{r.area}</span>}
+                  {r.points !== null && <span className="k-tag mono">{r.points}p</span>}
+                  {r.adding && <span className="k-tag success">from backlog</span>}
+                  {/* A FACT, not a finding — see the header. */}
+                  {r.laneHeld && (
+                    <span className="k-tag warning" title="This area is locked by an open branch claim. However high it sits, the runner cannot take it until that branch merges and is ticked.">
+                      lane held
+                    </span>
+                  )}
+                </span>
+                {r.why && <span className="why">{r.why}</span>}
+              </span>
+            </li>
+          ))}
+        </ol>
+      )}
+
+      {plan.drops.length > 0 && (
+        <div className="km-plandrops">
+          <span className="lbl">Applying also returns {plan.drops.length} to the backlog</span>
+          {plan.drops.map((d) => (
+            <span className="row" key={d.id}>
+              <span className="k-tag mono">#{d.id}</span>{d.title}
+              {d.area && <span className="k-tag">{d.area}</span>}
+            </span>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function BacklogView({
   slug, rows, boxes, activeId, areas, lists, onCreate, onEdit, onWrote, onRefresh, onError,
 }: {
@@ -2164,6 +2270,12 @@ function BacklogView({
   const [newFrom, setNewFrom] = useState('');
   const [newTo, setNewTo] = useState('');
   const [renaming, setRenaming] = useState<number | null>(null);
+  // ✧ THE PLANNER (#522). One proposal at a time, held here rather than on the
+  // box, because it survives the box re-rendering under it and because there is
+  // only ever one sprint in progress to plan.
+  const [plan, setPlan] = useState<SprintPlan | null>(null);
+  const [planning, setPlanning] = useState(false);
+  const [applying, setApplying] = useState(false);
   // Which box has its date editor open. One at a time, keyed by id.
   const [dating, setDating] = useState<number | null>(null);
   // The finish/delete confirm, keyed by sprint id — both are decisions with a
@@ -2307,6 +2419,27 @@ function BacklogView({
     onRefresh();
   });
 
+  // ASK. A refusal (no key, a quota) is the board's error line like any other
+  // write — nothing here invents a reason of its own.
+  const askPlan = (b: Sprint) => guard(async () => {
+    setPlanning(true);
+    try { setPlan(await planSprint(slug, b.id)); }
+    finally { setPlanning(false); }
+  });
+  // APPLY, and it is ONE call: `PUT /:id/order` takes the whole box, so it
+  // pulls in the rows the plan added and returns the ones it left out, in a
+  // single transaction. Exactly what a drag does, which is the point — there is
+  // no second write path for a machine's suggestion to travel down.
+  const applyPlan = () => guard(async () => {
+    if (!plan) return;
+    setApplying(true);
+    try {
+      await putSprintOrder(slug, plan.sprintId, plan.order.map((r) => r.id));
+      setPlan(null);
+      onRefresh();
+    } finally { setApplying(false); }
+  });
+
   const remove = (b: Sprint) => guard(async () => {
     // The box goes and the work comes back to the backlog — the server's FK
     // does it. That is why this confirm says where the items go rather than
@@ -2411,8 +2544,19 @@ function BacklogView({
         ))}
       </div>
 
+      {/* THE PROPOSAL SITS ABOVE THE BOXES, not inside the one it is about: it
+          names rows from the BACKLOG as well as from the sprint, so drawing it
+          inside the sprint would put backlog rows in a box they are not in
+          yet — which is the one thing this panel must not imply before the
+          press. */}
+      {plan && (
+        <PlannerPanel plan={plan} busy={applying}
+          onApply={applyPlan} onDismiss={() => setPlan(null)} />
+      )}
+
       {live.map((b) => (
         <SprintBox key={b.id} sprint={b} items={bags.byBox.get(b.id) || []} lists={lists}
+          planning={planning} onPlan={() => askPlan(b)}
           isActive={b.id === activeId} anyActive={activeId !== null}
           over={overBox === String(b.id)} dragging={drag}
           renaming={renaming === b.id} onRename={(n) => rename(b, n)} onStartRename={() => setRenaming(b.id)}
@@ -2501,6 +2645,7 @@ function SprintBox({
   sprint, items, lists, isActive, anyActive, over, dragging, renaming, onRename, onStartRename,
   dating, onDates, onWindow,
   confirming, onConfirm, onStart, onFinish, onReopen, onDelete, onOver, onDrop, onGrab, onEdit,
+  planning, onPlan,
 }: {
   sprint: Sprint; items: RoadmapItem[];
   /** The board's own columns — what the header squares count into. */
@@ -2517,6 +2662,9 @@ function SprintBox({
   onWindow: (patch: { startsOn?: string | null; endsOn?: string | null }) => void;
   confirming: string | null; onConfirm: (key: string | null) => void;
   onStart: () => void; onFinish: () => void; onReopen: () => void; onDelete: () => void;
+  /** ✧ Plan (#522) — offered only on the sprint IN PROGRESS, because the plan
+   *  is about what the night takes next and a planned box has no night. */
+  planning: boolean; onPlan: () => void;
   onOver: (on: boolean) => void;
   /** `beforeId` null = the bottom of the box. */
   onDrop: (beforeId: number | null) => void;
@@ -2564,6 +2712,15 @@ function SprintBox({
         <StatusSquares items={items} lists={lists} />
 
         <span className="right">
+          {/* ONLY ON THE SPRINT IN PROGRESS. A plan is a claim about what the
+              night takes next, and a planned box has no night — offering it
+              there would be a suggestion about nothing. */}
+          {isActive && (
+            <button className="k-btn sm secondary" onClick={onPlan} disabled={planning}
+              title="Ask for an order for this sprint. It proposes; nothing is written until you apply it.">
+              {planning ? '✧ Planning…' : '✧ Plan'}
+            </button>
+          )}
           {isActive ? (
             confirming === `finish:${sprint.id}` ? (
               <button className="k-btn sm accent" onClick={onFinish}>

@@ -1,7 +1,7 @@
 import type {
   Project, Resume, Activity, Bug, Roadmap, RoadmapItem, Check, CheckRun, CheckHistory, Overview,
   ProjectStatus, Priority, Severity, BugStatus, SearchResponse, Settings, AutopilotRun, PlanStep,
-  AuthDevice, Sprint, ResumeSince, ProjectDebrief,
+  AuthDevice, Sprint, SprintPlan, ResumeSince, ProjectDebrief,
   SchedSpan, ProjectPulse, BoardShape, BoardList, BoardArea, ItemKind,
   AgentProfile, AgentProfilesRoom, ModelsRoom, ContextRoom,
 } from './types';
@@ -1222,6 +1222,13 @@ export async function patchSprint(
 // what was sent: an id belonging to a row somebody else has since moved is
 // dropped rather than taking the whole reorder down with it. Render the answer,
 // not the request.
+// ✧ THE PLANNER (#522) — propose an order for one sprint. WRITES NOTHING; the
+// answer is applied with `putSprintOrder` below, which is the same call a drag
+// makes. The split is the rule: agents never write `sprint_id` or `sprint_rank`.
+export async function planSprint(slug: string, sprintId: number): Promise<SprintPlan> {
+  return request<SprintPlan>(`${sprintsBase(slug)}/${sprintId}/plan`, { method: 'POST', body: {} });
+}
+
 export async function putSprintOrder(
   slug: string, id: number, items: number[],
 ): Promise<{ sprintId: number; items: number[] }> {

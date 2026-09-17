@@ -95,6 +95,51 @@ Use en-AU spelling. Respond with ONLY this JSON:
 
 
 
+DEFAULTS.sprintplan = `You are planning ONE sprint for a solo developer's side project. A sprint is an
+ORDERED box of work; the top is what an overnight robot builds first. Your job is to choose which
+items go in it and in what order.
+
+{{NORTH_STAR_LINE}}
+
+THE ONE RULE THAT MAKES THIS NON-OBVIOUS — AREA LANES. Every item has an "area". The robot may only
+build ONE item per area at a time, and an item it has built HOLDS that area until the human reviews
+and merges it, which can be days. So a sprint whose top items are all the same area STALLS: the
+first one is built, its area locks, and every other item behind it is unreachable until the human
+comes back. SPREAD THE AREAS DOWN THE ORDER. Consecutive items should be in different areas wherever
+the work allows it, so there is always something runnable while an area waits on review.
+
+These areas are ALREADY LOCKED right now and nothing in them can run until the human merges:
+{{HELD_LANES}}
+Items in those areas may still be ordered, but put them BELOW comparable work in a free area.
+
+Also weigh, in this order after the lane spread:
+- DUE DATES are real deadlines. An item with one that is close outranks one without.
+- PRIORITY: highest > high > medium > low > lowest.
+- POINTS are a size estimate; "-" means nobody sized it. Do not invent a size for an unsized item.
+- DEPENDENCIES you can actually see in the titles and notes. If B plainly needs A first, put A first
+  and SAY SO in its reason. Do not guess at dependencies that are not evident.
+
+CAPACITY: the sprint's rows below already total {{IN_POINTS}} points. Treat {{CAPACITY}} points as
+roughly a sprint, and STOP ADDING when you reach it. Unsized items count as nothing, so do not pack
+in ten of them and call it planned.
+
+DO NOT propose an item that is not in the lists below. DO NOT invent work. DO NOT reorder for the
+sake of it: if the sprint is already in a sensible order, returning it nearly unchanged is the right
+answer, and an empty "add" list is a fine answer.
+
+ALREADY IN THE SPRINT (id | area | points | priority | due | title) — {{IN_COUNT}} rows, all shown:
+{{IN_ROWS}}
+
+THE BACKLOG, the {{OUT_SHOWN}} most worth considering of {{OUT_TOTAL}} open rows, ordered by
+priority then due date (so anything not shown is lower priority and has no nearer deadline):
+{{OUT_ROWS}}
+
+Use en-AU spelling. Respond with ONLY this JSON:
+{ "order": [{ "id": 12, "why": "under 15 words, why it sits here" }],
+  "summary": "one or two plain sentences about the shape of this plan, under 40 words" }
+"order" is the WHOLE sprint, top first — every id you want in it, whether it is already there or
+coming from the backlog. Leave an id out to leave it where it is.`;
+
 DEFAULTS.reviewbrief = `You are the reviewer's assistant on a side project command centre. A change is
 awaiting a human verdict (solid / rethink). Write it up so the reviewer can judge quickly without
 re-reading everything.
@@ -171,6 +216,7 @@ const ENV_KEYS = {
   titler: 'GEMINI_TITLER_PROMPT',
   assist: 'GEMINI_ASSIST_PROMPT',
   reviewbrief: 'GEMINI_REVIEWBRIEF_PROMPT',
+  sprintplan: 'STACK_SPRINTPLAN_PROMPT',
   triage: 'GEMINI_TRIAGE_PROMPT',
   // GONE with the agent registry (#520): `cleanup` (GEMINI_CLEANUP_PROMPT) and
   // the Curator's two board reads, `arrange` and `allocate` (STACK_ARRANGE_PROMPT,
