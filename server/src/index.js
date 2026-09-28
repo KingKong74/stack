@@ -25,6 +25,7 @@ import { previews, previewsGlobal } from './routes/previews.js';
 import { terminal } from './routes/terminal.js';
 import { triage } from './routes/triage.js';
 import { tips } from './routes/tips.js';
+import { plans } from './routes/plans.js';
 import { skills } from './routes/skills.js';
 import { models } from './routes/models.js';
 import { context } from './routes/context.js';
@@ -82,6 +83,8 @@ app.use('/api/projects/:slug/board', requireToken, board);
 // dragging a whole box at a time, not one item at a time.
 app.use('/api/projects/:slug/sprints', requireToken, sprints);
 app.use('/api/projects/:slug/checks', requireToken, checks);
+// Plan-mode plans captured by hook/stack-plan.mjs — see routes/plans.js.
+app.use('/api/projects/:slug/plans', requireToken, plans);
 app.use('/api/projects/:slug/autopilot', requireToken, autopilot);
 app.use('/api/projects/:slug/branches', requireToken, branches);
 app.use('/api/projects/:slug/previews', requireToken, previews);

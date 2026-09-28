@@ -20,6 +20,18 @@
           }
         ]
       }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "ExitPlanMode",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$HOME/.stack/stack-plan.mjs\"",
+            "async": true
+          }
+        ]
+      }
     ]
   }
 }

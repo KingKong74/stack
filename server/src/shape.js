@@ -480,3 +480,22 @@ export function sprintShape(row) {
     updatedAt: row.updated_at || null,
   };
 }
+
+// A captured plan-mode plan (session_plans). The list omits `body` — a plan
+// runs to tens of KB and the list only needs its title — so `withBody` is
+// what GET /:id asks for.
+export function sessionPlanShape(row, { withBody = false } = {}) {
+  const out = {
+    id: row.id,
+    sessionId: row.session_id || '',
+    title: row.title || '',
+    planFile: row.plan_file || '',
+    branch: row.branch || '',
+    commit: row.commit_hash || '',
+    size: Number(row.size ?? (row.body ? row.body.length : 0)),
+    createdAt: row.created_at,
+    when: relativeTime(row.created_at) || 'just now',
+  };
+  if (withBody) out.body = row.body || '';
+  return out;
+}

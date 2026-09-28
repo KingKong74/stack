@@ -1565,3 +1565,35 @@ CREATE INDEX IF NOT EXISTS roadmap_sprint_idx ON roadmap_items (sprint_id, sprin
 -- no new value for three packages to learn.
 ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS test_kind   TEXT;
 ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS test_target TEXT;
+
+-- SESSION PLANS — what Claude Code's plan mode wrote, captured on approval by
+-- the PostToolUse hook on ExitPlanMode (`hook/stack-plan.mjs`). A plan-mode
+-- plan lives in ~/.claude/plans/<random-slug>.md, which names neither the
+-- project nor the session, so the hook is what joins the two; a folder scan
+-- could not.
+--
+-- A TABLE OF ITS OWN, not roadmap rows and not `roadmap_items.plan`. That
+-- column is ONE item's steps; a plan-mode plan usually spans several items,
+-- and turning it into rows is a human's action, never the capture's — a row
+-- born here would be approved-to-run by its source, and a plan the fleet
+-- could build from without anyone looking is exactly what the gate forbids.
+--
+-- A session that revises its plan and exits plan mode again posts a new row:
+-- the history is the point. The fingerprint (sha256 of the body) only stops
+-- the SAME text landing twice from a retried hook.
+CREATE TABLE IF NOT EXISTS session_plans (
+  id          SERIAL PRIMARY KEY,
+  project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  session_id  TEXT NOT NULL DEFAULT '',
+  title       TEXT NOT NULL DEFAULT '',   -- the plan's first `#` heading
+  body        TEXT NOT NULL,              -- the markdown, capped at 200 KB by the route
+  plan_file   TEXT NOT NULL DEFAULT '',   -- basename under ~/.claude/plans, '' if unknown
+  branch      TEXT NOT NULL DEFAULT '',
+  commit_hash TEXT NOT NULL DEFAULT '',   -- HEAD when the plan was approved, not what built it
+  fingerprint TEXT NOT NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS session_plans_fp_idx
+  ON session_plans (project_id, session_id, fingerprint);
+CREATE INDEX IF NOT EXISTS session_plans_project_idx
+  ON session_plans (project_id, created_at DESC);

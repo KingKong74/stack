@@ -12,20 +12,21 @@ roadmap and sticky notes. State is **auto-managed** — you don't have to curate
 
 ## Trust the injected context
 
-Two Claude Code hooks keep Stack in sync with reality:
+Three Claude Code hooks keep Stack in sync with reality:
 
-- **SessionStart** injects a concise *"where you left off"* block at the top of the
+- **SessionStart** injects a *"where you left off"* block at the top of the
   session — the resume summary, current phase, what's in progress / next up, any
   blockers, the open-bug count and the last few activity entries. It opens with
   any **session defaults** (app-wide standing preferences set in Stack settings —
   e.g. "commits are pre-authorised: commit and push each unit without asking")
   followed by the project's **directives**. Treat both as granted permissions and
   standing orders — don't re-ask for what they already grant.
-- **SessionEnd** is a metadata backstop only. It captures the commit, branch,
+- **SessionEnd** is a metadata backstop. It captures the commit, branch,
   files touched, tools used and the last substantive message, and posts that so
-  the activity feed never has gaps. **It calls no external API.** It is
-  COALESCE-safe: a metadata post never overwrites a richer authored checkpoint or
-  the resume card for the same commit.
+  the activity feed never has gaps, and never overwrites a richer authored
+  checkpoint or the resume card.
+- **PostToolUse on ExitPlanMode** files an approved plan in the Plans tab. It
+  adds no roadmap items.
 
 When a "where you left off" block is present, **trust it** rather than
 reconstructing context by re-reading the whole repo. It reflects the live state
