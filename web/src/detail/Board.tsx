@@ -197,6 +197,30 @@ const pointsOf = (list: RoadmapItem[]) => {
  */
 const derivedKeyOf = (it: RoadmapItem): string => listKeyOf({ ...it, listKey: '' });
 
+/**
+ * THE ROW THAT JUST LANDED, for as long as its animation runs — the fourth of
+ * the drag's four states (styles.css, "THE DRAG, AS THE KIT DRAWS IT"), shared
+ * by the kanban and the Backlog tab so the two gestures cannot drift apart.
+ *
+ * The only time-based state on either screen, and deliberately the only thing
+ * that may be: `land` is called with the ANSWER, never on the drop, so the
+ * write it celebrates has already landed — a lapsed timer costs a flourish and
+ * never a row, and a failed write flashes nothing. The timer is cleared on
+ * unmount because a tab switched away mid-drop would otherwise set state on a
+ * screen that is gone.
+ */
+function useLanded(): [number | null, (id: number) => void] {
+  const [landedId, setLandedId] = useState<number | null>(null);
+  const timer = useRef<number | null>(null);
+  const land = useCallback((id: number) => {
+    if (timer.current !== null) window.clearTimeout(timer.current);
+    setLandedId(id);
+    timer.current = window.setTimeout(() => { setLandedId(null); timer.current = null; }, 900);
+  }, []);
+  useEffect(() => () => { if (timer.current !== null) window.clearTimeout(timer.current); }, []);
+  return [landedId, land];
+}
+
 export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, onAreas, highlightId }: {
   slug: string;
   projectName: string;
@@ -694,20 +718,7 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
   // editors on one board is two unsaved drafts and no way to tell them apart.
   const [inlineId, setInlineId] = useState<number | null>(null);
   const [over, setOver] = useState<string | null>(null);
-  // THE CARD THAT JUST LANDED, for as long as its animation runs. The only
-  // time-based state on this screen, and deliberately the only thing that may
-  // be: the write it celebrates has already landed by the time this is set, so
-  // a lapsed timer costs a flourish and never a row. The timer is cleared on
-  // unmount because a tab switched away mid-drop would otherwise set state on a
-  // screen that is gone.
-  const [landedId, setLandedId] = useState<number | null>(null);
-  const landTimer = useRef<number | null>(null);
-  const land = (id: number) => {
-    if (landTimer.current !== null) window.clearTimeout(landTimer.current);
-    setLandedId(id);
-    landTimer.current = window.setTimeout(() => { setLandedId(null); landTimer.current = null; }, 900);
-  };
-  useEffect(() => () => { if (landTimer.current !== null) window.clearTimeout(landTimer.current); }, []);
+  const [landedId, land] = useLanded();
   const closeAll = () => { setMenu(null); setPriMenu(null); setPtsMenu(null); setCardMenu(null); setAreaMenu(null); };
 
   // A deep link SELECTS its row; the scroll to it is ProjectDetail's, off the
@@ -1279,7 +1290,13 @@ function ColumnHead({ col, first, last, open, folded, canFold, onFold, onMenu, o
  * on `shipped` rather than on the name: THE KEYS OUTLIVE THE NAMES
  * (server/src/lists.js), and this lane renames.
  */
-function DropSlot({ from, to, shipped }: { from: string; to: string; shipped: boolean }) {
+function DropSlot({ from, to, shipped = false, say = 'Drop to move it here', note }: {
+  from: string; to: string; shipped?: boolean;
+  /** The zone's line — the kanban's "move it here" unless a surface says what
+   *  its own drop writes (the Backlog tab's commit / release, #498). */
+  say?: string;
+  note?: string;
+}) {
   return (
     <div className="km-slot" aria-hidden="true">
       <div className="hop">
@@ -1288,8 +1305,9 @@ function DropSlot({ from, to, shipped }: { from: string; to: string; shipped: bo
         <span className="to">{to}</span>
       </div>
       <div className="zone">
-        Drop to move it here
+        {say}
         {shipped && <span className="n">Sets the column only — it does not tick the item</span>}
+        {note && <span className="n">{note}</span>}
       </div>
     </div>
   );
@@ -2287,6 +2305,16 @@ function BacklogView({
   // accept the card is a box nobody drops into twice.
   const [drag, setDrag] = useState<number | null>(null);
   const [overBox, setOverBox] = useState<string | null>(null);
+  // THE BOARD'S FOUR DRAG STATES, HERE TOO (#498) — dragging, over, dim and
+  // landed, each read off the kanban's own classes in styles.css. `landed` is
+  // fired by the ANSWER (see `useLanded`); the other three by the two above.
+  const [landedId, land] = useLanded();
+  const dragged = drag === null ? null : rows.find((r) => r.id === drag) || null;
+  // Every way a drag can end without a drop — Escape, a release over nothing,
+  // a drop on a surface that refused it — lands here, or the whole screen
+  // stays dimmed around a row nobody is holding.
+  const endDrag = () => { setDrag(null); setOverBox(null); };
+  const leave = (key: string) => setOverBox((k) => (k === key ? null : k));
   const [naming, setNaming] = useState(false);
   const [newName, setNewName] = useState('');
   // The new sprint's planned window. Both optional — a sprint is a box of work
@@ -2369,7 +2397,10 @@ function BacklogView({
   const drop = (destId: number | null, beforeId: number | null) => {
     const id = drag;
     setDrag(null); setOverBox(null);
-    if (id == null) return;
+    // A row dropped on ITSELF is no move at all. Before #498 it fell through to
+    // the splice below, found no row to go above (its own id was filtered out)
+    // and wrote it to the TOP of the box — a reorder nobody asked for.
+    if (id == null || id === beforeId) return;
     const moving = rows.find((r) => r.id === id);
     if (!moving) return;
 
@@ -2379,7 +2410,7 @@ function BacklogView({
       // write here that is not a whole-list reorder, because there is no list
       // on this side to be whole.
       onWrote(rows.map((r) => (r.id === id ? { ...r, sprintId: null, sprintRank: 0 } : r)));
-      guard(async () => { await patchRoadmapItem(slug, id, { sprintId: null }); onRefresh(); });
+      guard(async () => { await patchRoadmapItem(slug, id, { sprintId: null }); land(id); onRefresh(); });
       return;
     }
 
@@ -2398,6 +2429,7 @@ function BacklogView({
       // moved out from under this drag, so its list is the real membership.
       const res = await putSprintOrder(slug, destId, ordered);
       applyOrder(destId, res.items);
+      if (res.items.includes(id)) land(id);
       onRefresh();
     });
   };
@@ -2488,6 +2520,10 @@ function BacklogView({
     if (counts.has(UNTAGGED)) out.push({ key: UNTAGGED, name: 'No area', dot: '', n: counts.get(UNTAGGED) || 0 });
     return out;
   }, [rows, areas]);
+
+  const looseTakes = !!dragged && dragged.sprintId != null;
+  const looseSource = !!dragged && dragged.sprintId == null;
+  const looseOver = overBox === 'loose' && looseTakes;
 
   const active = boxes.find((b) => b.id === activeId) || null;
   const activeRunnable = active ? (bags.byBox.get(active.id) || []).filter(runnable).length : 0;
@@ -2582,7 +2618,9 @@ function BacklogView({
         <SprintBox key={b.id} sprint={b} items={bags.byBox.get(b.id) || []} lists={lists}
           planning={planning} onPlan={() => askPlan(b)}
           isActive={b.id === activeId} anyActive={activeId !== null}
-          over={overBox === String(b.id)} dragging={drag}
+          over={overBox === String(b.id)} dragging={drag} dragged={dragged}
+          landedId={landedId} onDragEnd={endDrag}
+          from={dragged ? (boxes.find((x) => x.id === dragged.sprintId)?.name || 'Backlog') : ''}
           renaming={renaming === b.id} onRename={(n) => rename(b, n)} onStartRename={() => setRenaming(b.id)}
           dating={dating === b.id} onDates={() => setDating(dating === b.id ? null : b.id)}
           onWindow={(patch) => setWindow(b, patch)}
@@ -2591,7 +2629,7 @@ function BacklogView({
           onFinish={() => setStatus(b, 'done')}
           onReopen={() => setStatus(b, 'planned')}
           onDelete={() => remove(b)}
-          onOver={(on) => setOverBox(on ? String(b.id) : null)}
+          onOver={(on) => (on ? setOverBox(String(b.id)) : leave(String(b.id)))}
           onDrop={(beforeId) => drop(b.id, beforeId)}
           onGrab={setDrag} onEdit={onEdit} />
       ))}
@@ -2600,10 +2638,14 @@ function BacklogView({
           which is the honest ordering for a list nobody has ranked, and it
           quietly stops being the ordering that matters the moment a row is
           dragged upwards into a sprint. */}
-      <section className={`km-batch km-backlog${overBox === 'loose' ? ' over' : ''}`}
-        onDragOver={(e) => { e.preventDefault(); setOverBox('loose'); }}
-        onDragLeave={() => setOverBox((k) => (k === 'loose' ? null : k))}
-        onDrop={(e) => { e.preventDefault(); drop(null, null); }}>
+      {/* A drop here is a RELEASE, so only a row that is IN a sprint can make
+          one: a backlog row dropped back on the backlog writes nothing, and —
+          the kanban's rule for the column a card is already in — the one
+          gesture that writes nothing never looks like it did. */}
+      <section className={`km-batch km-backlog${looseOver ? ' over' : ''}${dragged && !looseOver && !looseSource ? ' dim' : ''}`}
+        onDragOver={(e) => { if (looseTakes) { e.preventDefault(); setOverBox('loose'); } }}
+        onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) leave('loose'); }}
+        onDrop={(e) => { e.preventDefault(); if (looseTakes) drop(null, null); else endDrag(); }}>
         <div className="km-batchhead">
           <span className="lbl">Backlog</span>
           <span className="items">{bags.loose.length} item{bags.loose.length === 1 ? '' : 's'}</span>
@@ -2615,13 +2657,19 @@ function BacklogView({
               is invisible from anywhere else. */}
           <StatusSquares items={bags.loose} lists={lists} />
         </div>
+        {looseOver && dragged && (
+          <DropSlot from={boxes.find((x) => x.id === dragged.sprintId)?.name || 'Sprint'} to="Backlog"
+            say="Drop to take it out of the sprint"
+            note="The runner never touches the backlog" />
+        )}
         {bags.loose.length === 0 ? (
           <div className="km-bl-empty">
             {pool.length === 0 ? 'No committed work on this board yet.' : 'Everything is in a sprint or done.'}
           </div>
         ) : bags.loose.map((it, i) => (
           <BacklogRow key={it.id} row={it} rank={i + 1} inSprint={false} runs={false} lists={lists}
-            dragging={drag === it.id} onGrab={() => setDrag(it.id)} onDrop={() => {}}
+            dragging={drag === it.id} landed={landedId === it.id}
+            onGrab={() => setDrag(it.id)} onDragEnd={endDrag}
             onEdit={() => onEdit(it)} />
         ))}
         <button className="km-bl-add" onClick={onCreate}>+ Add to backlog</button>
@@ -2666,7 +2714,8 @@ function BacklogView({
 
 /** One sprint box: a header that owns its lifecycle, and a drop zone. */
 function SprintBox({
-  sprint, items, lists, isActive, anyActive, over, dragging, renaming, onRename, onStartRename,
+  sprint, items, lists, isActive, anyActive, over, dragging, dragged, from, landedId, onDragEnd,
+  renaming, onRename, onStartRename,
   dating, onDates, onWindow,
   confirming, onConfirm, onStart, onFinish, onReopen, onDelete, onOver, onDrop, onGrab, onEdit,
   planning, onPlan,
@@ -2680,6 +2729,11 @@ function SprintBox({
    *  pressed, which it cannot do without knowing. */
   anyActive: boolean;
   over: boolean; dragging: number | null;
+  /** The row in flight, and the name of the box it came from ('Backlog' for a
+   *  loose one) — what the drop preview says it is moving from. */
+  dragged: RoadmapItem | null; from: string;
+  landedId: number | null;
+  onDragEnd: () => void;
   renaming: boolean; onRename: (name: string) => void; onStartRename: () => void;
   /** Is this box's date editor open, and the toggle for it. */
   dating: boolean; onDates: () => void;
@@ -2699,10 +2753,21 @@ function SprintBox({
   const built = items.filter((it) => it.done).length;
   const when = windowLabel(sprint.startsOn, sprint.endsOn);
 
+  // EVERY LIVE BOX TAKES A DROP, ITS OWN INCLUDED: inside the box a row came
+  // from, a drop is a REORDER, and a reorder writes the box's order. So the
+  // source box lights like any other target and only the preview is skipped —
+  // "Sprint 4 → Sprint 4" would name a move that is not happening. `dim` is the
+  // kanban's: every box the cursor is not over, bar the one the row came from.
+  const isSource = !!dragged && dragged.sprintId === sprint.id;
+
   return (
-    <section className={`km-batch km-sprintbox${isActive ? ' on' : ''}${over ? ' over' : ''}`}
+    <section className={`km-batch km-sprintbox${isActive ? ' on' : ''}${over ? ' over' : ''}${dragged && !over && !isSource ? ' dim' : ''}`}
       onDragOver={(e) => { e.preventDefault(); onOver(true); }}
-      onDragLeave={() => onOver(false)}
+      // A leave only counts when the cursor has left the BOX, not when it
+      // crosses onto one of its own rows — `dragleave` fires on every child
+      // boundary, and the preview below would replay its slot animation on
+      // each one. `relatedTarget` is where the cursor went.
+      onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) onOver(false); }}
       onDrop={(e) => { e.preventDefault(); onDrop(null); }}>
       <div className="km-batchhead">
         {isActive && <span className="km-live" title="In progress — the runner builds this sprint" />}
@@ -2813,14 +2878,22 @@ function SprintBox({
         </div>
       )}
 
+      {over && dragged && !isSource && (
+        <DropSlot from={from} to={sprint.name}
+          say="Drop to commit it to this sprint"
+          note={items.length ? 'It goes in at the bottom — or above the row you drop it on' : undefined} />
+      )}
+
       {items.length === 0 ? (
-        <div className="km-bl-empty">
-          {dragging !== null ? 'Drop it here to commit it to this sprint' : 'Empty — drag work in from the backlog'}
-        </div>
+        !(over && dragged) && (
+          <div className="km-bl-empty">
+            {dragging !== null ? 'Drop it here to commit it to this sprint' : 'Empty — drag work in from the backlog'}
+          </div>
+        )
       ) : items.map((it, i) => (
         <BacklogRow key={it.id} row={it} rank={i + 1} inSprint runs={isActive && runnable(it)} lists={lists}
-          dragging={dragging === it.id}
-          onGrab={() => onGrab(it.id)}
+          dragging={dragging === it.id} landed={landedId === it.id}
+          onGrab={() => onGrab(it.id)} onDragEnd={onDragEnd}
           onDrop={() => onDrop(it.id)}
           onEdit={() => onEdit(it)} />
       ))}
@@ -2858,7 +2931,7 @@ function StatusSquares({ items, lists }: { items: RoadmapItem[]; lists: BoardLis
   );
 }
 
-function BacklogRow({ row, rank, inSprint, runs, lists, dragging, onGrab, onDrop, onEdit }: {
+function BacklogRow({ row, rank, inSprint, runs, lists, dragging, landed, onGrab, onDragEnd, onDrop, onEdit }: {
   row: RoadmapItem;
   /** 1-based place in whatever list this is drawn in. Inside a sprint that IS
    *  the priority; in the backlog it is only a position in a bucket ordering,
@@ -2871,9 +2944,14 @@ function BacklogRow({ row, rank, inSprint, runs, lists, dragging, onGrab, onDrop
   /** The board's own columns, for the status tag. */
   lists: BoardList[];
   dragging: boolean;
+  /** Just dropped, and the server's answer has it here (#498). */
+  landed: boolean;
   onGrab: () => void;
-  /** Dropped ON this row: the dragged card goes in ABOVE it. */
-  onDrop: () => void;
+  onDragEnd: () => void;
+  /** Dropped ON this row: the dragged card goes in ABOVE it. Absent on a
+   *  backlog row, whose drop is its section's (a release) — so the event is
+   *  left to bubble there rather than swallowed here. */
+  onDrop?: () => void;
   onEdit: () => void;
 }) {
   const pri = priorityMeta(row.bucket);
@@ -2884,11 +2962,14 @@ function BacklogRow({ row, rank, inSprint, runs, lists, dragging, onGrab, onDrop
     : '';
 
   return (
-    <div className={`km-blrow${dragging ? ' dragging' : ''}${runs ? ' runs' : ''}`}
+    <div className={`km-blrow${dragging ? ' dragging' : ''}${landed ? ' landed' : ''}${runs ? ' runs' : ''}`}
       data-hl={row.id}
-      draggable onDragStart={onGrab}
-      onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
-      onDrop={(e) => { e.preventDefault(); e.stopPropagation(); onDrop(); }}
+      draggable onDragStart={onGrab} onDragEnd={onDragEnd}
+      // NO `dragover` HANDLER HERE, and its absence is the fix: the one this
+      // had stopped propagation, so the box under a row never heard the cursor
+      // was still over it and went dark whenever it crossed onto a row. The
+      // box's own handler accepts the drop for the whole box.
+      onDrop={onDrop && ((e) => { e.preventDefault(); e.stopPropagation(); onDrop(); })}
       onDoubleClick={onEdit}>
       <span className="grip" aria-hidden="true">⠿</span>
       {/* Inside a sprint the number is the ORDER THE NIGHT WORKS IN, so it is

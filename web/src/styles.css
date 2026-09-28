@@ -4520,14 +4520,19 @@ body[data-mc-full] .totop { display: none; }
                   of every other AREA, which is the #267 rule the board has said
                   in prose since #469 and can now say in the gesture itself.
      .landed    — IT WENT. In lime, which means done everywhere else in the app.
+   THE BACKLOG TAB WEARS THE SAME FOUR (#498): a sprint box or the backlog is
+   a column, a backlog row is a card, and each rule below names both rather
+   than growing a second copy — two drags that look different are two
+   gestures to learn. Where a row is not a card (it is the page's full width),
+   it says so beside the shared rule, never instead of it.
    The rings are `color-mix` over the same tokens the borders use, never an
    inline rgba(): the audit reads a literal tone as a stray one, and these two
    are the focus blue and the accent lime BY CONSTRUCTION. */
-.km-col.over {
+.km-col.over, .km-sprintbox.over, .km-backlog.over {
   border-color: var(--border-focus); background: var(--surface-selected);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--border-focus) 22%, transparent);
 }
-.km-col.dim { opacity: 0.72; }
+.km-col.dim, .km-sprintbox.dim, .km-backlog.dim { opacity: 0.72; }
 .km-col.catchall { border-style: dashed; }
 
 /* The drop preview. `scaleY` on the way in is the space opening rather than a
@@ -4793,7 +4798,7 @@ body[data-mc-full] .totop { display: none; }
 .km-cardmeta .id { font: var(--weight-medium) var(--text-xs)/1 var(--font-mono); color: var(--text-secondary); }
 .km-cardmeta .pts { font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-tertiary); }
 .km-cardmeta .right { margin-left: auto; display: flex; align-items: center; gap: var(--space-3); }
-.km-card.dragging {
+.km-card.dragging, .km-blrow.dragging {
   opacity: 0.9; cursor: grabbing;
   border-color: var(--border-focus);
   transform: rotate(1.4deg) scale(1.02);
@@ -4803,7 +4808,7 @@ body[data-mc-full] .totop { display: none; }
    column; the ring outlasts it by the rest of the 900ms the screen holds
    `landedId`, which is what makes the flash findable when the drop happened
    further down a long column than the eye was. */
-.km-card.landed {
+.km-card.landed, .km-blrow.landed {
   border-color: var(--border-accent);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--action-accent) 30%, transparent);
   animation: km-card-land var(--dur-slow) var(--ease-out);
@@ -5326,10 +5331,19 @@ body[data-mc-full] .totop { display: none; }
   border-radius: var(--radius-lg); padding: var(--space-5); gap: var(--space-2);
 }
 .km-sprintbox.on { border-color: var(--lime-700); border-left: 2px solid var(--lime-500); }
+/* The lit target wins over the live box's lime — the shared `.over` rule sits
+   above this one in the file, so it has to be restated at this specificity or
+   the sprint in progress is the one box that never says it will take a drop. */
+.km-sprintbox.on.over { border-color: var(--border-focus); }
 /* The drop target lights up BEFORE anything is written — an empty box that
-   gives no sign it will accept the card is a box nobody drops into twice. */
-.km-sprintbox.over, .km-backlog.over {
-  border-color: var(--border-focus); background: var(--surface-hover);
+   gives no sign it will accept the card is a box nobody drops into twice. The
+   lit and dimmed states are the kanban column's (#498, "THE DRAG, AS THE KIT
+   DRAWS IT"); what is here is only the transition they fade on. */
+.km-sprintbox, .km-backlog {
+  transition: background-color var(--dur-normal) var(--ease-standard),
+              border-color var(--dur-normal) var(--ease-standard),
+              box-shadow var(--dur-normal) var(--ease-standard),
+              opacity var(--dur-normal) var(--ease-standard);
 }
 .km-sprintbox .km-batchhead, .km-backlog .km-batchhead, .km-done .km-batchhead {
   padding: 0 0 var(--space-3);
@@ -5521,13 +5535,18 @@ body[data-mc-full] .totop { display: none; }
   display: flex; align-items: center; gap: var(--space-5);
   padding: var(--space-4) var(--space-5);
   background: var(--surface-card); border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md); transition: var(--transition-control);
+  border-radius: var(--radius-md);
+  /* The two properties the drag moves, named beside the control transition
+     rather than instead of it — the kanban card's own spelling. */
+  transition: var(--transition-control),
+              transform var(--dur-fast) var(--ease-out),
+              opacity var(--dur-fast) var(--ease-standard);
 }
 .km-blrow:hover { background: var(--surface-hover); }
-.km-blrow.dragging {
-  background: var(--surface-overlay); border-color: var(--border-focus);
-  box-shadow: var(--shadow-md);
-}
+/* The row in flight is the card in flight (#498), less the TILT: 1.4deg over
+   a row the page's full width swings its far end a dozen pixels, which reads
+   as the layout breaking rather than a row being lifted. The lift stays. */
+.km-blrow.dragging { transform: scale(1.005); }
 /* The handle is a CONTROL, not decoration, so it takes a readable tone at rest
    — --text-disabled is the tone the kit reaches for and it measures under AA
    on this card. */

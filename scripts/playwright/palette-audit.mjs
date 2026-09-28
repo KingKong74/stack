@@ -134,6 +134,12 @@ const SCREENS = [
   // audit had never measured anything over. `drag` below is what gets there.
   { slug: 'board-drag', hash: '#/p/{slug}/roadmap', drag: true },
   { slug: 'board-backlog', hash: '#/p/{slug}/roadmap', press: ['.km-tabs .k-tab:nth-child(2)'] },
+  // #498 — THE BACKLOG TAB WEARS THE SAME FOUR DRAG STATES, over grounds the
+  // kanban's row never measured: a row in flight at the page's full width, a
+  // sprint box lit as a target and the drop preview inside it. A backlog row
+  // aimed at a sprint box, or — on a board whose backlog is empty — a sprint's
+  // row aimed at the backlog. Needs a sprint to exist; none is `unreachable`.
+  { slug: 'board-backlog-drag', hash: '#/p/{slug}/roadmap', press: ['.km-tabs .k-tab:nth-child(2)'], drag: 'backlog' },
   // #522 — THE PLANNER'S PANEL IS DELIBERATELY NOT A SCREEN HERE, and the
   // reason is this file's own honesty rule rather than laziness. It only exists
   // after a Gemini call: a screen that pressed ✧ Plan would spend one on every
@@ -498,7 +504,17 @@ async function main() {
       // surface rather than most of it. Failure is reported, never skipped —
       // a drag that did not start is a screen nobody looked at.
       if (screen.drag) {
-        const marked = await page.evaluate(() => {
+        const marked = screen.drag === 'backlog' ? await page.evaluate(() => {
+          const box = document.querySelector('.km-sprintbox');
+          const loose = document.querySelector('.km-backlog .km-blrow');
+          const boxed = document.querySelector('.km-sprintbox .km-blrow');
+          const [src, dst] = loose && box ? [loose, box]
+            : boxed ? [boxed, document.querySelector('.km-backlog')] : [null, null];
+          if (!src || !dst) return false;
+          src.setAttribute('data-audit-drag', 'from');
+          dst.setAttribute('data-audit-drag', 'to');
+          return true;
+        }) : await page.evaluate(() => {
           for (const row of document.querySelectorAll('.km-cols')) {
             const cols = [...row.querySelectorAll('.km-col')].filter((c) => !c.classList.contains('catchall'));
             const src = cols.find((c) => c.querySelector('.km-card'));
@@ -533,8 +549,11 @@ async function main() {
         // this can fail fails SILENTLY — the events land, nothing paints, and
         // the audit reports the resting screen under the dragging screen's
         // name. Exactly the absence-mistaken-for-a-pass this tool exists for.
-        const began = marked && await page.evaluate(() =>
-          !!document.querySelector('.km-card.dragging') && !!document.querySelector('.km-col.over .km-slot'));
+        const began = marked && await page.evaluate((backlog) => (backlog
+          ? !!document.querySelector('.km-blrow.dragging')
+            && !!document.querySelector('.km-sprintbox.over .km-slot, .km-backlog.over .km-slot')
+          : !!document.querySelector('.km-card.dragging') && !!document.querySelector('.km-col.over .km-slot')),
+        screen.drag === 'backlog');
         if (!began) {
           findings.push({ screen: screen.slug, kind: 'unreachable', detail: 'the drag did not paint — no card in flight or no drop preview, nothing audited' });
           await page.close();
