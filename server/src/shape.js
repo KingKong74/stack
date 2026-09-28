@@ -111,6 +111,9 @@ export function roadmapItemShape(row) {
     sprintId: row.sprint_id ?? null,
     sprintRank: Number(row.sprint_rank) || 0,
     plan: cleanPlan(row.plan),         // implementation steps [{text, done}] (#75)
+    // In the build queue (routes/ready.js), and where: read the pair.
+    ready: row.ready_at != null,
+    readyRank: Number(row.ready_rank) || 0,
     spec: cleanSpec(row.spec),         // {goal?, acceptance?, files?, outOfScope?}; {} = none
     agentProfile: row.agent_profile || '', // '' = default executor; else the agent_profiles key to build this
     updatedAt: row.updated_at || null, // ISO — the archive sorts latest-touched first

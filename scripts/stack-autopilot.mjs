@@ -1562,26 +1562,23 @@ try {
         }
       }
       const blockedAreas = new Set();
-      // #477 — THE SPRINT IN PROGRESS IS THE WHOLE CANDIDATE SET.
-      //
-      // The automation only ever touches the sprint that is running, so this is
-      // a filter and not a preference: an item in no sprint, or in one that is
-      // planned or finished, is not a candidate at all. No active sprint means
-      // there is nothing to do tonight, which is a real and deliberate state —
-      // it is how a project is put down between cycles — and it is reported as
-      // such below rather than quietly falling back to the whole board.
-      //
-      // This mirrors the server's own fan-out gate in routes/autopilot.js, and
-      // the two cannot import each other. Change one, change the other.
+      // TWO LANES, and each is the whole candidate set for its kind of run:
+      //   • a BUILD takes the READY queue (routes/ready.js), top first;
+      //   • a PLAN takes the SPRINT IN PROGRESS, the planning lane.
+      // A filter, not a preference: an empty lane means nothing to do, said
+      // out loud below, never a fall-back to the whole board. This mirrors the
+      // server's fan-out and plan sweep (routes/autopilot.js); the two cannot
+      // import each other, so change one, change the other.
       const sprint = (detail.sprints || []).find((sp) => sp.status === 'active');
-      item = (!sprint ? [] : BUCKETS.flatMap((b) => detail.roadmap?.[b] || [])
-        .filter((it) => it.sprintId != null && String(it.sprintId) === String(sprint.id)))
-        // THE ORDER INSIDE THE BOX IS THE PRIORITY, top first — that is what
-        // replaced the desire tier, and it is the owner's own hand rather than
-        // a rank derived from anything. Bucket is the tiebreak for two rows
-        // somehow sharing a rank, and the payload's own order (which arrives
-        // sorted bucket-then-position) is the last, via a stable sort.
-        .sort((a, b) => (a.sprintRank ?? 0) - (b.sprintRank ?? 0) || bucketRank(a.bucket) - bucketRank(b.bucket))
+      const everything = BUCKETS.flatMap((b) => detail.roadmap?.[b] || []);
+      const lane = PLAN_ONLY
+        ? (!sprint ? [] : everything.filter((it) => it.sprintId != null && String(it.sprintId) === String(sprint.id)))
+        : everything.filter((it) => it.ready);
+      const rankOf = (it) => (PLAN_ONLY ? it.sprintRank : it.readyRank) ?? 0;
+      item = lane
+        // The lane's own order is the priority, top first; bucket breaks a tie,
+        // and the payload's order (bucket-then-position) is last, via a stable sort.
+        .sort((a, b) => rankOf(a) - rankOf(b) || bucketRank(a.bucket) - bucketRank(b.bucket))
         .filter((it) => !attempted.has(it.id))
         // A plan night wants the items still missing a design (#219).
         .filter((it) => !PLAN_ONLY || !(it.plan?.length))
@@ -1594,8 +1591,12 @@ try {
           log(`item #${it.id} "${it.title}" skipped — the "${area}" lane is held by ${holder}`);
           return false;
         });
-      if (!item && !sprint && n === 0) {
-        log(`no sprint is in progress on ${SLUG} — the automation only builds the sprint in progress, so there is nothing to do tonight.`);
+      if (!item && PLAN_ONLY && !sprint && n === 0) {
+        log(`no sprint is in progress on ${SLUG} — planning only designs the sprint in progress, so there is nothing to plan.`);
+        break;
+      }
+      if (!item && !PLAN_ONLY && !lane.length && n === 0) {
+        log(`the Ready queue on ${SLUG} is empty — the automation only builds what is queued, so there is nothing to build.`);
         break;
       }
       if (!item && targetArea && n === 0) log(`(target area "${targetArea}" — items outside it are ignored)`);
@@ -1606,7 +1607,9 @@ try {
     }
     if (!item) {
       log(n === 0
-        ? `no eligible ${PLAN_ONLY ? 'plan-less ' : ''}item in the sprint in progress on ${SLUG} — nothing to do tonight.`
+        ? (PLAN_ONLY
+          ? `no eligible plan-less item in the sprint in progress on ${SLUG} — nothing to plan.`
+          : `no eligible item in the Ready queue on ${SLUG} — nothing to build.`)
         : 'no more eligible items — night complete.');
       break;
     }

@@ -1607,3 +1607,9 @@ ALTER TABLE session_plans ADD COLUMN IF NOT EXISTS item_ids JSONB NOT NULL DEFAU
 -- '{}' = no spec, which is most rows. The build prompt prints what is here, and
 -- the auto-verdict reads `files` as the item's declared scope.
 ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS spec JSONB NOT NULL DEFAULT '{}'::jsonb;
+
+-- THE READY QUEUE (routes/ready.js): what the automation BUILDS, in order.
+-- NULL = not queued, the majority state. Only PUT /ready writes these; the
+-- active sprint is the planning lane and never builds.
+ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS ready_at   TIMESTAMPTZ;
+ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS ready_rank INTEGER NOT NULL DEFAULT 0;

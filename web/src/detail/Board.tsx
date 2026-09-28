@@ -139,7 +139,7 @@ import {
   createArea, patchArea, deleteArea,
   getBoardFolds, setBoardFolds,
   createRoadmapItem, patchRoadmapItem, deleteRoadmapItem,
-  createSprint, patchSprint, putSprintOrder, deleteSprint,
+  createSprint, patchSprint, putSprintOrder, deleteSprint, putReadyQueue,
   startBuild, planSprint,
   queueTermLaunch,
 } from '../store';
@@ -654,6 +654,25 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
       queueTermLaunch(tmux, launchBrief(slug, it, tmux));
       go.terminal(slug, tmux);
     });
+  // ⇥ QUEUE TO BUILD — the Ready queue is what the automation builds; the
+  // sprint in progress is only planned. The queue is sent WHOLE (see
+  // putReadyQueue), so a join goes at the bottom and a leave keeps the rest in
+  // order. A held row comes back refused, named, on the error line.
+  const readyIds = () => rows.filter((x) => x.ready && !x.done)
+    .sort((a, b) => a.readyRank - b.readyRank).map((x) => x.id);
+  const setReady = (it: RoadmapItem, on: boolean) =>
+    guard(async () => {
+      const ids = readyIds().filter((id) => id !== it.id);
+      const { items: queued } = await putReadyQueue(slug, on ? [...ids, it.id] : ids);
+      setRows((r) => r.map((x) => {
+        const k = queued.indexOf(x.id);
+        return k >= 0 ? { ...x, ready: true, readyRank: k } : x.ready ? { ...x, ready: false, readyRank: 0 } : x;
+      }));
+      setNote(on
+        ? `#${it.id} is queued to build, ${queued.length === 1 ? 'alone in the queue' : `number ${queued.length} in the queue`}.`
+        : `#${it.id} left the build queue.`);
+      onRefresh();
+    });
   const addToSprint = (it: RoadmapItem, sprintId: number) =>
     guard(async () => {
       wrote(await patchRoadmapItem(slug, it.id, { sprintId }));
@@ -1089,6 +1108,7 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
                           onRun={col.key === 'planned' && !it.done && !String(it.claimedBy || '').trim() && !isHeld(it)
                             ? () => { closeAll(); setCardMenu(null); runInTerminal(it); } : undefined}
                           onAddToSprint={(sid) => { setCardMenu(null); addToSprint(it, sid); }}
+                          onReady={(on) => { setCardMenu(null); setReady(it, on); }}
                           onPark={() => { setCardMenu(null); park(it); }}
                           onArchive={() => { setCardMenu(null); archive(it); }}
                           onDerive={() => { setCardMenu(null); derive(it); }}
@@ -1395,7 +1415,7 @@ function IssueCard({
   editing, onOpenInline, onInline, onCancelInline,
   priOpen, onPri, onPick, ptsOpen, onPts, onPoints, menuOpen, onMenu,
   onKind, onDue, onEdit, onSignOff, onPark, onArchive, onDerive, onDelete,
-  activeSprint, onBuildNow, onAddToSprint, onRun,
+  activeSprint, onBuildNow, onAddToSprint, onRun, onReady,
 }: {
   item: RoadmapItem;
   /** How many `parent_id` children this item has — its ideas, on the Roadmap tab. */
@@ -1412,6 +1432,8 @@ function IssueCard({
   activeSprint: Sprint | null;
   onBuildNow: () => void;
   onAddToSprint: (sprintId: number) => void;
+  /** Join (true) or leave (false) the Ready queue, which is what the automation builds. */
+  onReady: (on: boolean) => void;
   /** #525 — claim this card and open a claude tab already working it. Present
    *  only on an unclaimed, unheld card in To Do: anywhere else somebody (or
    *  something) already has it, or the night could not take it either. */
@@ -1546,7 +1568,7 @@ function IssueCard({
         </span>
       </div>
 
-      {(held || fly || sprint || kind || due || item.area || item.claimedBy || item.skipped || item.reviewTag) && (
+      {(held || item.ready || fly || sprint || kind || due || item.area || item.claimedBy || item.skipped || item.reviewTag) && (
         <div className="km-cardtags">
           {/* HELD IS FIRST, ahead of even the sprint chip, because it OUTRANKS
               it: a held row in the box in progress still does not run, so a
@@ -1558,8 +1580,15 @@ function IssueCard({
           {held && (
             <span className="k-tag warning" title={item.source === 'fly'
               ? 'Opened by a live session and not signed off — the overnight runner will not take it until you do (card menu → Sign off)'
+              : item.source === 'plan'
+              ? 'Written by a planning run and not signed off — it cannot be queued to build until you do (card menu → Sign off)'
               : 'Auto-found on a push and not signed off — the overnight runner will not take it until you do (card menu → Sign off)'}>
               held
+            </span>
+          )}
+          {item.ready && !item.done && (
+            <span className="k-tag km-sprint on" title={`In the Ready queue at position ${item.readyRank + 1}: the automation builds it${held ? ' once it is signed off' : ''}.`}>
+              ready #{item.readyRank + 1}
             </span>
           )}
           {/* THE SPRINT CHIP (#477). It comes ahead of the area — and second
@@ -1572,8 +1601,8 @@ function IssueCard({
           {sprint && (
             <span className={`k-tag km-sprint${sprint.status === 'active' ? ' on' : ''}`}
               title={sprint.status === 'active'
-                ? `Sprint "${sprint.name}" — in progress, so the overnight runner builds this`
-                : `Sprint "${sprint.name}" — ${sprint.status}, so the runner leaves it alone until this sprint starts`}>
+                ? `Sprint "${sprint.name}" — in progress, so the automation plans this (it builds only the Ready queue)`
+                : `Sprint "${sprint.name}" — ${sprint.status}, so nothing plans it until this sprint starts`}>
               <KitIcon name="layers" size={11} /><span className="v">{sprint.name}</span>
             </span>
           )}
@@ -1732,15 +1761,23 @@ function IssueCard({
               ⌨ Run in terminal
             </button>
           )}
+          {!item.done && (
+            <button className="km-menuitem" onClick={() => onReady(!item.ready)}
+              title={item.ready
+                ? 'Takes this item out of the Ready queue. The automation stops considering it for a build.'
+                : 'Queues this item to build. The automation builds the Ready queue top first, whenever it has budget.'}>
+              {item.ready ? '⇤ Take out of Ready' : '⇥ Queue to build'}
+            </button>
+          )}
           {activeSprint && item.sprintId !== activeSprint.id ? (
             <button className="km-menuitem" onClick={() => onAddToSprint(activeSprint.id)}
-              title={`Commits this item to ${activeSprint.name} — the box the overnight runner works from. It joins at the bottom of the queue.`}>
-              ＋ Add to {activeSprint.name}
+              title={`Adds this item to ${activeSprint.name}, the planning lane: the automation designs and breaks it down, but never builds from a sprint.`}>
+              ＋ Plan in {activeSprint.name}
             </button>
           ) : (
             <span className="km-menunote">
               {!activeSprint
-                ? 'No sprint in progress — the night does nothing until one is open.'
+                ? 'No sprint in progress, so nothing is being planned.'
                 : 'Already in the sprint in progress.'}
             </span>
           )}

@@ -180,6 +180,8 @@ export interface RoadmapItem {
   sprintRank: number;
   plan: PlanStep[];    // the implementation plan ([] = none)
   spec: ItemSpec;      // what a build run is held to ({} = none)
+  ready: boolean;      // in the build queue (routes/ready.js); readyRank is its place
+  readyRank: number;
   updatedAt: string | null; // ISO — latest-first ordering in the archive
   agentProfile: string; // '' = the default executor; else the agent profile that should build it
 

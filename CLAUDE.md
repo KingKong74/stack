@@ -20,8 +20,8 @@ be. The why behind a shipped feature lives in its commit message and its `built_
 
 A self-hosted command centre for side projects. The point is **frictionless resume**: open a project
 and the resume card tells you where you left off. A push auto-extracts bugs and next steps into the
-trackers, and progress is computed, never hand-set. Unattended builds run overnight from the
-**sprint in progress** in each project. A human gives the verdicts.
+trackers, and progress is computed, never hand-set. Unattended runs **build the Ready queue** and
+**plan the sprint in progress** in each project. A human gives the verdicts.
 
 ## Map
 
@@ -48,7 +48,7 @@ discipline keeps them in step. Change one copy, change them all, in the same com
 | **Built** | `done` OR (`built_note` non-empty AND `claimed_by` non-empty). Both halves are load-bearing: un-ticking clears `claimed_by` but keeps `built_note`. Nothing in Stack ticks an item, so a path acting on built work must use this, never `done` alone | `lib/plan.ts` `isBuilt` (the client's only copy), every server path acting on built work |
 | **Approved to run** | `source NOT IN ('hook','fly','plan') OR reviewed_at IS NOT NULL`. There's no column: a flag would become a second truth that drifts. A manual item is never held | `server/src/approval.js`, `scripts/lib/approval.mjs`, `web/src/lib/approval.ts` |
 | **Area lane** | key `(project, area)`. An area with an open claimed item admits no second worker. Untagged (`''`) is never a lane; a worker never blocks itself | `server/src/lanes.js`, `routes/autopilot.js` claim, the runner's pick |
-| **Run order** | active sprint's rows by `sprint_rank`, then `bucket`, then payload order. Rank only means something inside the active sprint (backlog rows are all 0) | `routes/autopilot.js`, the runner, `lib/plan.ts` `queueOrder` |
+| **Run order** | a build takes Ready rows by `ready_rank`; a plan takes the active sprint's by `sprint_rank`; then `bucket`, then payload order. Each rank only means something inside its lane | `routes/autopilot.js`, the runner, `lib/plan.ts` `queueOrder` |
 | **Schedule** | minutes from week zero (`sched_*_min`; `plan_*_min` is the write-once baseline a drag never moves). BIGINT arrives from pg as a string | `routes/roadmap.js`, `shape.js`, `lib/plan.ts`, `lib/spine.ts` |
 | **Branch name** | `<kind>/<id>-<summary>`. The legacy `auto/item-N-<slug>` must parse forever, with kind `''`, never `feat` | `scripts/lib/lane.mjs`, `web/src/lib/branch.ts` |
 | **Which screen** | `homeOf` → `auto \| roadmap \| board`. Call `isBoardWork`, never `!isIdea` | `lib/plan.ts` (single copy; keep it that way) |
@@ -67,10 +67,10 @@ Also:
 
 Gates, outermost first. Each is enforced where it is explained:
 
-1. **The sprint in progress.** The automation only touches the project's `active` sprint. The
-   database allows at most one per project (a partial unique index). **No active sprint means the
-   night does nothing**, and says so out loud; it never falls back to the board. Run now and a
-   calendar row are not gated, because each names one item a human picked.
+1. **Two lanes.** The automation **builds only the Ready queue** (`routes/ready.js`) and **plans only
+   the `active` sprint** (at most one per project, a partial unique index). **An empty lane means
+   that kind of run does nothing**, and says so out loud; it never falls back to the board. Run now
+   and a calendar row are not gated, because each names one item a human picked.
 2. **Approval** (above). An unattended enqueue drops a held item silently; Run now refuses out loud
    and names it.
 3. **Fleet cap** (`autopilotWorkers`, tunable), **per-project serialisation** (not tunable: every job
@@ -80,8 +80,8 @@ Gates, outermost first. Each is enforced where it is explained:
 
 Who writes what:
 
-- **Agents never write `sprint_id` or `sprint_rank`.** A POST never sets a sprint, or the extractor
-  could commission tonight's work by writing a title. The ✧ Planner proposes; Apply is the human's
+- **Agents never write `sprint_id`, `sprint_rank`, `ready_at` or `ready_rank`.** A POST never sets
+  them, or the extractor could commission a build by writing a title. Ready refuses a held item. The ✧ Planner proposes; Apply is the human's
   drag route.
 - **`risk` is written only through `PATCH /roadmap/:id`**, whose CASE guard lets an auto write
   replace only a NULL `risk_source`. A `low` item whose run lands green auto-queues its own merge, so

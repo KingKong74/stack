@@ -13,6 +13,7 @@ import { bugs } from './routes/bugs.js';
 import { roadmap } from './routes/roadmap.js';
 import { board } from './routes/board.js';
 import { sprints } from './routes/sprints.js';
+import { ready } from './routes/ready.js';
 import { presence } from './routes/presence.js';
 import { checks } from './routes/checks.js';
 import { publicShowcase } from './routes/public.js';
@@ -82,6 +83,8 @@ app.use('/api/projects/:slug/board', requireToken, board);
 // contents; and rather than part of /roadmap, because membership is written by
 // dragging a whole box at a time, not one item at a time.
 app.use('/api/projects/:slug/sprints', requireToken, sprints);
+// The build queue — see routes/ready.js.
+app.use('/api/projects/:slug/ready', requireToken, ready);
 app.use('/api/projects/:slug/checks', requireToken, checks);
 // Plan-mode plans captured by hook/stack-plan.mjs — see routes/plans.js.
 app.use('/api/projects/:slug/plans', requireToken, plans);

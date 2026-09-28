@@ -1324,6 +1324,13 @@ export async function putSprintOrder(
   return request<{ sprintId: number; items: number[] }>(
     `${sprintsBase(slug)}/${id}/order`, { method: 'PUT', body: { items } });
 }
+// THE READY QUEUE (server/src/routes/ready.js) — what the automation builds.
+// Like a sprint box, the WHOLE queue top to bottom: listed ids are ranked by
+// index, anything Ready that is left out leaves it. A held id is refused (409)
+// with a sentence naming it, and nothing is written.
+export async function putReadyQueue(slug: string, items: number[]): Promise<{ items: number[] }> {
+  return request<{ items: number[] }>(`/projects/${encodeURIComponent(slug)}/ready`, { method: 'PUT', body: { items } });
+}
 // The box goes; the work stays. Its items return to the backlog rather than
 // being deleted with it — deleting a decision about work must never delete the
 // work, so this needs no confirmation about losing anything.

@@ -11,7 +11,8 @@ one before editing its file: `stack-autopilot-dispatch.mjs`, `lib/autoverdict.mj
   behaviour change. For example, it still inlines its own `git worktree add/remove` rather than
   calling `lib/worktree.mjs`, and that is deliberate.
 - The runner's pick is one of three copies of the run order, the approval predicate and the area
-  lane (see root). No active sprint means it logs that and does nothing.
+  lane (see root). A build takes the Ready queue, a plan the active sprint; an empty lane logs that
+  and does nothing.
 - **Per-project serialisation is not a knob**: every job runs against the one checkout at
   `$STACK_AUTOPILOT_ROOT/<slug>`. The host lockfile's name sanitiser is spelled in both the runner
   and the dispatcher's kill path; the dispatcher's header says what diverging costs.

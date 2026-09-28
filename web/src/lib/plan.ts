@@ -1140,8 +1140,15 @@ export const inActiveSprint = (it: RoadmapItem, activeId: number | null): boolea
  * Curried rather than reading a module global because the id is a property of
  * the PROJECT and this file is pure — the same board rendered for two projects
  * must not share one.
+ *
+ * THE READY QUEUE COMES FIRST, by its rank: it is what the automation builds
+ * (server/src/routes/ready.js, routes/autopilot.js's fan-out and the runner's
+ * pick are the other copies). The sprint in progress is the planning lane and
+ * sorts after it.
  */
 export const queueOrder = (activeId: number | null) => (a: RoadmapItem, b: RoadmapItem): number => {
+  if (a.ready !== b.ready) return a.ready ? -1 : 1;
+  if (a.ready && b.ready && a.readyRank !== b.readyRank) return a.readyRank - b.readyRank;
   const ina = inActiveSprint(a, activeId);
   const inb = inActiveSprint(b, activeId);
   if (ina !== inb) return ina ? -1 : 1;

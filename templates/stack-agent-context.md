@@ -177,17 +177,13 @@ Open roadmap items can carry a claim (`claimedBy` — the branch name, e.g.
 - **Never start an item with `skipped: true`** — it's parked on purpose; the
   owner unparks it from the UI when it's back in play. (The Roadmap tab's Parked
   view ages every parked item and flags the stale ones, so nothing rots unseen.)
-- **Only the sprint IN PROGRESS is yours to build.** Each project has at most
-  one sprint with `status: "active"` (they arrive on the project payload as
-  `sprints`), and an item carries `sprintId` and `sprintRank`. Work only items
-  whose `sprintId` is that sprint's id, **in `sprintRank` order, lowest first** —
-  the top of the box is what the owner wants built first. An item in no sprint,
-  or in a `planned` or `done` one, is not yours to start: nobody has committed
-  to it yet. If no sprint is active, there is nothing to build unattended.
-- **Never set or change `sprintId` or `sprintRank` yourself.** Which sprint work
-  belongs to, and its order inside one, is the owner's ground truth for what
-  matters — it is the one thing on a roadmap row that decides what the machine
-  does tonight. A new item you file is always born in the backlog.
+- **Only the READY queue is yours to build**: items with `ready: true`, in
+  `readyRank` order, lowest first. The sprint in progress (`status: "active"`
+  in the payload's `sprints`) is the PLANNING lane: its items are designed and
+  broken down, not built. An empty Ready queue means nothing to build unattended.
+- **Never set `sprintId`, `sprintRank`, `ready` or `readyRank` yourself.** They
+  are the owner's call on what the machine does next. A new item you file is
+  always born in the backlog.
 - **A claim is on the ITEM; the collision is on the FILE.** A claim says who
   owns a roadmap row, not who owns a file — two sessions in one checkout share
   a dirty tree, so git cannot tell their edits apart. If you are in a shared
