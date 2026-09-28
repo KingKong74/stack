@@ -26,7 +26,7 @@ module.registerHooks({
 });
 
 const url = new URL('../web/src/lib/termName.ts', import.meta.url);
-const { newCapture, feedTyped, nameFrom } = await import(url.href);
+const { newCapture, feedTyped, nameFrom, labelAskKeys } = await import(url.href);
 
 /** Feed a stream one character at a time — the way xterm actually delivers
  *  typing — and return the first name it produced. */
@@ -134,4 +134,38 @@ test('a stream split across chunks reads the same as one typed straight', () => 
   assert.equal(feedTyped(st, 'give risk a '), null);
   assert.equal(feedTyped(st, 'surface again'), null);
   assert.equal(feedTyped(st, '\r'), 'give risk a surface again');
+});
+
+// ---- #501: the ✧ labeller's gate — ASK ONCE PER SESSION, whatever came back.
+// The old gate re-asked every 15s while anything stayed unnamed, so a keyless
+// or quota-spent server took a 503 per tick per tab (each retry spending the
+// quota whose exhaustion caused it), and a page load re-asked about detached
+// sessions the SERVER had already named. Each case below is one of those.
+const MIN = 2000;
+const none = new Set();
+
+test('#501 a detached session the server already named is never asked about', () => {
+  assert.deepEqual(labelAskKeys([], [{ name: 'stack-term-a', label: 'Reworking the merge strip' }], {}, none, MIN), []);
+});
+
+test('#501 an unnamed detached session is asked about — once', () => {
+  assert.deepEqual(labelAskKeys([], [{ name: 'stack-term-a', label: '' }], {}, none, MIN), ['stack-term-a']);
+  // The ask failed (503) or skipped it: the key is spent, so the next tick is quiet.
+  assert.deepEqual(labelAskKeys([], [{ name: 'stack-term-a', label: '' }], {}, new Set(['stack-term-a']), MIN), []);
+});
+
+test('#501 a name this mount already holds counts, whichever side it came from', () => {
+  assert.deepEqual(labelAskKeys([], [{ name: 'stack-term-a' }], { 'stack-term-a': 'Named here' }, none, MIN), []);
+});
+
+test('#501 a live pane waits for a screenful, is skipped once named, and is asked once', () => {
+  assert.deepEqual(labelAskKeys([{ id: 3, named: false, bytes: MIN - 1 }], [], {}, none, MIN), []);
+  assert.deepEqual(labelAskKeys([{ id: 3, named: true, bytes: MIN * 5 }], [], {}, none, MIN), []);
+  assert.deepEqual(labelAskKeys([{ id: 3, named: false, bytes: MIN }], [], {}, none, MIN), ['live:3']);
+  assert.deepEqual(labelAskKeys([{ id: 3, named: false, bytes: MIN * 9 }], [], {}, new Set(['live:3']), MIN), []);
+});
+
+test('#501 a live id and a tmux name never share a key', () => {
+  // A detached row named "3" must not be silenced by live pane 3's ask.
+  assert.deepEqual(labelAskKeys([], [{ name: '3' }], {}, new Set(['live:3']), MIN), ['3']);
 });

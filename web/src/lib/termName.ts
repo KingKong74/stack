@@ -146,3 +146,46 @@ export function nameFrom(line: string): string {
   const sp = cut.lastIndexOf(' ');
   return `${(sp > MAX_NAME * 0.6 ? cut.slice(0, sp) : cut).replace(/[\s,.;:]+$/, '')}…`;
 }
+
+/**
+ * #501 — WHICH SESSIONS THE ✧ LABELLER MAY BE ASKED ABOUT, and the rule is
+ * ASK ONCE PER SESSION, WHATEVER THE ANSWER WAS.
+ *
+ * `POST /api/terminal/label` is one Gemini call on the free tier. The gate this
+ * replaces re-asked every 15 seconds for as long as any session stayed unnamed,
+ * and it had two ways to stay unnamed for ever:
+ *
+ *  • a DETACHED row's name lives on the SERVER (the relay's name-keyed cache,
+ *    `d.label` on every GET), and the gate read only this mount's own `labels`
+ *    — so every fresh page load re-asked about sessions that were already named;
+ *  • an ask that FAILED (no key → 503, quota spent → 503, upstream → 502), or
+ *    one whose answer skipped a session, left it unnamed, so the next tick asked
+ *    again — a keyless or exhausted server took a 503 every 15s per open tab,
+ *    and each retry spent the very quota whose exhaustion caused the 503.
+ *
+ * That loop is what a full UI smoke run kept recording as a 5xx. So a key is
+ * spent the moment it is ASKED about, not when it is answered: a session the
+ * labeller could not name stays unnamed for this mount, which is a state the
+ * rail already draws honestly. Pure — `asked` is read, never written.
+ *
+ * Keys: a live pane is `live:<id>`, a detached row is its tmux name — the two
+ * spaces cannot collide.
+ */
+export type LabelLive = { id: number; named: boolean; bytes: number };
+export type LabelDetached = { name: string; label?: string };
+export function labelAskKeys(
+  live: readonly LabelLive[],
+  detached: readonly LabelDetached[],
+  labels: Readonly<Record<string, string>>,
+  asked: ReadonlySet<string>,
+  minBytes: number,
+): string[] {
+  return [
+    ...live
+      .filter((x) => !x.named && x.bytes >= minBytes && !asked.has(`live:${x.id}`))
+      .map((x) => `live:${x.id}`),
+    ...detached
+      .filter((d) => !labels[d.name] && !d.label && !asked.has(d.name))
+      .map((d) => d.name),
+  ];
+}

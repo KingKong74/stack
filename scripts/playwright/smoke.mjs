@@ -1615,9 +1615,13 @@ export async function main(argv = process.argv.slice(2)) {
                 detail: `${resUrl} → ${status}`, url: resUrl, status,
               });
             } else {
+              // The METHOD is in the detail (#501): a finding that read
+              // "…/api/terminal/label → 503" was filed as a GET, and the only
+              // route there is a POST — half a diagnosis spent on the wrong verb.
+              const method = res.request().method();
               sink.findings.push({
                 kind: 'http-error', severity: 'error', screen: screen.id, viewport: viewportName,
-                detail: `${resUrl} → ${status}`, url: resUrl, status,
+                detail: `${method} ${resUrl} → ${status}`, url: resUrl, method, status,
               });
             }
           }

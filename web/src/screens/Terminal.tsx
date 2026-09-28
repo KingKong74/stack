@@ -27,7 +27,7 @@ import { hrefTo } from '../lib/route';
 
 import { useAutoRefresh } from '../lib/autoRefresh';
 import { wireTermClipboard } from '../lib/termClipboard';
-import { newCapture, feedTyped } from '../lib/termName';
+import { newCapture, feedTyped, labelAskKeys } from '../lib/termName';
 import { DROP_MAX_BYTES, dropSizeLabel, fileToBase64, filesFrom, isFileDrag, pathAsInput } from '../lib/termDrop';
 // The wire codec and the palette are shared with the tab agents' consoles
 // (#379) — see lib/termWire.ts for why those three and nothing else.
@@ -859,11 +859,15 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   // anything to say about them.
   const [labelBusy, setLabelBusy] = useState(false);
   const labelBusyRef = useRef(false);
-  const refreshLabels = async () => {
+  // (#501) Every session this mount has already ASKED about, answered or not —
+  // `labelAskKeys` (lib/termName) says why a failed ask must not be retried.
+  const labelAskedRef = useRef<Set<string>>(new Set());
+  const refreshLabels = async (keys: string[]) => {
     // Guard on a REF, not the state: two triggers in the same tick would both
     // read the stale `false` and fire two Gemini calls for one set of tabs.
     if (labelBusyRef.current) return;
     labelBusyRef.current = true;
+    for (const k of keys) labelAskedRef.current.add(k);
     setLabelBusy(true);
     try {
       const r = await labelTerminalSessions();
@@ -932,12 +936,13 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
       // to be worth reading. A detached session is exempt: its output happened
       // before this browser was watching, so there is no counter for it and the
       // daemon reads its pane directly.
-      const unnamed = [
-        ...live.filter((x) => !labelOf(x) && (seenRef.current[x.id] || 0) >= NAME_AFTER_BYTES).map((x) => x.id),
-        ...detachedShown.filter((d) => !labels[d.name]).map((d) => d.name),
-      ];
+      // (#501) …and a detached row the SERVER already named, or any session
+      // this mount has asked about once, is not asked about again.
+      const unnamed = labelAskKeys(
+        live.map((x) => ({ id: x.id, named: !!labelOf(x), bytes: seenRef.current[x.id] || 0 })),
+        detachedShown, labels, labelAskedRef.current, NAME_AFTER_BYTES);
       if (!unnamed.length) return;
-      void refreshLabels();
+      void refreshLabels(unnamed);
     };
     tick();
     const t = setInterval(tick, 15_000);
