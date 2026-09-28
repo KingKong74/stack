@@ -7532,7 +7532,7 @@ body[data-mc-full] .totop { display: none; }
    app cards and hub rows, then the wishlist. Kit tokens only.
    ============================================================ */
 .sp-screen { min-height: 100vh; background: var(--surface-canvas); }
-.sp-layout { display: grid; grid-template-columns: 220px minmax(0, 1fr); max-width: 1320px; margin: 0 auto; min-height: calc(100vh - 56px); }
+.sp-layout { display: grid; grid-template-columns: 220px minmax(0, 1fr); min-height: calc(100vh - 56px); }
 .sp-layout.folded { grid-template-columns: 44px minmax(0, 1fr); }
 .sp-eyebrow { font: var(--type-eyebrow); letter-spacing: var(--tracking-caps); text-transform: uppercase; color: var(--text-tertiary); }
 .sp-eyebrow .opt { text-transform: none; letter-spacing: 0; font-weight: var(--weight-regular); }
