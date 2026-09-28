@@ -1,7 +1,7 @@
 import { Router } from 'express';
-import { q } from '../db.js';
+import { q, pool } from '../db.js';
 import { projectBySlug } from '../resolve.js';
-import { fingerprint, oneOf, BUCKETS, BUCKET_DEFAULT, cleanPlan, cleanReviewTags, riskWriteSource, capNote } from '../util.js';
+import { fingerprint, oneOf, BUCKETS, BUCKET_DEFAULT, cleanPlan, cleanReviewTags, riskWriteSource, capNote, cleanSpec, ITEM_NOTE_MAX } from '../util.js';
 import { cleanLabels, ensureLabels } from '../labels.js';
 
 // How far the timeline spans, and where "now" sits in it. A bar is an OFFSET IN
@@ -127,33 +127,38 @@ const FLY_SESSION_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 // A fly item is HELD from the auto runner exactly like a hook item (see
 // approval.js) — the sign-off is the distance between a session taking a note
 // and a session commissioning a night's work.
-roadmap.post('/', async (req, res) => {
-  const title = String(req.body?.title || '').trim().slice(0, 300);
-  if (!title) return res.status(400).json({ error: 'Title is required.' });
-  const wantSource = String(req.body?.source || 'manual').trim().toLowerCase();
-  if (wantSource !== 'manual' && wantSource !== 'fly') {
-    return res.status(400).json({
-      error: `source must be 'manual' or 'fly' — '${wantSource}' cannot be set from here.`,
-    });
+//
+// A THIRD, 'plan', is a planning run's child item: held the same way, deduped
+// per parent, and honouring the dismiss tombstone like 'fly'. A plan child
+// carries `parentId` and usually a `spec`.
+async function createItem(db, projectId, body) {
+  const title = String(body?.title || '').trim().slice(0, 300);
+  if (!title) return { status: 400, body: { error: 'Title is required.' } };
+  const wantSource = String(body?.source || 'manual').trim().toLowerCase();
+  if (wantSource !== 'manual' && wantSource !== 'fly' && wantSource !== 'plan') {
+    return { status: 400, body: {
+      error: `source must be 'manual', 'fly' or 'plan' — '${wantSource}' cannot be set from here.`,
+    } };
   }
   const source = wantSource;
   // Who opened it. Only meaningful on a fly item, and a fly item without one is
   // still a fly item: the session is provenance, not identity, and refusing the
   // card because a session could not name itself would lose the work.
-  const rawSession = String(req.body?.session || '').trim();
+  const rawSession = String(body?.session || '').trim();
   const flySession = source === 'fly' && FLY_SESSION_RE.test(rawSession) ? rawSession : null;
-  const note = String(req.body?.note || '').trim().slice(0, 1000);
-  const bucket = oneOf(req.body?.bucket, BUCKETS, BUCKET_DEFAULT);
-  const claimedBy = String(req.body?.claimed_by || '').trim().slice(0, 100) || null;
-  const area = String(req.body?.area || '').trim().toLowerCase().slice(0, 40) || null;
-  const plan = cleanPlan(req.body?.plan);
-  const risk = oneOf(req.body?.risk, RISKS, 'normal');
+  const note = String(body?.note || '').trim().slice(0, ITEM_NOTE_MAX);
+  const spec = cleanSpec(body?.spec);
+  const bucket = oneOf(body?.bucket, BUCKETS, BUCKET_DEFAULT);
+  const claimedBy = String(body?.claimed_by || '').trim().slice(0, 100) || null;
+  const area = String(body?.area || '').trim().toLowerCase().slice(0, 40) || null;
+  const plan = cleanPlan(body?.plan);
+  const risk = oneOf(body?.risk, RISKS, 'normal');
   // #262 — an untouched default isn't a human decision; only a caller who
   // actually sent a risk gets credited as its source.
-  const riskSource = req.body?.risk !== undefined ? 'human' : null;
+  const riskSource = body?.risk !== undefined ? 'human' : null;
   // The Polaris hook: which agent_profiles key should build this item ('' =
   // the default executor). A plain string, same handling as any other.
-  const agentProfile = String(req.body?.agentProfile || '').trim().slice(0, 60);
+  const agentProfile = String(body?.agentProfile || '').trim().slice(0, 60);
 
   const fp = fingerprint(title);
 
@@ -182,33 +187,56 @@ roadmap.post('/', async (req, res) => {
   // A MANUAL post is deliberately not gated: a human typing a title is not the
   // machine that was dismissed, and telling somebody they may not write a card
   // because a session once wrote one like it would be absurd.
-  if (source === 'fly') {
-    const { rows: dismissed } = await q(
+  if (source === 'fly' || source === 'plan') {
+    const { rows: dismissed } = await db(
       `SELECT 1 FROM dismissed_items WHERE project_id = $1 AND kind = 'roadmap' AND fingerprint = $2`,
-      [req.project.id, fp]
+      [projectId, fp]
     );
     if (dismissed.length) {
-      return res.status(409).json({
+      return { status: 409, body: {
         error: 'That card was dismissed by the owner and will not be re-created. Do not post it again — mention it in your summary instead.',
         dismissed: true,
-      });
+      } };
     }
   }
 
+  // A parent is ONE LEVEL DEEP and in this project, the same test PATCH's
+  // parentId makes. A bad id is refused rather than dropped: a planning run's
+  // child that silently lands parentless reads as a stray idea.
+  let parentId = null;
+  if (body?.parentId !== undefined && body?.parentId !== null) {
+    const pid = Number(body.parentId);
+    const { rows: par } = Number.isInteger(pid) && pid > 0 ? await db(
+      'SELECT id FROM roadmap_items WHERE id = $1 AND project_id = $2 AND parent_id IS NULL',
+      [pid, projectId]) : { rows: [] };
+    if (!par.length) return { status: 400, body: { error: `parentId ${body.parentId} is not a top-level item in this project.` } };
+    parentId = pid;
+  }
+  // A planning run that runs twice over the same parent must not file its
+  // children twice: an open child with the same title is returned, not copied.
+  if (source === 'plan' && parentId) {
+    const { rows: dupe } = await db(
+      `SELECT * FROM roadmap_items
+        WHERE project_id = $1 AND fingerprint = $2 AND parent_id = $3 AND NOT done AND NOT archived
+        ORDER BY id LIMIT 1`,
+      [projectId, fp, parentId]);
+    if (dupe.length) return { status: 200, body: roadmapItemShape(dupe[0]) };
+  }
+
   if (source === 'fly' && flySession) {
-    const { rows: dupe } = await q(
+    const { rows: dupe } = await db(
       `SELECT * FROM roadmap_items
         WHERE project_id = $1 AND fingerprint = $2 AND source = 'fly'
           AND fly_session = $3 AND NOT done AND NOT archived
         ORDER BY id LIMIT 1`,
-      [req.project.id, fp, flySession]
+      [projectId, fp, flySession]
     );
-    if (dupe.length) return res.status(200).json(roadmapItemShape(dupe[0]));
+    if (dupe.length) return { status: 200, body: roadmapItemShape(dupe[0]) };
   }
 
-  const { rows: pos } = await q(
+  const { rows: pos } = await db(
     'SELECT COALESCE(MAX(position), -1) + 1 AS p FROM roadmap_items WHERE project_id = $1 AND bucket = $2',
-    [req.project.id, bucket]
+    [projectId, bucket]
   );
   // #425 — a row may be born ON the timeline. The caller supplies the span
   // because placement is the timeline's own arithmetic (lib/plan.ts owns "now"
@@ -221,25 +249,25 @@ roadmap.post('/', async (req, res) => {
   // every agent post) still means NULL, which is UNSCHEDULED and a real state —
   // auto-placing a push's worth of unreviewed extractions would bury the chart
   // under work nobody has agreed to yet.
-  const subArea = String(req.body?.subArea || '').trim().toLowerCase().slice(0, 40);
+  const subArea = String(body?.subArea || '').trim().toLowerCase().slice(0, 40);
   // #507 — a row may be born with a size. Omitted means NULL, which is unsized
   // and is what every extraction and every quick composer entry stays: a size
   // nobody chose must not read as a size somebody did.
-  const points = Number.isFinite(Number(req.body?.points)) && req.body?.points !== null && req.body?.points !== ''
-    ? Math.max(0, Math.min(999, Math.round(Number(req.body.points))))
+  const points = Number.isFinite(Number(body?.points)) && body?.points !== null && body?.points !== ''
+    ? Math.max(0, Math.min(999, Math.round(Number(body.points))))
     : null;
   // #508 — a due DAY and a kind, both optional and both born empty by default.
   // `cleanDate` returns null for anything that is not a real YYYY-MM-DD, so a
   // malformed date lands as "no due date" rather than as a 500 out of Postgres.
-  const dueOn = cleanDate(req.body?.dueOn);
-  const kind = cleanKind(req.body?.kind);
+  const dueOn = cleanDate(body?.dueOn);
+  const kind = cleanKind(body?.kind);
   let schedStart = null; let schedLen = null;
-  const s = req.body?.sched;
+  const s = body?.sched;
   if (s && Number.isFinite(s.start) && Number.isFinite(s.len)) {
     schedStart = Math.max(0, Math.min(SCHED_MINUTES - MIN_SCHED_LEN, Math.trunc(s.start)));
     schedLen = Math.max(MIN_SCHED_LEN, Math.min(SCHED_MINUTES - schedStart, Math.trunc(s.len)));
   }
-  const { rows } = await q(
+  const { rows } = await db(
     // #262 brought risk_source, #334 brought agent_profile, on separate
     // branches that each rewrote this one statement. Both columns are real;
     // the merge left two whole INSERTs stacked, which JS read as a tagged
@@ -250,12 +278,49 @@ roadmap.post('/', async (req, res) => {
     // straight in the ACTIVE sprint would let any caller — the extractor, a
     // fly card, a script — commission tonight's work by writing a title.
     `INSERT INTO roadmap_items (project_id, bucket, title, note, position, source, fingerprint, claimed_by, area, plan, risk, risk_source, agent_profile, fly_session,
-                                sched_start_min, sched_len_min, plan_start_min, plan_len_min, sub_area, points, due_on, item_kind)
-     VALUES ($1,$2,$3,$4,$5,$13,$6,$7,$8,$9::jsonb,$10,$11,$12,$14,$15,$16,$15,$16,$17,$18,$19,$20) RETURNING *`,
-    [req.project.id, bucket, title, note, pos[0].p, fp, claimedBy, area, JSON.stringify(plan), risk, riskSource, agentProfile, source, flySession,
-      schedStart, schedLen, subArea, points, dueOn, kind]
+                                sched_start_min, sched_len_min, plan_start_min, plan_len_min, sub_area, points, due_on, item_kind, spec, parent_id)
+     VALUES ($1,$2,$3,$4,$5,$13,$6,$7,$8,$9::jsonb,$10,$11,$12,$14,$15,$16,$15,$16,$17,$18,$19,$20,$21::jsonb,$22) RETURNING *`,
+    [projectId, bucket, title, note, pos[0].p, fp, claimedBy, area, JSON.stringify(plan), risk, riskSource, agentProfile, source, flySession,
+      schedStart, schedLen, subArea, points, dueOn, kind, JSON.stringify(spec), parentId]
   );
-  res.status(201).json(roadmapItemShape(rows[0]));
+  return { status: 201, body: roadmapItemShape(rows[0]) };
+}
+
+roadmap.post('/', async (req, res) => {
+  const out = await createItem(q, req.project.id, req.body);
+  res.status(out.status).json(out.body);
+});
+
+// POST /batch  -> {items: [...]}: many creates in ONE transaction, each item
+// exactly what POST / takes. All or nothing: a planning run that files half a
+// breakdown leaves a parent that looks planned and isn't. Like POST /, nothing
+// here can set a sprint or the Ready queue — see createItem.
+export const BATCH_MAX = 50;
+roadmap.post('/batch', async (req, res) => {
+  const items = Array.isArray(req.body?.items) ? req.body.items : null;
+  if (!items || !items.length) return res.status(400).json({ error: 'items must be a non-empty array.' });
+  if (items.length > BATCH_MAX) return res.status(400).json({ error: `At most ${BATCH_MAX} items per batch (got ${items.length}).` });
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const db = (text, params) => client.query(text, params);
+    const made = [];
+    for (let k = 0; k < items.length; k++) {
+      const out = await createItem(db, req.project.id, items[k]);
+      if (out.status >= 400) {
+        await client.query('ROLLBACK');
+        return res.status(out.status).json({ ...out.body, index: k, error: `item ${k}: ${out.body.error}` });
+      }
+      made.push(out.body);
+    }
+    await client.query('COMMIT');
+    res.status(201).json({ items: made });
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw e;
+  } finally {
+    client.release();
+  }
 });
 
 // PATCH /:id  -> done toggle, bucket move, title/note edit, reorder, reviewed,
@@ -372,7 +437,8 @@ roadmap.patch('/:id', async (req, res) => {
     const title = String(req.body.title).trim().slice(0, 300);
     if (title) { sets.push(`title = $${i++}`); vals.push(title); }
   }
-  if (req.body?.note !== undefined) { sets.push(`note = $${i++}`); vals.push(String(req.body.note).slice(0, 1000)); }
+  if (req.body?.note !== undefined) { sets.push(`note = $${i++}`); vals.push(String(req.body.note).slice(0, ITEM_NOTE_MAX)); }
+  if (req.body?.spec !== undefined) { sets.push(`spec = $${i++}::jsonb`); vals.push(JSON.stringify(cleanSpec(req.body.spec))); }
   if (req.body?.area !== undefined) {
     sets.push(`area = $${i++}`);
     vals.push(String(req.body.area || '').trim().toLowerCase().slice(0, 40) || null);
@@ -709,7 +775,7 @@ roadmap.delete('/:id', async (req, res) => {
   // 14:05 without this, and a delete that undoes itself reads as a broken
   // button. A MANUAL card is never tombstoned: nothing re-creates it, and a
   // permanent block on a title a human might type again is not a kindness.
-  if (rows[0].source === 'hook' || rows[0].source === 'fly') {
+  if (rows[0].source === 'hook' || rows[0].source === 'fly' || rows[0].source === 'plan') {
     await q(
       `INSERT INTO dismissed_items (project_id, kind, fingerprint)
        VALUES ($1,'roadmap',$2) ON CONFLICT DO NOTHING`,

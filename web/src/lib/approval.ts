@@ -7,7 +7,7 @@ import type { RoadmapItem } from '../types';
 // Rule: an item nobody typed needs a human's sign-off (the client-shaped
 // `reviewed: true`) before the auto runner may pick it up — 'hook' (read off a
 // push by the extractor) and 'fly' (#381, opened by a live Claude session for
-// its own work). A manual item is approved the moment a human writes it, and is
+// its own work), plus 'plan' (a planning run's child item). A manual item is approved the moment a human writes it, and is
 // NEVER held, because blocking hand-written work is the failure mode this
 // feature must not have.
 //
@@ -24,7 +24,7 @@ import type { RoadmapItem } from '../types';
 // three times (`server/src/`, `scripts/lib/`, here) because none of the three
 // packages can import another; `scripts/approval.test.mjs` keeps them honest.
 
-const NEEDS_SIGNOFF = new Set(['hook', 'fly']);
+const NEEDS_SIGNOFF = new Set(['hook', 'fly', 'plan']);
 
 type Approvable = Pick<RoadmapItem, 'source' | 'reviewed'>;
 

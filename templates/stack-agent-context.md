@@ -138,8 +138,8 @@ owner turned that off: the cards arrived faster than anyone triaged them, and an
 idea pipeline nobody empties is worse than no pipeline, because it makes the
 board look busy with work no one has agreed to.
 
-The route still accepts a fly post — nothing was removed, so this is one setting
-away from coming back — but **the `fly` session default is off**, which means
+The route still accepts a fly post, so this is one setting away from coming
+back, but **the `fly` session default is off**, which means
 you will not be told to open one, and you should not do it unasked. Record what
 you did in your summary and in `/checkpoint` instead.
 
@@ -260,12 +260,12 @@ Open roadmap items can carry a claim (`claimedBy` — the branch name, e.g.
   Stopping partway is fine — ticked steps tell the next session (or the
   overnight autopilot, which injects the plan into its prompt) where to resume.
 
-  An empty `plan` on an open must/should item is what the **plan sweep** looks
-  for: while it's on, the server stands up an unattended plan session for any
-  automode project with work that has no design yet, so a build night rarely
-  starts from a bare title. A plan session designs and PATCHes steps back — it
-  never builds, never ticks and never touches a plan whose steps you've already
-  started ticking.
+  The **plan sweep** designs plan-less items; it never builds, ticks or touches
+  a plan whose steps have started.
+- **Items can carry a `spec`**: `{"goal","acceptance":[],"files":[],"outOfScope":[]}`,
+  on POST or PATCH. A build run is held to it. `POST /roadmap/batch` with
+  `{"items":[…]}` makes up to 50 at once, all or nothing; each may take
+  `parentId`. `source:"plan"` rows are held until the owner approves them.
 - **An item may come back as a refinement** — if it carries a `refineNote`, it
   was built before and sent back with a delta. `builtNote` says what already
   landed; change ONLY what the refinement asks for, on top of that — don't

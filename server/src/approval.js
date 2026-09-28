@@ -6,7 +6,8 @@
 // Rule: an item NOBODY TYPED needs a human's sign-off (reviewed_at set, or the
 // client-shaped `reviewed: true`) before the auto runner may pick it up. Two
 // origins qualify — 'hook' (the extractor read it off a push) and 'fly' (#381,
-// a live session opened a card for its own work) — and a MANUAL item is NEVER
+// a live session opened a card for its own work) — plus 'plan' (a planning
+// run's child item, same reasoning as 'fly') — and a MANUAL item is NEVER
 // held, because blocking hand-written work is the failure mode this feature
 // must not have.
 //
@@ -22,7 +23,7 @@
 // The origins that need signing off. Adding one here is the ONLY place the
 // server-side rule changes — but the two twins do not import this file, so
 // change scripts/lib/approval.mjs and web/src/lib/approval.ts with it.
-const NEEDS_SIGNOFF = new Set(['hook', 'fly']);
+const NEEDS_SIGNOFF = new Set(['hook', 'fly', 'plan']);
 
 // Why each held origin is held, in the words the refusals say. Keyed by source
 // so a refusal names the RIGHT reason: telling someone their session's own card
@@ -30,6 +31,7 @@ const NEEDS_SIGNOFF = new Set(['hook', 'fly']);
 const HOLD_REASON = {
   hook: 'auto-found and not yet approved — it is in the review inbox',
   fly: 'opened by a live session and not yet approved — it is in the review inbox',
+  plan: 'written by a planning run and not yet approved — it is in the review inbox',
 };
 
 // roadmap_items.source defaults to 'manual' at the column level, so a missing
@@ -54,7 +56,7 @@ export function APPROVED_SQL(alias = 'r') {
   if (!/^[a-z_][a-z0-9_]*$/i.test(alias)) {
     throw new Error(`APPROVED_SQL: invalid alias ${JSON.stringify(alias)}`);
   }
-  return `(${alias}.source NOT IN ('hook', 'fly') OR ${alias}.reviewed_at IS NOT NULL)`;
+  return `(${alias}.source NOT IN ('hook', 'fly', 'plan') OR ${alias}.reviewed_at IS NOT NULL)`;
 }
 
 // The exact inverse, for the review INBOX — the queue of things awaiting that
@@ -69,7 +71,7 @@ export function PENDING_SQL(alias = 'r') {
   if (!/^[a-z_][a-z0-9_]*$/i.test(alias)) {
     throw new Error(`PENDING_SQL: invalid alias ${JSON.stringify(alias)}`);
   }
-  return `(${alias}.source IN ('hook', 'fly') AND ${alias}.reviewed_at IS NULL)`;
+  return `(${alias}.source IN ('hook', 'fly', 'plan') AND ${alias}.reviewed_at IS NULL)`;
 }
 
 // Splits a list into { approved, held }, preserving order — used by the

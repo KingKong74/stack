@@ -8,7 +8,7 @@
 // Rule: an item nobody typed needs a human's sign-off in the review inbox
 // before the auto runner may pick it up — 'hook' (read off a push by the
 // extractor) and 'fly' (#381, opened by a live Claude session for its own
-// work). A manual item is approved the moment a human writes it, and is NEVER
+// work), plus 'plan' (a planning run's child item). A manual item is approved the moment a human writes it, and is NEVER
 // held, because blocking hand-written work is the failure mode this feature
 // must not have.
 //
@@ -16,13 +16,14 @@
 // CLIENT shape: { source: 'hook'|'manual'|'fly', reviewed: boolean }. There is
 // no DB row here to fall back to, unlike the server-side copy.
 
-const NEEDS_SIGNOFF = new Set(['hook', 'fly']);
+const NEEDS_SIGNOFF = new Set(['hook', 'fly', 'plan']);
 
 // Keyed by source so a refusal names the right reason — a session's own card
 // described as "auto-found" sends its reader hunting through commits for it.
 const HOLD_REASON = {
   hook: 'auto-found and not yet approved — approve it in the review inbox first',
   fly: 'opened by a live session and not yet approved — approve it in the review inbox first',
+  plan: 'written by a planning run and not yet approved — approve it in the review inbox first',
 };
 
 export function isApproved(item) {

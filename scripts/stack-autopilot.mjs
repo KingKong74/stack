@@ -415,11 +415,16 @@ Respond with ONLY this JSON:
   return null;
 }
 
+// A spec the ITEM carries (written by a planning run or a human, and approved
+// with the item) outranks the pre-pass's: it is what somebody signed off. The
+// pre-pass only fills a spec-less item, and its answer is kept on the item.
+const hasStoredSpec = (item) => Boolean(item.spec?.goal && item.spec?.acceptance?.length);
 const specBlock = (spec) => !spec ? '' : `
-The build spec (from the planning pre-pass — verify yourself against it before finishing):
+The build spec (${spec.stored ? "the item's own approved spec" : 'from the planning pre-pass'} — verify yourself against it before finishing):
 - Goal: ${spec.goal}
 - Acceptance criteria:
 ${spec.acceptance.map((a) => `  • ${a}`).join('\n')}
+${spec.files?.length ? `- Files it expects to touch (a guide, not a fence; up to 30 are kept):\n${spec.files.map((f) => `  • ${f}`).join('\n')}` : ''}
 ${spec.outOfScope?.length ? `- Out of scope tonight:\n${spec.outOfScope.map((o) => `  • ${o}`).join('\n')}` : ''}
 ${spec.risks?.length ? `- Watch out for:\n${spec.risks.map((r) => `  • ${r}`).join('\n')}` : ''}
 ${spec.risk ? `- Risk tier: ${riskLabel(spec.risk, spec.riskReason)} (derived at plan time; a human's own tier always wins)\n` : ''}`;
@@ -1076,8 +1081,22 @@ async function runItem(item, northStar, capMin) {
   // The spec pre-pass — Gemini plans, the session builds, the human disposes.
   // A refined item (#146) skips it: the owner's refine_note IS the spec — a
   // fresh full-item spec would drown the delta in re-derived scope.
-  const spec = item.refineNote ? null : await geminiSpec(item, northStar);
-  if (spec) log(`spec ready: ${spec.goal}`);
+  let spec = null;
+  if (!item.refineNote && hasStoredSpec(item)) {
+    spec = { ...item.spec, stored: true };
+    log(`spec: the item's own — ${spec.goal}`);
+  } else if (!item.refineNote) {
+    spec = await geminiSpec(item, northStar);
+    if (spec) {
+      log(`spec ready: ${spec.goal}`);
+      // Keep it on the item, so the human reviewing the branch sees what the
+      // run was held to, and the next round starts from it.
+      try {
+        await api('PATCH', `/api/projects/${SLUG}/roadmap/${item.id}`,
+          { spec: { goal: spec.goal, acceptance: spec.acceptance, outOfScope: spec.outOfScope || [] } });
+      } catch (e) { log(`spec not saved to the item (${e.message}) — the run still uses it.`); }
+    }
+  }
 
   // #262 — land the pre-pass's tier on the item itself: an annotation only, so
   // a failure here must never take the build down with it. The auto-merge lever
@@ -1185,7 +1204,7 @@ ${continuing
 Your single task tonight is roadmap item #${item.id} (bucket: ${item.bucket}):
 
   ${item.title}
-${item.note ? `  Context: ${item.note}\n` : ''}${refineBlock}${specBlock(spec)}${designFirstBlock}${planBlock}${advisorBlock}
+${item.note ? `  Context: ${item.note}\n` : ''}${item.area ? `  Area: ${item.area}${item.subArea ? ` / ${item.subArea}` : ''}\n` : ''}${item.risk ? `  Risk tier: ${item.risk}\n` : ''}${item.parent ? `  Part of #${item.parent.id} "${item.parent.title}"${item.parent.note ? ` — ${item.parent.note.slice(0, 1500)}${item.parent.note.length > 1500 ? ' [parent note cut at 1500 characters]' : ''}` : ''}\n  Build only this piece; sibling pieces are separate items.\n` : ''}${refineBlock}${specBlock(spec)}${designFirstBlock}${planBlock}${advisorBlock}
 Rules for this run:
 - Work ONLY on this item; do not pick up other roadmap items or ideas.
 - Commit in small complete units with clear messages. Push the branch with \`git push -u origin ${branch}\`. NEVER push or merge main — a human reviews and merges in the morning.
@@ -1374,7 +1393,9 @@ Rules for this run:
   // stays the human's call, exactly like the auto-merge above never ticks it.
   const changedFiles = git(wt, ['diff', '--name-only', `${MAIN}...HEAD`])
     .split('\n').map((s) => s.trim()).filter(Boolean);
-  const declared = declaredFiles([item.note || '', (item.plan || []).map((s) => s.text).join(' ')].join(' '));
+  const declared = item.spec?.files?.length
+    ? item.spec.files
+    : declaredFiles([item.note || '', (item.plan || []).map((s) => s.text).join(' ')].join(' '));
   const verdict = autoVerdict({
     risk: item.risk || 'normal',
     limitHit,
@@ -1588,6 +1609,13 @@ try {
         ? `no eligible ${PLAN_ONLY ? 'plan-less ' : ''}item in the sprint in progress on ${SLUG} — nothing to do tonight.`
         : 'no more eligible items — night complete.');
       break;
+    }
+
+    // The parent feature, when there is one: a child's title is often only
+    // meaningful against it, and the build prompt prints it.
+    if (item.parentId != null) {
+      item.parent = BUCKETS.flatMap((b) => detail.roadmap?.[b] || [])
+        .find((it) => Number(it.id) === Number(item.parentId)) || null;
     }
 
     if (DRY) {

@@ -927,7 +927,7 @@ export function defaultLen(it: RoadmapItem, grain: Grain): number {
   // signing it off, claiming it or ticking it all make it work with a size, and
   // a claimed-but-unsigned card that stayed two hours would size the stage wrong.
   if (!it.done && !it.claimedBy.trim()
-    && (it.source === 'hook' || it.source === 'fly') && !it.reviewed) return 2 * MIN_PER_HOUR;
+    && (it.source === 'hook' || it.source === 'fly' || it.source === 'plan') && !it.reviewed) return 2 * MIN_PER_HOUR;
   if (grain === 'hour') return 2 * MIN_PER_HOUR;
   if (grain === 'day') return 4 * MIN_PER_HOUR;
   return 3 * MIN_PER_DAY;

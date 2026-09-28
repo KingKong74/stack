@@ -46,7 +46,7 @@ discipline keeps them in step. Change one copy, change them all, in the same com
 | rule | definition | copies |
 | --- | --- | --- |
 | **Built** | `done` OR (`built_note` non-empty AND `claimed_by` non-empty). Both halves are load-bearing: un-ticking clears `claimed_by` but keeps `built_note`. Nothing in Stack ticks an item, so a path acting on built work must use this, never `done` alone | `lib/plan.ts` `isBuilt` (the client's only copy), every server path acting on built work |
-| **Approved to run** | `source NOT IN ('hook','fly') OR reviewed_at IS NOT NULL`. There's no column: a flag would become a second truth that drifts. A manual item is never held | `server/src/approval.js`, `scripts/lib/approval.mjs`, `web/src/lib/approval.ts` |
+| **Approved to run** | `source NOT IN ('hook','fly','plan') OR reviewed_at IS NOT NULL`. There's no column: a flag would become a second truth that drifts. A manual item is never held | `server/src/approval.js`, `scripts/lib/approval.mjs`, `web/src/lib/approval.ts` |
 | **Area lane** | key `(project, area)`. An area with an open claimed item admits no second worker. Untagged (`''`) is never a lane; a worker never blocks itself | `server/src/lanes.js`, `routes/autopilot.js` claim, the runner's pick |
 | **Run order** | active sprint's rows by `sprint_rank`, then `bucket`, then payload order. Rank only means something inside the active sprint (backlog rows are all 0) | `routes/autopilot.js`, the runner, `lib/plan.ts` `queueOrder` |
 | **Schedule** | minutes from week zero (`sched_*_min`; `plan_*_min` is the write-once baseline a drag never moves). BIGINT arrives from pg as a string | `routes/roadmap.js`, `shape.js`, `lib/plan.ts`, `lib/spine.ts` |

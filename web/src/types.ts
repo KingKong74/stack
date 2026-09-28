@@ -16,7 +16,16 @@ export type Priority = 'highest' | 'high' | 'medium' | 'low' | 'lowest';
 // hand-entered, fly = opened by a live Claude session for its own work (#381).
 // 'fly' is ROADMAP-ONLY — a bug cannot hold it — but the type is shared, so
 // the renderers that switch on it must not assume all three.
-export type Source = 'hook' | 'manual' | 'fly';
+export type Source = 'hook' | 'manual' | 'fly' | 'plan';
+
+// An item's spec (server/src/util.js cleanSpec). Every key is optional and an
+// absent key means "not said", so {} is the common case.
+export interface ItemSpec {
+  goal?: string;
+  acceptance?: string[];
+  files?: string[];
+  outOfScope?: string[];
+}
 
 // What has pushed since the checkpoint that wrote the resume card. The card's
 // content only moves on an authored /checkpoint, while its timestamp moves on
@@ -170,6 +179,7 @@ export interface RoadmapItem {
   sprintId: number | null;
   sprintRank: number;
   plan: PlanStep[];    // the implementation plan ([] = none)
+  spec: ItemSpec;      // what a build run is held to ({} = none)
   updatedAt: string | null; // ISO — latest-first ordering in the archive
   agentProfile: string; // '' = the default executor; else the agent profile that should build it
 

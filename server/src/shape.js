@@ -2,7 +2,7 @@
 // contract; these keep every route returning the same shapes so store.ts stays
 // a thin mapping layer.
 
-import { relativeTime, cleanPlan } from './util.js';
+import { relativeTime, cleanPlan, cleanSpec } from './util.js';
 
 // ---- the resume card's provenance ----------------------------------------
 // The resume fields (summary / current_phase / the three sub-lists) are written
@@ -63,7 +63,7 @@ export function roadmapItemShape(row) {
     note: row.note || '',
     done: row.done,
     bucket: row.bucket,
-    source: row.source,                // 'hook' | 'manual' | 'fly' (#381)
+    source: row.source,                // 'hook' | 'manual' | 'fly' (#381) | 'plan' (a planning run's child)
     // #500 — a test a session suggested: '' = an ordinary row, which is nearly
     // all of them. 'bug' = a test that would have caught a defect, 'function' =
     // a check on a named route or function. `testTarget` is what it is about —
@@ -111,6 +111,7 @@ export function roadmapItemShape(row) {
     sprintId: row.sprint_id ?? null,
     sprintRank: Number(row.sprint_rank) || 0,
     plan: cleanPlan(row.plan),         // implementation steps [{text, done}] (#75)
+    spec: cleanSpec(row.spec),         // {goal?, acceptance?, files?, outOfScope?}; {} = none
     agentProfile: row.agent_profile || '', // '' = default executor; else the agent_profiles key to build this
     updatedAt: row.updated_at || null, // ISO — the archive sorts latest-touched first
 

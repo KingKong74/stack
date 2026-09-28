@@ -6,7 +6,7 @@
 // The type-stripping loader is for the client twin only (web/src/lib/approval.ts);
 // the other two are plain ESM. Same shim as scripts/spine.test.mjs.
 //
-// WHAT THIS IS FOR. The rule is `source NOT IN ('hook','fly') OR reviewed_at IS
+// WHAT THIS IS FOR. The rule is `source NOT IN ('hook','fly','plan') OR reviewed_at IS
 // NOT NULL`, and it decides whether the overnight fleet may build a row. It is
 // spelt out in server/src/approval.js, scripts/lib/approval.mjs and
 // web/src/lib/approval.ts because none of the three packages can import
@@ -74,7 +74,10 @@ check('a fly item that has been signed off IS approved',
 check('a fly item is held on reviewed_at too, not just the client shape',
   isApproved({ source: 'fly', reviewed_at: '2026-08-10T00:00:00Z' }), true);
 
-check('an unknown source is NOT held — only hook and fly are',
+check('a planning run\'s child item is held until a human approves it',
+  isApproved({ source: 'plan', reviewed: false }), false);
+
+check('an unknown source is NOT held — only hook, fly and plan are',
   isApproved({ source: 'imported', reviewed: false }), true);
 
 // ---- B. approvalHold --------------------------------------------------------
@@ -104,6 +107,8 @@ const CLIENT_SHAPES = [
   [{ source: 'hook', reviewed: true }, true, 'until a human keeps it'],
   [{ source: 'fly', reviewed: false }, false, "a session's own card is HELD (#381)"],
   [{ source: 'fly', reviewed: true }, true, 'until a human keeps it'],
+  [{ source: 'plan', reviewed: false }, false, "a planning run's child is HELD"],
+  [{ source: 'plan', reviewed: true }, true, 'until a human approves it'],
   [{ source: '', reviewed: false }, true, 'an empty source falls back to manual'],
   [{ reviewed: false }, true, 'a missing source falls back to manual'],
   [{ source: 'imported', reviewed: false }, true, 'an unknown source is not one of the two held ones'],

@@ -74,9 +74,9 @@ check('a source the rule has never heard of is NOT held — only hook and fly ar
 // ---- APPROVED_SQL -----------------------------------------------------------
 
 check('APPROVED_SQL produces the expected fragment',
-  APPROVED_SQL('ri'), "(ri.source NOT IN ('hook', 'fly') OR ri.reviewed_at IS NOT NULL)");
+  APPROVED_SQL('ri'), "(ri.source NOT IN ('hook', 'fly', 'plan') OR ri.reviewed_at IS NOT NULL)");
 check('APPROVED_SQL defaults to alias r',
-  APPROVED_SQL(), "(r.source NOT IN ('hook', 'fly') OR r.reviewed_at IS NOT NULL)");
+  APPROVED_SQL(), "(r.source NOT IN ('hook', 'fly', 'plan') OR r.reviewed_at IS NOT NULL)");
 
 {
   let threw = false;
@@ -91,9 +91,9 @@ check('APPROVED_SQL defaults to alias r',
 // approved, which is the failure this pair exists to make impossible.
 
 check('PENDING_SQL produces the expected fragment',
-  PENDING_SQL('ri'), "(ri.source IN ('hook', 'fly') AND ri.reviewed_at IS NULL)");
+  PENDING_SQL('ri'), "(ri.source IN ('hook', 'fly', 'plan') AND ri.reviewed_at IS NULL)");
 check('PENDING_SQL defaults to alias r',
-  PENDING_SQL(), "(r.source IN ('hook', 'fly') AND r.reviewed_at IS NULL)");
+  PENDING_SQL(), "(r.source IN ('hook', 'fly', 'plan') AND r.reviewed_at IS NULL)");
 
 {
   let threw = false;

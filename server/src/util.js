@@ -123,6 +123,31 @@ export function cleanPlan(v, max = 30, len = 300) {
     .slice(0, max);
 }
 
+// An item's SPEC: what a build run is held to, beyond its title and note.
+// Every part is optional and an empty spec is `{}`, which is what nearly every
+// row has; a key is only present when it says something. Lists are capped
+// here, and the build prompt says so when it prints them.
+export const SPEC_CAPS = { goal: 600, acceptance: 12, files: 30, outOfScope: 10, line: 300 };
+export function cleanSpec(v) {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return {};
+  const list = (x, max) => (Array.isArray(x) ? x : [])
+    .map((s) => String(s ?? '').trim().slice(0, SPEC_CAPS.line)).filter(Boolean).slice(0, max);
+  const out = {};
+  const goal = String(v.goal ?? '').trim().slice(0, SPEC_CAPS.goal);
+  if (goal) out.goal = goal;
+  const acceptance = list(v.acceptance, SPEC_CAPS.acceptance);
+  if (acceptance.length) out.acceptance = acceptance;
+  const files = list(v.files, SPEC_CAPS.files);
+  if (files.length) out.files = files;
+  const outOfScope = list(v.outOfScope, SPEC_CAPS.outOfScope);
+  if (outOfScope.length) out.outOfScope = outOfScope;
+  return out;
+}
+
+// The item note's cap. A planning run writes its design here, so it is sized
+// for a design rather than a one-line reminder.
+export const ITEM_NOTE_MAX = 4000;
+
 // A capped free-text field, capped OUT LOUD (BUG-12). #239's rule — "a capped
 // list inside a prompt must say it is capped" — is not really about lists: a
 // reader that cannot see a cap treats what it got as the whole thing, and the

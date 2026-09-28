@@ -1602,3 +1602,8 @@ CREATE INDEX IF NOT EXISTS session_plans_project_idx
 -- since stays listed, and the reader drops ids the board no longer has. It
 -- exists so a plan already split says so before it is split twice.
 ALTER TABLE session_plans ADD COLUMN IF NOT EXISTS item_ids JSONB NOT NULL DEFAULT '[]'::jsonb;
+
+-- An item's SPEC (goal, acceptance[], files[], outOfScope[]; util.js cleanSpec).
+-- '{}' = no spec, which is most rows. The build prompt prints what is here, and
+-- the auto-verdict reads `files` as the item's declared scope.
+ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS spec JSONB NOT NULL DEFAULT '{}'::jsonb;
