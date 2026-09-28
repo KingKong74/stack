@@ -493,6 +493,10 @@ ALTER TABLE projects ADD COLUMN IF NOT EXISTS merge_autonomy TEXT NOT NULL DEFAU
 -- restore / purge (the hard DELETE, which cascades).
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
 
+-- Which half of the Projects page a project sits in: personal | professional.
+-- A grouping only; nothing gates on it.
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT 'personal';
+
 -- Area tags: which part of the product an idea lives in (landing page,
 -- settings, mobile, …) — a second, orthogonal axis to alignment. Freeform,
 -- filterable on the Futures tab. NULL = untagged.

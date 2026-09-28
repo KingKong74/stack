@@ -516,6 +516,23 @@ a { color: inherit; }
 .pcard .track { height: 4px; border-radius: 3px; background: rgba(255,255,255,.26); margin-top: 11px; }
 .pcard .fill { height: 100%; border-radius: 3px; background: #fff; }
 .pcard .metarow { display: flex; justify-content: space-between; color: rgba(255,255,255,.86); font-size: 11px; margin-top: 8px; }
+/* The Projects page's two halves (Personal, Professional), each its own grid. */
+.proj-half + .proj-half { margin-top: 30px; }
+.proj-half-h {
+  font-family: var(--disp); font-size: 15px; font-weight: 600; color: var(--text-secondary);
+  margin-bottom: 12px; display: flex; align-items: baseline; gap: 8px;
+}
+.proj-half-h .n { font-family: var(--mono); font-size: 12px; font-weight: 400; color: var(--text-tertiary); }
+/* The move button sits beside the card, not in it (a button can't hold one),
+   and shows on hover or keyboard focus. */
+.pcard-wrap { position: relative; }
+.pcard-move {
+  position: absolute; bottom: 52px; right: 13px; z-index: 3; font-size: 11px; color: var(--white);
+  background: rgba(10, 11, 12, 0.55); backdrop-filter: blur(4px); padding: 4px 10px; border-radius: 20px;
+  opacity: 0; transition: opacity 0.14s ease;
+}
+.pcard-wrap:hover .pcard-move, .pcard-move:focus-visible { opacity: 1; }
+.pcard-move:hover { background: rgba(10, 11, 12, 0.8); }
 .newtile {
   height: 234px; border-radius: 16px; border: 1.5px dashed var(--border-default);
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;

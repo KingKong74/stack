@@ -1,6 +1,6 @@
 import type {
   Project, Resume, Activity, Bug, Roadmap, RoadmapItem, Check, CheckRun, CheckHistory, Overview,
-  ProjectStatus, Priority, Severity, BugStatus, SearchResponse, Settings, AutopilotRun, PlanStep,
+  ProjectStatus, ProjectCategory, Priority, Severity, BugStatus, SearchResponse, Settings, AutopilotRun, PlanStep,
   AuthDevice, Sprint, SprintPlan, ResumeSince, ProjectDebrief,
   SchedSpan, ProjectPulse, BoardShape, BoardList, BoardArea, ItemKind,
   AgentProfile, AgentProfilesRoom, ModelsRoom, ContextRoom, ClaudeMdRead,
@@ -197,6 +197,7 @@ const repoUrl = (repo: string): string =>
 
 interface ProjectPayload {
   slug: string; name: string; subtitle: string; tint: string | null; status: ProjectStatus;
+  category?: ProjectCategory;  // absent on an older server: personal
   progress: number; metaLine: string; pinned: boolean; automode?: boolean;
   weekZero?: string | null;   // the Roadmap timeline's week zero; absent on an older server
   siteUrl: string; repo: string; repoUrl: string;
@@ -231,6 +232,7 @@ function toProject(d: ProjectPayload): Project {
     subtitle: d.subtitle || '',
     tint: d.tint || '#dcdac9',
     status: d.status,
+    category: d.category === 'professional' ? 'professional' : 'personal',
     progress: d.progress ?? 0,
     metaLine: d.metaLine || '',
     automode: !!d.automode,
@@ -1032,7 +1034,7 @@ export async function deleteShareLink(slug: string): Promise<void> {
   await request<void>(`/projects/${encodeURIComponent(slug)}/share`, { method: 'DELETE' });
 }
 
-export async function createProject(input: { name: string; subtitle: string; status: ProjectStatus }): Promise<Project> {
+export async function createProject(input: { name: string; subtitle: string; status: ProjectStatus; category: ProjectCategory }): Promise<Project> {
   return toProject(await request<ProjectPayload>('/projects', { method: 'POST', body: input }));
 }
 
@@ -1040,7 +1042,7 @@ export async function patchProject(
   slug: string,
   patch: Partial<{
     subtitle: string; site_url: string; repo_url: string; status: ProjectStatus; pinned: boolean;
-    automode: boolean; autopilot_area: string; merge_autonomy: MergeAutonomy;
+    automode: boolean; autopilot_area: string; merge_autonomy: MergeAutonomy; category: ProjectCategory;
     name: string; north_star: string; directives: string[]; deploy_platform: string; logs_url: string;
     tech_stack: string[];
   }>,

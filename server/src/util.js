@@ -40,6 +40,9 @@ export const LEGACY_BUCKET = { must: 'highest', should: 'high', could: 'low', wo
 // other. `web/src/lib/ui.ts`'s PRIORITY_DEFAULT is the client twin.
 export const BUCKET_DEFAULT = 'medium';
 export const PROJECT_STATUSES = ['live', 'building', 'paused', 'archived'];
+// Which half of the Projects page a project sits in. Purely a grouping: no
+// gate, run or rollup reads it.
+export const PROJECT_CATEGORIES = ['personal', 'professional'];
 // (#363) How much of a project's merging the Merge room's agent may do on one
 // press: auto = its clean branches are queued by ▶ Run; plan = they are in the
 // proposed plan but merge one press each; off = out of the plan. See the

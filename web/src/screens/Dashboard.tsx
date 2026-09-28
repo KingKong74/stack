@@ -1,17 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { Project, ProjectStatus, Overview } from '../types';
-import { getProjects, getOverview, createProject } from '../store';
+import type { Project, ProjectCategory, ProjectStatus, Overview } from '../types';
+import { getProjects, getOverview, createProject, patchProject } from '../store';
 import { go } from '../lib/route';
-import { NewProjectModal } from '../components/NewProjectModal';
+import { NewProjectModal, type NewProject } from '../components/NewProjectModal';
 import { ConnectGuide } from '../components/ConnectGuide';
 import { HowToGuide } from '../components/HowToGuide';
 import { TopBar } from '../components/TopBar';
-import {
-  AttentionRow, BranchClaims, ResumeHero, ReviewQueue,
-} from '../components/CommandDeck';
-import {
-  AuditLists, InsideSection, PushesSection, RoadmapRollup, SubNav,
-} from '../components/DashSections';
+import { ResumeHero } from '../components/CommandDeck';
 
 type Filter = 'all' | ProjectStatus;
 
@@ -20,13 +15,20 @@ const framed = window.self !== window.top;
 const STATUS_LABEL: Record<ProjectStatus, string> = {
   live: 'Live', building: 'Building', paused: 'Paused', archived: 'Archived',
 };
+// The page is two halves, in this order. Each keeps the status filter above it.
+const HALVES: { key: ProjectCategory; label: string }[] = [
+  { key: 'personal', label: 'Personal' },
+  { key: 'professional', label: 'Professional' },
+];
+const OTHER: Record<ProjectCategory, ProjectCategory> = { personal: 'professional', professional: 'personal' };
 
 export function Dashboard({ onOpenSearch }: { onOpenSearch: () => void }) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
-  const [newOpen, setNewOpen] = useState(false);
+  // Which half the New project modal opens on: the half whose tile was pressed.
+  const [newOpen, setNewOpen] = useState<ProjectCategory | null>(null);
   const [guideOpen, setGuideOpen] = useState(false);
   const [howToOpen, setHowToOpen] = useState(false);
   const [overview, setOverview] = useState<Overview | null>(null);
@@ -78,16 +80,58 @@ export function Dashboard({ onOpenSearch }: { onOpenSearch: () => void }) {
     .filter((c) => c.key === 'all' || c.key === filter || counts[c.key] > 0)
     .map((c) => ({ key: c.key, label: `${c.label} ${counts[c.key]}` }));
 
-  const onCreate = async (v: { name: string; subtitle: string; status: ProjectStatus }) => {
+  const onCreate = async (v: NewProject) => {
     try {
       const p = await createProject(v);
-      setNewOpen(false);
+      setNewOpen(null);
       go.detail(p.id);
     } catch (e) {
-      setNewOpen(false);
+      setNewOpen(null);
       setError((e as Error)?.message || 'Could not create the project.');
     }
   };
+
+  // Moves a card to the other half. Optimistic, and put back if the PATCH fails.
+  const move = async (p: Project) => {
+    const to = OTHER[p.category];
+    const put = (c: ProjectCategory) =>
+      setProjects((ps) => ps.map((x) => (x.id === p.id ? { ...x, category: c } : x)));
+    put(to);
+    try { await patchProject(p.id, { category: to }); } catch (e) {
+      put(p.category);
+      setError((e as Error)?.message || 'Could not move the project.');
+    }
+  };
+
+  const card = (p: Project) => (
+    <div key={p.id} className="pcard-wrap">
+      <button className="pcard" style={{ background: p.tint }} onClick={() => go.detail(p.id)} aria-label={`Open ${p.name}`}>
+        <span className="stripe" />
+        {p.siteUrl && !framed && (
+          // Live view of the deployed site, scaled to the card (à la Vercel).
+          // Inert to the pointer/keyboard; the tint shows while it loads or
+          // if the site refuses framing. Skipped when Stack is itself framed
+          // so its own card can't recurse.
+          <span className="preview" aria-hidden="true">
+            <iframe src={p.siteUrl} loading="lazy" tabIndex={-1} title="" referrerPolicy="no-referrer" />
+          </span>
+        )}
+        <span className="scrim" />
+        <span className="statuspill">{STATUS_LABEL[p.status]}</span>
+        {p.automode && <span className="autopill" title="Automode — the overnight autopilot may work this project">⚙ auto</span>}
+        <span className="meta">
+          <span className="pname">{p.name}</span>
+          <span className="track"><span className="fill" style={{ width: `${p.progress}%` }} /></span>
+          <span className="metarow"><span>{p.metaLine}</span><span>{p.progress}%</span></span>
+        </span>
+      </button>
+      {/* A sibling of the card, not inside it: a button can't hold a button. */}
+      <button className="pcard-move" onClick={() => move(p)}
+        title={`Move ${p.name} to ${OTHER[p.category] === 'personal' ? 'Personal' : 'Professional'}`}>
+        → {OTHER[p.category] === 'personal' ? 'Personal' : 'Professional'}
+      </button>
+    </div>
+  );
 
   return (
     <div>
@@ -98,18 +142,15 @@ export function Dashboard({ onOpenSearch }: { onOpenSearch: () => void }) {
           <a className="btn-repo" href="#/control" title="Every project's automation from one point">Mission Control</a>
           <button className="btn-repo" onClick={() => setHowToOpen(true)}>Guide</button>
           <button className="btn-repo" onClick={() => setGuideOpen(true)}>Connect</button>
-          <button className="btn-accent" onClick={() => setNewOpen(true)}>New project</button>
+          <button className="btn-accent" onClick={() => setNewOpen('personal')}>New project</button>
         </>
       } />
 
-      {overview && <SubNav totals={overview.totals} bugs={overview.bugs.total} />}
-
       <div className="page">
-        {/* ---- projects: the grid leads, since it's what you came for ---- */}
         <section id="projects" className="dash-section">
           <div className="section-bar">
             <div className="titles">
-              <div className="h" style={{ fontSize: 26 }}>All projects</div>
+              <div className="h" style={{ fontSize: 26 }}>Projects</div>
               <div className="subtitle">
                 {counts.all} app{counts.all === 1 ? '' : 's'} · {counts.live} live · {counts.building} building · {counts.paused} paused
               </div>
@@ -130,87 +171,47 @@ export function Dashboard({ onOpenSearch }: { onOpenSearch: () => void }) {
             <div className="empty-state"><div className="big">Loading…</div><div>Fetching your projects from the API.</div></div>
           ) : error ? (
             <div className="empty-state"><div className="big">Couldn't load projects</div><div>{error}</div></div>
-          ) : (
-            <div className="grid">
-              {visible.map((p) => (
-                <button key={p.id} className="pcard" style={{ background: p.tint }} onClick={() => go.detail(p.id)} aria-label={`Open ${p.name}`}>
-                  <span className="stripe" />
-                  {p.siteUrl && !framed && (
-                    // Live view of the deployed site, scaled to the card (à la Vercel).
-                    // Inert to the pointer/keyboard; the tint shows while it loads or
-                    // if the site refuses framing. Skipped when Stack is itself framed
-                    // so its own card can't recurse.
-                    <span className="preview" aria-hidden="true">
-                      <iframe src={p.siteUrl} loading="lazy" tabIndex={-1} title="" referrerPolicy="no-referrer" />
-                    </span>
-                  )}
-                  <span className="scrim" />
-                  <span className="statuspill">{STATUS_LABEL[p.status]}</span>
-                  {p.automode && <span className="autopill" title="Automode — the overnight autopilot may work this project">⚙ auto</span>}
-                  <span className="meta">
-                    <span className="pname">{p.name}</span>
-                    <span className="track"><span className="fill" style={{ width: `${p.progress}%` }} /></span>
-                    <span className="metarow"><span>{p.metaLine}</span><span>{p.progress}%</span></span>
-                  </span>
-                </button>
-              ))}
-              <button className="newtile" onClick={() => setNewOpen(true)}>
-                <span className="plus">+</span>
-                <span className="lab">New project</span>
-              </button>
-            </div>
-          )}
+          ) : HALVES.map((h) => {
+            const mine = visible.filter((p) => p.category === h.key);
+            return (
+              <div className="proj-half" key={h.key}>
+                <div className="proj-half-h">
+                  {h.label}<span className="n">{mine.length}</span>
+                </div>
+                <div className="grid">
+                  {mine.map(card)}
+                  <button className="newtile" onClick={() => setNewOpen(h.key)}>
+                    <span className="plus">+</span>
+                    <span className="lab">New {h.label.toLowerCase()} project</span>
+                  </button>
+                </div>
+              </div>
+            );
+          })}
         </section>
 
         {deckLoading ? (
-          <div className="deck deck-skeleton" aria-busy="true">Loading the deck…</div>
+          <div className="deck deck-skeleton" aria-busy="true">Loading…</div>
         ) : deckError ? (
-          <div className="deck-error">Couldn’t load the command deck — {deckError}</div>
+          <div className="deck-error">Couldn’t load where you left off — {deckError}</div>
         ) : overview ? (
-          <>
-            {/* ---- continue: where you left off, plus what's in flight ---- */}
-            <section id="continue" className="dash-section">
-              <div className="section-bar">
-                <div className="titles">
-                  <div className="h">Pick up where you left off</div>
-                  {overview.resume && (
-                    <div className="subtitle">
-                      {overview.resume.slug}{overview.resume.when ? ` · last session ${overview.resume.when}` : ''}
-                    </div>
-                  )}
-                </div>
+          <section id="continue" className="dash-section last">
+            <div className="section-bar">
+              <div className="titles">
+                <div className="h">Pick up where you left off</div>
+                {overview.resume && (
+                  <div className="subtitle">
+                    {overview.resume.slug}{overview.resume.when ? ` · last session ${overview.resume.when}` : ''}
+                  </div>
+                )}
               </div>
-              <ResumeHero resume={overview.resume} keepResumeCard={overview.keepResumeCard}
-                claims={overview.claims} />
-              <BranchClaims claims={overview.claims} />
-            </section>
-
-            {/* ---- activity: the day-grouped push feed + its sidebar ---- */}
-            <PushesSection overview={overview} projects={projects} />
-
-            {/* ---- roadmap: the cross-project priority rollup ---- */}
-            <RoadmapRollup roadmap={overview.roadmap} projects={projects} fallback={overview.resume?.slug} />
-
-            {/* ---- audit: what needs a human ---- */}
-            <section id="audit" className="dash-section">
-              <div className="section-bar">
-                <div className="titles">
-                  <div className="h">Audit</div>
-                  <div className="subtitle">What needs a human</div>
-                </div>
-              </div>
-              <ReviewQueue initial={overview.review} />
-              <AttentionRow blockers={overview.blockers} stale={overview.stale} bugs={overview.bugs} />
-              <AuditLists overview={overview} projects={projects} />
-            </section>
-
-            {/* ---- inside: the map of the app, and what is still a mockup ---- */}
-            <InsideSection />
-          </>
+            </div>
+            <ResumeHero resume={overview.resume} keepResumeCard={overview.keepResumeCard} />
+          </section>
         ) : null}
       </div>
 
-      {newOpen && <NewProjectModal onClose={() => setNewOpen(false)} onCreate={onCreate} />}
+      {newOpen && <NewProjectModal category={newOpen} onClose={() => setNewOpen(null)} onCreate={onCreate} />}
       {guideOpen && <ConnectGuide onClose={() => setGuideOpen(false)} />}
       {howToOpen && <HowToGuide onClose={() => setHowToOpen(false)} />}
     </div>

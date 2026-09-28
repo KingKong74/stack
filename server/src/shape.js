@@ -279,6 +279,7 @@ export function projectListShape(p, { progress, metaLine, pushesThisWeek }) {
     subtitle: p.subtitle || '',
     tint: p.tint || null,
     status: p.status,
+    category: p.category || 'personal',
     progress,
     metaLine,
     pinned: p.pinned,

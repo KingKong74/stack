@@ -1,4 +1,6 @@
 export type ProjectStatus = 'live' | 'building' | 'paused' | 'archived';
+// Which half of the Projects page a project sits in. A grouping only.
+export type ProjectCategory = 'personal' | 'professional';
 export type Severity = 'critical' | 'high' | 'medium' | 'low';
 // #500 — what a session suggested testing. '' is the ordinary case and is not a
 // kind: it means the row is not a test suggestion at all.
@@ -51,6 +53,7 @@ export interface Project {
   subtitle: string;
   tint: string;
   status: ProjectStatus;
+  category: ProjectCategory;
   progress: number;        // 0–100, computed server-side from roadmap/bug completion
   metaLine: string;        // dashboard card meta e.g. "pushed 2h ago"
   automode: boolean;       // open to the overnight autopilot — shows the AUTO badge

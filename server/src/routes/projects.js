@@ -3,6 +3,7 @@ import { Router } from 'express';
 import { q } from '../db.js';
 import {
   slugify, oneOf, relativeTime, computeProgress, pushCadence, TINTS, PROJECT_STATUSES,
+  PROJECT_CATEGORIES,
   MERGE_AUTONOMY, PRESENCE_TTL_MINUTES,
 } from '../util.js';
 import {
@@ -67,6 +68,7 @@ projects.post('/', async (req, res) => {
   if (!name) return res.status(400).json({ error: 'Name is required.' });
   const subtitle = String(req.body?.subtitle || '').trim().slice(0, 300) || null;
   const status = oneOf(req.body?.status, PROJECT_STATUSES, 'building');
+  const category = oneOf(req.body?.category, PROJECT_CATEGORIES, 'personal');
 
   // Unique slug: append -2, -3, ... if the base is taken.
   const base = slugify(name);
@@ -85,9 +87,9 @@ projects.post('/', async (req, res) => {
     // runs at migration time and can only reach projects that already existed,
     // so without this every NEW project would open with no start date and no
     // calendar view. Monday of the current week — the timeline counts weeks.
-    `INSERT INTO projects (slug, name, subtitle, status, tint, week_zero)
-     VALUES ($1, $2, $3, $4, $5, (date_trunc('week', now()))::date) RETURNING *`,
-    [slug, name, subtitle, status, tint]
+    `INSERT INTO projects (slug, name, subtitle, status, tint, category, week_zero)
+     VALUES ($1, $2, $3, $4, $5, $6, (date_trunc('week', now()))::date) RETURNING *`,
+    [slug, name, subtitle, status, tint, category]
   );
   const p = rows[0];
   res.status(201).json(
@@ -348,7 +350,7 @@ projects.get('/:slug/debrief', async (req, res) => {
 // Fields the client may PATCH directly on a project.
 const PATCHABLE = new Set([
   'name', 'repo', 'repo_url', 'subtitle', 'site_url', 'status', 'pinned', 'automode', 'autopilot_area',
-  'merge_autonomy',
+  'merge_autonomy', 'category',
   'current_phase', 'summary', 'next_steps', 'blockers',
   'in_progress', 'next_up', 'working_well', 'tint', 'north_star', 'directives',
   'deploy_platform', 'logs_url', 'tech_stack',
@@ -371,6 +373,9 @@ projects.patch('/:slug', async (req, res) => {
     } else if (key === 'status') {
       fields.push(`status = $${i}`);
       values.push(oneOf(val, PROJECT_STATUSES, 'building'));
+    } else if (key === 'category') {
+      fields.push(`category = $${i}`);
+      values.push(oneOf(val, PROJECT_CATEGORIES, 'personal'));
     } else if (key === 'merge_autonomy') {
       // (#363) A bad value must not become "the agent may merge this": the
       // fallback is the middle setting, where the plan names the branches and
