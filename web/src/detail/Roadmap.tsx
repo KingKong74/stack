@@ -52,7 +52,7 @@
 //     work is the failure mode approval must not have), so being unapproved
 //     cannot be what makes it an idea; not being committed to is. Two doors
 //     (#523): ＋ on a board item files one under it, and New idea files a
-//     free-standing one in the scoped area. Both are a create and then a
+//     free-standing one in the area last jumped to. Both are a create and then a
 //     `committed: false` patch, because the create route takes no `committed`
 //     — the row is board work for the instant between them, outside every
 //     sprint, so nothing can run it. A failed second write says so and leaves
@@ -62,6 +62,13 @@
 //     header names the branch holding its lane, and untagged says it can never
 //     hold one. Two screens agreeing about what an area IS matters more here
 //     than on the board, because this is where a row gets filed into one.
+//     AND THE AREAS BEHAVE AS THE BOARD'S DO (#529, owner's request), off the board's
+//     own components: every section starts FOLDED to its header and remembers
+//     what you opened (`getRoadmapFolds`, its own key); a chip JUMPS (opens its
+//     area, folds the rest, scrolls there) rather than filtering; All areas
+//     opens them all, Collapse all shuts them, a search suspends every fold;
+//     and ＋ New area and each header's ⋯ menu register, rename, recolour and
+//     delete an area in the one registry both screens read.
 //  4. DISCARD IS DELETE, and on a `hook` row it TOMBSTONES THE FINGERPRINT so
 //     the next push cannot re-create it. That is what Dismiss has always meant
 //     and why it has no undo; the second press is because the word does not say
@@ -74,12 +81,15 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { KitIcon } from './kit/KitIcon';
+import { AreaChip, AddArea, AreaMenu } from './Board';
 import type { BoardArea, Priority, RoadmapItem } from '../types';
 import { PRIORITY_META, PRIORITY_DEFAULT, priorityMeta } from '../lib/ui';
 import { isIdea, isBoardWork } from '../lib/plan';
 import {
   getBoardShape, createRoadmapItem, patchRoadmapItem, deleteRoadmapItem,
+  createArea, patchArea, deleteArea, getRoadmapFolds, setRoadmapFolds,
 } from '../store';
+import type { RoadmapFolds } from '../store';
 
 // Same key, same reason, as the board's: untagged is a REAL scope and never a
 // lane (#267). The leading space keeps it off any area an owner could type.
@@ -110,7 +120,7 @@ const colOf = (it: RoadmapItem): Col =>
 const sourceOf = (it: RoadmapItem): string =>
   (it.source === 'hook' ? 'kept from a push' : it.source === 'fly' ? `kept from ${it.flySession || 'a session'}` : 'filed');
 
-export function Roadmap({ slug, projectName, items, onRefresh, onEdit, highlightId }: {
+export function Roadmap({ slug, projectName, items, onRefresh, onEdit, onAreas, highlightId }: {
   slug: string;
   projectName: string;
   /** The project payload's own roadmap, flattened and in payload order. */
@@ -118,19 +128,27 @@ export function Roadmap({ slug, projectName, items, onRefresh, onEdit, highlight
   onRefresh: () => void;
   /** Open the item modal — note, title, area, sub-area and plan. */
   onEdit: (it: RoadmapItem) => void;
+  /** Hands the registered area names up, as the board does, so an area made
+   *  here is offered by the item modal before any row carries it. */
+  onAreas?: (names: string[]) => void;
   highlightId: string | null;
 }) {
   const [rows, setRows] = useState<RoadmapItem[]>(items);
   useEffect(() => { setRows(items); }, [items]);
 
   const [areas, setAreas] = useState<BoardArea[]>([]);
+  // The colours an area may wear, served rather than copied (routes/board.js).
+  const [palette, setPalette] = useState<string[]>([]);
   const [err, setErr] = useState('');
 
   // Only the AREAS are fetched — this screen has no columns of its own, so the
   // board's list table is none of its business.
   const loadShape = useCallback(async () => {
-    setAreas((await getBoardShape(slug)).areas);
+    const shape = await getBoardShape(slug);
+    setAreas(shape.areas);
+    setPalette(shape.palette || []);
   }, [slug]);
+  useEffect(() => { onAreas?.(areas.map((a) => a.name)); }, [areas]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     let live = true;
     loadShape().catch(() => { /* an unregistered area still groups; see areaKey */ });
@@ -147,7 +165,16 @@ export function Roadmap({ slug, projectName, items, onRefresh, onEdit, highlight
   };
 
   const [query, setQuery] = useState('');
-  const [scope, setScope] = useState('');
+  // The area a chip last jumped to — kept only so an EMPTY area (one just
+  // registered) still draws a section to land on, and so New idea files into
+  // the area you are looking at. Which chip reads as on is derived from the
+  // folds, as on the board.
+  const [focus, setFocus] = useState('');
+  const [jump, setJump] = useState<{ key: string; n: number } | null>(null);
+  const [areaMenu, setAreaMenu] = useState<string | null>(null);
+  const [folds, setFolds] = useState<RoadmapFolds>(() => getRoadmapFolds(slug));
+  useEffect(() => { setFolds(getRoadmapFolds(slug)); }, [slug]);
+  const writeFolds = (next: RoadmapFolds) => { setFolds(next); setRoadmapFolds(slug, next); };
   const areaKey = (it: RoadmapItem) => it.area.trim() || UNTAGGED;
 
   const matches = (it: RoadmapItem) => {
@@ -197,8 +224,7 @@ export function Roadmap({ slug, projectName, items, onRefresh, onEdit, highlight
     if (byArea.has(UNTAGGED) || boardByArea.has(UNTAGGED)) order.push(UNTAGGED);
 
     return order
-      .filter((k) => byArea.has(k) || boardByArea.has(k))
-      .filter((k) => (scope ? k === scope : true))
+      .filter((k) => byArea.has(k) || boardByArea.has(k) || k === focus)
       .map((k) => {
         const mine = byArea.get(k) || [];
         const work = boardByArea.get(k) || [];
@@ -216,7 +242,7 @@ export function Roadmap({ slug, projectName, items, onRefresh, onEdit, highlight
           cols: COLS.map((c) => ({ ...c, items: mine.filter((it) => colOf(it) === c.key) })),
         };
       });
-  }, [ideas, onBoard, areas, scope]);
+  }, [ideas, onBoard, areas, focus]);
 
   const chips = useMemo(() => {
     const counts = new Map<string, number>();
@@ -254,7 +280,7 @@ export function Roadmap({ slug, projectName, items, onRefresh, onEdit, highlight
     });
   // `committed: false` is what keeps the row on this screen (decision 2). A
   // child also gets its parent, whose area it inherits; a free-standing idea
-  // takes the scoped area, or none.
+  // takes the area last jumped to, or none.
   const addIdea = (parent: RoadmapItem | null, title: string, area: string) =>
     guard(async () => {
       const made = await createRoadmapItem(slug, {
@@ -268,6 +294,68 @@ export function Roadmap({ slug, projectName, items, onRefresh, onEdit, highlight
       onRefresh();
     });
 
+  // ---- areas: the board's controls, the board's rules ----------------------
+  // A search suspends every fold, read-time only, so what matches is never
+  // hidden behind a header and the stored folds come back when it is cleared.
+  const searching = !!query.trim();
+  const sectionOpen = (key: string) => searching || folds.open.includes(key);
+  const foldSection = (key: string) => writeFolds({
+    open: folds.open.includes(key) ? folds.open.filter((k) => k !== key) : [...folds.open, key],
+  });
+  const focusArea = (key: string) => {
+    setAreaMenu(null);
+    setFocus(key);
+    writeFolds({ open: [key] });
+    setJump((j) => ({ key, n: (j?.n ?? 0) + 1 }));
+  };
+  const collapseAll = () => { setAreaMenu(null); writeFolds({ open: [] }); };
+  const expandAll = () => {
+    setAreaMenu(null);
+    setFocus('');
+    writeFolds({ open: sections.map((s) => s.key) });
+    setJump((j) => ({ key: '', n: (j?.n ?? 0) + 1 }));
+  };
+  // After the render that opened it, so the scroll measures the open section.
+  useEffect(() => {
+    if (!jump) return;
+    const el = jump.key
+      ? document.querySelector(`.im [data-area="${CSS.escape(jump.key)}"]`)
+      : document.querySelector('.im .im-bar');
+    el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [jump]);
+  const openSections = sections.filter((s) => sectionOpen(s.key));
+  const allOpen = sections.length > 0 && openSections.length === sections.length;
+  const allFolded = sections.length > 0 && openSections.length === 0;
+
+  // A registered area has nothing in it yet, so it is focused — opened and
+  // scrolled to — or it would draw no section and the press would look inert.
+  const addArea = (name: string) =>
+    guard(async () => {
+      const before = new Set(areas.map((a) => a.name));
+      const next = await createArea(slug, name);
+      setAreas(next);
+      const made = next.find((a) => !before.has(a.name))?.name;
+      if (made) focusArea(made);
+    });
+  const renameArea = (from: string, to: string) =>
+    guard(async () => {
+      setAreas(await patchArea(slug, from, { name: to }));
+      const key = to.trim().toLowerCase();
+      setFocus((f) => (f === from ? key : f));
+      if (folds.open.includes(from)) writeFolds({ open: folds.open.map((k) => (k === from ? key : k)) });
+      onRefresh();
+    });
+  const recolourArea = (name: string, dot: string) =>
+    guard(async () => { setAreas(await patchArea(slug, name, { dot })); });
+  // The rows stay and lose the tag (the route never deletes work), so they land
+  // in No area, and the focus follows them there.
+  const dropArea = (name: string) =>
+    guard(async () => {
+      setAreas(await deleteArea(slug, name));
+      setFocus((f) => (f === name ? UNTAGGED : f));
+      onRefresh();
+    });
+
   const [open, setOpen] = useState<number | null>(null);
   const [composeUnder, setComposeUnder] = useState<number | null>(null);
   const [capturing, setCapturing] = useState(false);
@@ -277,31 +365,21 @@ export function Roadmap({ slug, projectName, items, onRefresh, onEdit, highlight
     if (Number.isFinite(n) && n > 0) setOpen(n);
   }, [highlightId]);
 
-  // THE LEDE SAYS "IN THIS SCOPE", so both of its numbers have to be. They were
-  // read off the unscoped list, which made the sentence false the moment a chip
-  // was pressed — the sections narrowed and the count sat still. The smoke
-  // caught it as `control-inert`, which was the honest reading: from outside,
-  // a press that changes no number IS a control that did nothing.
-  //
-  // `total` stays unscoped on purpose — it is the "All areas" chip's count, and
-  // a chip that counted only what is already showing would always read the same
-  // as the lede beside it.
+  // The chips no longer narrow anything, so the lede counts what the search
+  // leaves, and `total` is the All areas chip's count, as on the board.
   const total = rows.filter((it) => !it.archived && isIdea(it)).length;
-  const scoped = useMemo(
-    () => (scope ? ideas.filter((it) => areaKey(it) === scope) : ideas),
-    [ideas, scope]);
-  const ready = scoped.filter((it) => colOf(it) === 'ready').length;
-  const captureArea = scope && scope !== UNTAGGED ? scope : '';
+  const ready = ideas.filter((it) => colOf(it) === 'ready').length;
+  const captureArea = focus && focus !== UNTAGGED ? focus : '';
 
   return (
-    <div className="im">
+    <div className="im" onClick={() => setAreaMenu(null)}>
       <div className="im-head">
         <div className="im-title">
           <span className="eyebrow">{projectName}</span>
           <h1>Roadmap</h1>
         </div>
         <span className="im-lede">
-          {scoped.length} idea{scoped.length === 1 ? '' : 's'} · {ready} ready in this scope
+          {ideas.length} idea{ideas.length === 1 ? '' : 's'} · {ready} ready
         </span>
         <button className="k-btn sm accent rm-new" aria-expanded={capturing}
           onClick={() => { setComposeUnder(null); setCapturing(!capturing); }}>
@@ -309,7 +387,7 @@ export function Roadmap({ slug, projectName, items, onRefresh, onEdit, highlight
         </button>
       </div>
 
-      {/* A FREE-STANDING IDEA (#523), filed in the scoped area. The label says
+      {/* A FREE-STANDING IDEA (#523), filed in the area last jumped to. The label says
           which, because the chip row is the only other place that does. */}
       {capturing && (
         <IdeaComposer
@@ -323,24 +401,53 @@ export function Roadmap({ slug, projectName, items, onRefresh, onEdit, highlight
 
       {err && <div className="km-err" role="alert">{err}</div>}
 
-      <div className="im-bar">
-        <AreaChip label="All areas" count={total} active={scope === ''} onClick={() => setScope('')} />
-        {chips.length > 0 && <span className="im-chipsep" />}
-        {chips.map((c) => (
-          <AreaChip key={c.key} label={c.name} dot={c.dot} count={c.n}
-            active={scope === c.key} onClick={() => setScope(c.key)} />
-        ))}
-        <span className="searchbox sm im-search">
+      {/* THE BOARD'S TOOLBAR AND JUMP BAR, in the board's order and classes. */}
+      <div className="km-toolbar">
+        <span className="searchbox sm km-search">
           <KitIcon name="search" size={14} />
           <input placeholder="Search ideas" aria-label="Search ideas" value={query}
             onChange={(e) => setQuery(e.target.value)} />
         </span>
+        {/* Collapse all folds every area; expanding is All areas' job. */}
+        {!searching && (
+          <button className="k-btn sm secondary km-collapseall" onClick={collapseAll}
+            disabled={allFolded} title="Fold every area to its header">
+            <KitIcon name="chevron-right" size={14} />Collapse all
+          </button>
+        )}
+        {searching && sections.some((s) => !folds.open.includes(s.key)) && (
+          <span className="km-count"><span className="km-unfolded">folds suspended while searching</span></span>
+        )}
+      </div>
+
+      <div className="im-bar km-scope">
+        <AreaChip label="All areas" count={total} active={allOpen} onClick={expandAll} />
+        <span className="im-chipsep" />
+        {/* At the FRONT, as on the board: the smoke presses the LAST chip as
+            the one provably not already on, and it must land on an area. */}
+        <AddArea onAdd={addArea} />
+        {chips.map((c) => (
+          <AreaChip key={c.key} label={c.name} dot={c.dot} count={c.n}
+            active={openSections.length === 1 && openSections[0].key === c.key}
+            onClick={() => focusArea(c.key)} />
+        ))}
       </div>
 
       <div className="im-sections">
-        {sections.map((sec) => (
-          <section className="im-section" key={sec.key}>
+        {sections.map((sec) => {
+          const secFolded = !sectionOpen(sec.key);
+          return (
+          <section className={`im-section${secFolded ? ' km-folded' : ''}`} key={sec.key} data-area={sec.key}>
             <div className="im-sechead">
+              {!searching && (
+                <button className="km-foldbtn"
+                  aria-expanded={!secFolded}
+                  aria-label={`${secFolded ? 'Expand' : 'Collapse'} ${sec.name}`}
+                  title={secFolded ? 'Expand this area' : 'Collapse this area'}
+                  onClick={(e) => { e.stopPropagation(); setAreaMenu(null); foldSection(sec.key); }}>
+                  <KitIcon name={secFolded ? 'chevron-right' : 'chevron-down'} size={15} />
+                </button>
+              )}
               <span className={`ico${sec.untagged ? ' global' : ''}`}>
                 <KitIcon name={sec.untagged ? 'layers' : 'layout-grid'} size={13} />
               </span>
@@ -354,7 +461,20 @@ export function Roadmap({ slug, projectName, items, onRefresh, onEdit, highlight
                     : 'Lane free'}
               </span>
               <span className="n">{sec.count} {sec.count === 1 ? 'idea' : 'ideas'}</span>
+              {/* Untagged is not a row in the registry, so it has no menu. */}
+              {!sec.untagged && (
+                <AreaMenu name={sec.key} count={sec.count + sec.work.length} holder={sec.holder}
+                  dot={sec.dot} palette={palette}
+                  open={areaMenu === sec.key}
+                  onOpen={(e) => { e.stopPropagation(); setAreaMenu(areaMenu === sec.key ? null : sec.key); }}
+                  onRename={(to) => { setAreaMenu(null); renameArea(sec.key, to); }}
+                  onColour={(dot) => { setAreaMenu(null); recolourArea(sec.key, dot); }}
+                  onDelete={() => { setAreaMenu(null); dropArea(sec.key); }} />
+              )}
             </div>
+
+            {/* A FOLDED SECTION IS ITS HEADER AND NOTHING ELSE, as on the board. */}
+            {!secFolded && <>
 
             {/* ON THE BOARD — this area's committed work. Pressing ＋ opens a
                 composer whose row is born under that item. */}
@@ -414,8 +534,10 @@ export function Roadmap({ slug, projectName, items, onRefresh, onEdit, highlight
                 </div>
               ))}
             </div>
+            </>}
           </section>
-        ))}
+          );
+        })}
 
         {sections.length === 0 && (
           <span className="im-empty">
@@ -426,18 +548,6 @@ export function Roadmap({ slug, projectName, items, onRefresh, onEdit, highlight
         )}
       </div>
     </div>
-  );
-}
-
-function AreaChip({ label, dot, count, active, onClick }: {
-  label: string; dot?: string; count: number; active: boolean; onClick: () => void;
-}) {
-  return (
-    <button className={`im-chip${active ? ' on' : ''}`} onClick={onClick} aria-pressed={active}>
-      {dot && <span className="km-dot" style={{ background: dot }} />}
-      {label}
-      <span className="n">{count}</span>
-    </button>
   );
 }
 

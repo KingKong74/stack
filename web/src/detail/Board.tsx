@@ -1132,11 +1132,15 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
   );
 }
 
+// EXPORTED, with AddArea and AreaMenu, FOR THE ROADMAP TAB, which draws its
+// areas exactly as this board does (owner's request): one component per
+// control, so the two screens cannot drift apart.
+//
 // The Roadmap tab's own chip (`.im-chip`), with one substitution: the kit
 // gives each of its six invented areas an ICON, and a real area has no icon —
 // it has a `dot`, chosen by the owner from the board's closed palette. So the
 // dot is what identifies it, and "All areas" and untagged carry none.
-function AreaChip({ label, dot, count, active, onClick }: {
+export function AreaChip({ label, dot, count, active, onClick }: {
   label: string; dot?: string; count: number; active: boolean; onClick: () => void;
 }) {
   return (
@@ -1884,7 +1888,7 @@ function Composer({ onClose, onAdd }: { onClose: () => void; onAdd: (text: strin
  * (routes/board.js's `clean`) — so an area typed in Title Case comes back
  * lowercase and the chip shows what actually stored rather than what was typed.
  */
-function AddArea({ onAdd }: { onAdd: (name: string) => void }) {
+export function AddArea({ onAdd }: { onAdd: (name: string) => void }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const commit = () => { const n = name.trim(); setOpen(false); setName(''); if (n) onAdd(n); };
@@ -1930,7 +1934,7 @@ function AddArea({ onAdd }: { onAdd: (name: string) => void }) {
  *     that hold. That is a change to what tonight may run, made from a menu
  *     about a colour and a name, and it has to be said before it happens.
  */
-function AreaMenu({ name, count, holder, dot, palette, open, onOpen, onRename, onColour, onDelete }: {
+export function AreaMenu({ name, count, holder, dot, palette, open, onOpen, onRename, onColour, onDelete }: {
   name: string; count: number; holder: string | null; dot: string; palette: string[];
   open: boolean;
   onOpen: (e: React.MouseEvent) => void;

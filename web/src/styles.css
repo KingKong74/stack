@@ -4608,9 +4608,9 @@ body[data-mc-full] .totop { display: none; }
    One block for both, and the `.im-section` rule lives here with the `.km-*`
    ones rather than up with the shared section furniture: folding is the
    BOARD's, and `.im-sechead` / `.im-section` are shared with detail/Roadmap.tsx
-   precisely so the two screens look alike. The Roadmap never sets `.km-folded`,
-   so nothing here reaches it; the day it wants a fold it adds the class and
-   gets this, rather than growing a second stylesheet for the same look. */
+   precisely so the two screens look alike. The Roadmap folds its areas the same
+   way now, and sets these same classes rather than growing a second stylesheet
+   for the same look. */
 .km-foldbtn {
   width: 22px; height: 22px; flex: none; border: 0; padding: 0;
   background: transparent; cursor: pointer; border-radius: var(--radius-sm);

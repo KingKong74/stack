@@ -721,7 +721,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
             across the two screens rather than each fetching its own. */}
         {tab === 'ideas' && (
           <Roadmap slug={slug} projectName={project.name} items={allRoadmap}
-            onRefresh={reread} highlightId={highlightId}
+            onRefresh={reread} highlightId={highlightId} onAreas={setBoardAreas}
             onEdit={(it) => setRoadModal({ open: true, title: it.title, note: it.note, editing: it })} />
         )}
         {/* PLANS IS TWO WIRED SUB-VIEWS AND FOUR MOCKUPS (#482), and the tab

@@ -1505,6 +1505,31 @@ export function setBoardFolds(slug: string, folds: BoardFolds) {
   catch { /* storage full or unavailable — a fold is a nicety, never a blocker */ }
 }
 
+// ---- the Roadmap tab's folds ----
+//
+// Which AREA SECTIONS are open on one project's Roadmap tab. The board's rules
+// exactly (see its folds above): device-local, keyed by slug, it lists the OPEN
+// areas because a section starts FOLDED, and absent or corrupt storage lands on
+// every area folded. A SEPARATE KEY from the board's on purpose: the two
+// screens group the same areas, but which ones you have open on each is a
+// different question, and one fold reaching across both would open an area on
+// a screen you were not looking at.
+export interface RoadmapFolds {
+  /** OPEN area sections, by `area` string (the screen's UNTAGGED sentinel included). */
+  open: string[];
+}
+const ROADMAP_FOLDS_KEY = (slug: string) => `stack.roadmapFolds.${slug}`;
+export function getRoadmapFolds(slug: string): RoadmapFolds {
+  return readStoredJSON(ROADMAP_FOLDS_KEY(slug), (p) => {
+    const o = (p && typeof p === 'object') ? p as Record<string, unknown> : {};
+    return { open: strings(o.open) };
+  });
+}
+export function setRoadmapFolds(slug: string, folds: RoadmapFolds) {
+  try { localStorage.setItem(ROADMAP_FOLDS_KEY(slug), JSON.stringify(folds)); }
+  catch { /* storage full or unavailable — a fold is a nicety, never a blocker */ }
+}
+
 // ---- the Plans Timeline's column filters (#515) ----
 //
 // What the Timeline's column headers are narrowed to on one project. Device-

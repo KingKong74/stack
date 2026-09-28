@@ -353,12 +353,54 @@ const ROADMAP_PANELS = [
 // fills itself — every `/checkpoint` carrying `next_steps` files hook rows here,
 // and every `fly` card a session opens lands here until it is promoted.
 //
-// The scope press has no new element to point at — narrowing HIDES sections
-// rather than adding one — so it is judged on the count line changing, which
-// is `expectTextChangeIn`'s whole purpose. That line reads "N ideas · M ready
-// in this scope", and M is what moves. It runs LAST, because narrowing to one
-// area can hide the rows the presses above need.
+// THE AREAS ARE THE BOARD'S NOW (owner's request): every section lands FOLDED,
+// a chip jumps rather than filters, and the fold persists in
+// `stack.roadmapFolds.<slug>`. So this list is ordered the way the board's is:
+// All areas FIRST (a folded section draws no card to press), the area presses
+// before the jump (which folds every other area), then Collapse all and All
+// areas, which leaves every section open for the card presses and the narrow
+// pass. The AREA presses come before the CARD presses because they need no
+// idea on screen: an empty Roadmap fails the first card press, and everything
+// after a failure on a screen is abandoned untested.
 const IDEAS_PANELS = [
+  {
+    id: 'ideas-openall',
+    label: 'Roadmap — lands folded; All areas opens every area',
+    click: '.im .km-scope .im-chip:first-of-type',
+    expect: '.im .im-sections:not(:has(.im-section.km-folded)) .im-cols',
+  },
+  {
+    // Opened, never submitted: its blur commits an empty name, which AddArea
+    // drops before it reaches the wire.
+    id: 'ideas-newarea',
+    label: 'Roadmap — + New area opens its name field',
+    click: '.im .km-addarea',
+    expect: '.im .km-addarea.open input',
+  },
+  {
+    id: 'ideas-areamenu',
+    label: 'Roadmap — area actions menu',
+    click: '.im [aria-label^="Area actions"]',
+    expect: 'body > .km-menu .km-dots',
+  },
+  {
+    id: 'ideas-scope',
+    label: 'Roadmap — area chip jumps to its section',
+    click: '.im .km-scope .im-chip:last-of-type',
+    expect: '.im .km-scope .im-chip:last-of-type.on',
+  },
+  {
+    id: 'ideas-collapseall',
+    label: 'Roadmap — Collapse all folds every area',
+    click: '.im .km-collapseall',
+    expect: '.im .im-sections:not(:has(.im-section:not(.km-folded)))',
+  },
+  {
+    id: 'ideas-allareas',
+    label: 'Roadmap — All areas opens every area again',
+    click: '.im .km-scope .im-chip:first-of-type',
+    expect: '.im .im-sections:not(:has(.im-section.km-folded)) .im-cols',
+  },
   {
     id: 'ideas-expand',
     label: 'Roadmap — an idea opens its actions',
@@ -380,12 +422,6 @@ const IDEAS_PANELS = [
     label: 'Roadmap — New idea opens its composer',
     click: '.rm-new',
     expect: '.im > .rm-composer textarea',
-  },
-  {
-    id: 'ideas-scope',
-    label: 'Roadmap — area scope',
-    click: '.im-bar .im-chip:last-of-type',
-    expectTextChangeIn: '.im-lede',
   },
 ];
 
