@@ -1,7 +1,7 @@
 # terminal/ — the web terminal's host daemon
 
 The root `CLAUDE.md` holds the cross-package rules. This file holds what applies only here. These
-file headers carry their own rules; read one before editing its file: `agent-run.mjs`,
+file headers carry their own rules; read one before editing its file: `agent-run.mjs`, `claude-md.mjs`,
 `model-switch.mjs`, `cli-registry.mjs`, `drop-file.mjs`.
 
 - **The daemon dials out** to the server; the server can't reach the host. Run it by hand with

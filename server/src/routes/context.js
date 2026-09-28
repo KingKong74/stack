@@ -3,21 +3,31 @@ import { q } from '../db.js';
 import { readSettings, SESSION_DEFAULTS, sessionDefaultLines } from '../settings.js';
 import { mergeProfiles } from '../agent-profiles.js';
 import { PULSE_DAYS } from '../pulse.js';
+import { readClaudeMdFiles, writeClaudeMdFile } from '../term.js';
 
-// THE CONTEXT ROOM (Mission Control → Context) — app-wide, one GET.
+// THE CONTEXT ROOM (Mission Control → Context) — app-wide.
 //
-// READ THE WARNING BEFORE THE CODE. The kit's Context tab is a MANAGED
-// CLAUDE.MD LIBRARY with an Edit/Save button, and that surface was culled FOR
-// CAUSE: Stack used to write each repo's CLAUDE.md from its own copy every five
-// minutes, authoritatively, and a stale DB copy silently reverted the project's
-// own CLAUDE.md for several sessions running — each one filed as a mystery
-// blocker. A repo's CLAUDE.md is the repo's. **Nothing in this file reads,
-// holds or writes one, and nothing downstream of it may start to.**
+// READ THE WARNING BEFORE THE CODE. Stack used to keep a MANAGED CLAUDE.MD
+// LIBRARY: a copy of each repo's file in its database, written back to disk
+// every five minutes. A stale DB copy silently reverted a project's own
+// CLAUDE.md for several sessions running, each filed as a mystery blocker.
+// The CLAUDE.md rows below (GET/PUT /claude-md) are shaped so that cannot
+// recur, and each rule is load-bearing:
 //
-// WHAT THIS IS INSTEAD. The honest question the kit's screen asks is "what text
+//   • STACK HOLDS NO COPY. The host daemon reads the file on disk when the
+//     browser asks (terminal/claude-md.mjs). Nothing here stores a body.
+//   • A WRITE IS ONE HUMAN'S SAVE. PUT is the only writer, it runs when the
+//     Save button is pressed, and nothing may call it on a schedule, from a
+//     job, or from an agent.
+//   • A WRITE IS REFUSED IF THE FILE CHANGED since the editor opened it (the
+//     host compares the sha256 it was sent). It never overwrites text it did
+//     not show you, and the refusal is shown verbatim.
+//   • NO DAEMON = "STACK CANNOT SEE", never an empty list (fail silent).
+//
+// THE REST OF THE ROOM. The honest question the kit's screen asks is "what text
 // actually reaches a model in this installation, and which of it is mine to
-// change?" — and Stack has a real, complete answer to that which is not a file
-// library at all. Three kinds of prompt text, and every one of them is already
+// change?" — and Stack has a real answer to that beyond the repos' own files.
+// Three kinds of prompt text, and every one of them is already
 // stored somewhere with an owner:
 //
 //   • ROOT — the SESSION DEFAULTS (`settings.session_defaults`). Rendered
@@ -38,7 +48,8 @@ import { PULSE_DAYS } from '../pulse.js';
 //     Fill-from-note. Also the owner's, also already a PATCH field.
 //
 // So the kit's Edit/Save button survives, pointed at two fields that were
-// always meant to be written by hand, and the file library does not. A doc with
+// always meant to be written by hand, plus the repos' CLAUDE.md files under the
+// rules above. A doc with
 // no `edit` is a STATEMENT OF WHAT THE CODE DOES and has no button at all —
 // which is what stops this shape drifting back into a writer.
 //
@@ -165,4 +176,29 @@ context.get('/', async (_req, res) => {
   ];
 
   res.json({ windowDays: PULSE_DAYS, docs });
+});
+
+// Every live project's CLAUDE.md files, read fresh off the host. Only live
+// projects' slugs are sent, so the daemon reads only their checkouts.
+context.get('/claude-md', async (_req, res) => {
+  const { rows } = await q('SELECT slug, name FROM projects WHERE deleted_at IS NULL ORDER BY name');
+  const r = await readClaudeMdFiles(rows.map((p) => p.slug));
+  const names = new Map(rows.map((p) => [p.slug, p.name]));
+  res.json({ ...r, projects: r.projects.map((p) => ({ ...p, name: names.get(p.slug) || p.slug })) });
+});
+
+// One human's Save — see the header. The slug must be a live project; the host
+// checks the path, the file's existence and the sha.
+context.put('/claude-md', async (req, res) => {
+  const { slug, path, sha, body } = req.body || {};
+  if (typeof slug !== 'string' || typeof path !== 'string' || typeof sha !== 'string' || typeof body !== 'string') {
+    return res.status(400).json({ error: 'slug, path, sha and body are all required.' });
+  }
+  const { rows } = await q('SELECT 1 FROM projects WHERE slug = $1 AND deleted_at IS NULL', [slug]);
+  if (!rows.length) return res.status(404).json({ error: `No live project "${slug}".` });
+  const r = await writeClaudeMdFile({ slug, path, sha, body });
+  // 409 for every refusal: the browser shows `error` verbatim either way, and
+  // "the file changed under you" is the one it will actually meet.
+  if (!r.ok) return res.status(409).json({ error: r.error || 'The host refused the save.' });
+  res.json({ ok: true, sha: r.sha, bytes: r.bytes });
 });

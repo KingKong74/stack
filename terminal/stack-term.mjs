@@ -59,6 +59,7 @@ import { detectWaiting } from './input-wait.mjs';
 import { parseAutoName, readActivity } from './auto-scan.mjs';
 import { agentScratchDir, agentClaudeArgs } from './agent-run.mjs';
 import { writeDrop, DROP_MAX_BYTES } from './drop-file.mjs';
+import { listClaudeMd, writeClaudeMd } from './claude-md.mjs';
 import { createEditWatch } from './edit-watch.mjs';
 import { resolvedModelFor } from './session-model.mjs';
 import {
@@ -865,6 +866,28 @@ async function modelsRead(m) {
   });
 }
 
+// ---- claudeMd — each project's CLAUDE.md files, for Mission Control → Context
+// The server cannot see the checkouts (it is in a container), so it asks. The
+// server sends the live projects' slugs; this reads only those checkouts. The
+// write is one human's Save, hash-guarded against the file on disk: read
+// claude-md.mjs's header before changing either half.
+function claudeMdRead(m) {
+  const root = process.env.STACK_AUTOPILOT_ROOT || homedir();
+  let projects = [];
+  let reason = '';
+  try { projects = listClaudeMd({ root, slugs: m.slugs }); } catch (e) { reason = e.message; }
+  sendUplink({ t: 'claudeMdRead', id: m.id, ok: !reason, reason, projects });
+}
+
+function claudeMdWrite(m) {
+  const root = process.env.STACK_AUTOPILOT_ROOT || homedir();
+  const r = writeClaudeMd({ root, slug: m.slug, path: m.path, sha: m.sha, body: m.body });
+  log(r.ok
+    ? `claude-md: saved ${m.slug}/${m.path} (${r.bytes} bytes)`
+    : `claude-md: refused ${String(m.slug).slice(0, 40)}/${String(m.path).slice(0, 80)} — ${r.error}`);
+  sendUplink({ t: 'claudeMdWritten', id: m.id, ...r });
+}
+
 // ---- drop — a file dragged onto a pane becomes a file on this host (#513) ---
 //
 // The browser cannot hand a session a path, because the file it holds has never
@@ -1430,6 +1453,8 @@ function connect() {
     else if (m.t === 'autoView') autoView(m);
     else if (m.t === 'gateway') gatewayProbe(m);
     else if (m.t === 'models') modelsRead(m);
+    else if (m.t === 'claudeMd') claudeMdRead(m);
+    else if (m.t === 'claudeMdWrite') claudeMdWrite(m);
     else if (m.t === 'kill') {
       if (sess?.switchMode) {
         // Browser tab closed during the switch prompt — clean up gracefully.

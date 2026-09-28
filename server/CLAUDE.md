@@ -88,7 +88,8 @@ area stalls after the first build. Lane holders are read off every open row, hel
 - **`POST /api/terminal/answer`** is the only path by which anything but a human at the keyboard
   types into a session. The pane it was drawn from may be 20 seconds old, so "1" can land as a stray
   digit in someone's message. The rules are at the route.
-- `routes/context.js` is not a CLAUDE.md library, and nothing in it writes one.
+- `routes/context.js` reads each repo's CLAUDE.md live off the host and writes one only on a
+  human's Save, refused if the file changed since it was opened. It stores no copy; its header says why.
 - The recipe library (`/api/tips`) has a route and a table but no screen.
 - Both closure counts in `totals` lean on `updated_at`: read them as movement, not a ledger.
 - **Host-side agent ops outlast a web request.** nginx's `/api` read timeout and each op's own

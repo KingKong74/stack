@@ -3,7 +3,7 @@ import type {
   ProjectStatus, Priority, Severity, BugStatus, SearchResponse, Settings, AutopilotRun, PlanStep,
   AuthDevice, Sprint, SprintPlan, ResumeSince, ProjectDebrief,
   SchedSpan, ProjectPulse, BoardShape, BoardList, BoardArea, ItemKind,
-  AgentProfile, AgentProfilesRoom, ModelsRoom, ContextRoom,
+  AgentProfile, AgentProfilesRoom, ModelsRoom, ContextRoom, ClaudeMdRead,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -1640,11 +1640,26 @@ export async function getModelsRoom(): Promise<ModelsRoom> {
 
 /**
  * The Context room: the prompt text this installation actually puts in front of
- * a model. NOT a CLAUDE.md library — `server/src/routes/context.js`'s header
- * says at length why that surface stays culled. Its two editable docs are
- * written through `patchAgentProfile` and `patchSettings`, which is the point:
- * there is no context-writing endpoint to grow a schedule on.
+ * a model. Its editable docs are written through `patchAgentProfile`,
+ * `patchSettings` and `putClaudeMd` below.
  */
 export async function getContextRoom(): Promise<ContextRoom> {
   return request<ContextRoom>('/context');
+}
+
+/** Each live project's CLAUDE.md files, read off the host now. Stack keeps no copy. */
+export async function getClaudeMd(): Promise<ClaudeMdRead> {
+  return request<ClaudeMdRead>('/context/claude-md');
+}
+
+/**
+ * One human's Save of a repo's CLAUDE.md. `sha` is the version the editor
+ * opened; the host refuses (409, message shown verbatim) if the file changed
+ * since. Never call this from anything but a Save button.
+ */
+export async function putClaudeMd(slug: string, path: string, sha: string, body: string): Promise<{ sha: string; bytes: number }> {
+  return request<{ sha: string; bytes: number }>('/context/claude-md', {
+    method: 'PUT',
+    body: { slug, path, sha, body },
+  });
 }

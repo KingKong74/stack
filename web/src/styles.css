@@ -7160,6 +7160,13 @@ body[data-mc-full] .totop { display: none; }
 .mcx-docrow.kind-root, .mcx-docview.kind-root { --k-fg: var(--lime-500); }
 .mcx-docrow.kind-agent, .mcx-docview.kind-agent { --k-fg: var(--blue-400); }
 .mcx-docrow.kind-provider, .mcx-docview.kind-provider { --k-fg: var(--text-secondary); }
+.mcx-docrow.kind-repo, .mcx-docview.kind-repo { --k-fg: var(--viz-4); }
+/* A project's name above its CLAUDE.md rows, in the repo section of the tree. */
+.mcx-docgroup {
+  padding: var(--space-4) var(--space-5) var(--space-2); border-top: 1px solid var(--border-subtle);
+  font: var(--weight-medium) var(--text-2xs)/1.4 var(--font-mono); color: var(--text-secondary);
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
 .mcx-docrow {
   display: flex; align-items: center; gap: var(--space-4); text-align: left;
   padding: var(--space-3) var(--space-5) var(--space-3) 30px;

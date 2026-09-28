@@ -760,15 +760,19 @@ export interface ModelsRoom {
 
 // ---- Mission Control: the Context room (GET /api/context) ----
 //
-// NOT a CLAUDE.md library — read server/src/routes/context.js's header before
-// touching anything here. These are the three kinds of prompt text this
-// installation actually puts in front of a model, and only the two that are the
-// owner's own words carry an `edit`.
-export type ContextDocKind = 'root' | 'agent' | 'assist';
+// Read server/src/routes/context.js's header before touching anything here.
+// The prompt text this installation puts in front of a model, plus each repo's
+// CLAUDE.md files read live off the host (GET /api/context/claude-md). Only the
+// docs that are the owner's own words carry an `edit`.
+export type ContextDocKind = 'root' | 'agent' | 'assist' | 'repo';
 export interface ContextDocEdit {
-  kind: 'profile-prompt' | 'assist-guidance';
+  kind: 'profile-prompt' | 'assist-guidance' | 'claude-md';
   /** The agent_profiles key, on a 'profile-prompt' edit. */
   agentKey?: string;
+  /** On a 'claude-md' edit: which file, and the sha256 the editor opened. */
+  slug?: string;
+  path?: string;
+  sha?: string;
   value: string;
   label: string;
   hint: string;
@@ -793,4 +797,30 @@ export interface ContextDoc {
 export interface ContextRoom {
   windowDays: number;
   docs: ContextDoc[];
+}
+export interface ClaudeMdFile {
+  path: string;
+  bytes: number;
+  sha: string;
+  body: string;
+  /** Over the host's read cap: shown in part, and not editable here. */
+  truncated: boolean;
+  /** The repo's own budget for this file, if it keeps one. */
+  budget: number | null;
+}
+export interface ClaudeMdProject {
+  slug: string;
+  name: string;
+  /** false = no checkout for this slug on the host, which is not "has none". */
+  checkout: boolean;
+  files: ClaudeMdFile[];
+  /** Files past the per-repo cap, not listed. */
+  more: number;
+}
+/** connected:false = Stack cannot see the host. ok:false = it asked and the read failed. */
+export interface ClaudeMdRead {
+  ok: boolean;
+  connected: boolean;
+  reason: string;
+  projects: ClaudeMdProject[];
 }

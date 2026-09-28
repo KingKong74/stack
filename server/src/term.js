@@ -372,6 +372,67 @@ export function readGatewayModels({ timeoutMs = 12_000 } = {}) {
   });
 }
 
+// CLAUDE.md files, for Mission Control → Context. The host reads them on
+// request (terminal/claude-md.mjs — read its header) and nothing here keeps a
+// copy, so there is nothing to go stale. THREE STATES, as with the models read:
+// `connected:false` means Stack cannot see the host at all, `ok:false` means it
+// asked and the read failed, and only `ok:true` with no files means none.
+let claudeMdSeq = 0;
+const pendingClaudeMd = new Map(); // id -> resolve
+const str = (v, n) => String(v ?? '').slice(0, n);
+export function readClaudeMdFiles(slugs, { timeoutMs = 10_000 } = {}) {
+  if (!agentSend) return Promise.resolve({ ok: false, connected: false, reason: 'the host daemon is not connected', projects: [] });
+  const id = `c${++claudeMdSeq}`;
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      pendingClaudeMd.delete(id);
+      resolve({ ok: false, connected: true, reason: 'the host did not answer in time', projects: [] });
+    }, timeoutMs);
+    pendingClaudeMd.set(id, (m) => {
+      clearTimeout(timer);
+      resolve({
+        ok: m.ok === true,
+        connected: true,
+        reason: str(m.reason, 300),
+        projects: (Array.isArray(m.projects) ? m.projects : []).slice(0, 200).map((p) => ({
+          slug: str(p?.slug, 80),
+          checkout: p?.checkout === true,
+          more: Number(p?.more) || 0,
+          files: (Array.isArray(p?.files) ? p.files : []).slice(0, 30)
+            .filter((f) => f && typeof f.path === 'string' && /^[0-9a-f]{64}$/.test(String(f.sha)))
+            .map((f) => ({
+              path: str(f.path, 300),
+              bytes: Number(f.bytes) || 0,
+              sha: String(f.sha),
+              body: str(f.body, 200_000),
+              truncated: f.truncated === true,
+              budget: Number.isFinite(f.budget) ? f.budget : null,
+            })),
+        })),
+      });
+    });
+    agentSend({ t: 'claudeMd', id, slugs });
+  });
+}
+
+// One human's Save. The host refuses if the file changed since `sha` was read.
+export function writeClaudeMdFile({ slug, path, sha, body }, { timeoutMs = 10_000 } = {}) {
+  if (!agentSend) return Promise.resolve({ ok: false, error: 'The host daemon is not connected, so nothing was saved.' });
+  const id = `c${++claudeMdSeq}`;
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      pendingClaudeMd.delete(id);
+      // Not "failed": the frame went out and may have landed. Say so.
+      resolve({ ok: false, error: 'The host did not answer in time. The save may or may not have landed; reload to see the file as it is.' });
+    }, timeoutMs);
+    pendingClaudeMd.set(id, (m) => {
+      clearTimeout(timer);
+      resolve({ ok: m.ok === true, error: str(m.error, 400), sha: str(m.sha, 64), bytes: Number(m.bytes) || 0 });
+    });
+    agentSend({ t: 'claudeMdWrite', id, slug, path, sha, body });
+  });
+}
+
 export function attachTerm(httpServer) {
   const wss = new WebSocketServer({ noServer: true });
   let agent = null;
@@ -572,6 +633,11 @@ export function attachTerm(httpServer) {
       if (m.t === 'gatewayed' && m.id) {
         const waiting = pendingGateway.get(m.id);
         if (waiting) { pendingGateway.delete(m.id); waiting(m); }
+      }
+      if ((m.t === 'claudeMdRead' || m.t === 'claudeMdWritten') && m.id) {
+        const waiting = pendingClaudeMd.get(m.id);
+        if (waiting) { pendingClaudeMd.delete(m.id); waiting(m); }
+        return;
       }
       if (m.t === 'modelsRead' && m.id) {
         const waiting = pendingModels.get(m.id);

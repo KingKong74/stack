@@ -151,8 +151,9 @@ not uniform. **Get it wrong and you delete work:**
 
 - Never commit secrets. `.env` and `~/.stack/env` are gitignored. Hooks never read tokens from the
   shell profile and never print them. No surface prints any part of a provider key.
-- Never write a repo's `CLAUDE.md` from Stack. It once silently reverted this file for days. If
-  something ever needs to, it gets an off switch before it gets a schedule.
+- Never write a repo's `CLAUDE.md` except on a human's Save in Mission Control → Context, which
+  is hash-guarded against the file on disk (`terminal/claude-md.mjs`). Never store a copy, never
+  write on a schedule: a stored copy written back every few minutes once reverted this file for days.
 - Never remove a skill Stack didn't plant (no `.stack-managed` marker → report, don't touch).
 - Never let a preview write to the real database.
 - Never give the browser kill/type access to `stack-auto-*` sessions (they run with

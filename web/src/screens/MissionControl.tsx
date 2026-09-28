@@ -37,16 +37,14 @@
 //    `server/src/routes/models.js` holds the arithmetic and the mapping from
 //    "provider" to Stack's actual backends — a subscription, a key, and one
 //    gateway the server cannot see at all.
-//  • CONTEXT (wired, and the one that had to be re-aimed) — the kit draws a
-//    managed CLAUDE.md library with an Edit/Save button, and THAT SURFACE STAYS
-//    CULLED: Stack used to write each repo's CLAUDE.md from its own copy every
-//    five minutes and a stale DB copy silently reverted this project's own file
-//    for several sessions running. So the tab answers the honest version of the
-//    kit's question — what text actually reaches a model here — over the three
-//    things that really do: the session defaults, each SPAWN PROFILE's prompt
-//    (#520 re-aimed this from the culled registry's preambles) and the ✧ assist
-//    steer. Two of those are the owner's own words and carry the Edit button;
-//    the rest is code and has no button at all.
+//  • CONTEXT (wired) — what text actually reaches a model here: the session
+//    defaults, each SPAWN PROFILE's prompt, the ✧ assist steer, and each
+//    project's CLAUDE.md files READ LIVE OFF THE HOST. Stack once kept a DB
+//    copy of every CLAUDE.md and wrote it back on a schedule, and a stale copy
+//    silently reverted this repo's own file for days. So a CLAUDE.md here is
+//    never stored, is written only by a human's Save, and that Save is refused
+//    if the file changed on disk since it was opened. The owner's own words
+//    carry the Edit button; what is code has no button at all.
 //    `server/src/routes/context.js`'s header is the long version.
 //  • OVERVIEW (mock) is `autopilot_runs`, and the kit's "runs today / landed /
 //    failed" strip is THREE of the four buckets a night partitions into.
@@ -88,13 +86,13 @@
 // this app has one TopBar of its own, and the strip would have been a second
 // copy of numbers the screen already states.
 
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { Fragment, useCallback, useEffect, useState, type ReactNode } from 'react';
 import type {
-  AgentProfile, AgentProfilesRoom, ContextRoom, ModelsRoom,
+  AgentProfile, AgentProfilesRoom, ClaudeMdFile, ClaudeMdRead, ContextDoc, ContextRoom, ModelsRoom,
 } from '../types';
 import {
   getAgentProfiles, getContextRoom, getModelsRoom, patchAgentProfile,
-  createAgentProfile, deleteAgentProfile, patchSettings,
+  createAgentProfile, deleteAgentProfile, patchSettings, getClaudeMd, putClaudeMd,
 } from '../store';
 import { compactTokens } from '../lib/spine';
 import { hrefTo } from '../lib/route';
@@ -1160,22 +1158,56 @@ function Connections() {
 
 /* ---------- Context (WIRED) ----------
 
-   NOT a CLAUDE.md library. Read this file's header and
-   server/src/routes/context.js's before changing anything here: the managed
-   library was culled for cause, and the Edit button below writes exactly two
-   fields — an agent's standing guidance and the ✧ assist steer — both of which
-   were already hand-written settings with their own PATCH routes. A doc with no
-   `edit` has no button at all, which is what stops this shape drifting back
-   into a writer. */
+   Read this file's header and server/src/routes/context.js's before changing
+   anything here. The Edit button writes three things: a spawn profile's prompt,
+   the ✧ assist steer, and a repo's CLAUDE.md. The last goes to the file on the
+   host, carrying the sha256 the editor opened, and the host refuses it if the
+   file has changed since; that refusal is shown verbatim and the draft is kept.
+   A doc with no `edit` has no button at all. */
 
 const DOC_KIND: Record<string, { icon: KitIconName; label: string }> = {
   root: { icon: 'terminal', label: 'Root' },
   agent: { icon: 'users', label: 'Agent' },
   assist: { icon: 'file-text', label: 'Assist' },
+  repo: { icon: 'git-branch', label: 'Repo' },
 };
+
+const kb = (n: number) => (n < 1000 ? `${n} B` : `${(n / 1000).toFixed(1)} KB`);
+
+// A repo's CLAUDE.md as a doc on this screen. Built here, not on the server,
+// because it comes from a different read (the host, live) with its own failure
+// states, and the room must not wait on the host to draw the rest.
+function claudeMdDoc(slug: string, name: string, f: ClaudeMdFile): ContextDoc {
+  const dir = f.path.includes('/') ? f.path.slice(0, f.path.lastIndexOf('/') + 1) : '';
+  const pct = f.budget ? Math.round((f.bytes / f.budget) * 100) : null;
+  return {
+    id: `md:${slug}:${f.path}`,
+    path: `${slug}/${f.path}`,
+    kind: 'repo',
+    scope: dir
+      ? `Claude Code sessions in ${name}, when they work under ${dir}`
+      : `Every Claude Code session opened in ${name}`,
+    inherits: true,
+    summary: 'Read off the host just now. Stack keeps no copy. Saving writes the file on disk and does not commit it.',
+    meta: [
+      f.budget ? `${kb(f.bytes)} of ${kb(f.budget)} budget (${pct}%)` : kb(f.bytes),
+      f.truncated ? 'shown in part' : null,
+    ].filter(Boolean).join(' · '),
+    body: f.body,
+    words: f.body.trim() ? f.body.trim().split(/\s+/).length : 0,
+    reads: null,
+    readsLabel: '',
+    edit: f.truncated ? null : {
+      kind: 'claude-md', slug, path: f.path, sha: f.sha, value: f.body, label: 'CLAUDE.md',
+      hint: 'Saves straight to the file on the host. If a session or a pull changed it since you opened it, the save is refused and nothing is overwritten. Saving does not commit.',
+    },
+    note: f.truncated ? 'This file is over the host\'s read cap, so only the start is shown, and it cannot be edited here.' : '',
+  };
+}
 
 function Context() {
   const [room, err, busy, reload] = useRoom<ContextRoom>(getContextRoom);
+  const [md, mdErr, mdBusy, reloadMd] = useRoom<ClaudeMdRead>(getClaudeMd);
   const [sel, setSel] = useState('');
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
@@ -1186,8 +1218,14 @@ function Context() {
   if (err) return <Failed err={err} onRetry={reload} />;
   if (!room) return null;
 
-  const doc = room.docs.find((d) => d.id === sel) ?? room.docs[0];
-  const words = room.docs.reduce((n, d) => n + d.words, 0);
+  const repos = (md?.projects ?? []).filter((p) => p.checkout && p.files.length);
+  const repoDocs = repos.flatMap((p) => p.files.map((f) => claudeMdDoc(p.slug, p.name, f)));
+  const noCheckout = (md?.projects ?? []).filter((p) => !p.checkout);
+  const noFiles = (md?.projects ?? []).filter((p) => p.checkout && !p.files.length);
+  const all = [...room.docs, ...repoDocs];
+  const doc = all.find((d) => d.id === sel) ?? all[0];
+  const words = all.reduce((n, d) => n + d.words, 0);
+  const sizeOf = new Map<string, ClaudeMdFile>(repos.flatMap((p) => p.files.map((f) => [`md:${p.slug}:${f.path}`, f] as [string, ClaudeMdFile])));
 
   const pick = (id: string) => { setSel(id); setEditing(false); setSaveErr(''); };
   const startEdit = () => { setDraft(doc.edit?.value ?? ''); setEditing(true); setSaveErr(''); };
@@ -1196,7 +1234,12 @@ function Context() {
     if (!doc.edit) return;
     setSaving(true); setSaveErr('');
     try {
-      if (doc.edit.kind === 'profile-prompt' && doc.edit.agentKey) {
+      if (doc.edit.kind === 'claude-md' && doc.edit.slug && doc.edit.path && doc.edit.sha) {
+        await putClaudeMd(doc.edit.slug, doc.edit.path, doc.edit.sha, draft);
+        setEditing(false);
+        reloadMd();
+        return;
+      } else if (doc.edit.kind === 'profile-prompt' && doc.edit.agentKey) {
         await patchAgentProfile(doc.edit.agentKey, { prompt: draft });
       } else {
         await patchSettings({ assistGuidance: draft });
@@ -1214,19 +1257,24 @@ function Context() {
     <div className="mcx-stack tight">
       <div className="mcx-intro">
         <span className="lede">
-          {room.docs.length} pieces of prompt text · {words.toLocaleString()} words. This is what
-          Stack itself puts in front of a model — the session block every session starts with, each
-          spawn profile's prompt, and the ✧ steer. It is NOT a copy of any repo's CLAUDE.md.
+          {all.length} pieces of prompt text · {words.toLocaleString()} words. What Stack itself puts
+          in front of a model — the session block every session starts with, each spawn profile's
+          prompt and the ✧ steer — then each project's CLAUDE.md files, read live off the host.
         </span>
       </div>
 
       <div className="mcx-ctx">
         <section className="mcx-doctree">
-          {room.docs.map((d) => {
+          {all.map((d, i) => {
             const k = DOC_KIND[d.kind] ?? DOC_KIND.assist;
+            const f = sizeOf.get(d.id);
+            const firstOfRepo = d.kind === 'repo' && (i === 0 || !all[i - 1].id.startsWith(`md:${d.path.split('/')[0]}:`));
+            const project = firstOfRepo ? repos.find((p) => d.id.startsWith(`md:${p.slug}:`)) : undefined;
             const root = d.kind === 'root';
             return (
-              <button key={d.id} type="button"
+              <Fragment key={d.id}>
+              {project ? <div className="mcx-docgroup">{project.name}</div> : null}
+              <button type="button"
                 className={`mcx-docrow kind-${d.kind}${root ? ' root' : ''}${doc.id === d.id ? ' on' : ''}`}
                 onClick={() => pick(d.id)}>
                 {!root ? <span className="tick" /> : null}
@@ -1234,14 +1282,26 @@ function Context() {
                 <span className="path">{d.path}</span>
                 {/* A null read count is a DASH. Nothing counts how often the ✧
                     steer is read, and a 0 there would be a claim nobody made. */}
-                <span className="reads">{d.reads === null ? '—' : d.reads}</span>
+                <span className="reads">{f ? kb(f.bytes) : d.reads === null ? '—' : d.reads}</span>
               </button>
+              </Fragment>
             );
           })}
+          {/* FAIL SILENT: no daemon means Stack cannot see the files, which
+              must never be drawn as "no CLAUDE.md anywhere". */}
           <div className="mcx-docfoot">
-            A repo's CLAUDE.md is the repo's. Stack holds no copy and nothing here writes one —
-            the managed library that did was culled after a stale copy silently reverted a project's
-            own file for several sessions running.
+            {mdBusy && !md ? 'Reading the repos’ CLAUDE.md files off the host…'
+              : mdErr ? `Could not ask for the repos’ CLAUDE.md files: ${mdErr}`
+              : md && !md.connected ? 'Stack cannot see the host (the terminal daemon is not connected), so the repos’ CLAUDE.md files are not shown. That is not the same as having none.'
+              : md && !md.ok ? `The host could not read the CLAUDE.md files: ${md.reason}`
+              : <>
+                  Each CLAUDE.md is read live, and Stack keeps no copy. A Save writes the file and is
+                  refused if it changed on disk since you opened it.
+                  {repos.filter((p) => p.more).map((p) => ` ${p.name} has ${p.more} more CLAUDE.md files than the ${p.files.length} listed.`).join('')}
+                  {noFiles.length ? ` No CLAUDE.md in: ${noFiles.map((p) => p.name).join(', ')}.` : ''}
+                  {noCheckout.length ? ` No checkout on this host for: ${noCheckout.map((p) => p.name).join(', ')}.` : ''}
+                </>}
+            {md && !mdBusy ? <> <button type="button" className="k-btn sm ghost" onClick={reloadMd}>Re-read</button></> : null}
           </div>
         </section>
 
@@ -1269,7 +1329,7 @@ function Context() {
                     <KitIcon name="pencil" size={13} />Edit {doc.edit.label.toLowerCase()}
                   </button>
                 )
-              ) : (
+              ) : doc.kind === 'repo' ? null : (
                 <a className="k-btn sm ghost" href={hrefTo.settings}>
                   <KitIcon name="settings" size={13} />Settings
                 </a>

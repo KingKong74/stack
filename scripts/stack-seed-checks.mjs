@@ -171,7 +171,7 @@ function suiteFor(slug, ORIGIN) {
     { name: 'Timeline — daily graph', url: u('/api/timeline'), auth: true, json_path: 'graph.0.date' },
     { name: 'Timeline — 3-day window', url: u('/api/timeline?days=3&graph=0'), auth: true, json_path: 'windowDays' },
     { name: 'Settings — session defaults', url: u('/api/settings'), auth: true, json_path: 'sessionDefaults' },
-    // BUG-2 — the settings that CHANGE BEHAVIOUR (the table in CLAUDE.md).
+    // BUG-2 — the settings that CHANGE BEHAVIOUR (the table in server/CLAUDE.md).
     // Each is read by something that fails open or closed on it, and a missing
     // field is read as its default by every consumer: `autopilotEnabled` is the
     // arm switch, `autoRecord` decides whether the SessionEnd hook records at
