@@ -1393,6 +1393,43 @@ export function setBoardFolds(slug: string, folds: BoardFolds) {
   catch { /* storage full or unavailable — a fold is a nicety, never a blocker */ }
 }
 
+// ---- the Plans Timeline's column filters (#515) ----
+//
+// What the Timeline's column headers are narrowed to on one project. Device-
+// local and keyed by slug, for the reason the board's folds are: it is how you
+// like to LOOK at this plan on this screen, not a fact about the work — a
+// filter is never a claim another device or the overnight runner should see.
+//
+// `item` is the Work item column's text (the toolbar search is the same box);
+// `pick` maps a column key to the values ticked in its header, where an absent
+// or empty list means "no filter on this column". The keys are NOT validated
+// against the screen's columns here — Plans.tsx owns that vocabulary, and a key
+// it no longer draws is simply never read. Absent or corrupt storage falls
+// back to NOTHING FILTERED, the state the Timeline shipped in: a filter is a
+// nicety and must never be why a row cannot be found.
+export interface PlanFilters {
+  item: string;
+  pick: Record<string, string[]>;
+}
+const PLAN_FILTERS_KEY = (slug: string) => `stack.planFilters.${slug}`;
+
+export function getPlanFilters(slug: string): PlanFilters {
+  return readStoredJSON(PLAN_FILTERS_KEY(slug), (p) => {
+    const o = (p && typeof p === 'object') ? p as Record<string, unknown> : {};
+    const raw = (o.pick && typeof o.pick === 'object') ? o.pick as Record<string, unknown> : {};
+    const pick: Record<string, string[]> = {};
+    for (const [k, v] of Object.entries(raw)) {
+      const vals = strings(v);
+      if (vals.length) pick[k] = vals;
+    }
+    return { item: typeof o.item === 'string' ? o.item : '', pick };
+  });
+}
+export function setPlanFilters(slug: string, f: PlanFilters) {
+  try { localStorage.setItem(PLAN_FILTERS_KEY(slug), JSON.stringify(f)); }
+  catch { /* storage full or unavailable — a filter is a nicety, never a blocker */ }
+}
+
 // ---- which rail sections are folded shut ----
 //
 // Device-local for the same reason the board layout is: it describes how you

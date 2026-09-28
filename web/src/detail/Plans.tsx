@@ -25,6 +25,19 @@
 // population. A held hook/fly row and a child idea are on Roadmap and are in
 // nobody's plan yet; drawing them here would put one row on three screens.
 //
+// THE TIMELINE'S COLUMN HEADERS FILTER (#515), and they filter what is DRAWN,
+// never what a box holds — the rule `groupBySprint` states. Each header answers
+// in its own vocabulary: Work item is TEXT (the toolbar search is the same box,
+// not a second one that could disagree with it), every other column is a VALUE
+// PICKER over what that cell actually renders — the derived status, the claim,
+// scheduled or not, the bucket, the progress band, the verdict, the risk. A
+// picker never offers a value the cell cannot show, because a filter on a value
+// nobody can see is a filter nobody can check. The state is device-local per
+// project (`getPlanFilters`) and every active one is said TWICE: the header's
+// funnel lights, and a chip in the toolbar names it with its own ✕ beside a
+// Clear all — a filter restored from storage that you cannot see is the
+// "these rows are missing" bug with extra steps.
+//
 // EVERY STATUS IS DERIVED, AND NOTHING ON THIS SCREEN WRITES. The kit's status
 // cell is a dropdown that sets a row's state; Stack has no such column —
 // `listKeyOf` is the client's one derivation (done / built-and-unverdicted /
@@ -62,10 +75,12 @@
 //    window is the common case, and a calendar that silently omits it is a
 //    calendar that hides the sprint in progress.
 
-import { useMemo, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { KitIcon, type KitIconName } from './kit/KitIcon';
+import { Popover } from './Board';
 import type { RoadmapItem, Sprint } from '../types';
 import { dateAt, fmtDate, isBuilt, isBoardWork, listKeyOf } from '../lib/plan';
+import { getPlanFilters, setPlanFilters, type PlanFilters } from '../store';
 
 type SubTab = 'summary' | 'progress' | 'timeline' | 'calendar' | 'releases' | 'dependencies';
 type StatusKey = 'todo' | 'progress' | 'review' | 'done';
@@ -103,6 +118,82 @@ const PRI_LEVEL: Record<PriKey, 'hi' | 'med' | 'lo'> = {
 };
 
 /* ------------------------------------------------- what a plan row reads off */
+
+/**
+ * THE PICKER COLUMNS (#515). `of` reads the one value a row shows in that cell;
+ * `opts` is the column's full vocabulary where it has a fixed one, and for the
+ * two that do not (a claim, a verdict) the values are read off the rows —
+ * plus whatever is already picked, so a stale pick can always be unticked.
+ */
+type PickCol = 'status' | 'branch' | 'start' | 'due' | 'pri' | 'prog' | 'verdict' | 'risk';
+type FilterCol = 'item' | PickCol;
+type Opt = { key: string; label: string };
+type ColCtx = { weekZero: string | null; now: number };
+
+const PICK_COLS: Record<PickCol, {
+  label: string;
+  of: (it: RoadmapItem, c: ColCtx) => string;
+  opts?: Opt[];
+  label4?: (key: string) => string;
+}> = {
+  status: {
+    label: 'Status', of: (it) => statusOf(it),
+    opts: (Object.keys(STATUS_META) as StatusKey[]).map((k) => ({ key: k, label: STATUS_META[k].label })),
+  },
+  branch: {
+    label: 'Branch', of: (it) => it.claimedBy.trim(),
+    label4: (k) => (k ? k : 'Unclaimed'),
+  },
+  start: {
+    label: 'Start', of: (it, c) => (it.sched && c.weekZero ? 'scheduled' : 'unscheduled'),
+    opts: [{ key: 'scheduled', label: 'Scheduled' }, { key: 'unscheduled', label: 'Unscheduled' }],
+  },
+  // OVERDUE IS WORK STILL OWED: a bar that ended before now on a row nobody has
+  // built. A built row past its bar is finished late, not overdue.
+  due: {
+    label: 'Due',
+    of: (it, c) => {
+      if (!it.sched || !c.weekZero) return 'unscheduled';
+      const end = dateAt(it.sched.start + it.sched.len, c.weekZero);
+      return end && end.getTime() < c.now && !isBuilt(it) && !it.done ? 'overdue' : 'ontime';
+    },
+    opts: [{ key: 'overdue', label: 'Overdue' }, { key: 'ontime', label: 'Not overdue' }, { key: 'unscheduled', label: 'Unscheduled' }],
+  },
+  pri: {
+    label: 'Priority', of: (it) => it.bucket,
+    opts: (Object.keys(PRIORITY) as PriKey[]).map((k) => ({ key: k, label: PRIORITY[k] })),
+  },
+  prog: {
+    label: 'Progress',
+    of: (it) => { const p = progressOf(it); return p === 100 ? 'full' : p === 0 ? 'none' : 'part'; },
+    opts: [{ key: 'none', label: '0%' }, { key: 'part', label: 'Partway' }, { key: 'full', label: '100%' }],
+  },
+  verdict: {
+    label: 'Verdict', of: (it) => verdictOf(it)?.label ?? '',
+    label4: (k) => (k ? k : 'No verdict'),
+  },
+  risk: {
+    label: 'Risk',
+    of: (it) => it.risk,
+    opts: [{ key: 'low', label: 'Low' }, { key: 'normal', label: 'Normal' }, { key: 'high', label: 'High' }],
+  },
+};
+
+/** The options a picker offers, each with how many rows of the WHOLE plan carry it. */
+function optionsFor(col: PickCol, rows: RoadmapItem[], picked: string[], c: ColCtx): (Opt & { n: number })[] {
+  const def = PICK_COLS[col];
+  const counts = new Map<string, number>();
+  for (const it of rows) { const v = def.of(it, c); counts.set(v, (counts.get(v) ?? 0) + 1); }
+  const base: Opt[] = def.opts ?? [...new Set([...counts.keys(), ...picked])]
+    .sort((a, b) => (a === '' ? -1 : b === '' ? 1 : a.localeCompare(b)))
+    .map((k) => ({ key: k, label: def.label4 ? def.label4(k) : k }));
+  return base.map((o) => ({ ...o, n: counts.get(o.key) ?? 0 }));
+}
+
+const labelOf = (col: PickCol, key: string): string => {
+  const def = PICK_COLS[col];
+  return def.opts?.find((o) => o.key === key)?.label ?? (def.label4 ? def.label4(key) : key);
+};
 
 /**
  * A ROW'S STATUS, DERIVED — the client has exactly one derivation and this is a
@@ -489,7 +580,9 @@ const LINKS: { rel: string; from: DepNode; to: DepNode }[] = [
  */
 const MOCK_SUBS = new Set<SubTab>(['summary', 'progress', 'releases', 'dependencies']);
 
-export function Plans({ items, sprints, weekZero, onBoard }: {
+export function Plans({ slug, items, sprints, weekZero, onBoard }: {
+  /** Keys the Timeline's device-local column filters (#515). */
+  slug: string;
   /** EVERY roadmap row, in the payload's own order — the same flattened list the
    *  board and Roadmap take. This screen keeps the committed third (#496 —
    *  `isBoardWork`, never `!isIdea`, which would draw the Auto-ideas pile). */
@@ -536,7 +629,7 @@ export function Plans({ items, sprints, weekZero, onBoard }: {
 
       {sub === 'summary' && <SummaryView />}
       {sub === 'progress' && <ProgressView onBoard={onBoard} />}
-      {sub === 'timeline' && <TimelineView rows={plan} sprints={sprints} weekZero={weekZero} />}
+      {sub === 'timeline' && <TimelineView key={slug} slug={slug} rows={plan} sprints={sprints} weekZero={weekZero} />}
       {sub === 'calendar' && <CalendarView rows={plan} sprints={sprints} weekZero={weekZero} />}
       {sub === 'releases' && <ReleasesView />}
       {sub === 'dependencies' && <DependenciesView />}
@@ -559,37 +652,98 @@ function Meter({ value }: { value: number }) {
 
 /* ---------------------------------------------------------------- Timeline */
 
-function TimelineView({ rows, sprints, weekZero }: {
-  rows: RoadmapItem[]; sprints: Sprint[]; weekZero: string | null;
+function TimelineView({ slug, rows, sprints, weekZero }: {
+  slug: string; rows: RoadmapItem[]; sprints: Sprint[]; weekZero: string | null;
 }) {
-  const [find, setFind] = useState('');
+  const [filters, setFilters] = useState<PlanFilters>(() => getPlanFilters(slug));
   const [hideBuilt, setHideBuilt] = useState(false);
   const [shut, setShut] = useState<string[]>([]);
   const [cursor, setCursor] = useState<number | null>(null);
+  const [menu, setMenu] = useState<FilterCol | null>(null);
+  const heads = useRef<Partial<Record<FilterCol, HTMLSpanElement | null>>>({});
 
-  // The two toolbar controls are FILTERS OVER THE ROWS, never over the boxes: a
-  // sprint whose every row is filtered out still draws, with its own count
-  // saying what it really holds. Hiding the box would make a search read as
-  // "this sprint is empty", which is the one thing this screen must not say.
+  const update = (next: PlanFilters) => { setFilters(next); setPlanFilters(slug, next); };
+  const setPick = (col: PickCol, vals: string[]) => {
+    const pick = { ...filters.pick };
+    if (vals.length) pick[col] = vals; else delete pick[col];
+    update({ ...filters, pick });
+  };
+  const setItem = (item: string) => update({ ...filters, item });
+
+  // Escape shuts an open header menu, and so does a press ANYWHERE outside it —
+  // the document, not this view's root, because the topbar and the rail are
+  // outside the root and a menu that only a click on the table can close reads
+  // as stuck. A press on a funnel is left to the funnel's own toggle.
+  useEffect(() => {
+    if (!menu) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMenu(null); };
+    const onDown = (e: PointerEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t && t.closest('.pl-filtermenu, .pl-colfilter')) return;
+      setMenu(null);
+    };
+    document.addEventListener('keydown', onKey);
+    document.addEventListener('pointerdown', onDown);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('pointerdown', onDown);
+    };
+  }, [menu]);
+
+  // Read once per render rather than per row, so every row is judged against
+  // the same "now" — an overdue filter must not flicker across a boundary.
+  const ctx = useMemo<ColCtx>(() => ({ weekZero, now: Date.now() }), [weekZero, rows]);
+
+  const active = (Object.keys(PICK_COLS) as PickCol[])
+    .filter((c) => (filters.pick[c] ?? []).length > 0);
+  const needle = filters.item.trim().toLowerCase();
+  const nActive = active.length + (needle ? 1 : 0);
+
+  // The filters narrow THE ROWS, never the boxes: a sprint whose every row is
+  // filtered out still draws, with its own count saying what it really holds.
+  // Hiding the box would make a search read as "this sprint is empty", which
+  // is the one thing this screen must not say.
   const groups = useMemo(() => {
-    const needle = find.trim().toLowerCase();
     return groupBySprint(rows, sprints, (it) => {
       if (hideBuilt && isBuilt(it)) return false;
+      for (const c of active) {
+        if (!filters.pick[c].includes(PICK_COLS[c].of(it, ctx))) return false;
+      }
       if (!needle) return true;
-      return it.title.toLowerCase().includes(needle) || String(it.id).includes(needle);
+      return it.title.toLowerCase().includes(needle) || `#${it.id}`.includes(needle) || String(it.id) === needle;
     });
-  }, [rows, sprints, find, hideBuilt]);
+    // `active` is derived from `filters`, so `filters` covers it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, sprints, filters, hideBuilt, ctx]);
 
   const shown = groups.reduce((n, g) => n + g.shown.length, 0);
   const filtered = shown !== rows.length;
 
+  /** One header cell: its label, and the funnel that opens its filter. */
+  const head = (col: FilterCol, cls: string, label: ReactNode, title?: string) => {
+    const on = col === 'item' ? !!needle : (filters.pick[col] ?? []).length > 0;
+    const name = col === 'item' ? 'Work item' : PICK_COLS[col].label;
+    return (
+      <span className={`${cls}${on ? ' filtered' : ''}`} title={title}
+        ref={(el) => { heads.current[col] = el; }}>
+        <span className="lbl">{label}</span>
+        <button className={`pl-colfilter${on ? ' on' : ''}${menu === col ? ' open' : ''}`}
+          aria-label={`Filter by ${name}${on ? ' (active)' : ''}`} aria-expanded={menu === col}
+          title={on ? `Filtered by ${name}` : `Filter by ${name}`}
+          onClick={() => setMenu(menu === col ? null : col)}>
+          <KitIcon name="list-filter" size={12} />
+        </button>
+      </span>
+    );
+  };
+
   return (
-    <>
+    <div className="pl-timeline">
       <div className="pl-toolbar">
         <span className="pl-search">
           <KitIcon name="search" size={14} />
           <input placeholder="Search the plan" aria-label="Search the plan"
-            value={find} onChange={(e) => setFind(e.target.value)} />
+            value={filters.item} onChange={(e) => setItem(e.target.value)} />
         </span>
         {/* A LABEL, NOT A MENU. The kit offers "Group: Area" and three more
             filter buttons; the grouping here is the sprint and there is nothing
@@ -606,20 +760,45 @@ function TimelineView({ rows, sprints, weekZero }: {
         </span>
       </div>
 
+      {/* EVERY ACTIVE FILTER, NAMED, with its own ✕ — including one restored
+          from this device's storage, which is exactly the one nobody remembers
+          setting. */}
+      {nActive > 0 && (
+        <div className="pl-filterbar" aria-label="Active column filters">
+          <KitIcon name="list-filter" size={13} />
+          {needle && (
+            <button className="im-chip on" onClick={() => setItem('')}
+              aria-label={`Clear the Work item filter "${filters.item.trim()}"`}>
+              Work item: “{filters.item.trim()}”<span className="x" aria-hidden="true">✕</span>
+            </button>
+          )}
+          {active.map((c) => (
+            <button key={c} className="im-chip on" onClick={() => setPick(c, [])}
+              aria-label={`Clear the ${PICK_COLS[c].label} filter`}>
+              {PICK_COLS[c].label}: {filters.pick[c].map((k) => labelOf(c, k)).join(', ')}
+              <span className="x" aria-hidden="true">✕</span>
+            </button>
+          ))}
+          <button className="pl-linkbtn" onClick={() => update({ item: '', pick: {} })}>
+            Clear all
+          </button>
+        </div>
+      )}
+
       <div className="pl-scroll">
         <div className="pl-grid">
           <div className="pl-row head">
             <span className="c-check" />
             <span className="c-n" title="Inside a sprint this is the order the night works in">#</span>
-            <span className="c-item">Work item</span>
-            <span className="c-status">Status</span>
-            <span className="c-branch">Branch</span>
-            <span className="c-date">Start<span className="pl-coltag">D</span></span>
-            <span className="c-date">Due<span className="pl-coltag">D</span></span>
-            <span className="c-pri">Priority</span>
-            <span className="c-prog">Progress</span>
-            <span className="c-checks">Verdict</span>
-            <span className="c-flag" title="Risk (#212) — a low-risk row whose run lands green merges itself">⚑</span>
+            {head('item', 'c-item', 'Work item')}
+            {head('status', 'c-status', 'Status')}
+            {head('branch', 'c-branch', 'Branch')}
+            {head('start', 'c-date', <>Start<span className="pl-coltag">D</span></>)}
+            {head('due', 'c-date', <>Due<span className="pl-coltag">D</span></>)}
+            {head('pri', 'c-pri', 'Priority')}
+            {head('prog', 'c-prog', 'Progress')}
+            {head('verdict', 'c-checks', 'Verdict')}
+            {head('risk', 'c-flag', '⚑', 'Risk (#212) — a low-risk row whose run lands green merges itself')}
           </div>
 
           {groups.map((g) => {
@@ -689,7 +868,53 @@ function TimelineView({ rows, sprints, weekZero }: {
           })}
         </div>
       </div>
-    </>
+
+      {menu && (
+        // Keyed on whether the filter bar is drawn: the bar appearing under the
+        // first pick moves the header 40px down, and `Popover` re-measures on
+        // scroll and resize only, so it is re-mounted to follow its header.
+        <Popover key={nActive > 0 ? 'bar' : 'nobar'}
+          anchor={heads.current[menu] ?? null} className="km-menu pl-filtermenu" inset={4}>
+          {menu === 'item'
+            ? (
+              <>
+                <span className="km-menunote">Work item — title or #id contains</span>
+                {/* Same state as the toolbar search: one text filter, two doors. */}
+                <input className="pl-filterinput" autoFocus placeholder="Type to filter"
+                  aria-label="Filter work items by title or #id"
+                  value={filters.item} onChange={(e) => setItem(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') setMenu(null); }} />
+              </>
+            )
+            : (
+              <>
+                <span className="km-menunote">{PICK_COLS[menu].label} — show rows that are</span>
+                {optionsFor(menu, rows, filters.pick[menu] ?? [], ctx).map((o) => {
+                  const picked = filters.pick[menu] ?? [];
+                  const on = picked.includes(o.key);
+                  return (
+                    <button key={o.key || '(none)'} className={`km-menuitem pl-filteropt${on ? ' on' : ''}`}
+                      role="menuitemcheckbox" aria-checked={on}
+                      onClick={() => setPick(menu, on ? picked.filter((k) => k !== o.key) : [...picked, o.key])}>
+                      <span className="box" aria-hidden="true">{on && <KitIcon name="check" size={11} />}</span>
+                      <span className="l">{o.label}</span>
+                      <span className="n">{o.n}</span>
+                    </button>
+                  );
+                })}
+              </>
+            )}
+          {(menu === 'item' ? !!needle : (filters.pick[menu] ?? []).length > 0) && (
+            <>
+              <span className="km-menusep" />
+              <button className="km-menuitem" onClick={() => {
+                if (menu === 'item') setItem(''); else setPick(menu, []);
+              }}>Clear this filter</button>
+            </>
+          )}
+        </Popover>
+      )}
+    </div>
   );
 }
 

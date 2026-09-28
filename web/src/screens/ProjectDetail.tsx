@@ -740,7 +740,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
             schedule (#401) a reader again after #451 took its last one. */}
         {tab === 'plans' && (
           <Plans items={allRoadmap} sprints={data.sprints} weekZero={project.weekZero}
-            onBoard={() => setTab('roadmap')} />
+            slug={slug} onBoard={() => setTab('roadmap')} />
         )}
 
         {/* Deleting a project lives in Settings → Projects now. A destructive,

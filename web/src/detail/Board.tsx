@@ -1089,10 +1089,13 @@ function AreaChip({ label, dot, count, active, onClick }: {
  *    that handler still fires for a press outside the menu and this one still
  *    has to swallow the press inside it.
  *
+ * EXPORTED FOR THE PLANS TIMELINE'S COLUMN FILTERS (#515), whose grid clips the
+ * same way (`.pl-grid` is `overflow: hidden` inside a sideways `.pl-scroll`).
+ *
  * `inset` is the gap the stylesheet used to spell as `right: var(--space-5)` —
  * the menu's right edge sits that far inside the anchor's.
  */
-function Popover({ anchor, className, inset = 0, children }: {
+export function Popover({ anchor, className, inset = 0, children }: {
   anchor: HTMLElement | null;
   className: string;
   inset?: number;

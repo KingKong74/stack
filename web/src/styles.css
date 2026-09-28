@@ -5927,8 +5927,8 @@ body[data-mc-full] .totop { display: none; }
 /* The table windows its own width, so the PAGE never scrolls sideways. */
 .pl-scroll { overflow-x: auto; }
 .pl-grid {
-  --pl-cols: 34px 34px minmax(240px, 1fr) 130px 180px 92px 92px 110px 140px 110px 36px;
-  min-width: 1200px;
+  --pl-cols: 34px 34px minmax(240px, 1fr) 130px 180px 106px 106px 110px 140px 110px 52px;
+  min-width: 1244px;
   border: 1px solid var(--border-subtle); border-radius: var(--radius-lg);
   overflow: hidden; background: var(--surface-canvas);
 }
@@ -5945,6 +5945,58 @@ body[data-mc-full] .totop { display: none; }
   background: var(--surface-sunken); border-bottom: 1px solid var(--border-subtle);
   font: var(--type-label); color: var(--text-tertiary);
 }
+/* ---- the column filters (#515) ----
+   Each header cell is its label plus a funnel pushed to the right edge. The
+   funnel is tertiary at rest, on `--surface-sunken`, which cannot lighten — the
+   ground the section header allows tertiary on. AN ACTIVE FILTER IS SAID BY
+   SHAPE AS WELL AS TONE: the button takes the selected chip's fill AND ring and
+   the header's label goes to the link tone, because a tint alone is the state a
+   colour-blind reader cannot find, and a restored filter nobody can see is the
+   "rows are missing" bug. The menu is `.km-menu` portalled (`Popover`) — the
+   grid is a clip on both axes — with a checkbox square per value. */
+.pl-row.head > span .lbl { min-width: 0; display: inline-flex; align-items: center; gap: var(--space-3); overflow: hidden; white-space: nowrap; }
+.pl-row.head > span.filtered .lbl { color: var(--text-link); }
+.pl-colfilter {
+  margin-left: auto; flex: none; width: 20px; height: 20px; padding: 0; border: 0; cursor: pointer;
+  border-radius: var(--radius-sm); background: transparent; color: var(--text-tertiary);
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: var(--transition-control);
+}
+.pl-colfilter:hover, .pl-colfilter.open { background: var(--surface-hover); color: var(--text-primary); }
+.pl-colfilter.on {
+  background: var(--surface-selected); color: var(--blue-300);
+  box-shadow: inset 0 0 0 1px var(--border-focus);
+}
+/* The two narrow columns cannot carry a label, a tag and a funnel at the
+   kit's 12px padding; they tighten rather than overflow. */
+.pl-row.head > span.c-date, .pl-row.head > span.c-flag { padding: 0 var(--space-3) 0 var(--space-5); gap: var(--space-2); }
+.pl-row.head > span.c-flag { padding-left: var(--space-3); justify-content: flex-start; }
+
+.pl-timeline { display: flex; flex-direction: column; gap: var(--space-6); min-width: 0; }
+.pl-filterbar { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; color: var(--text-tertiary); }
+.pl-filterbar .im-chip { height: 26px; max-width: 100%; }
+.pl-filterbar .im-chip .x { font-size: var(--text-2xs); color: var(--blue-400); }
+.pl-filterbar .pl-linkbtn { margin-left: var(--space-3); }
+
+.pl-filtermenu { min-width: 200px; max-height: min(360px, 70vh); overflow-y: auto; }
+.pl-filteropt { display: flex; align-items: center; gap: var(--space-4); }
+.pl-filteropt .box {
+  width: 14px; height: 14px; flex: none; border-radius: var(--radius-xs);
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.pl-filteropt.on { color: var(--text-primary); }
+.pl-filteropt.on .box { background: var(--action-primary); box-shadow: none; color: var(--white); }
+.pl-filteropt .l { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pl-filteropt .n { margin-left: auto; font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-secondary); }
+.pl-filterinput {
+  height: var(--control-h-sm); margin: 2px var(--space-2) var(--space-2); padding: 0 var(--space-4);
+  background: var(--surface-card); border: 1px solid var(--border-default); border-radius: var(--radius-sm);
+  font: var(--type-body-sm); color: var(--text-primary); outline: none;
+}
+.pl-filterinput:focus { border-color: var(--border-focus); }
+.pl-filterinput::placeholder { color: var(--text-tertiary); }
+
 .pl-coltag {
   width: 14px; height: 14px; border-radius: var(--radius-xs); flex: none;
   background: var(--surface-overlay); color: var(--text-secondary);
