@@ -7790,3 +7790,59 @@ button.sp-pill { cursor: pointer; }
   .sp-wf .desc, .sp-wf .trig, .sp-wf .toggle { display: none; }
   .sp-wish-grid { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* ---- The Inbox (screens/Inbox.tsx) and its top-bar chip ------------------
+   An agent's read (reviewer, architect) is drawn in the ACCENT, never a
+   verdict tone; an absent read is NO REVIEW in the neutral warning ground,
+   because it is a gap, not a pass. */
+.inbox-chip {
+  flex: none; display: inline-flex; align-items: center; gap: var(--space-3);
+  height: 28px; padding: 0 var(--space-4); border-radius: var(--radius-pill);
+  background: var(--status-info-bg); color: var(--status-info-fg);
+  font: var(--weight-semibold) var(--text-2xs)/1 var(--font-sans);
+  transition: var(--transition-control);
+}
+.inbox-chip:hover { box-shadow: inset 0 0 0 1px var(--status-info-fg); }
+.inbox-n { font-family: var(--font-mono); }
+.inbox-warn { color: var(--status-warning-fg); }
+
+.ib-note { margin-bottom: 16px; color: var(--text-secondary); font-size: var(--text-sm); }
+.ib-h { display: flex; align-items: baseline; gap: 8px; margin: 28px 0 12px; font-size: var(--text-lg); font-weight: 600; color: var(--ink); }
+.ib-h span { font: var(--weight-medium) var(--text-xs)/1 var(--font-mono); color: var(--muted); }
+.ib-empty { color: var(--muted); font-size: var(--text-sm); }
+.ib-card { margin-bottom: 12px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.ib-cardhead { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+.ib-proj { color: var(--text-link); font-size: var(--text-xs); }
+.ib-proj:hover { color: var(--text-link-hover); }
+.ib-title { color: var(--ink); font-weight: 600; font-size: var(--text-md); overflow-wrap: anywhere; }
+.ib-built { margin: 0; color: var(--text-secondary); font-size: var(--text-sm); white-space: pre-wrap; overflow-wrap: anywhere; }
+.ib-spec { border-left: 2px solid var(--border-default); padding-left: 10px; font-size: var(--text-sm); color: var(--text-secondary); }
+.ib-goal { color: var(--ink); }
+.ib-accept { margin: 4px 0 0; padding-left: 18px; }
+.ib-files { margin-top: 4px; font: var(--text-xs)/1.4 var(--font-mono); color: var(--muted); overflow-wrap: anywhere; }
+.ib-run { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: var(--text-xs); color: var(--muted); }
+.ib-bad { color: var(--status-danger-fg); }
+.ib-read { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; font-size: var(--text-xs); }
+.ib-readlbl { color: var(--muted); min-width: 64px; }
+.ib-readcall { color: var(--text-accent); font-weight: 600; }
+.ib-readnote { color: var(--text-secondary); overflow-wrap: anywhere; }
+.ib-noreview { background: var(--status-warning-bg); color: var(--status-warning-fg); border-radius: var(--radius-pill); padding: 2px 8px; font-weight: 600; letter-spacing: var(--tracking-wide); }
+.ib-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.ib-actions button { height: 32px; padding: 0 14px; border-radius: 10px; font-size: var(--text-sm); }
+.ib-actions button:disabled { opacity: 0.5; cursor: default; }
+.ib-bulk { margin-bottom: 12px; }
+.ib-sendback { display: flex; flex-direction: column; gap: 8px; }
+.ib-sendback textarea { min-height: 80px; resize: vertical; background: var(--surface-sunken); color: var(--ink); border: 1px solid var(--border-default); border-radius: 10px; padding: 8px 10px; font: inherit; font-size: var(--text-sm); }
+.ib-piece { display: flex; flex-direction: column; gap: 6px; padding-top: 10px; border-top: 1px solid var(--line); }
+.ib-pick { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.ib-loop { display: flex; flex-direction: column; gap: 12px; }
+.ib-looptop { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.ib-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--status-warning-fg); flex: none; }
+.ib-dot.on { background: var(--status-success-fg); }
+.ib-loopsay { color: var(--ink); font-size: var(--text-sm); flex: 1 1 240px; min-width: 0; overflow-wrap: anywhere; }
+.ib-loopn { font: var(--text-xs)/1 var(--font-mono); color: var(--muted); }
+.ib-controls, .ib-projects { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; }
+.ib-switch { display: inline-flex; align-items: center; gap: 6px; font-size: var(--text-sm); color: var(--text-secondary); cursor: pointer; }
+.ib-seg { display: inline-flex; border: 1px solid var(--border-default); border-radius: 10px; overflow: hidden; }
+.ib-seg button { height: 30px; padding: 0 12px; font-size: var(--text-xs); color: var(--text-secondary); background: transparent; }
+.ib-seg button.on { background: var(--surface-selected); color: var(--ink); }

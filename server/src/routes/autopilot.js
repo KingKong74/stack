@@ -714,7 +714,7 @@ export const CLAIM_NEXT_SQL = `
 // quiet is reported as exactly that (fail silent: "Stack cannot see", never
 // "nothing to do").
 const HEARTBEAT_FRESH_MS = 5 * 60_000;
-autopilotGlobal.get('/loop', async (_req, res) => {
+export async function loopStatus() {
   const settings = await readSettings();
   const { rows: hb } = await q('SELECT last_poll_at, host_local FROM dispatcher_heartbeat WHERE id');
   const seen = Boolean(hb[0]?.last_poll_at) && Date.now() - new Date(hb[0].last_poll_at).getTime() < HEARTBEAT_FRESH_MS;
@@ -728,7 +728,7 @@ autopilotGlobal.get('/loop', async (_req, res) => {
   const hold = !seen
     ? 'Stack cannot see the dispatcher: it has not polled in the last 5 minutes'
     : await loopHold(settings, nowMin);
-  res.json({
+  return {
     seen,
     mode: settings.autopilot_mode,
     armed: settings.autopilot_enabled,
@@ -736,8 +736,9 @@ autopilotGlobal.get('/loop', async (_req, res) => {
     ready: counts[0].ready,
     running: counts[0].running,
     queued: counts[0].queued,
-  });
-});
+  };
+}
+autopilotGlobal.get('/loop', async (_req, res) => { res.json(await loopStatus()); });
 
 autopilotGlobal.get('/next', async (req, res) => {
   const m = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/.exec(String(req.query.local || ''));

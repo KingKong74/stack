@@ -83,3 +83,51 @@ ready.put('/', async (req, res) => {
     client.release();
   }
 });
+
+// POST /add  -> {items: [...]}: APPEND to the bottom of the queue, in the order
+// given, leaving everything already queued where it is. For a bulk "approve
+// and queue" from a screen that does not hold the whole queue. Already-queued
+// ids keep their place. The same held refusal as PUT.
+ready.post('/add', async (req, res) => {
+  const wanted = Array.isArray(req.body?.items) ? req.body.items : null;
+  if (!wanted || !wanted.length) return res.status(400).json({ error: 'items must be a non-empty array of item ids.' });
+  const ids = [...new Set(wanted.map((n) => Math.trunc(Number(n))).filter((n) => Number.isFinite(n) && n > 0))];
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows: real } = await client.query(
+      `SELECT id, title, source, reviewed_at, ready_at FROM roadmap_items
+        WHERE project_id = $1 AND id = ANY($2::int[]) FOR UPDATE`,
+      [req.project.id, ids]
+    );
+    const held = real.filter((r) => !isApproved(r));
+    if (held.length) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        error: `Not approved yet, so it can't be queued to build: ${held.map((r) => `#${r.id} "${r.title}" (${approvalHold(r)})`).join('; ')}.`,
+        held: held.map((r) => r.id),
+      });
+    }
+    const fresh = new Set(real.filter((r) => r.ready_at == null).map((r) => r.id));
+    const added = ids.filter((n) => fresh.has(n));
+    if (added.length) {
+      const { rows: top } = await client.query(
+        'SELECT COALESCE(MAX(ready_rank), -1) + 1 AS next FROM roadmap_items WHERE project_id = $1 AND ready_at IS NOT NULL',
+        [req.project.id]);
+      await client.query(
+        `UPDATE roadmap_items r
+            SET ready_at = now(), ready_rank = $3 + o.ord - 1, updated_at = now()
+           FROM unnest($2::int[]) WITH ORDINALITY AS o(item_id, ord)
+          WHERE r.project_id = $1 AND r.id = o.item_id`,
+        [req.project.id, added, top[0].next]);
+    }
+    await client.query('COMMIT');
+    res.json({ added });
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw e;
+  } finally {
+    client.release();
+  }
+});

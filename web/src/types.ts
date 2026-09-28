@@ -289,6 +289,38 @@ export interface ModelUsageEntry {
 
 // One autopilot item attempt (the run ledger) — the Reviews view joins these
 // onto completed items so a verdict is made against what the session reported.
+// The loop's own account of itself (server routes/autopilot.js loopStatus).
+// `hold` is '' when it may start work, else the sentence saying why not.
+// `seen: false` means Stack cannot see the dispatcher, which is not "idle".
+export interface LoopStatus {
+  seen: boolean;
+  mode: 'nightly' | 'continuous';
+  armed: boolean;
+  hold: string;
+  ready: number;
+  running: number;
+  queued: number;
+}
+
+// A run as the inbox reads it: the ledger row plus both second-model reads.
+// An empty verdict string is NO REVIEW, never clean.
+export interface InboxRun extends AutopilotRun {
+  autoVerdict: string;
+  reviewVerdict: string;
+  reviewNote: string;
+  reviewFindings: number | null;
+  architectVerdict: string;
+  architectNote: string;
+}
+export interface InboxItem extends RoadmapItem { projectSlug: string; projectName: string }
+export interface InboxData {
+  built: (InboxItem & { run: InboxRun | null })[];
+  plans: (InboxItem & { parentTitle: string })[];
+  ideas: InboxItem[];
+  projects: { slug: string; name: string; automode: boolean; ready: number }[];
+  loop: LoopStatus;
+}
+
 export interface AutopilotRun {
   id: string;
   itemId: string | null;
@@ -535,6 +567,10 @@ export interface Settings {
   autopilotTime: string;      // nightly start, host-local HH:MM
   autopilotMaxItems: number;  // most items attempted per night
   autopilotPlanSweep: boolean; // #255 — stand up a plan session for unplanned highest/high work
+  autopilotMode: 'nightly' | 'continuous'; // continuous builds the Ready queue whenever it may spend
+  autopilotQuiet: string;     // 'HH:MM-HH:MM' host-local quiet hours, '' = none
+  autopilotRollingTokens: number; // continuous: token cap over the rolling window; 0 = none
+  autopilotRollingHours: number;
   staleItemDays: number;      // a parked roadmap item reads as stale past this many days (#247)
   termIdleHours: number;      // #287 — terminate a silent terminal session after this long; 0 = never
   autopilotExecutorModel: string; // model alias sessions run as; '' = CLI default (#153)

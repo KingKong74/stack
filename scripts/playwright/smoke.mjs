@@ -717,6 +717,7 @@ export const SCREENS = [
   { id: 'terminal', label: 'Terminal', path: '#/terminal' },
   { id: 'skills', label: 'Skills', path: '#/skills' },
   { id: 'timeline', label: 'Timeline', path: '#/timeline' },
+  { id: 'inbox', label: 'Inbox', path: '#/inbox' },
   { id: 'settings', label: 'Settings', path: '#/settings' },
   { id: 'project-overview', label: 'Project — Overview', path: '#/p/<slug>' },
   {

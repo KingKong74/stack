@@ -4,7 +4,7 @@ import type {
   AuthDevice, Sprint, SprintPlan, ResumeSince, ProjectDebrief,
   SchedSpan, ProjectPulse, BoardShape, BoardList, BoardArea, ItemKind,
   AgentProfile, AgentProfilesRoom, ModelsRoom, ContextRoom, ClaudeMdRead,
-  ProjectKind, Spaces, SpaceArea, Workflow, WishIdea, IdeaStage, SessionPlan,
+  ProjectKind, Spaces, SpaceArea, Workflow, WishIdea, IdeaStage, SessionPlan, InboxData,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -378,6 +378,23 @@ export async function hangupAutopilotJob(id: string): Promise<AutopilotJob> {
 // That is the whole point of pressing it here rather than letting an unattended
 // enqueue drop it silently — `request()` throws on a 409 with the server's own
 // sentence, which names the hold, so nothing here has to compose one.
+// THE INBOX (server routes/inbox.js): everything waiting on the human, across
+// projects, in one read.
+export async function getInbox(): Promise<InboxData> {
+  return request<InboxData>('/inbox');
+}
+export async function getInboxCount(): Promise<{ waiting: number; built: number; held: number; hold: string; seen: boolean }> {
+  return request('/inbox/count');
+}
+// A merge job for a built branch; the dispatcher merges it into main, and a
+// conflict aborts it rather than forcing anything.
+export async function queueMerge(slug: string, branch: string, itemId: number): Promise<AutopilotJob> {
+  return request<AutopilotJob>('/autopilot/merge', { method: 'POST', body: { slug, branch, itemId } });
+}
+// A refine round (#274): builds the refine note on top of the item's branch.
+export async function startRefine(slug: string, itemId: number): Promise<AutopilotJob> {
+  return request<AutopilotJob>('/autopilot/start', { method: 'POST', body: { slug, itemId, kind: 'refine' } });
+}
 export async function startBuild(slug: string, itemId: number): Promise<AutopilotJob> {
   return request<AutopilotJob>('/autopilot/start', { method: 'POST', body: { slug, itemId } });
 }
@@ -1330,6 +1347,10 @@ export async function putSprintOrder(
 // with a sentence naming it, and nothing is written.
 export async function putReadyQueue(slug: string, items: number[]): Promise<{ items: number[] }> {
   return request<{ items: number[] }>(`/projects/${encodeURIComponent(slug)}/ready`, { method: 'PUT', body: { items } });
+}
+// Append to the bottom of the Ready queue, leaving the rest where it is.
+export async function addToReady(slug: string, items: number[]): Promise<{ added: number[] }> {
+  return request<{ added: number[] }>(`/projects/${encodeURIComponent(slug)}/ready/add`, { method: 'POST', body: { items } });
 }
 // The box goes; the work stays. Its items return to the backlog rather than
 // being deleted with it — deleting a decision about work must never delete the

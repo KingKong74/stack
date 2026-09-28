@@ -56,8 +56,8 @@ rail row or on the sub-tab itself where a tab is only partly wired; a chip over 
 about the wrong thing. **A number must agree with the screen behind it**: a wired badge shows a real
 count, a mockup's badge shows the mockup's count.
 
-Not reachable from a browser (use `./stack` and the API): a verdict, labels, the ⎇ claim, `automode`,
-and writing the stored schedule.
+Not reachable from a browser (use `./stack` and the API): labels, the ⎇ claim, and writing the stored
+schedule. A verdict, a merge, a send-back, automode and the loop's mode live on `#/inbox`.
 
 ## Derived state
 

@@ -120,12 +120,11 @@
 // hold out loud (the `held` chip) and being able to answer it (the menu),
 // because Roadmap's Promote can no longer see those rows.
 //
-// STILL UNREACHABLE FROM ANY BROWSER, so nobody re-discovers it here: GIVING A
-// VERDICT. `review_tag` and the #263 trio arrive from the auto path alone, and
-// #263's third leg — a machine verdict must be READABLE by the human it stands
-// in for — is unmet. This screen draws a verdicted card in Done and says the
-// verdict came from a machine, which is not the same as letting anyone disagree
-// with it. Whatever surfaces a change next still owes both.
+// GIVING A VERDICT happens on the Inbox (screens/Inbox.tsx), not here: that is
+// where a built row is shown with its evidence (spec, run, both second-model
+// reads) and answered with Approve, Approve & merge, Send back or Reject. This
+// screen draws a verdicted card in Done and says when the verdict came from a
+// machine.
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';

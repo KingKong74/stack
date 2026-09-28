@@ -1414,7 +1414,7 @@ Rules for this run:
         const job = await api('POST', '/api/autopilot/merge',
           { slug: SLUG, branch, itemId: item.id, auto: true });
         log(`#${item.id} is low risk with green checks + a clean review — auto-merge queued as job #${job.id} (the dispatcher merges after this night ends; ticking stays yours).`);
-      } catch (e) { log(`auto-merge not queued (${e.message}) — merge by hand from Mission Control.`); }
+      } catch (e) { log(`auto-merge not queued (${e.message}) — merge it from the Inbox.`); }
     } else {
       log(`#${item.id} is low risk but NOT auto-merging: `
         + `${checksGreen ? 'checks green' : checksRan > 0 ? `${checksFailing} check(s) failing` : 'no checks ran'}, `
@@ -1462,7 +1462,7 @@ Rules for this run:
     }
     if (roadmapPatched) {
       autoVerdicted = verdict.evidence;
-      log(`#${item.id} auto-verdicted SOLID — ${verdict.evidence}. ⎌ Undo from the Review room returns it to To verify.`);
+      log(`#${item.id} auto-verdicted SOLID — ${verdict.evidence}. It shows on the item; a human can still send it back.`);
     }
   } else if ((item.risk || 'normal') === 'low') {
     log(`#${item.id} is low risk but NOT auto-verdicted: ${verdict.missing.join('; ')}.`);
