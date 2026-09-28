@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
+import { useEffect, useMemo, useRef, useState, type RefObject, type MouseEvent as ReactMouseEvent } from 'react';
 import { Terminal as XTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
@@ -662,13 +662,22 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   // count it reads instead for exactly that window.
   const [endingAllCount, setEndingAllCount] = useState(0);
   const [endAllAsk, setEndAllAsk] = useState(false);
-  const endAllSessions = async () => {
-    const list = sessions;
+  // `endSessions` is the same thing for a SUBSET — the rail's ⌃-click pick.
+  // One path for both, so a bulk end and an end-all cannot drift apart on how
+  // a kill is confirmed landed.
+  const endAllSessions = () => endSessions(sessions);
+  const endSessions = async (list: Sess[]) => {
+    if (!list.length) return;
     setEndingAllCount(list.length);
     const cwdOf = new Map(list.filter((s) => s.tmux).map((s) => [s.tmux!, s.cwd]));
-    handles.current.clear();
-    setSessions([]);
-    setActive(0);
+    const ids = new Set(list.map((s) => s.id));
+    for (const id of ids) handles.current.delete(id);
+    setSessions((cur) => {
+      const rest = cur.filter((x) => !ids.has(x.id));
+      if (ids.has(active)) setActive(rest.length ? rest[rest.length - 1].id : 0);
+      return rest;
+    });
+    setEndPick((p) => p.filter((id) => !ids.has(id)));
     const left = new Set(cwdOf.keys());
     if (!left.size) return;
     setEndingAll(true);
@@ -688,6 +697,18 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
       void refreshDetached();
     }
   };
+  // ⌃-CLICK (⌘ on a Mac) PICKS A RAIL ROW for a bulk end instead of bringing
+  // it into the first pane — the file-manager gesture, because that is the one
+  // a hand reaches for. Live rows collect here by tab id; idle rows share
+  // `killPick` with their ☐, so the two ways of picking one agree. A plain
+  // click clears the live pick: selection is a mode you are in only while
+  // holding the modifier, and a leftover pick behind an ordinary click is how
+  // a bulk end takes a session nobody meant.
+  const [endPick, setEndPick] = useState<number[]>([]);
+  const [endPickAsk, setEndPickAsk] = useState(false);
+  const isPickClick = (e: ReactMouseEvent) => e.ctrlKey || e.metaKey;
+  const toggleEndPick = (id: number) =>
+    setEndPick((p) => (p.includes(id) ? p.filter((n) => n !== id) : [...p, id]));
   const setStatus = (id: number, status: Status, note: string) =>
     setSessions((s) => s.map((x) => (x.id === id ? { ...x, status, note } : x)));
 
@@ -755,6 +776,9 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   const confirmKill = async () => {
     const list = killTargets ?? [];
     setKillTargets(null);
+    await killIdle(list);
+  };
+  const killIdle = async (list: DetachedSession[]) => {
     if (!list.length) return;
     const names = new Set(list.map((d) => d.name));
     setDetached((l) => l.filter((x) => !names.has(x.name)));
@@ -807,6 +831,17 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   const detachedShown = detached.filter(
     (d) => !sessions.some((s) => s.tmux === d.name && (s.status === 'live' || s.status === 'connecting')));
   const killable = detachedShown.filter((d) => !d.attached);
+  // Derived, not stored: a tab closed or an idle row re-attached since the
+  // pick simply drops out, rather than a stale id ending something else.
+  const pickedLive = sessions.filter((s) => endPick.includes(s.id));
+  const pickedIdle = killable.filter((d) => killPick.includes(d.name));
+  const confirmEndPick = () => {
+    setEndPickAsk(false);
+    const live = pickedLive;
+    setEndPick([]);
+    void endSessions(live);
+    if (pickedIdle.length) void killIdle(pickedIdle);
+  };
 
   // ---- what each claude session is DOING (#120), on this screen ----
   // Gemini's one-line take, keyed by the host tmux session — the only id both
@@ -2033,13 +2068,19 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                             const ask = blockedOf(x);
                             return (
                               <div key={x.id}
-                                className={`tcg-row${x.id === active ? ' on' : ''}${onScreen ? '' : ' off'}${ask ? ' asking' : ''}`}
-                                title={ask
+                                className={`tcg-row${x.id === active ? ' on' : ''}${onScreen ? '' : ' off'}${ask ? ' asking' : ''}${endPick.includes(x.id) ? ' picked' : ''}`}
+                                aria-selected={endPick.includes(x.id)}
+                                title={(ask
                                   ? 'Stopped on a question — click to bring it into the first pane and answer it'
                                   : onScreen
                                     ? 'Click to bring this session into the first pane'
-                                    : 'Not on screen — click to bring it into the first pane'}
-                                onClick={() => showInLead(x.id)}>
+                                    : 'Not on screen — click to bring it into the first pane')
+                                  + '\n⌃-click to select it for a bulk end'}
+                                onClick={(e) => {
+                                  if (isPickClick(e)) { e.preventDefault(); toggleEndPick(x.id); return; }
+                                  setEndPick([]);
+                                  showInLead(x.id);
+                                }}>
                                 <span className={`dot ${x.status}`} />
                                 <span className="t"
                                   title={labelOf(x)
@@ -2140,7 +2181,12 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                                 title={d.attached
                                   ? `Attached on another device (tmux ${d.name}) — open it here too: both screens mirror the same session`
                                   : `Re-attach to this running claude session (tmux ${d.name}${d.created ? `, since ${new Date(d.created).toLocaleString()}` : ''})`}
-                                onClick={() => attachDetached(d)}>
+                                onClick={(e) => {
+                                  // ⌃-click picks rather than re-attaches — on
+                                  // a killable row only, the same rule as its ☐.
+                                  if (isPickClick(e)) { e.preventDefault(); if (!d.attached) toggleKillPick(d.name); return; }
+                                  attachDetached(d);
+                                }}>
                                 <span className="w">
                                   ↺ {d.cwd ? `~/${d.cwd}` : '~'}
                                   <span className="st">{d.attached ? 'another device' : 'detached'}</span>
@@ -2205,15 +2251,24 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                           <div className="tci-bulk">
                             <button className="btn-repo sm"
                               onClick={() => setKillPick(killPick.length === killable.length ? [] : killable.map((d) => d.name))}>
-                              {killPick.length === killable.length ? 'none' : `all ${killable.length}`}
-                            </button>
-                            <button className="btn-cancel sm" disabled={killPick.length === 0}
-                              title="Kill the selected sessions on the host"
-                              onClick={() => setKillTargets(killable.filter((d) => killPick.includes(d.name)))}>
-                              × Kill {killPick.length || ''}
+                              {killPick.length === killable.length ? 'select none' : `select all ${killable.length}`}
                             </button>
                           </div>
                         )}
+                      </div>
+                    )}
+                    {/* ONE bulk bar for both kinds of pick — ⌃-clicked live
+                        rows and ticked idle ones — so a selection that spans
+                        the two ends in one press and one confirm. */}
+                    {pickedLive.length + pickedIdle.length > 0 && (
+                      <div className="tci-bulk tcg-bulk">
+                        <span className="n">{pickedLive.length + pickedIdle.length} selected</span>
+                        <button className="btn-repo sm" onClick={() => { setEndPick([]); setKillPick([]); }}>clear</button>
+                        <button className="btn-cancel sm" disabled={endingAll}
+                          title="Close the selected tabs and kill their sessions on the host"
+                          onClick={() => setEndPickAsk(true)}>
+                          ⏻ End {pickedLive.length + pickedIdle.length}
+                        </button>
                       </div>
                     )}
 
@@ -2514,6 +2569,34 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
         danger
         onConfirm={() => void confirmKill()}
         onCancel={() => setKillTargets(null)}
+      />
+    )}
+    {endPickAsk && pickedLive.length + pickedIdle.length > 0 && (
+      <ConfirmModal
+        title={`End ${pickedLive.length + pickedIdle.length} selected session${pickedLive.length + pickedIdle.length === 1 ? '' : 's'}?`}
+        body={
+          <>Each tab closes, and each session still running on the host is killed — anything
+            unfinished in those conversations is lost.
+            <ul className="td-killlist">
+              {pickedLive.map((s) => (
+                <li key={s.id}>
+                  <b>{s.cmd === 'claude' ? 'claude' : 'shell'}</b> in <b>{s.cwd ? `~/${s.cwd}` : '~'}</b>
+                  {labelOf(s) ? ` — ${labelOf(s)}` : s.tmux ? ` — tmux ${s.tmux}` : ''}
+                </li>
+              ))}
+              {pickedIdle.map((d) => (
+                <li key={d.name}>
+                  <b>idle</b> in <b>{d.cwd ? `~/${d.cwd}` : '~'}</b>
+                  {labels[d.name] || d.label ? ` — ${labels[d.name] || d.label}` : ''}
+                </li>
+              ))}
+            </ul>
+          </>
+        }
+        confirmLabel={`End ${pickedLive.length + pickedIdle.length}`}
+        danger
+        onConfirm={confirmEndPick}
+        onCancel={() => setEndPickAsk(false)}
       />
     )}
     {endAllAsk && sessions.length > 0 && (

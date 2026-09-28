@@ -2419,6 +2419,11 @@ a.tab { display: inline-block; }
    cannot afford, and a session asking from off the canvas is precisely the one
    that gets forgotten. */
 .tcg-row.asking.off { opacity: 1; }
+/* ⌃-click pick for a bulk end — the idle rows' .picked tone, since it means
+   the same thing: this one goes when you press End. */
+.tcg-row.picked, .tcg-row.on.picked { background: var(--critical-tint); border-left-color: var(--critical); }
+.tcg-bulk { padding: 4px 8px; }
+.tcg-bulk .n { font-size: 10.5px; color: var(--muted); margin-right: auto; }
 .tcg-ask { flex: none; display: inline-flex; align-items: center; padding: 0 1px; }
 .tcg-ask .d {
   width: 7px; height: 7px; border-radius: 50%;
