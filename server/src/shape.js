@@ -280,6 +280,7 @@ export function projectListShape(p, { progress, metaLine, pushesThisWeek }) {
     tint: p.tint || null,
     status: p.status,
     category: p.category || 'personal',
+    kind: p.kind === 'hub' ? 'hub' : 'app',
     progress,
     metaLine,
     pinned: p.pinned,

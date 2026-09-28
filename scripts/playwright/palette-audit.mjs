@@ -81,6 +81,10 @@ function readStackEnv() {
 // cursor on it at all.
 const SCREENS = [
   { slug: 'dashboard', hash: '#/' },
+  // The Projects page's two tones first paint can't reach: a card's actions
+  // menu (--surface-overlay, with Archive in danger) and the new-project modal.
+  { slug: 'dashboard-cardmenu', hash: '#/', press: ['.sp-card .sp-corner'] },
+  { slug: 'dashboard-new', hash: '#/', press: ['.topbar .btn-accent'] },
   // MISSION CONTROL IS SEVEN TABS OF TONE AND FIRST PAINT REACHES ONE, so each
   // of the other six is walked as its own row. #514 wired three of them, which
   // changed which grounds are reachable and how: the Agents fold and the first

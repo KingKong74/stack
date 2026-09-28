@@ -8,6 +8,7 @@ import { overview } from './routes/overview.js';
 import { search } from './routes/search.js';
 import { settings } from './routes/settings.js';
 import { projects } from './routes/projects.js';
+import { spaces } from './routes/spaces.js';
 import { bugs } from './routes/bugs.js';
 import { roadmap } from './routes/roadmap.js';
 import { board } from './routes/board.js';
@@ -104,6 +105,7 @@ app.use('/api/context', requireToken, context);
 // updates one half.
 app.use('/api/agent-profiles', requireToken, agentProfiles);
 app.use('/api/worktrees', requireToken, worktrees);
+app.use('/api/spaces', requireToken, spaces);
 app.use('/api/projects', requireToken, projects);
 
 const port = process.env.PORT || 4000;

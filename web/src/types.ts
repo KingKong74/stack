@@ -1,6 +1,8 @@
 export type ProjectStatus = 'live' | 'building' | 'paused' | 'archived';
 // Which half of the Projects page a project sits in. A grouping only.
-export type ProjectCategory = 'personal' | 'professional';
+// An area's key (the owner names areas; 'personal' is the fallback). See Spaces.
+export type ProjectCategory = string;
+export type ProjectKind = 'app' | 'hub';
 export type Severity = 'critical' | 'high' | 'medium' | 'low';
 // #500 — what a session suggested testing. '' is the ordinary case and is not a
 // kind: it means the row is not a test suggestion at all.
@@ -54,6 +56,7 @@ export interface Project {
   tint: string;
   status: ProjectStatus;
   category: ProjectCategory;
+  kind: ProjectKind;       // app = a card; hub = a row hosting workflows
   progress: number;        // 0–100, computed server-side from roadmap/bug completion
   metaLine: string;        // dashboard card meta e.g. "pushed 2h ago"
   automode: boolean;       // open to the overnight autopilot — shows the AUTO badge
@@ -827,3 +830,16 @@ export interface ClaudeMdRead {
   reason: string;
   projects: ClaudeMdProject[];
 }
+
+// ---- the Projects page's areas, hubs' workflows and the wishlist (GET /api/spaces) ----
+export interface SpaceArea { key: string; name: string; position: number }
+// Derived server-side: paused (disabled) | failing (last report failed) | ok |
+// never (nothing has reported a run — not the same as healthy).
+export type WorkflowStatus = 'ok' | 'failing' | 'paused' | 'never';
+export interface Workflow {
+  id: number; hub: string; name: string; description: string; trigger: string;
+  enabled: boolean; status: WorkflowStatus; lastRun: string; lastNote: string;
+}
+export type IdeaStage = 'spark' | 'scoped' | 'ready';
+export interface WishIdea { id: number; area: string; title: string; note: string; stage: IdeaStage }
+export interface Spaces { areas: SpaceArea[]; workflows: Workflow[]; ideas: WishIdea[] }

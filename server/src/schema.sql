@@ -497,6 +497,59 @@ ALTER TABLE projects ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
 -- A grouping only; nothing gates on it.
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT 'personal';
 
+-- The Projects page's AREAS: owner-named groupings of projects (Personal,
+-- Finance, Home…). `projects.category` holds an area's key. Not a foreign key,
+-- so a row whose area is gone is read as 'personal' rather than refused; the
+-- routes only ever write a key that exists. Distinct from `project_areas` and
+-- `roadmap_items.area`, which are lanes INSIDE one project. A grouping only:
+-- nothing gates, runs or rolls up on it. 'personal' is the fallback and can't
+-- be deleted.
+CREATE TABLE IF NOT EXISTS categories (
+  key        TEXT PRIMARY KEY,
+  name       TEXT NOT NULL,
+  position   INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+INSERT INTO categories (key, name, position) VALUES
+  ('personal', 'Personal', 0), ('professional', 'Professional', 1)
+  ON CONFLICT (key) DO NOTHING;
+
+-- What a project IS: app (has a UI and a preview) | hub (hosts small
+-- workflows: shared creds, one schedule, one log). A hub is still a project
+-- (a repo, a resume card, a board); the Projects page draws it as a row
+-- holding its workflows rather than as a card.
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'app';
+
+-- A hub's workflows. Stack runs none of them: whatever runs one reports each
+-- run (POST /api/spaces/workflows/:id/runs), and health is DERIVED from that
+-- report: disabled = paused, last_ok false = failing, else ok. A workflow
+-- nothing has reported on reads "never", not healthy-by-default.
+CREATE TABLE IF NOT EXISTS workflows (
+  id          SERIAL PRIMARY KEY,
+  project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  name        TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  trigger     TEXT NOT NULL DEFAULT 'manual',   -- free text: 'cron · 06:00', 'on file drop'
+  enabled     BOOLEAN NOT NULL DEFAULT true,
+  last_run_at TIMESTAMPTZ,
+  last_ok     BOOLEAN,
+  last_note   TEXT NOT NULL DEFAULT '',
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS workflows_project_idx ON workflows (project_id);
+
+-- The wishlist: project ideas per area, before any project exists. Not a
+-- roadmap row (those live inside a project). "Start →" creates the project and
+-- deletes the idea. Stage is the owner's own read of how ready it is.
+CREATE TABLE IF NOT EXISTS wishlist_ideas (
+  id         SERIAL PRIMARY KEY,
+  category   TEXT NOT NULL DEFAULT 'personal',
+  title      TEXT NOT NULL,
+  note       TEXT NOT NULL DEFAULT '',
+  stage      TEXT NOT NULL DEFAULT 'spark',     -- spark | scoped | ready
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 -- Area tags: which part of the product an idea lives in (landing page,
 -- settings, mobile, …) — a second, orthogonal axis to alignment. Freeform,
 -- filterable on the Futures tab. NULL = untagged.

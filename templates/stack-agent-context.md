@@ -73,6 +73,9 @@ The block is a snapshot. For the current state at any moment, read the API:
   `/api/agents`, each with its own switch. It is culled. **A ✧ is now a plain
   Gemini route**, so a 503 from one means `GEMINI_API_KEY`, never a daemon.
 
+- `GET /api/spaces` — areas, hubs' workflows, the wishlist. **Report each run
+  of a hub workflow you run**: `POST /api/spaces/workflows/<id>/runs {"ok":bool}`.
+
 **A repo's CLAUDE.md is the repo's.** Stack used to manage a tree of them and
 write each one from its own copy on a five-minute sync; that surface is culled,
 so a CLAUDE.md is now edited in the repo like any other file and nothing

@@ -4,6 +4,7 @@ import type {
   AuthDevice, Sprint, SprintPlan, ResumeSince, ProjectDebrief,
   SchedSpan, ProjectPulse, BoardShape, BoardList, BoardArea, ItemKind,
   AgentProfile, AgentProfilesRoom, ModelsRoom, ContextRoom, ClaudeMdRead,
+  ProjectKind, Spaces, SpaceArea, Workflow, WishIdea, IdeaStage,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -198,6 +199,7 @@ const repoUrl = (repo: string): string =>
 interface ProjectPayload {
   slug: string; name: string; subtitle: string; tint: string | null; status: ProjectStatus;
   category?: ProjectCategory;  // absent on an older server: personal
+  kind?: ProjectKind;          // absent on an older server: app
   progress: number; metaLine: string; pinned: boolean; automode?: boolean;
   weekZero?: string | null;   // the Roadmap timeline's week zero; absent on an older server
   siteUrl: string; repo: string; repoUrl: string;
@@ -232,7 +234,8 @@ function toProject(d: ProjectPayload): Project {
     subtitle: d.subtitle || '',
     tint: d.tint || '#dcdac9',
     status: d.status,
-    category: d.category === 'professional' ? 'professional' : 'personal',
+    category: d.category || 'personal',
+    kind: d.kind === 'hub' ? 'hub' : 'app',
     progress: d.progress ?? 0,
     metaLine: d.metaLine || '',
     automode: !!d.automode,
@@ -1034,7 +1037,7 @@ export async function deleteShareLink(slug: string): Promise<void> {
   await request<void>(`/projects/${encodeURIComponent(slug)}/share`, { method: 'DELETE' });
 }
 
-export async function createProject(input: { name: string; subtitle: string; status: ProjectStatus; category: ProjectCategory }): Promise<Project> {
+export async function createProject(input: { name: string; subtitle: string; status: ProjectStatus; category: ProjectCategory; kind?: ProjectKind }): Promise<Project> {
   return toProject(await request<ProjectPayload>('/projects', { method: 'POST', body: input }));
 }
 
@@ -1042,7 +1045,7 @@ export async function patchProject(
   slug: string,
   patch: Partial<{
     subtitle: string; site_url: string; repo_url: string; status: ProjectStatus; pinned: boolean;
-    automode: boolean; autopilot_area: string; merge_autonomy: MergeAutonomy; category: ProjectCategory;
+    automode: boolean; autopilot_area: string; merge_autonomy: MergeAutonomy; category: ProjectCategory; kind: ProjectKind;
     name: string; north_star: string; directives: string[]; deploy_platform: string; logs_url: string;
     tech_stack: string[];
   }>,
@@ -1052,6 +1055,33 @@ export async function patchProject(
 
 export async function deleteProject(slug: string): Promise<void> {
   await request<void>(`/projects/${encodeURIComponent(slug)}`, { method: 'DELETE' });
+}
+
+// ---- the Projects page's areas, hubs' workflows and the wishlist ----
+
+export const getSpaces = () => request<Spaces>('/spaces');
+export const createSpaceArea = (name: string) => request<SpaceArea>('/spaces/areas', { method: 'POST', body: { name } });
+export const renameSpaceArea = (key: string, name: string) =>
+  request<SpaceArea>(`/spaces/areas/${encodeURIComponent(key)}`, { method: 'PATCH', body: { name } });
+export const deleteSpaceArea = (key: string) =>
+  request<void>(`/spaces/areas/${encodeURIComponent(key)}`, { method: 'DELETE' });
+export const createIdea = (input: { area: string; title: string; note?: string }) =>
+  request<WishIdea>('/spaces/ideas', { method: 'POST', body: input });
+export const patchIdea = (id: number, patch: Partial<{ title: string; note: string; stage: IdeaStage; area: string }>) =>
+  request<WishIdea>(`/spaces/ideas/${id}`, { method: 'PATCH', body: patch });
+export const deleteIdea = (id: number) => request<void>(`/spaces/ideas/${id}`, { method: 'DELETE' });
+export const createWorkflow = (input: { hub: string; name: string; description?: string; trigger?: string; enabled?: boolean }) =>
+  request<Workflow>('/spaces/workflows', { method: 'POST', body: input });
+export const patchWorkflow = (id: number, patch: Partial<{ name: string; description: string; trigger: string; enabled: boolean }>) =>
+  request<Workflow>(`/spaces/workflows/${id}`, { method: 'PATCH', body: patch });
+
+// Whether the Projects page's area rail is folded shut. Device-local, like
+// the project rail's fold.
+const AREA_RAIL_KEY = 'stack.areaRailFolded';
+export const getAreaRailFolded = (): boolean => readStoredJSON(AREA_RAIL_KEY, (p) => p === true);
+export function setAreaRailFolded(folded: boolean) {
+  try { localStorage.setItem(AREA_RAIL_KEY, JSON.stringify(folded)); }
+  catch { /* storage unavailable — the fold lasts this visit only */ }
 }
 
 // ---- bugs ----

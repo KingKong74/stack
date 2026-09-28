@@ -522,7 +522,9 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
     {
       id: 'spaces',
       label: 'Spaces',
-      items: spaces.map((sp) => ({
+      // Only this project's AREA (Personal, Finance…): the rail is for hopping
+      // between neighbours, and the Projects page is where every area lives.
+      items: spaces.filter((sp) => sp.category === project.category).map((sp) => ({
         key: `space:${sp.id}`,
         label: sp.name,
         icon: <SpaceDot tint={sp.tint} />,
