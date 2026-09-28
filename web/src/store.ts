@@ -316,7 +316,7 @@ export interface AutopilotSchedule {
 
 export interface AutopilotJob {
   id: string; slug: string; name: string; tint: string | null;
-  kind: 'manual' | 'nightly' | 'scheduled' | 'revert' | 'resume' | 'merge' | 'plan' | 'advise';
+  kind: 'manual' | 'nightly' | 'loop' | 'scheduled' | 'revert' | 'resume' | 'merge' | 'plan' | 'advise';
   itemId: string | null; itemTitle: string;
   // 'paused' = hung up (#142): held until a human resumes; never auto-fires.
   status: 'queued' | 'claimed' | 'running' | 'done' | 'failed' | 'paused';

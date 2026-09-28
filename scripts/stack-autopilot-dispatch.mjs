@@ -666,9 +666,10 @@ if (job.area) args.push('--area', String(job.area));
 // set); a resume whose hold a human cleared (▶ Resume now) is a manual press.
 // #255 — a plan-sweep job is the SERVER's decision, not a human's, so it keeps
 // both gates exactly like the nightly. --force would let a sweep run against a
-// disarmed switch, which is precisely what the switch is for.
+// disarmed switch, which is precisely what the switch is for. So does a
+// continuous-loop job ('loop'): the server chose it off the Ready queue.
 const autoResume = job.kind === 'resume' && job.notBefore;
-const serverEnqueued = job.kind === 'nightly' || job.kind === 'plan';
+const serverEnqueued = job.kind === 'nightly' || job.kind === 'plan' || job.kind === 'loop';
 if (!serverEnqueued && !autoResume) args.push('--force');
 
 // Run the autopilot inside a named tmux session (#171) so the web terminal can

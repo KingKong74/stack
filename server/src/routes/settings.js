@@ -5,7 +5,7 @@ import { hashPin } from '../auth.js';
 import {
   readSettings, settingsShape, CHECKPOINT_DETAILS,
   cleanSessionDefaults, cleanAutopilotTime, cleanAssistFields,
-  cleanModelAlias,
+  cleanModelAlias, AUTOPILOT_MODES, cleanQuiet,
 } from '../settings.js';
 
 // GET/PATCH /api/settings — the single-row app settings behind bearer auth.
@@ -83,6 +83,25 @@ settings.patch('/', async (req, res) => {
     // gate the run itself, so switching it off can never strand work.
     fields.push(`autopilot_plan_sweep = $${i++}`);
     values.push(Boolean(body.autopilotPlanSweep));
+  }
+  if ('autopilotMode' in body) {
+    fields.push(`autopilot_mode = $${i++}`);
+    values.push(oneOf(body.autopilotMode, AUTOPILOT_MODES, 'nightly'));
+  }
+  if ('autopilotQuiet' in body) {
+    fields.push(`autopilot_quiet = $${i++}`);
+    values.push(cleanQuiet(body.autopilotQuiet));
+  }
+  if ('autopilotRollingTokens' in body) {
+    // 0 = no cap. A positive cap gets the same floor as the per-run budget.
+    const t = Math.trunc(Number(body.autopilotRollingTokens));
+    fields.push(`autopilot_rolling_tokens = $${i++}`);
+    values.push(!Number.isFinite(t) || t <= 0 ? 0 : Math.max(100_000, t));
+  }
+  if ('autopilotRollingHours' in body) {
+    const h = Math.trunc(Number(body.autopilotRollingHours));
+    fields.push(`autopilot_rolling_hours = $${i++}`);
+    values.push(Number.isFinite(h) ? Math.min(168, Math.max(1, h)) : 5);
   }
   if ('termIdleHours' in body) {
     // #287 — 0 = NEVER, which is the off switch; otherwise 1–72h. The floor is

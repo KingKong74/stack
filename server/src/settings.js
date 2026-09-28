@@ -109,6 +109,10 @@ const DEFAULTS = {
   autopilot_time: '23:05',     // nightly start, host-local HH:MM
   autopilot_max_items: 3,
   autopilot_plan_sweep: true,  // #255 — stand up a plan job for unplanned work
+  autopilot_mode: 'nightly',   // 'nightly' | 'continuous' — see schema.sql's THE LOOP
+  autopilot_quiet: '',         // 'HH:MM-HH:MM' host-local, '' = none
+  autopilot_rolling_tokens: 0, // the continuous loop's cap over the rolling window; 0 = none
+  autopilot_rolling_hours: 5,
   stale_item_days: 21,         // a parked item reads as stale past this many days (#247)
   term_idle_hours: 6,          // #287 — terminate a silent terminal session after this long; 0 = never
   autopilot_executor_model: '',            // '' = the claude CLI's own default model
@@ -121,6 +125,13 @@ const DEFAULTS = {
   gcal_client_secret: '',
   gcal_refresh_token: '',
   gcal_calendar_id: '',
+};
+
+export const AUTOPILOT_MODES = ['nightly', 'continuous'];
+// '' or 'HH:MM-HH:MM'. A window may wrap midnight (22:00-07:00).
+export const cleanQuiet = (v) => {
+  const m = /^\s*(([01]?\d|2[0-3]):[0-5]\d)\s*-\s*(([01]?\d|2[0-3]):[0-5]\d)\s*$/.exec(String(v || ''));
+  return m && m[1] !== m[3] ? `${m[1]}-${m[3]}` : '';
 };
 
 export const cleanAutopilotTime = (v) =>
@@ -151,6 +162,10 @@ export async function readSettings(client) {
     // #255 — default ON: a column added by the migration is true, and a row that
     // predates it reads as true too, so the sweep is the standing behaviour.
     autopilot_plan_sweep: r.autopilot_plan_sweep == null ? true : Boolean(r.autopilot_plan_sweep),
+    autopilot_mode: oneOf(r.autopilot_mode, AUTOPILOT_MODES, 'nightly'),
+    autopilot_quiet: cleanQuiet(r.autopilot_quiet),
+    autopilot_rolling_tokens: Number.isFinite(Number(r.autopilot_rolling_tokens)) ? Number(r.autopilot_rolling_tokens) : 0,
+    autopilot_rolling_hours: Number.isFinite(r.autopilot_rolling_hours) ? r.autopilot_rolling_hours : 5,
     stale_item_days: Number.isFinite(r.stale_item_days) ? r.stale_item_days : 21,
     // #287 — a row predating the column reads as the default rather than as 0,
     // since 0 means "never reap" and would silently disable the feature.
@@ -182,6 +197,10 @@ export function settingsShape(s) {
     autopilotTime: s.autopilot_time,         // host-local HH:MM
     autopilotMaxItems: s.autopilot_max_items,
     autopilotPlanSweep: s.autopilot_plan_sweep, // #255 — auto-plan unplanned must/should work
+    autopilotMode: s.autopilot_mode,         // 'nightly' | 'continuous'
+    autopilotQuiet: s.autopilot_quiet,       // 'HH:MM-HH:MM' or ''
+    autopilotRollingTokens: s.autopilot_rolling_tokens, // 0 = no cap
+    autopilotRollingHours: s.autopilot_rolling_hours,
     staleItemDays: s.stale_item_days,        // parked-item stale threshold, days (#247)
     termIdleHours: s.term_idle_hours,        // #287 — reap a silent terminal session after this long; 0 = never
     autopilotExecutorModel: s.autopilot_executor_model, // '' = CLI default (#153)

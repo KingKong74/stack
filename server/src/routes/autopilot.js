@@ -136,6 +136,46 @@ export function nightFanOut(maxItems, eligibleCount, totalTokens) {
   return n;
 }
 
+// THE CONTINUOUS LOOP's quiet hours: 'HH:MM-HH:MM' host-local, may wrap
+// midnight, '' = never quiet. Pure, so it is tested without a database.
+export function inQuietHours(quiet, nowMin) {
+  const m = /^(\d{1,2}:\d{2})-(\d{1,2}:\d{2})$/.exec(String(quiet || ''));
+  if (!m || !Number.isFinite(nowMin)) return false;
+  const a = timeToMin(m[1]); const b = timeToMin(m[2]);
+  return a < b ? nowMin >= a && nowMin < b : nowMin >= a || nowMin < b;
+}
+
+// Why the continuous loop is not starting work right now, in a sentence, or
+// '' when it may. Shared by GET /next (which acts on it) and GET /loop (which
+// says it), so the screen and the loop can never disagree. Checked in the
+// order a human would fix them. FAIL SAFE: this decides whether to SPEND, so a
+// question it cannot answer reads as a hold, never as a go.
+export async function loopHold(settings, nowMin) {
+  if (!settings.autopilot_enabled) return 'the autopilot is switched off';
+  if (settings.autopilot_mode !== 'continuous') return `the loop is in nightly mode (it builds after ${settings.autopilot_time})`;
+  if (!Number.isFinite(nowMin)) return 'the host clock was not given';
+  if (inQuietHours(settings.autopilot_quiet, nowMin)) return `it is quiet hours (${settings.autopilot_quiet})`;
+  const { rows: resume } = await q(
+    `SELECT not_before FROM autopilot_jobs
+      WHERE kind = 'resume' AND status = 'queued' AND not_before > now()
+      ORDER BY not_before LIMIT 1`);
+  if (resume.length) return `the usage limit was hit; a resume is booked for ${new Date(resume[0].not_before).toISOString()}`;
+  const cap = Number(settings.autopilot_rolling_tokens) || 0;
+  if (cap > 0) {
+    const { rows } = await q(
+      `SELECT COALESCE(SUM(tokens), 0)::bigint AS spent FROM autopilot_runs
+        WHERE finished_at > now() - make_interval(hours => $1)`, [settings.autopilot_rolling_hours || 5]);
+    const spent = Number(rows[0].spent);
+    if (spent >= cap) return `the fleet spent ${Math.round(spent / 1000)}k of its ${Math.round(cap / 1000)}k-token cap in the last ${settings.autopilot_rolling_hours}h`;
+  }
+  return '';
+}
+
+// How long an item that already ran rests before the loop may pick it again.
+// Without it, an item whose run fails (and releases its claim) would be
+// rebuilt every minute for as long as it keeps failing.
+const LOOP_RETRY_HOURS = 6;
+
 // #359 — a due calendar row (or a Run-now press) can pin `item_id` and/or
 // carry roadmap ids in its `agenda` (mixed, for a debug row, with `BUG-N`
 // strings — those are bug tracker keys, not roadmap items, so they carry no
@@ -635,10 +675,10 @@ export const CLAIM_NEXT_SQL = `
         LEFT JOIN LATERAL (
           SELECT finished_at FROM autopilot_jobs
            WHERE project_id = j.project_id
-             AND kind = 'nightly'
+             AND kind IN ('nightly', 'loop')
              AND status = 'done'
            ORDER BY finished_at DESC LIMIT 1
-        ) last_run ON j.kind = 'nightly'
+        ) last_run ON j.kind IN ('nightly', 'loop')
         LEFT JOIN roadmap_items pinned ON pinned.id = j.item_id
          WHERE j.status = 'queued' AND (j.not_before IS NULL OR j.not_before <= now())
            -- Per-PROJECT serialisation (not tunable, see the comment).
@@ -656,7 +696,7 @@ export const CLAIM_NEXT_SQL = `
          ORDER BY
            -- Non-nightly jobs first (they have a specific creation time and
            -- priority; nightly batch jobs rank behind them in the same tick).
-           (j.kind = 'nightly') ASC,
+           (j.kind IN ('nightly', 'loop')) ASC,
            -- Rotate nightly projects: least recently run goes first (NULL = never run).
            last_run.finished_at ASC NULLS FIRST,
            -- Stable tie-break across everything else.
@@ -669,6 +709,36 @@ export const CLAIM_NEXT_SQL = `
 // Recovers stale jobs, lazily enqueues due work, then claims one job under the
 // fleet cap and the per-project gate (#335 — see the comment on CLAIM_NEXT_SQL
 // above).
+// GET /loop — is the loop working, and if not, why. Read-only. The host's
+// clock comes from the dispatcher's last poll, so a dispatcher that has gone
+// quiet is reported as exactly that (fail silent: "Stack cannot see", never
+// "nothing to do").
+const HEARTBEAT_FRESH_MS = 5 * 60_000;
+autopilotGlobal.get('/loop', async (_req, res) => {
+  const settings = await readSettings();
+  const { rows: hb } = await q('SELECT last_poll_at, host_local FROM dispatcher_heartbeat WHERE id');
+  const seen = Boolean(hb[0]?.last_poll_at) && Date.now() - new Date(hb[0].last_poll_at).getTime() < HEARTBEAT_FRESH_MS;
+  const { rows: counts } = await q(`
+    SELECT
+      (SELECT count(*) FROM roadmap_items r JOIN projects p ON p.id = r.project_id AND p.deleted_at IS NULL
+        WHERE r.ready_at IS NOT NULL AND NOT r.done AND COALESCE(r.claimed_by, '') = '')::int AS ready,
+      (SELECT count(*) FROM autopilot_jobs WHERE status IN ('claimed', 'running'))::int AS running,
+      (SELECT count(*) FROM autopilot_jobs WHERE status = 'queued')::int AS queued`);
+  const nowMin = seen ? timeToMin(String(hb[0].host_local || '').slice(11, 16)) : NaN;
+  const hold = !seen
+    ? 'Stack cannot see the dispatcher: it has not polled in the last 5 minutes'
+    : await loopHold(settings, nowMin);
+  res.json({
+    seen,
+    mode: settings.autopilot_mode,
+    armed: settings.autopilot_enabled,
+    hold,
+    ready: counts[0].ready,
+    running: counts[0].running,
+    queued: counts[0].queued,
+  });
+});
+
 autopilotGlobal.get('/next', async (req, res) => {
   const m = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/.exec(String(req.query.local || ''));
   if (!m) return res.status(400).json({ error: 'local=YYYY-MM-DDTHH:MM required.' });
@@ -709,7 +779,8 @@ autopilotGlobal.get('/next', async (req, res) => {
   // nightly job at all tonight — the old single job would have started a
   // session, found nothing eligible and exited; standing one up for nothing
   // is worse than standing up none.
-  if (settings.autopilot_enabled && within(timeToMin(settings.autopilot_time), nowMin)) {
+  if (settings.autopilot_enabled && settings.autopilot_mode !== 'continuous'
+      && within(timeToMin(settings.autopilot_time), nowMin)) {
     const { rows: candidates } = await q(`
       SELECT project_id, item_id FROM (
         SELECT p.id AS project_id, r.id AS item_id,
@@ -778,6 +849,37 @@ autopilotGlobal.get('/next', async (req, res) => {
           ON CONFLICT (project_id, night_date, COALESCE(item_id, 0)) WHERE kind = 'nightly' DO NOTHING`,
         params);
     }
+  }
+
+  // THE CONTINUOUS LOOP. With the mode on 'continuous', the Ready queue is
+  // built one job at a time, whenever `loopHold` says the loop may spend: at
+  // most one open job per project (per-project serialisation would hold a
+  // second anyway), the queue's top eligible item, filtered exactly like the
+  // nightly's candidates. ONE aggregate statement across every automode
+  // project. A 'paused' job does not count as open: a hung-up resume must not
+  // stop the loop for good.
+  if (settings.autopilot_enabled && settings.autopilot_mode === 'continuous' && !(await loopHold(settings, nowMin))) {
+    await q(`
+      INSERT INTO autopilot_jobs (project_id, kind, item_id, token_budget)
+      SELECT DISTINCT ON (p.id) p.id, 'loop', r.id, $1
+        FROM projects p
+        JOIN roadmap_items r ON r.project_id = p.id
+       WHERE p.automode AND p.deleted_at IS NULL
+         AND r.ready_at IS NOT NULL
+         AND NOT r.done AND NOT COALESCE(r.skipped, false)
+         AND COALESCE(r.claimed_by, '') = ''
+         AND ${APPROVED_SQL('r')}
+         AND (COALESCE(p.autopilot_area, '') = '' OR lower(COALESCE(r.area, '')) = lower(p.autopilot_area))
+         AND NOT EXISTS (
+           SELECT 1 FROM autopilot_jobs j
+            WHERE j.project_id = p.id AND j.status IN ('queued', 'claimed', 'running'))
+         AND NOT EXISTS (
+           SELECT 1 FROM autopilot_jobs j
+            WHERE j.item_id = r.id AND j.created_at > now() - make_interval(hours => $2))
+       ORDER BY p.id, r.ready_rank,
+         CASE r.bucket WHEN 'highest' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END,
+         r.position, r.id`,
+      [settings.autopilot_tokens || 0, LOOP_RETRY_HOURS]);
   }
 
   // The plan sweep (#255). The Plan room's own ✧ Plan the N unplanned items

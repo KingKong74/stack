@@ -1613,3 +1613,13 @@ ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS spec JSONB NOT NULL DEFAULT '
 -- active sprint is the planning lane and never builds.
 ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS ready_at   TIMESTAMPTZ;
 ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS ready_rank INTEGER NOT NULL DEFAULT 0;
+
+-- THE LOOP (routes/autopilot.js GET /next). 'nightly' builds the Ready queue in
+-- one batch after autopilot_time; 'continuous' builds it one job at a time
+-- whenever the arm switch is on, outside the quiet hours ('HH:MM-HH:MM', '' =
+-- none), while the fleet's spend over the last autopilot_rolling_hours is under
+-- autopilot_rolling_tokens (0 = no cap) and no usage-limit resume is pending.
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS autopilot_mode           TEXT    NOT NULL DEFAULT 'nightly';
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS autopilot_quiet          TEXT    NOT NULL DEFAULT '';
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS autopilot_rolling_tokens BIGINT  NOT NULL DEFAULT 0;
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS autopilot_rolling_hours  INTEGER NOT NULL DEFAULT 5;
