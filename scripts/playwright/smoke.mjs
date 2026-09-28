@@ -205,9 +205,25 @@ const ROADMAP_PANELS = [
     // the end so that this selector still lands on an area — read Board.tsx's
     // note beside it before moving either.
     id: 'board-scope',
-    label: 'Board — area scope chip',
+    label: 'Board — area chip jumps to its section',
     click: '.km-scope .im-chip:last-of-type',
     expect: '.km-scope .im-chip:last-of-type.on',
+  },
+  // A CHIP PRESS WRITES FOLDS — it folds every other area, and folds persist
+  // (see THE FOLDS below). So Collapse all runs next and "All areas" last,
+  // and that second press is what leaves every section open for the column
+  // presses after it and for the narrow pass.
+  {
+    id: 'board-collapseall',
+    label: 'Board — Collapse all folds every area',
+    click: '.km-collapseall',
+    expect: '.im-sections:not(:has(.im-section:not(.km-folded)))',
+  },
+  {
+    id: 'board-allareas',
+    label: 'Board — All areas opens every area again',
+    click: '.km-scope .im-chip:first-of-type',
+    expect: '.im-sections:not(:has(.im-section.km-folded)) .km-cols',
   },
   // THE FOLDS (#510, #511), AND THEY COME IN PAIRS ON PURPOSE. This harness is
   // read-only, and a fold is the one press on this screen that persists

@@ -40,8 +40,10 @@
 //     a second truth about concurrency next to `autopilotWorkers` — which is a
 //     FLEET cap, not a column's.
 //  6a. THE COLUMNS ARE GROUPED BY AREA, in the Roadmap tab's own furniture
-//     (#469, owner's request). Scope chips across the top, one section per area
-//     with the four columns nested inside it. `.im-chip` / `.im-section` /
+//     (#469, owner's request). Area chips across the top, one section per area
+//     with the four columns nested inside it. A chip JUMPS rather than filters:
+//     it opens its own section, folds the rest and scrolls there, so every area
+//     stays on the board (`focusArea`). `.im-chip` / `.im-section` /
 //     `.im-sechead` are SHARED with detail/Roadmap.tsx rather than copied as
 //     `.km-*`: the ask was that the two screens look alike, and two
 //     stylesheets for one look is exactly how they stop.
@@ -342,10 +344,17 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
 
   // ---- filters --------------------------------------------------------------
   const [query, setQuery] = useState('');
-  // '' = every area. UNTAGGED is a scope like any other and not the absence of
-  // one — an untagged item is real work, and it is also the one kind that can
-  // never hold an overnight lane (#267), which its own section says out loud.
-  const [scope, setScope] = useState('');
+  // THE AREA CHIPS NAVIGATE, THEY DO NOT FILTER (owner's request). A press
+  // unfolds that area, folds every other one and scrolls to it; every section
+  // stays on the board. `focus` is kept only so an EMPTY area — one just
+  // created, which draws no section by the rule below — still has somewhere to
+  // land, and so the create dialog files into the area you are looking at.
+  // Which chip reads as ON is derived from the folds, not from this, so a chip
+  // cannot claim an area is open after its chevron shut it. UNTAGGED is an area
+  // like any other here: real work, and never an overnight lane (#267).
+  const [focus, setFocus] = useState('');
+  // Bumped on every chip press, so pressing the same chip twice scrolls again.
+  const [jump, setJump] = useState<{ key: string; n: number } | null>(null);
   // Parked cards SHOW by default. Hiding them by default is how a parked item
   // becomes invisible work, which is the state #247 existed to end.
   const [hideParked, setHideParked] = useState(false);
@@ -404,7 +413,6 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
     if (byArea.has(UNTAGGED)) order.push(UNTAGGED);
 
     return order
-      .filter((k) => (scope ? k === scope : true))
       .map((k) => {
         const mine = byArea.get(k) || [];
         const byKey = new Map<string, RoadmapItem[]>();
@@ -449,10 +457,10 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
       // put three four-column sections with nothing in them at the top of this
       // board — `project_areas` outlives the features it was registered for.
       // What a just-created area needs is not a permanent empty section but a
-      // way IN, and `addArea` scopes to it, which this same predicate then
+      // way IN, and `addArea` focuses it, which this same predicate then
       // draws. Reachable, and not in the way.
-      .filter((sec) => sec.count > 0 || !!scope);
-  }, [visible, lists, areas, rows, scope, activeId]);
+      .filter((sec) => sec.count > 0 || sec.key === focus);
+  }, [visible, lists, areas, rows, focus, activeId]);
 
   // The chips: every area with cards on the board right now, plus untagged.
   const chips = useMemo(() => {
@@ -495,6 +503,35 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
   const foldedSections = searching ? [] : folds.sections;
   const foldedColumns = searching ? [] : folds.columns;
   const foldsSuspended = searching && (folds.sections.length > 0 || folds.columns.length > 0);
+
+  // THE CHIPS AND COLLAPSE ALL WRITE THE SAME FOLDS the chevrons do, so a jump
+  // persists like a fold and a chevron can undo it. Columns are left alone:
+  // they are board-wide and a different decision (getBoardFolds' header).
+  const focusArea = (key: string) => {
+    closeAll();
+    setFocus(key);
+    writeFolds({ ...folds, sections: sections.map((s) => s.key).filter((k) => k !== key) });
+    setJump((j) => ({ key, n: (j?.n ?? 0) + 1 }));
+  };
+  const collapseAll = () => { closeAll(); writeFolds({ ...folds, sections: sections.map((s) => s.key) }); };
+  const expandAll = () => {
+    closeAll();
+    setFocus('');
+    writeFolds({ ...folds, sections: [] });
+    setJump((j) => ({ key: '', n: (j?.n ?? 0) + 1 }));
+  };
+  // After the render that opened it, so the scroll measures the unfolded
+  // section and not the strip it was a moment ago.
+  useEffect(() => {
+    if (!jump) return;
+    const el = jump.key
+      ? document.querySelector(`.km [data-area="${CSS.escape(jump.key)}"]`)
+      : document.querySelector('.km .km-scope');
+    el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [jump]);
+  const openSections = sections.filter((s) => !foldedSections.includes(s.key));
+  const allOpen = sections.length > 0 && openSections.length === sections.length;
+  const allFolded = sections.length > 0 && openSections.length === 0;
   const parked = onBoard.filter((it) => it.skipped).length;
   // What the night would actually take out of the sprint in progress — the
   // Backlog tab's badge. `runnable` is the client twin of the runner's own
@@ -669,38 +706,40 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
   // screen carry the old string until the payload comes back, and a section
   // drawn from a stale tag is a section the drop handler will file work into
   // under a name that no longer exists.
-  // AND SCOPE TO IT. An area is registered with nothing in it by definition, and
+  // AND FOCUS IT. An area is registered with nothing in it by definition, and
   // an empty area draws no section — so without this the create would land, the
-  // chip would appear, and the board would look exactly as it did. Scoping is
+  // chip would appear, and the board would look exactly as it did. Focusing is
   // what makes it "usable immediately": the section opens with its four columns
   // and its composers, and the first card goes straight in. The key comes off
   // the RESPONSE rather than off the typed string, because the server
-  // normalises a name (lowercase, trimmed to 40) and scoping to what was typed
+  // normalises a name (lowercase, trimmed to 40) and focusing what was typed
   // would miss.
   const addArea = (name: string) =>
     guard(async () => {
       const before = new Set(areas.map((a) => a.name));
       const next = await createArea(slug, name);
       setAreas(next);
-      setScope(next.find((a) => !before.has(a.name))?.name ?? '');
+      const made = next.find((a) => !before.has(a.name))?.name;
+      if (made) focusArea(made);
     });
-  // The board keeps its scope pinned to the area through a rename, so the
-  // owner is not silently thrown back to "All areas" by fixing a typo.
+  // The focus follows the area through a rename, and so does its fold.
   const renameArea = (from: string, to: string) =>
     guard(async () => {
       setAreas(await patchArea(slug, from, { name: to }));
-      setScope((sc) => (sc === from ? to.trim().toLowerCase() : sc));
+      const key = to.trim().toLowerCase();
+      setFocus((f) => (f === from ? key : f));
+      if (folds.sections.includes(from)) writeFolds({ ...folds, sections: folds.sections.map((k) => (k === from ? key : k)) });
       onRefresh();
     });
   const recolourArea = (name: string, dot: string) =>
     guard(async () => { setAreas(await patchArea(slug, name, { dot })); });
   // THE CARDS DO NOT GO WITH IT — the route clears the tag and leaves the work,
-  // which lands it in the untagged scope. The scope follows it there rather
+  // which lands it in the untagged section. The focus follows it there rather
   // than pointing at an area that no longer exists.
   const dropArea = (name: string) =>
     guard(async () => {
       setAreas(await deleteArea(slug, name));
-      setScope((sc) => (sc === name ? UNTAGGED : sc));
+      setFocus((f) => (f === name ? UNTAGGED : f));
       onRefresh();
     });
 
@@ -797,18 +836,28 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
             <KitIcon name="layers" size={14} />{hideParked ? 'Parked hidden' : `Parked shown${parked ? ` (${parked})` : ''}`}
           </button>
 
+          {/* Collapse all folds every AREA; the columns keep their own folds.
+              Expanding is the "All areas" chip's job. Gone while searching,
+              like every other fold control. */}
+          {!searching && (
+            <button className="k-btn sm secondary km-collapseall" onClick={collapseAll}
+              disabled={allFolded} title="Fold every area to its header">
+              <KitIcon name="chevron-right" size={14} />Collapse all
+            </button>
+          )}
+
           <span className="km-count">
             {shown} of {onBoard.length} on the board
             {foldsSuspended && <span className="km-unfolded"> · folds suspended while searching</span>}
           </span>
         </div>
 
-        {/* THE SCOPE, and "All areas" is a scope like any other rather than the
-            absence of one — the Roadmap tab's own chips, on this project's real
-            areas and their own stored colours. */}
+        {/* THE AREA JUMP BAR — the Roadmap tab's own chips, on this project's
+            real areas and their own stored colours, but a press here navigates
+            (`focusArea`) where Roadmap's filters. "All areas" opens them all. */}
         <div className="im-bar km-scope">
           <AreaChip label="All areas" count={onBoard.length}
-            active={scope === ''} onClick={() => setScope('')} />
+            active={allOpen} onClick={expandAll} />
           <span className="im-chipsep" />
           {/* #473 — the board could only ever FILTER by an area that already
               existed; this registers one. It sits at the FRONT of the chips and
@@ -817,11 +866,12 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
               chip if it goes last — and `scripts/playwright/smoke.mjs` presses
               "the last chip" precisely because that is provably an area nobody
               has already selected. A create control answering to that is a
-              harness pressing New area and calling the scope filter broken. */}
+              harness pressing New area and calling the area jump broken. */}
           <AddArea onAdd={addArea} />
           {chips.map((c) => (
             <AreaChip key={c.key} label={c.name} dot={c.dot} count={c.n}
-              active={scope === c.key} onClick={() => setScope(c.key)} />
+              active={openSections.length === 1 && openSections[0].key === c.key}
+              onClick={() => focusArea(c.key)} />
           ))}
         </div>
 
@@ -829,7 +879,7 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
           {sections.map((sec) => {
           const secFolded = foldedSections.includes(sec.key);
           return (
-            <section className={`im-section${secFolded ? ' km-folded' : ''}`} key={sec.key}>
+            <section className={`im-section${secFolded ? ' km-folded' : ''}`} key={sec.key} data-area={sec.key}>
               {/* THE FOLD LIVES ON THE BOARD, NOT ON THE FURNITURE (#510).
                   `.im-sechead` is SHARED with detail/Roadmap.tsx — that is the
                   whole reason the two screens look alike — so the chevron is a
@@ -1053,7 +1103,7 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
 
       {dialog && (
         <CreateDialog onClose={() => setDialog(false)}
-          onCreate={(title, bucket, extra) => { setDialog(false); add(title, bucket, '', scope === UNTAGGED ? '' : scope, extra); }} />
+          onCreate={(title, bucket, extra) => { setDialog(false); add(title, bucket, '', focus === UNTAGGED ? '' : focus, extra); }} />
       )}
     </>
   );
