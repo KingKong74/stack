@@ -295,7 +295,7 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
   const writeFolds = (next: BoardFolds) => { setFolds(next); setBoardFolds(slug, next); };
   const toggle = (list: string[], key: string) =>
     (list.includes(key) ? list.filter((k) => k !== key) : [...list, key]);
-  const foldSection = (key: string) => writeFolds({ ...folds, sections: toggle(folds.sections, key) });
+  const foldSection = (key: string) => writeFolds({ ...folds, open: toggle(folds.open, key) });
   const foldColumn = (key: string) => writeFolds({ ...folds, columns: toggle(folds.columns, key) });
   // Unfold one column without toggling it — what a drop onto a folded column
   // does. A card must never land somewhere the owner cannot see it.
@@ -503,9 +503,11 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
   // the folds come straight back when the box is cleared, which is why this is
   // a read-time override rather than a write.
   const searching = !!query.trim();
-  const foldedSections = searching ? [] : folds.sections;
+  // Folds store the OPEN areas (a section is folded by default, #524), so a
+  // search reads every section as open rather than none as folded.
+  const sectionOpen = (key: string) => searching || folds.open.includes(key);
   const foldedColumns = searching ? [] : folds.columns;
-  const foldsSuspended = searching && (folds.sections.length > 0 || folds.columns.length > 0);
+  const foldsSuspended = searching && (sections.some((s) => !folds.open.includes(s.key)) || folds.columns.length > 0);
 
   // THE CHIPS AND COLLAPSE ALL WRITE THE SAME FOLDS the chevrons do, so a jump
   // persists like a fold and a chevron can undo it. Columns are left alone:
@@ -513,14 +515,14 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
   const focusArea = (key: string) => {
     closeAll();
     setFocus(key);
-    writeFolds({ ...folds, sections: sections.map((s) => s.key).filter((k) => k !== key) });
+    writeFolds({ ...folds, open: [key] });
     setJump((j) => ({ key, n: (j?.n ?? 0) + 1 }));
   };
-  const collapseAll = () => { closeAll(); writeFolds({ ...folds, sections: sections.map((s) => s.key) }); };
+  const collapseAll = () => { closeAll(); writeFolds({ ...folds, open: [] }); };
   const expandAll = () => {
     closeAll();
     setFocus('');
-    writeFolds({ ...folds, sections: [] });
+    writeFolds({ ...folds, open: sections.map((s) => s.key) });
     setJump((j) => ({ key: '', n: (j?.n ?? 0) + 1 }));
   };
   // After the render that opened it, so the scroll measures the unfolded
@@ -532,7 +534,7 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
       : document.querySelector('.km .km-scope');
     el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, [jump]);
-  const openSections = sections.filter((s) => !foldedSections.includes(s.key));
+  const openSections = sections.filter((s) => sectionOpen(s.key));
   const allOpen = sections.length > 0 && openSections.length === sections.length;
   const allFolded = sections.length > 0 && openSections.length === 0;
   const parked = onBoard.filter((it) => it.skipped).length;
@@ -747,7 +749,7 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
       setAreas(await patchArea(slug, from, { name: to }));
       const key = to.trim().toLowerCase();
       setFocus((f) => (f === from ? key : f));
-      if (folds.sections.includes(from)) writeFolds({ ...folds, sections: folds.sections.map((k) => (k === from ? key : k)) });
+      if (folds.open.includes(from)) writeFolds({ ...folds, open: folds.open.map((k) => (k === from ? key : k)) });
       onRefresh();
     });
   const recolourArea = (name: string, dot: string) =>
@@ -896,7 +898,7 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
 
         <div className="im-sections">
           {sections.map((sec) => {
-          const secFolded = foldedSections.includes(sec.key);
+          const secFolded = !sectionOpen(sec.key);
           return (
             <section className={`im-section${secFolded ? ' km-folded' : ''}`} key={sec.key} data-area={sec.key}>
               {/* THE FOLD LIVES ON THE BOARD, NOT ON THE FURNITURE (#510).

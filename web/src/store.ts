@@ -1462,20 +1462,25 @@ export function setBoardLayout(slug: string, layout: BoardLayout) {
 // THE TWO LISTS ARE KEYED DIFFERENTLY ON PURPOSE, and it is the one thing to
 // get right here:
 //
-//  • `sections` holds AREA keys, and an area section is a single thing on the
-//    screen — folding `terminal` folds the one place `terminal` is drawn.
+//  • `open` holds AREA keys, and an area section is a single thing on the
+//    screen — opening `terminal` opens the one place `terminal` is drawn. It
+//    lists the OPEN ones, not the folded ones, because a section's default is
+//    FOLDED (#524, owner's request): the board lands as a column of area
+//    headers, and an area nobody has opened yet — a new one included — is shut.
 //  • `columns` holds COLUMN keys and is BOARD-WIDE, not per section. The same
 //    four columns are repeated inside every area section, so a fold scoped to
 //    one of them would have an owner with eight areas folding Done eight times
 //    and then unfolding it eight times. "Fold Done" is one decision about the
 //    board, so it is stored as one.
 //
-// Absent or corrupt storage falls back to EVERYTHING OPEN, which is the state
-// the board shipped in before it could fold at all — a fold is a nicety and
-// must never be the reason a card cannot be found.
+// Absent or corrupt storage falls back to EVERY AREA FOLDED and every column
+// open. A folded area still draws its header and its count, and a search
+// suspends every fold, so the default cannot be the reason a card is lost. The
+// pre-#524 `sections` (folded) list is ignored rather than migrated: without
+// the area list it cannot be inverted, and it lands on the new default.
 export interface BoardFolds {
-  /** Folded area sections, by `area` string (the board's own UNTAGGED sentinel included). */
-  sections: string[];
+  /** OPEN area sections, by `area` string (the board's own UNTAGGED sentinel included). Absent = folded. */
+  open: string[];
   /** Folded columns, by `project_lists.key` — board-wide, not per section. */
   columns: string[];
 }
@@ -1487,7 +1492,7 @@ const strings = (v: unknown): string[] => (
 export function getBoardFolds(slug: string): BoardFolds {
   return readStoredJSON(BOARD_FOLDS_KEY(slug), (p) => {
     const o = (p && typeof p === 'object') ? p as Record<string, unknown> : {};
-    return { sections: strings(o.sections), columns: strings(o.columns) };
+    return { open: strings(o.open), columns: strings(o.columns) };
   });
 }
 export function setBoardFolds(slug: string, folds: BoardFolds) {

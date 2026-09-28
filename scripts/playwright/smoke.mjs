@@ -115,6 +115,15 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 // earlier would empty the board underneath every press that follows.
 const ROADMAP_PANELS = [
   {
+    // #524 — THE BOARD LANDS FOLDED: every area is a header until opened, and
+    // a folded section draws no `.km-col`. So "All areas" goes FIRST, or every
+    // card and column press below reports a control hidden behind the default.
+    id: 'board-openall',
+    label: 'Board — lands folded; All areas opens every area',
+    click: '.km-scope .im-chip:first-of-type',
+    expect: '.im-sections:not(:has(.im-section.km-folded)) .km-cols',
+  },
+  {
     id: 'board-priority',
     label: 'Board — card priority picker',
     click: '.km-col:has(.km-card) .km-card [aria-label^="Priority"]',
