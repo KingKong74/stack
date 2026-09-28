@@ -141,7 +141,10 @@ import {
   createRoadmapItem, patchRoadmapItem, deleteRoadmapItem,
   createSprint, patchSprint, putSprintOrder, deleteSprint,
   startBuild, planSprint,
+  queueTermLaunch,
 } from '../store';
+import { go } from '../lib/route';
+import { newTermName, termClaim, launchBrief } from '../lib/termLaunch';
 import type { BoardFolds } from '../store';
 
 // The five priorities, their glyphs and their tones come from `lib/ui.ts` —
@@ -633,6 +636,22 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
         : `This project already has a job ${job.status}${job.itemTitle ? ` — ${job.itemTitle}` : ''}. Runs are serialised per project, so #${it.id} waits for it.`);
       onRefresh();
     });
+  // ⌨ RUN IN TERMINAL (#525) — the third way, and the only one that is YOU
+  // working it rather than the fleet. lib/termLaunch.ts says why it is two
+  // writes and no column: the claim moves the card to In Progress by
+  // derivation, and the built_note the brief asks for moves it to In Review.
+  //
+  // THE CLAIM GOES FIRST, before anything spawns, so the night cannot take the
+  // card between the click and the session starting. `listKey: ''` because a
+  // card dragged into To Do by hand carries an override that would pin it
+  // there through both moves.
+  const runInTerminal = (it: RoadmapItem) =>
+    guard(async () => {
+      const tmux = newTermName();
+      wrote(await patchRoadmapItem(slug, it.id, { claimed_by: termClaim(tmux), listKey: '' }));
+      queueTermLaunch(tmux, launchBrief(slug, it, tmux));
+      go.terminal(slug, tmux);
+    });
   const addToSprint = (it: RoadmapItem, sprintId: number) =>
     guard(async () => {
       wrote(await patchRoadmapItem(slug, it.id, { sprintId }));
@@ -1065,6 +1084,8 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
                           onSignOff={() => { setCardMenu(null); signOff(it); }}
                           activeSprint={boxes.find((b) => b.id === activeId) || null}
                           onBuildNow={() => { setCardMenu(null); buildNow(it); }}
+                          onRun={col.key === 'planned' && !it.done && !String(it.claimedBy || '').trim() && !isHeld(it)
+                            ? () => { closeAll(); setCardMenu(null); runInTerminal(it); } : undefined}
                           onAddToSprint={(sid) => { setCardMenu(null); addToSprint(it, sid); }}
                           onPark={() => { setCardMenu(null); park(it); }}
                           onArchive={() => { setCardMenu(null); archive(it); }}
@@ -1368,7 +1389,7 @@ function IssueCard({
   editing, onOpenInline, onInline, onCancelInline,
   priOpen, onPri, onPick, ptsOpen, onPts, onPoints, menuOpen, onMenu,
   onKind, onDue, onEdit, onSignOff, onPark, onArchive, onDerive, onDelete,
-  activeSprint, onBuildNow, onAddToSprint,
+  activeSprint, onBuildNow, onAddToSprint, onRun,
 }: {
   item: RoadmapItem;
   /** How many `parent_id` children this item has — its ideas, on the Roadmap tab. */
@@ -1385,6 +1406,10 @@ function IssueCard({
   activeSprint: Sprint | null;
   onBuildNow: () => void;
   onAddToSprint: (sprintId: number) => void;
+  /** #525 — claim this card and open a claude tab already working it. Present
+   *  only on an unclaimed, unheld card in To Do: anywhere else somebody (or
+   *  something) already has it, or the night could not take it either. */
+  onRun?: () => void;
   selected: boolean; onSelect: () => void;
   dragging: boolean;
   /** True for the ~900ms after this card's own drop wrote. Drawn as the kit's
@@ -1495,6 +1520,16 @@ function IssueCard({
         {item.estimate !== null && <span className="pts" title="Estimate, in weeks">{item.estimate}w</span>}
 
         <span className="right">
+          {/* #525 — ONE CLICK, so it is on the card and not only in the menu.
+              Drawn only where it can act (see `onRun`), which also keeps it off
+              every card that is already moving. */}
+          {onRun && (
+            <button className="km-colbtn km-run" aria-label={`Run #${item.id} in a terminal session`}
+              title="Run in terminal: claims this card (In Progress) and opens a Claude session already working it. The session writes a built note when it is done, which moves the card to In Review."
+              onClick={(e) => { e.stopPropagation(); onRun(); }}>
+              <KitIcon name="terminal" size={14} />
+            </button>
+          )}
           <button className={`km-pri${priOpen ? ' on' : ''}`} aria-label={`Priority — ${pri.label}`}
             style={{ color: pri.color }} onClick={onPri}>
             {pri.glyph}
@@ -1685,6 +1720,12 @@ function IssueCard({
             title="Queues a build for this item now. The dispatcher picks it up on its next poll; runs are serialised per project, so it waits for anything already running.">
             ▶ Build now
           </button>
+          {onRun && (
+            <button className="km-menuitem" onClick={onRun}
+              title="Claims this card for a new Claude session and opens it, already working the item. The session writes a built note when it is done, which moves the card to In Review.">
+              ⌨ Run in terminal
+            </button>
+          )}
           {activeSprint && item.sprintId !== activeSprint.id ? (
             <button className="km-menuitem" onClick={() => onAddToSprint(activeSprint.id)}
               title={`Commits this item to ${activeSprint.name} — the box the overnight runner works from. It joins at the bottom of the queue.`}>

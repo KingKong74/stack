@@ -59,6 +59,7 @@ import { detectWaiting } from './input-wait.mjs';
 import { parseAutoName, readActivity } from './auto-scan.mjs';
 import { agentScratchDir, agentClaudeArgs } from './agent-run.mjs';
 import { writeDrop, DROP_MAX_BYTES } from './drop-file.mjs';
+import { writeBrief, briefArg, pruneBriefs } from './launch-brief.mjs';
 import { listClaudeMd, writeClaudeMd } from './claude-md.mjs';
 import { createEditWatch } from './edit-watch.mjs';
 import { resolvedModelFor } from './session-model.mjs';
@@ -422,6 +423,8 @@ function gcOrphans() {
 }
 setInterval(gcOrphans, 10 * 60_000);
 gcOrphans(); // and once at startup — reboots are when corpses accumulate
+// #525 — a launch brief a spawn never consumed (launch-brief.mjs). Same cadence.
+setInterval(() => { const n = pruneBriefs(); if (n) log(`briefs: pruned ${n} unconsumed`); }, 10 * 60_000);
 
 // (#287) Idle reaper — the second half of a ladder the daemon only had the
 // first half of.
@@ -966,9 +969,13 @@ function startSession(msg) {
     const modelArgs = wantModel
       ? ` --model '${wantModel}'${wantCtx ? ` --context-tokens ${wantCtx}` : ''}`
       : '';
-    const claudeCmd = msg.provider === 'omniroute'
-      ? `exec ${dispatcher} omniroute launch --cli claude${modelArgs}${perms ? ` --${perms}` : ''}`
-      : `exec claude${perms}`;
+    // #525 — `brief` is claude's first prompt, and it is the one argument that
+    // is not a flag. launch-brief.mjs says why it arrives as `$(cat …)` rather
+    // than as text; the gateway takes it after `--`, like the permissions flag.
+    const claudeCmdWith = (brief = '') => (msg.provider === 'omniroute'
+      ? `exec ${dispatcher} omniroute launch --cli claude${modelArgs}${perms || brief ? ` --${perms}${brief}` : ''}`
+      : `exec claude${perms}${brief}`);
+    const claudeCmd = claudeCmdWith();
     // THE PRIME IS GONE with the tab consoles. A session spawned for a tab
     // agent used to carry an appended system prompt — the server composed it,
     // a launcher script fed it in via `$(cat …)` so the text never travelled
@@ -996,7 +1003,11 @@ function startSession(msg) {
       modelTag = reattached
         ? (listStackSessions().find((x) => x.name === tmuxSession)?.model || '')
         : sessionModelTag(msg.provider === 'omniroute' ? 'omniroute' : null, wantModel);
-      const shellCmd = `/bin/bash -lc "${claudeCmd}"`;
+      // A brief only for a session this call CREATES — a re-attach ignores the
+      // command, and the start frame is re-sent on every reconnect.
+      const briefFile = !reattached && typeof msg.brief === 'string' ? writeBrief(tmuxSession, msg.brief) : null;
+      if (briefFile) log(`session ${sid}: starting ${tmuxSession} on a brief (${msg.brief.length} chars)`);
+      const shellCmd = `/bin/bash -lc "${briefFile ? claudeCmdWith(briefArg(briefFile)) : claudeCmd}"`;
       argv = sessionArgv(tmuxSession, cwd, shellCmd);
       log(`session ${sid}: tmux session ${tmuxSession} (${reattached ? 're-attach' : 'new'})`);
       // A session we are CREATING starts out marked fresh — nobody has been

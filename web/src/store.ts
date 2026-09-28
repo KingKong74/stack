@@ -538,6 +538,9 @@ export function openTerminal(opts: {
   // the account's own subscription. A provider KEY, never a base URL or a
   // credential: the host owns both, and the browser has no business with either.
   provider?: 'omniroute';
+  // #525 — claude's FIRST PROMPT, for a session this frame creates. The host
+  // ignores it on a re-attach, so re-sending it on every reconnect is safe.
+  brief?: string;
 }): WebSocket {
   const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
   const ws = new WebSocket(`${proto}://${window.location.host}/term`);
@@ -545,6 +548,36 @@ export function openTerminal(opts: {
     ws.send(JSON.stringify({ t: 'start', token: getToken() || '', ...opts }));
   });
   return ws;
+}
+
+// #525 — THE BOARD'S ⌨ RUN IN TERMINAL hands a claude tab its first prompt,
+// keyed by the tmux name the board chose and claimed the card with. Session
+// storage, because the handoff is one tab navigating to its own terminal
+// screen: nothing else should ever read it. It is PEEKED at connect (a spawn
+// that failed before the host answered must still have it on the retry) and
+// dropped on the first `ready`, after which the session exists and a brief
+// could only be ignored.
+const TERM_LAUNCH_KEY = 'stack.term.launch';
+function readLaunches(): Record<string, string> {
+  try {
+    const m = JSON.parse(sessionStorage.getItem(TERM_LAUNCH_KEY) || '{}');
+    return m && typeof m === 'object' ? m : {};
+  } catch { return {}; }
+}
+function writeLaunches(m: Record<string, string>) {
+  try { sessionStorage.setItem(TERM_LAUNCH_KEY, JSON.stringify(m)); } catch { /* private mode: the tab opens without its brief */ }
+}
+export function queueTermLaunch(tmux: string, brief: string) {
+  writeLaunches({ ...readLaunches(), [tmux]: brief });
+}
+export function peekTermLaunch(tmux: string): string | undefined {
+  return readLaunches()[tmux] || undefined;
+}
+export function clearTermLaunch(tmux: string) {
+  const m = readLaunches();
+  if (!(tmux in m)) return;
+  delete m[tmux];
+  writeLaunches(m);
 }
 
 // Quick commands on the Terminal screen — device-local, like brief prefs.

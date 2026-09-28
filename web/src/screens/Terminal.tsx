@@ -22,6 +22,7 @@ import {
   getTerminalModels, type GatewayModels,
   getProjectDetail, type ProjectDetailData,
   getOverview,
+  peekTermLaunch, clearTermLaunch,
 } from '../store';
 import { hrefTo } from '../lib/route';
 import { askOf } from '../lib/asking';
@@ -2929,6 +2930,8 @@ function TermSession({ sess, visible, focused, fontSize, onStatus, onUsage, onTm
           ? (getTermSessionPrefs().model || undefined) : undefined,
         contextTokens: sess.cmd === 'claude' && getTermSessionPrefs().onGateway
           ? (getTermSessionPrefs().modelContext || undefined) : undefined,
+        // #525 — a board card's first prompt, when one was queued for this name.
+        brief: sess.cmd === 'claude' && tmuxRef.current ? peekTermLaunch(tmuxRef.current) : undefined,
       });
       wsRef.current = ws;
       // #135 — write-batching: coalesce rapid incoming frames into one
@@ -2982,7 +2985,7 @@ function TermSession({ sess, visible, focused, fontSize, onStatus, onUsage, onTm
         }
         else if (m.t === 'ready') {
           retries = 0;
-          if (m.tmuxSession) { tmuxRef.current = m.tmuxSession; onTmux(m.tmuxSession); }
+          if (m.tmuxSession) { tmuxRef.current = m.tmuxSession; onTmux(m.tmuxSession); clearTermLaunch(m.tmuxSession); }
           // Always reported, including when it is null: "the host does not know
           // what this is on" is an answer the rail must be able to draw, and a
           // daemon too old to send the field at all leaves it undefined, which
