@@ -739,6 +739,8 @@ function AutoPane({ slug, items, onRefresh, onEdit, highlightId }: {
         // running-sessions strip, so the sentence points at something real.
         const src = it.source === 'hook'
           ? 'read off a push'
+          : it.source === 'plan'
+          ? 'a piece of a planned item'
           : `opened by ${it.flySession || 'a session'}`;
         // A SUGGESTED TEST WEARS ITS OWN GLYPH, because it is answered
         // differently from everything else in this queue: an idea is kept or

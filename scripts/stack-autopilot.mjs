@@ -132,6 +132,9 @@ const ALLOW_UNAPPROVED = process.argv.includes('--allow-unapproved');
 // see scripts/lib/refine.mjs).
 const KIND_RAW = String(arg('kind') || '').toLowerCase();
 const PLAN_ONLY = process.argv.includes('--plan-only') || KIND_RAW === 'plan';
+// How many separately buildable pieces one plan run may break an item into.
+// The prompt states it; anything past it is dropped.
+const PLAN_PIECES_MAX = 8;
 const KIND = KIND_RAW === 'debug' ? 'debug'
   : KIND_RAW === 'audit' ? 'audit'
   : KIND_RAW === 'refine' ? 'refine'
@@ -874,6 +877,14 @@ label, a doc, one self-contained pure function with tests. Anything touching the
 database schema, auth, money, deletion, migrations, the hooks, or a contract other
 code reads is "high". Everything else is "normal" — when in doubt, say normal.
 
+${item.parentId == null ? `BREAK IT DOWN ONLY IF IT NEEDS IT. If this is more than one build session's work
+(one branch, one reviewable diff), list the separately buildable PIECES, at most
+${PLAN_PIECES_MAX}, each small enough for one unattended session. Each becomes its own item a
+human approves before anything builds it. If it is ONE buildable change, "pieces" is
+[] and "spec" describes it; that is a normal, good answer, not a failure to plan.
+` : `This item is already a piece of a larger feature, so do not break it down: "pieces"
+must be [] and "spec" describes it.
+`}
 Then answer with ONLY this JSON as your final output (no prose around it):
 { "approach": "2-4 sentences — how to build it and where it hooks in",
   "interfaces": ["the routes/functions/props touched or added — file paths included"],
@@ -881,7 +892,9 @@ Then answer with ONLY this JSON as your final output (no prose around it):
   "risks": ["what could bite — max 3"],
   "risk": "low | normal | high — how much damage a wrong build does, NOT how hard the work is",
   "riskReason": "one line — why that tier",
-  "steps": ["4-8 ordered implementation steps, each one commit-sized"] }`;
+  "steps": ["4-8 ordered implementation steps, each one commit-sized"],
+  "spec": { "goal": "one sentence", "acceptance": ["checkable from the terminal"], "files": ["real paths it touches"], "outOfScope": ["what not to touch"] },
+  "pieces": [ { "title": "imperative, under 80 chars", "goal": "one sentence", "acceptance": ["…"], "files": ["…"], "outOfScope": ["…"] } ] }`;
 
   // #285 — a plan night writes a design and nothing else: all judgement, no
   // typing. So it runs on the advisor when there is one (and spawns no executor
@@ -964,19 +977,45 @@ Then answer with ONLY this JSON as your final output (no prose around it):
     `Risk tier: ${riskLabel(risk, riskReason)}`,
   ];
   const note = `${(item.note || '').trim()}\n\n${docLines.join('\n')}`.trim().slice(0, 4000);
+  // The item's own spec, when it is one buildable change. A breakdown's
+  // parent gets none: its pieces carry theirs.
+  const pieces = item.parentId == null && Array.isArray(design.pieces)
+    ? design.pieces.filter((pc) => String(pc?.title || '').trim()).slice(0, PLAN_PIECES_MAX) : [];
+  const ownSpec = !pieces.length && design.spec && typeof design.spec === 'object' ? design.spec : null;
   const updated = await api('PATCH', `/api/projects/${SLUG}/roadmap/${item.id}`, {
     note,
     plan: steps.map((text) => ({ text, done: false })),
     risk, risk_reason: riskReason, risk_source: 'auto',
+    ...(ownSpec ? { spec: ownSpec } : {}),
   });
+  // The breakdown lands as HELD child items (source 'plan'): nothing builds
+  // one until a human approves it and queues it. One batch, all or nothing,
+  // so a parent never looks planned with half its pieces missing.
+  let filed = 0;
+  if (pieces.length) {
+    try {
+      const made = await api('POST', `/api/projects/${SLUG}/roadmap/batch`, {
+        items: pieces.map((pc) => ({
+          title: String(pc.title).trim(),
+          source: 'plan',
+          parentId: item.id,
+          bucket: item.bucket,
+          area: item.area || '',
+          spec: { goal: pc.goal, acceptance: pc.acceptance, files: pc.files, outOfScope: pc.outOfScope },
+        })),
+      });
+      filed = made?.items?.length || 0;
+      log(`#${item.id}: broken into ${filed} held piece(s) — approve them, then queue them to build.`);
+    } catch (e) { log(`#${item.id}: the breakdown was not filed (${e.message}) — the design note still lists it.`); }
+  }
   // Trust the response over what we sent — a human's own tier refuses our write
   // and hands its own tier back.
   const riskLog = updated?.riskSource === 'human'
     ? ` (risk tier: kept the human's own tier — ${updated.risk} — ours was ignored)`
     : ` (risk tier: ${updated?.risk ?? risk}, auto)`;
-  log(`#${item.id}: design saved — ${steps.length} plan step(s) + design note${riskLog}. Review it on the board, then a build night executes it.`);
+  log(`#${item.id}: design saved — ${steps.length} plan step(s) + design note${ownSpec ? ' + spec' : ''}${riskLog}. Review it, then queue it (or its pieces) to build.`);
   await postRun({ ...runRecord, outcome: limitHit ? 'limit' : 'planned', commits: 0,
-    summary: `Design authored: ${String(design.approach).trim()}`.slice(0, 1800) });
+    summary: `Design authored${filed ? `, ${filed} piece(s) filed for approval` : ''}: ${String(design.approach).trim()}`.slice(0, 1800) });
   return { landed: true, limitHit };
 }
 

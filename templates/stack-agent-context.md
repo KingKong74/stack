@@ -256,8 +256,8 @@ Open roadmap items can carry a claim (`claimedBy` — the branch name, e.g.
   Stopping partway is fine — ticked steps tell the next session (or the
   overnight autopilot, which injects the plan into its prompt) where to resume.
 
-  The **plan sweep** designs plan-less items; it never builds, ticks or touches
-  a plan whose steps have started.
+  The **plan sweep** designs the sprint's plan-less items, filing big ones as
+  held `plan` pieces; it never builds, ticks or touches a started plan.
 - **Items can carry a `spec`**: `{"goal","acceptance":[],"files":[],"outOfScope":[]}`,
   on POST or PATCH. A build run is held to it. `POST /roadmap/batch` with
   `{"items":[…]}` makes up to 50 at once, all or nothing; each may take
