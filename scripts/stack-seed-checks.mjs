@@ -138,6 +138,15 @@ function suiteFor(slug, ORIGIN) {
     { name: 'Agents — a profile carries its tool grant', url: u('/api/agent-profiles'), auth: true, json_path: 'profiles.0.tools.0' },
     { name: 'Agents — the tool vocabulary is served', url: u('/api/agent-profiles'), auth: true, json_path: 'knownTools.0' },
     { name: 'Agents — auth gate closed', url: u('/api/agent-profiles'), expect_status: 401 },
+    // Mission Control → Context's CLAUDE.md rows. `connected` is asserted as a
+    // PATH, not a value: false is a real answer (no daemon) that the screen must
+    // draw as "Stack cannot see", and a payload that dropped the key would draw
+    // it as "no CLAUDE.md anywhere". The PUT writes a file on the host, so its
+    // malformed form must be refused before anything is relayed.
+    { name: 'Context — CLAUDE.md read says whether it could see the host', url: u('/api/context/claude-md'), auth: true, json_path: 'connected' },
+    { name: 'Context — CLAUDE.md auth gate closed', url: u('/api/context/claude-md'), expect_status: 401 },
+    { name: 'Context — a malformed CLAUDE.md save is refused', method: 'PUT',
+      url: u('/api/context/claude-md'), auth: true, expect_status: 400, req_body: '{"slug":"x"}' },
     // #520 — the registry's route is GONE, and a deploy that still answers it
     // is a deploy running the old server. Asserted as a 404 rather than left
     // untested: a half-updated deploy is exactly when the client would call it.
