@@ -1,10 +1,11 @@
-// THE PLANS TAB — TWO WIRED SUB-VIEWS AND FOUR MOCKUPS, and which is which is
+// THE PLANS TAB — THREE WIRED SUB-VIEWS AND FOUR MOCKUPS, and which is which is
 // said on the sub-tab itself.
 //
 // `ui_kits/console/PlansScreen.jsx` came across whole in #451, all six views on
 // the kit's own sample rows (KING-07 … ATL-12). #482 wires the two that carry
 // the tab — TIMELINE, which is the order the night actually works in, and
-// CALENDAR, which is when the sprints run. Summary, Progress, Releases and
+// CALENDAR, which is when the sprints run. SESSION PLANS (SessionPlans.tsx) is
+// the third: plan-mode plans captured on approval, not board rows. Summary, Progress, Releases and
 // Dependencies still draw the kit's rows and each wears a MOCK CHIP ON ITS OWN
 // SUB-TAB. The rail's chip came off with this: the tab opens on Timeline, and a
 // "Mock" label over a wired default view breaks the "a number and the screen
@@ -81,8 +82,9 @@ import { Popover } from './Board';
 import type { RoadmapItem, Sprint } from '../types';
 import { dateAt, fmtDate, isBuilt, isBoardWork, listKeyOf } from '../lib/plan';
 import { getPlanFilters, setPlanFilters, type PlanFilters } from '../store';
+import { SessionPlansView } from './SessionPlans';
 
-type SubTab = 'summary' | 'progress' | 'timeline' | 'calendar' | 'releases' | 'dependencies';
+type SubTab = 'summary' | 'progress' | 'timeline' | 'calendar' | 'sessions' | 'releases' | 'dependencies';
 type StatusKey = 'todo' | 'progress' | 'review' | 'done';
 type Tone = 'neutral' | 'info' | 'success' | 'warning';
 type Kind = 'task' | 'idea';
@@ -93,6 +95,7 @@ const SUBTABS: { value: SubTab; label: string; icon: KitIconName }[] = [
   { value: 'progress', label: 'Progress', icon: 'chart-no-axes-column' },
   { value: 'timeline', label: 'Timeline', icon: 'list' },
   { value: 'calendar', label: 'Calendar', icon: 'calendar' },
+  { value: 'sessions', label: 'Session plans', icon: 'file-text' },
   { value: 'releases', label: 'Releases', icon: 'bookmark' },
   { value: 'dependencies', label: 'Dependencies', icon: 'git-branch' },
 ];
@@ -631,6 +634,7 @@ export function Plans({ slug, items, sprints, weekZero, onBoard }: {
       {sub === 'progress' && <ProgressView onBoard={onBoard} />}
       {sub === 'timeline' && <TimelineView key={slug} slug={slug} rows={plan} sprints={sprints} weekZero={weekZero} />}
       {sub === 'calendar' && <CalendarView rows={plan} sprints={sprints} weekZero={weekZero} />}
+      {sub === 'sessions' && <SessionPlansView key={slug} slug={slug} />}
       {sub === 'releases' && <ReleasesView />}
       {sub === 'dependencies' && <DependenciesView />}
     </div>

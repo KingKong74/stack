@@ -499,10 +499,19 @@ const PLANS_PANELS = [
     click: '.pl-monthnav .arw:last-child',
     expectTextChangeIn: '.pl-monthnav',
   },
+  // Session plans reads the project's captured plan-mode plans. A project
+  // with none draws the empty state instead, which is a pass: it is the view
+  // answering, not failing. Discard is never pressed; it deletes.
+  {
+    id: 'plans-sessions',
+    label: 'Plans — Session plans view',
+    click: '.pl-tabs .k-tab:nth-child(5)',
+    expect: '.sp-read .md, .sp-empty',
+  },
   {
     id: 'plans-releases',
     label: 'Plans — Releases view',
-    click: '.pl-tabs .k-tab:nth-child(5)',
+    click: '.pl-tabs .k-tab:nth-child(6)',
     expect: '.pl-relhead',
   },
   // The LAST release is closed at first paint (only tokens-v1.5 is open), so
@@ -516,7 +525,7 @@ const PLANS_PANELS = [
   {
     id: 'plans-dependencies',
     label: 'Plans — Dependencies view',
-    click: '.pl-tabs .k-tab:nth-child(6)',
+    click: '.pl-tabs .k-tab:nth-child(7)',
     expect: '.pl-depcard',
   },
 ];

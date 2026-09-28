@@ -185,8 +185,9 @@ const SCREENS = [
   // --surface-hover permanently while it is open.
   { slug: 'plans-progress-open', hash: '#/p/{slug}/plans', press: ['.pl-tabs .k-tab:nth-child(2)', '.pl-childrow'] },
   { slug: 'plans-calendar', hash: '#/p/{slug}/plans', press: ['.pl-tabs .k-tab:nth-child(4)'] },
-  { slug: 'plans-releases', hash: '#/p/{slug}/plans', press: ['.pl-tabs .k-tab:nth-child(5)'] },
-  { slug: 'plans-deps', hash: '#/p/{slug}/plans', press: ['.pl-tabs .k-tab:nth-child(6)'] },
+  { slug: 'plans-sessions', hash: '#/p/{slug}/plans', press: ['.pl-tabs .k-tab:nth-child(5)'] },
+  { slug: 'plans-releases', hash: '#/p/{slug}/plans', press: ['.pl-tabs .k-tab:nth-child(6)'] },
+  { slug: 'plans-deps', hash: '#/p/{slug}/plans', press: ['.pl-tabs .k-tab:nth-child(7)'] },
   { slug: 'settings', hash: '#/settings' },
   { slug: 'skills', hash: '#/skills' },
   { slug: 'timeline', hash: '#/timeline' },

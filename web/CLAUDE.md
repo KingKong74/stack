@@ -4,7 +4,8 @@ The root `CLAUDE.md` holds the cross-package rules (mirrored predicates, fail-sa
 file holds what applies only here. These file headers carry their own rules; read one before editing
 its file: `lib/branch.ts`, `lib/plan.ts`, `lib/quality.ts`, `lib/termClipboard.ts`, `lib/termLaunch.ts`, `styles.css`,
 `components/Brandmark.tsx`, `components/RoadmapModal.tsx`, `components/Asking.tsx`,
-`detail/Board.tsx`, `detail/Roadmap.tsx`, `detail/ForYou.tsx`, `detail/Plans.tsx`.
+`detail/Board.tsx`, `detail/Roadmap.tsx`, `detail/ForYou.tsx`, `detail/Plans.tsx`,
+`detail/SessionPlans.tsx`, `components/Markdown.tsx`.
 
 ## Structure
 

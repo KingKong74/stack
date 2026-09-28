@@ -4,7 +4,7 @@ import type {
   AuthDevice, Sprint, SprintPlan, ResumeSince, ProjectDebrief,
   SchedSpan, ProjectPulse, BoardShape, BoardList, BoardArea, ItemKind,
   AgentProfile, AgentProfilesRoom, ModelsRoom, ContextRoom, ClaudeMdRead,
-  ProjectKind, Spaces, SpaceArea, Workflow, WishIdea, IdeaStage,
+  ProjectKind, Spaces, SpaceArea, Workflow, WishIdea, IdeaStage, SessionPlan,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -1379,6 +1379,19 @@ export async function assistRoadmapItem(slug: string, note: string): Promise<Roa
 }
 
 // ---- checks (the Quality tab's Suite segment) ----
+
+// Plan-mode plans the stack-plan hook captured on approval. The list is
+// bodiless; one plan comes with its markdown.
+const plansBase = (slug: string) => `/projects/${encodeURIComponent(slug)}/plans`;
+export async function getSessionPlans(slug: string): Promise<SessionPlan[]> {
+  return request<SessionPlan[]>(plansBase(slug));
+}
+export async function getSessionPlan(slug: string, id: number): Promise<SessionPlan> {
+  return request<SessionPlan>(`${plansBase(slug)}/${id}`);
+}
+export async function deleteSessionPlan(slug: string, id: number): Promise<void> {
+  await request<void>(`${plansBase(slug)}/${id}`, { method: 'DELETE' });
+}
 
 const checksBase = (slug: string) => `/projects/${encodeURIComponent(slug)}/checks`;
 

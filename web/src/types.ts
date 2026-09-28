@@ -843,3 +843,12 @@ export interface Workflow {
 export type IdeaStage = 'spark' | 'scoped' | 'ready';
 export interface WishIdea { id: number; area: string; title: string; note: string; stage: IdeaStage }
 export interface Spaces { areas: SpaceArea[]; workflows: Workflow[]; ideas: WishIdea[] }
+
+// ---- plan-mode plans captured on approval (GET /api/projects/:slug/plans) ----
+// The list carries no `body`; GET /plans/:id does. `commit` is HEAD when the
+// plan was approved, not what built it. `planFile` is '' when unknown.
+export interface SessionPlan {
+  id: number; sessionId: string; title: string; planFile: string;
+  branch: string; commit: string; size: number; createdAt: string; when: string;
+  body?: string;
+}
