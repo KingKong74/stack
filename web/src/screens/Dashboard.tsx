@@ -393,7 +393,7 @@ export function Dashboard({ onOpenSearch }: { onOpenSearch: () => void }) {
           {deckError ? (
             <div className="deck-error">Couldn’t load where you left off — {deckError}</div>
           ) : overview ? (
-            <ResumeHero resume={overview.resume} keepResumeCard={overview.keepResumeCard} />
+            <ResumeHero overview={overview} project={projects.find((p) => p.id === overview.resume?.slug)} />
           ) : null}
 
           {actionError && (
