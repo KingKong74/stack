@@ -56,7 +56,7 @@ let detachedSessions = []; // [{ name, cwd, created, attached, keep, tail }]
 // name/cwd/created/attached/keep/tail); pruned when a name leaves the list.
 const detachedLabels = new Map(); // name -> label
 export const termDetached = () =>
-  detachedSessions.map(({ name, cwd, created, attached, keep, blocked, model, resolvedModel }) => ({
+  detachedSessions.map(({ name, cwd, created, attached, keep, blocked, waiting, model, resolvedModel }) => ({
     name, cwd, created, attached, keep, label: detachedLabels.get(name) || '',
     // #503 — what the session is talking to, as the HOST read it off the tmux
     // session a moment ago. null is UNRECORDED and is not the same claim as any
@@ -74,6 +74,10 @@ export const termDetached = () =>
     // the number the row actually needs: a prompt up for two minutes and one up
     // since last night are the same sentence and very different problems.
     blocked: blocked ? { ...blocked, since: blockedSince.get(name)?.at || Date.now() } : null,
+    // #519 — finished its turn and waiting at its own input (or on a question
+    // menu), confirmed by the host across two reads. Same clock as `blocked`,
+    // on its own map: the two are different stops and must not share a stamp.
+    waiting: waiting ? { ...waiting, since: waitingSince.get(name)?.at || Date.now() } : null,
   }));
 
 // name -> { fingerprint, at }. Reset when the question changes, dropped when
@@ -81,16 +85,28 @@ export const termDetached = () =>
 // not know how long a prompt has been up, and re-stamping now says "at least
 // this long" rather than inventing a history.
 const blockedSince = new Map();
-function stampBlocked(sessions) {
+const waitingSince = new Map(); // #519 — the same, for `waiting`
+function stampSince(map, sessions, field) {
   for (const s of sessions) {
-    const fp = s.blocked?.fingerprint;
-    if (!fp) { blockedSince.delete(s.name); continue; }
-    const prev = blockedSince.get(s.name);
-    if (!prev || prev.fingerprint !== fp) blockedSince.set(s.name, { fingerprint: fp, at: Date.now() });
+    const fp = s[field]?.fingerprint;
+    if (!fp) { map.delete(s.name); continue; }
+    const prev = map.get(s.name);
+    if (!prev || prev.fingerprint !== fp) map.set(s.name, { fingerprint: fp, at: Date.now() });
   }
   const alive = new Set(sessions.map((s) => s.name));
-  for (const name of blockedSince.keys()) if (!alive.has(name)) blockedSince.delete(name);
+  for (const name of map.keys()) if (!alive.has(name)) map.delete(name);
 }
+function stampBlocked(sessions) {
+  stampSince(blockedSince, sessions, 'blocked');
+  stampSince(waitingSince, sessions, 'waiting');
+}
+
+// #519 — a session that FINISHED and is waiting at its input, narrowed. No
+// Approve rides on this and nothing may answer it: there is no menu to
+// answer, only a conversation to continue, and that is typed at the pane.
+const waitingShape = (w) => (w && (w.kind === 'input' || w.kind === 'choice') && typeof w.fingerprint === 'string'
+  ? { kind: w.kind, detail: String(w.detail || '').slice(0, 300), fingerprint: w.fingerprint.slice(0, 40) }
+  : null);
 
 // A session stopped on a permission prompt, narrowed to the fields a row and
 // its Approve button need. The BODY the host fingerprinted is deliberately not
@@ -450,6 +466,9 @@ export function attachTerm(httpServer) {
             // An older daemon sends nothing, which reads as "not blocked" — the
             // truthful answer for a host that cannot see a block at all.
             blocked: blockedShape(s.blocked),
+            // #519 — an older daemon sends nothing: "cannot see a finished
+            // turn", which reads as not waiting, the same as it always did.
+            waiting: blockedShape(s.blocked) ? null : waitingShape(s.waiting),
             // #503 — an older daemon sends nothing, which reads as unrecorded:
             // the truthful answer for a host that cannot say what a session is
             // on, and deliberately NOT a default to the subscription.

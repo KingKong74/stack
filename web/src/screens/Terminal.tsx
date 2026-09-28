@@ -24,6 +24,7 @@ import {
   getOverview,
 } from '../store';
 import { hrefTo } from '../lib/route';
+import { askOf } from '../lib/asking';
 
 import { useAutoRefresh } from '../lib/autoRefresh';
 import { wireTermClipboard } from '../lib/termClipboard';
@@ -758,6 +759,14 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   // which is worse than noticing a real one a tick late.
   const blockedOf = (x: Sess) =>
     (x.tmux ? detached.find((d) => d.name === x.tmux)?.blocked : null) ?? null;
+  // #519 — …or has FINISHED and is waiting at its own input. The rail marks
+  // either stop (a bypass-permissions session only ever makes the second);
+  // the Approve strip above the canvas stays on `blockedOf` alone, because a
+  // finished turn has no menu to approve.
+  const askFor = (x: Sess) => {
+    const d = x.tmux ? detached.find((dd) => dd.name === x.tmux) : undefined;
+    return d ? askOf(d) : null;
+  };
 
   const attachDetached = (d: DetachedSession) => {
     setDetached((l) => l.filter((x) => x.name !== d.name));
@@ -2015,7 +2024,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                 {TOOL_GROUPS.map((g) => {
                   const mine = sessions.filter((x) => x.cmd === g.key);
                   if (!mine.length) return null;
-                  const asks = mine.filter((x) => !!blockedOf(x)).length;
+                  const asks = mine.filter((x) => !!askFor(x)).length;
                   return (
                     <button key={g.key} className={`tc-markbtn ${g.key}`}
                       title={`${mine.length} ${g.name}${asks ? ` · ${asks} waiting on you` : ''} — open the rail`}
@@ -2051,14 +2060,14 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                     ) : TOOL_GROUPS.map((g) => {
                       const mine = sessions.filter((x) => x.cmd === g.key);
                       if (!mine.length) return null;
-                      const asking = mine.filter((x) => !!blockedOf(x)).length;
+                      const asking = mine.filter((x) => !!askFor(x)).length;
                       return (
                         <div className="tcg" key={g.key}>
                           <div className="tcg-head">
                             <span className={`term-mark ${g.key}`} aria-hidden="true">{g.mark}</span>
                             <span className="nm">{g.name}</span>
                             {asking > 0 && (
-                              <span className="asking" title={`${asking} waiting on a permission answer`}>
+                              <span className="asking" title={`${asking} waiting on you`}>
                                 <span className="d" />{asking} asking
                               </span>
                             )}
@@ -2070,13 +2079,15 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                             // The one thing on this row that is not a reading
                             // but a REQUEST: this session has stopped and is
                             // waiting for an answer.
-                            const ask = blockedOf(x);
+                            const ask = askFor(x);
                             return (
                               <div key={x.id}
                                 className={`tcg-row${x.id === active ? ' on' : ''}${onScreen ? '' : ' off'}${ask ? ' asking' : ''}${endPick.includes(x.id) ? ' picked' : ''}`}
                                 aria-selected={endPick.includes(x.id)}
                                 title={(ask
-                                  ? 'Stopped on a question — click to bring it into the first pane and answer it'
+                                  ? (ask.kind === 'permission'
+                                    ? 'Stopped on a question — click to bring it into the first pane and answer it'
+                                    : 'Finished and waiting on you — click to bring it into the first pane')
                                   : onScreen
                                     ? 'Click to bring this session into the first pane'
                                     : 'Not on screen — click to bring it into the first pane')
@@ -2119,7 +2130,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                                     catching a real one a tick late. */}
                                 {ask && (
                                   <span className="tcg-ask" aria-label="Waiting on your answer"
-                                    title={`Waiting on you — ${ask.title || ask.question}`}>
+                                    title={`Waiting on you — ${ask.title || ask.question}${ask.kind === 'permission' ? '' : ask.detail ? `\n${ask.detail}` : ''}`}>
                                     <span className="d" />
                                   </span>
                                 )}
@@ -2181,7 +2192,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                           const picked = killPick.includes(d.name);
                           return (
                             <div key={d.name}
-                              className={`tci-row${d.attached ? ' away' : ''}${picked ? ' picked' : ''}${d.keep ? ' pinned' : ''}${d.blocked ? ' asking' : ''}`}>
+                              className={`tci-row${d.attached ? ' away' : ''}${picked ? ' picked' : ''}${d.keep ? ' pinned' : ''}${askOf(d) ? ' asking' : ''}`}>
                               <button className="tci-main"
                                 title={d.attached
                                   ? `Attached on another device (tmux ${d.name}) — open it here too: both screens mirror the same session`
@@ -2209,9 +2220,9 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                                       conditional — a session the labeller has
                                       not answered for yet would drop the mark
                                       with it. */}
-                                  {d.blocked && (
+                                  {askOf(d) && (
                                     <span className="tcg-ask" aria-label="Waiting on your answer"
-                                      title={`Waiting on you — ${d.blocked.title || d.blocked.question}`}>
+                                      title={`Waiting on you — ${askOf(d)!.title || askOf(d)!.question}`}>
                                       <span className="d" />
                                     </span>
                                   )}

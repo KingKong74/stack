@@ -16,6 +16,7 @@ import { TokenGate } from './components/TokenGate';
 import { Showcase } from './screens/Showcase';
 import { CommandPalette } from './components/CommandPalette';
 import { ToTop } from './components/ToTop';
+import { AskNotifier } from './components/Asking';
 import { getToken, onAuthChange } from './store';
 
 // The app is DARK-ONLY: the imported console kit ships one palette and no
@@ -82,6 +83,9 @@ export default function App() {
         </Suspense>
       )}
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
+      {/* #519 — the tab-title count and the desktop notification when a
+          session stops for you. Mounted once, on every screen. */}
+      <AskNotifier />
       {route.name !== 'terminal' && <ToTop />}
     </>
   );

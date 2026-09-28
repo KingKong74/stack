@@ -104,6 +104,22 @@ export function paneTail(name, lines = 30, { chars = 1500 } = {}) {
   return (r.stdout || '').replace(/\s+$/, '').slice(-chars);
 }
 
+// #519 — the same capture WITH its styling (-e), for input-wait.mjs, which
+// has to tell claude's dimmed input suggestion from a draft the human typed —
+// a difference a plain capture erases. A separate read rather than a change
+// to paneTail: the plain tail feeds the labeller and prompt-scan, and neither
+// wants SGR noise in its text. Uncapped by characters (escapes inflate it) but
+// bounded by lines.
+export function paneTailStyled(name, lines = 60) {
+  const r = spawnSync(
+    'tmux',
+    ['capture-pane', '-e', '-p', '-t', `=${name}:`, '-S', `-${lines}`],
+    { encoding: 'utf8' },
+  );
+  if (r.status !== 0) return '';
+  return (r.stdout || '').replace(/\s+$/, '');
+}
+
 // Type into a session's pane. The ONLY writer into a running session that is
 // not the browser's own PTY, and it exists for exactly one caller: answering a
 // permission prompt from Mission Control (prompt-scan.mjs).

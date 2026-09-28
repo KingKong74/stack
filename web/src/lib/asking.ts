@@ -1,4 +1,4 @@
-import type { BlockedPrompt, DetachedSession } from '../store';
+import type { DetachedSession } from '../store';
 
 // WHICH SESSIONS HAVE STOPPED TO ASK YOU SOMETHING — the pure half.
 //
@@ -21,6 +21,30 @@ import type { BlockedPrompt, DetachedSession } from '../store';
 // promotes a session to "asking" on its own — it only passes through what the
 // host's own scan already decided.
 
+/**
+ * WHAT A SESSION IS WAITING ON, in one shape for every surface (#519).
+ *
+ * Two host scans feed it and they are different stops:
+ *   · `permission` — prompt-scan.mjs's `blocked`: a yes/no menu, the one the
+ *     Terminal screen's Approve button may answer.
+ *   · `input` / `choice` — input-wait.mjs's `waiting`: the turn is over and
+ *     claude is sitting at its own input, or on a question menu. This is the
+ *     stop a bypass-permissions session makes — i.e. every session the owner
+ *     runs — and it was invisible until #519.
+ * Only the first carries an answerable menu; these surfaces answer neither.
+ */
+export type AskInfo = {
+  kind: 'permission' | 'input' | 'choice';
+  /** The sentence a row leads with. */
+  question: string;
+  /** The box heading for a permission ("Bash command"); '' otherwise. */
+  title: string;
+  /** The command, the file — or what the session last said. */
+  detail: string;
+  fingerprint: string;
+  since: number;
+};
+
 export type AskingSession = {
   /** The host tmux session name — the one id every surface agrees on. */
   name: string;
@@ -28,9 +52,31 @@ export type AskingSession = {
   cwd: string;
   /** ✧ Gemini's take on what it is doing. '' when nothing has named it yet. */
   label: string;
-  /** The question itself, with `since` stamped by the relay. */
-  ask: BlockedPrompt;
+  /** What it is waiting on, with `since` stamped by the relay. */
+  ask: AskInfo;
 };
+
+/**
+ * The one stop a host session is making right now, or null. A permission
+ * prompt wins over a finished turn (the relay already drops `waiting` when
+ * `blocked` is set; this is the second guard, not the first).
+ */
+export function askOf(d: Pick<DetachedSession, 'blocked' | 'waiting'>): AskInfo | null {
+  const b = d.blocked;
+  if (b) return { kind: 'permission', question: b.question, title: b.title, detail: b.detail, fingerprint: b.fingerprint, since: b.since };
+  const w = d.waiting;
+  if (w) {
+    return {
+      kind: w.kind,
+      question: w.kind === 'choice' ? (w.detail || 'Waiting on your choice') : 'Finished — waiting for your reply',
+      title: '',
+      detail: w.kind === 'choice' ? '' : w.detail,
+      fingerprint: w.fingerprint,
+      since: w.since,
+    };
+  }
+  return null;
+}
 
 /**
  * The waiting sessions out of the host's full session list, LONGEST WAIT
@@ -51,8 +97,9 @@ export type AskingSession = {
 export function pickAsking(sessions: DetachedSession[]): AskingSession[] {
   const out: AskingSession[] = [];
   for (const d of sessions) {
-    if (!d.blocked) continue;
-    out.push({ name: d.name, cwd: d.cwd || '', label: d.label || '', ask: d.blocked });
+    const ask = askOf(d);
+    if (!ask) continue;
+    out.push({ name: d.name, cwd: d.cwd || '', label: d.label || '', ask });
   }
   return out.sort((a, b) => a.ask.since - b.ask.since || a.name.localeCompare(b.name));
 }
@@ -90,4 +137,54 @@ export function askingName(a: AskingSession): string {
   if (a.label) return a.label;
   const leaf = a.cwd.split('/').filter(Boolean).pop();
   return leaf || 'home';
+}
+
+// ---------------------------------------------------------------------------
+// #519 — TELLING THE OWNER, when he is not looking
+// ---------------------------------------------------------------------------
+
+/** The dedupe key: one stop is one session at one fingerprint. */
+export const stopKey = (a: AskingSession): string => `${a.name}:${a.ask.fingerprint}`;
+
+/**
+ * Which stops are NEW since the last read — the ones worth a notification.
+ *
+ * `seen` null means "no read yet" and SEEDS rather than notifies: a tab that
+ * has just opened is a tab the owner is looking at, and a burst of five
+ * notifications for things already on his screen is how he learns to turn them
+ * off. `gone` is what to close: a stop that is no longer current (answered, or
+ * the session moved on) must not sit in the notification centre as if it were.
+ */
+export function diffStops(seen: ReadonlySet<string> | null, list: AskingSession[]): {
+  fresh: AskingSession[]; gone: string[]; seen: Set<string>;
+} {
+  const now = new Set(list.map(stopKey));
+  if (!seen) return { fresh: [], gone: [], seen: now };
+  return {
+    fresh: list.filter((a) => !seen.has(stopKey(a))),
+    gone: [...seen].filter((k) => !now.has(k)),
+    seen: now,
+  };
+}
+
+/**
+ * The tab title with a waiting count in front — "(2) Stack". Idempotent over
+ * its own output, so re-badging a badged title never stacks "(2) (2) …".
+ * Zero is the bare title: silence is not drawn as a number.
+ */
+export function badgeTitle(title: string, n: number): string {
+  const bare = title.replace(/^\(\d+\)\s+/, '');
+  return n > 0 ? `(${n}) ${bare}` : bare;
+}
+
+/** A system notification's words for one stop. */
+export function notifyText(a: AskingSession): { title: string; body: string } {
+  const who = askingName(a);
+  const title = a.ask.kind === 'permission'
+    ? `${who} is asking permission`
+    : a.ask.kind === 'choice' ? `${who} is waiting on your choice` : `${who} is waiting for you`;
+  const body = a.ask.kind === 'permission'
+    ? [a.ask.title, a.ask.detail || a.ask.question].filter(Boolean).join(' — ')
+    : a.ask.kind === 'choice' ? a.ask.question : (a.ask.detail || a.ask.question);
+  return { title, body: body.length > 180 ? `${body.slice(0, 179)}…` : body };
 }

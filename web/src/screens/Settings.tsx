@@ -12,6 +12,7 @@ import { hrefTo } from '../lib/route';
 import { PRODUCT_NAME } from '../lib/ui';
 import { DIRECTIVES } from '../lib/brief';
 import { TopBar } from '../components/TopBar';
+import { AskNotifySetting } from '../components/Asking';
 
 // Mission Control and the instructions tree were culled, so this screen is
 // back to the one surface it started as. The strip below is kept for the
@@ -424,6 +425,17 @@ export function Settings() {
                   ))}
                 </div>
               </div>
+            </section>
+
+            {/* ---- Notifications (#519 — device-local: the browser notifies) ---- */}
+            <section className="set-card">
+              <div className="set-card-head">
+                <div className="set-card-title">Notifications</div>
+                <div className="set-card-sub">
+                  Being told when a terminal session is waiting on you, on this device.
+                </div>
+              </div>
+              <AskNotifySetting />
             </section>
 
             {/* ---- Auto refresh (#312 — device-local, like Appearance) ---- */}

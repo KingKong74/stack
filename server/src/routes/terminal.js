@@ -90,7 +90,9 @@ terminal.get('/models', async (_req, res) => {
 // (#188 follow-up): what a page reload orphans. Served from the relay's cache
 // (the daemon pushes updates); empty while the daemon is offline.
 terminal.get('/detached', (_req, res) => {
-  res.json({ sessions: termDetached() });
+  // `connected` rides along (#519) so a reader can tell "nothing is waiting"
+  // from "Stack cannot see the host" — an empty list means both.
+  res.json({ sessions: termDetached(), connected: termAgentConnected() });
 });
 
 // POST /api/terminal/detached/kill {name} — kill an orphaned tmux session on

@@ -291,6 +291,18 @@ export interface BlockedPrompt {
   since: number;         // epoch ms the relay first saw this question
 }
 
+// #519 — a session that FINISHED ITS TURN and is sitting at its own input
+// (`input`), or on a question menu (`choice`), as the host confirmed it across
+// two reads. The stop a bypass-permissions session actually makes. Nothing
+// answers this from a list — there is no menu to approve, only a conversation
+// to continue at the pane. `since` is stamped by the relay.
+export interface WaitingStop {
+  kind: 'input' | 'choice';
+  detail: string;        // what it last said, or the menu's question
+  fingerprint: string;   // one stop, one notification
+  since: number;
+}
+
 // ---- the autopilot's jobs and schedules ----
 //
 // The NIGHTLY RUNNER outlived Mission Control. Its rooms were the console, but
@@ -785,6 +797,7 @@ export interface DetachedSession {
   label?: string;      // ✧ Gemini's take on what it's doing
   keep?: boolean;      // #292 — pinned: the host's idle reaper leaves it alone
   blocked?: BlockedPrompt | null;  // stopped on a permission prompt right now
+  waiting?: WaitingStop | null;    // #519 — finished its turn, waiting at its input
   model?: SessionModel | null;     // #503 — what it is running on; null = unrecorded
   // #505 — what actually ANSWERED, off the session's own transcript. '' = Stack
   // cannot say. Separate from `model` on purpose: a combo route resolves per
@@ -814,8 +827,36 @@ export async function getTerminalGateway(): Promise<GatewayState> {
 }
 
 export async function getDetachedSessions(): Promise<DetachedSession[]> {
-  const r = await request<{ sessions: DetachedSession[] }>('/terminal/detached');
-  return r.sessions;
+  return (await getDetachedFeed()).sessions;
+}
+// The same read WITH whether the host daemon is on the line (#519). An empty
+// list means "nothing is waiting" only when `connected` is true — otherwise
+// Stack cannot see the host at all (CLAUDE.md's fail-SILENT rule). An older
+// server sends no flag, which reads as `undefined`: unknown, not connected.
+export async function getDetachedFeed(): Promise<{ sessions: DetachedSession[]; connected?: boolean }> {
+  const r = await request<{ sessions: DetachedSession[]; connected?: boolean }>('/terminal/detached');
+  return { sessions: r.sessions, connected: r.connected };
+}
+
+// ---- desktop notifications when a session stops for you (#519, device-local) ----
+//
+// Whether THIS browser raises a system notification when a claude session
+// stops to wait on the owner. Device-local for the Auto refresh reason: the
+// browser is what polls and what notifies, and the permission it needs is the
+// browser's own. Off until turned on — turning it on is also what asks the
+// browser for permission, which it only allows from a click.
+const ASK_NOTIFY_KEY = 'stack.askNotify';
+export function getAskNotify(): boolean {
+  try { return localStorage.getItem(ASK_NOTIFY_KEY) === '1'; } catch { return false; }
+}
+let askNotifyListeners: Array<() => void> = [];
+export function setAskNotify(on: boolean) {
+  try { localStorage.setItem(ASK_NOTIFY_KEY, on ? '1' : '0'); } catch { /* private mode: this tab only */ }
+  for (const cb of askNotifyListeners) cb();
+}
+export function onAskNotifyChange(cb: () => void): () => void {
+  askNotifyListeners.push(cb);
+  return () => { askNotifyListeners = askNotifyListeners.filter((x) => x !== cb); };
 }
 export async function killDetachedSession(name: string): Promise<void> {
   await request<{ ok: boolean }>('/terminal/detached/kill', { method: 'POST', body: { name } });

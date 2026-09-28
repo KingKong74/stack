@@ -33,7 +33,7 @@ module.registerHooks({
 });
 
 const url = new URL('../web/src/lib/asking.ts', import.meta.url);
-const { pickAsking, waitedFor, askingName } = await import(url.href);
+const { pickAsking, waitedFor, askingName, askOf, diffStops, badgeTitle, notifyText, stopKey } = await import(url.href);
 
 const MIN = 60_000;
 const NOW = Date.parse('2026-09-14T12:00:00Z');
@@ -41,7 +41,7 @@ const NOW = Date.parse('2026-09-14T12:00:00Z');
 /** A host session row as GET /api/terminal/detached ships one. */
 const sess = (over = {}) => ({
   name: 'stack-term-aa11', cwd: 'stack', created: NOW - 9e6, attached: false,
-  keep: false, label: '', model: null, resolvedModel: '', blocked: null, ...over,
+  keep: false, label: '', model: null, resolvedModel: '', blocked: null, waiting: null, ...over,
 });
 const ask = (over = {}) => ({
   title: 'Edit file', question: 'Do you want to make this edit to lanes.js?',
@@ -143,4 +143,92 @@ test('the floor is <1m, never a precise zero', () => {
   assert.equal(waitedFor(NOW, NOW), '<1m');
   assert.equal(waitedFor(NOW - 59_000, NOW), '<1m');
   assert.equal(waitedFor(NOW + 5_000, NOW), '<1m');
+});
+
+// ---- #519 · the finished-and-waiting stop ----------------------------------
+
+const wait = (over = {}) => ({ kind: 'input', detail: 'Tell me which of these to keep.', fingerprint: 'w1', since: NOW - 3 * MIN, ...over });
+
+test('a session WAITING at its input is asking — the stop a bypass session makes', () => {
+  const out = pickAsking([sess({ name: 'done', waiting: wait() }), sess({ name: 'busy' })]);
+  assert.deepEqual(out.map((x) => x.name), ['done']);
+  assert.equal(out[0].ask.kind, 'input');
+  assert.equal(out[0].ask.detail, 'Tell me which of these to keep.');
+});
+
+test('a permission prompt wins over a finished turn on the same session', () => {
+  const a = askOf({ blocked: ask(), waiting: wait() });
+  assert.equal(a.kind, 'permission');
+  assert.equal(a.fingerprint, 'abc123');
+});
+
+test('a question menu leads with its question', () => {
+  const a = askOf({ blocked: null, waiting: wait({ kind: 'choice', detail: 'Which currency?' }) });
+  assert.equal(a.question, 'Which currency?');
+  assert.equal(askOf({ blocked: null, waiting: null }), null);
+});
+
+test('both stops sort together, longest wait first', () => {
+  const out = pickAsking([
+    sess({ name: 'perm', blocked: ask({ since: NOW - 2 * MIN }) }),
+    sess({ name: 'fin', waiting: wait({ since: NOW - 9 * MIN }) }),
+  ]);
+  assert.deepEqual(out.map((x) => x.name), ['fin', 'perm']);
+});
+
+// ---- diffStops: one stop, one notification ---------------------------------
+
+test('the FIRST read seeds and notifies nothing', () => {
+  const list = pickAsking([sess({ name: 'a', waiting: wait() })]);
+  const r = diffStops(null, list);
+  assert.deepEqual(r.fresh, []);
+  assert.deepEqual([...r.seen], ['a:w1']);
+});
+
+test('a new stop is fresh once, and only once', () => {
+  const one = pickAsking([sess({ name: 'a', waiting: wait() })]);
+  const two = pickAsking([sess({ name: 'a', waiting: wait() }), sess({ name: 'b', blocked: ask() })]);
+  const r1 = diffStops(diffStops(null, one).seen, two);
+  assert.deepEqual(r1.fresh.map((x) => x.name), ['b']);
+  const r2 = diffStops(r1.seen, two);
+  assert.deepEqual(r2.fresh, []);
+});
+
+test('a relay re-stamp of `since` is NOT a new stop — the fingerprint is the key', () => {
+  const before = pickAsking([sess({ name: 'a', waiting: wait({ since: NOW - 9 * MIN }) })]);
+  const after = pickAsking([sess({ name: 'a', waiting: wait({ since: NOW }) })]);
+  assert.deepEqual(diffStops(diffStops(null, before).seen, after).fresh, []);
+});
+
+test('the same session stopping AGAIN on a new turn is a new stop, and the old one is gone', () => {
+  const before = pickAsking([sess({ name: 'a', waiting: wait({ fingerprint: 'w1' }) })]);
+  const after = pickAsking([sess({ name: 'a', waiting: wait({ fingerprint: 'w2' }) })]);
+  const r = diffStops(diffStops(null, before).seen, after);
+  assert.deepEqual(r.fresh.map(stopKey), ['a:w2']);
+  assert.deepEqual(r.gone, ['a:w1']);
+});
+
+test('an answered stop is gone, so its notification can be closed', () => {
+  const before = pickAsking([sess({ name: 'a', waiting: wait() })]);
+  const r = diffStops(diffStops(null, before).seen, []);
+  assert.deepEqual(r.gone, ['a:w1']);
+  assert.deepEqual(r.fresh, []);
+});
+
+// ---- the title badge and the notification's words --------------------------
+
+test('the title badge counts, and never stacks', () => {
+  assert.equal(badgeTitle('Stack', 2), '(2) Stack');
+  assert.equal(badgeTitle('(2) Stack', 3), '(3) Stack');
+  assert.equal(badgeTitle('(3) Stack', 0), 'Stack');
+  assert.equal(badgeTitle('Stack', 0), 'Stack');
+});
+
+test('a notification names the session and says what it is waiting on', () => {
+  const [fin] = pickAsking([sess({ cwd: 'bkos', waiting: wait() })]);
+  assert.deepEqual(notifyText(fin), { title: 'bkos is waiting for you', body: 'Tell me which of these to keep.' });
+  const [perm] = pickAsking([sess({ cwd: 'stack', blocked: ask() })]);
+  assert.deepEqual(notifyText(perm), { title: 'stack is asking permission', body: 'Edit file — server/src/lanes.js' });
+  const [long] = pickAsking([sess({ waiting: wait({ detail: 'x'.repeat(400) }) })]);
+  assert.ok(notifyText(long).body.length <= 180);
 });

@@ -53,8 +53,9 @@ import meow from 'meow';
 import WebSocket from 'ws';
 import { createUsageMeter } from './usage-meter.mjs';
 import { createPlanUsage } from './plan-usage.mjs';
-import { tmuxAvailable, validName, generateName, sessionArgv, sessionExists, killSession, clearFresh, listDetached, listStackSessions, listAutoSessions, markFresh, paneTail, reapDeadSessions, reapFreshSessions, reapIdleSessions, sendKeys, setKeep, setSessionModel } from './tmux-session.mjs';
+import { tmuxAvailable, validName, generateName, sessionArgv, sessionExists, killSession, clearFresh, listDetached, listStackSessions, listAutoSessions, markFresh, paneTail, paneTailStyled, reapDeadSessions, reapFreshSessions, reapIdleSessions, sendKeys, setKeep, setSessionModel } from './tmux-session.mjs';
 import { detectPrompt } from './prompt-scan.mjs';
+import { detectWaiting } from './input-wait.mjs';
 import { parseAutoName, readActivity } from './auto-scan.mjs';
 import { agentScratchDir, agentClaudeArgs } from './agent-run.mjs';
 import { writeDrop, DROP_MAX_BYTES } from './drop-file.mjs';
@@ -288,6 +289,12 @@ function pushDetached() {
       // Stopped, waiting on a human. null unless a permission prompt is
       // genuinely sitting at the end of the pane right now.
       blocked: detectPrompt(tail),
+      // #519 — FINISHED AND WAITING at its own input (or on a question menu):
+      // the stop a bypass-permissions session actually makes. Only ever what
+      // the block watch below has CONFIRMED across two reads, and re-checked
+      // against the pane as it is now, so a session answered since the last
+      // tick is not advertised as still waiting.
+      waiting: confirmedWaiting(s.name),
       // #505 — and WHAT ACTUALLY ANSWERED, read off the session's own
       // transcript. A SIBLING of `model`, not a field inside it, for two
       // reasons: a combo route resolves per request so the two are genuinely
@@ -343,12 +350,44 @@ setInterval(pushAuto, 60_000);
 // of blocked sessions CHANGES — no change, no frame. A capture-pane is a couple
 // of milliseconds, and this is the only cost of noticing within twenty seconds
 // instead of within sixty.
+//
+// #519 — the same tick watches for the OTHER stop: a turn finished and the
+// session sitting at an empty input (input-wait.mjs). A single read cannot be
+// trusted with that — between two tool calls a working session can look idle
+// for an instant — so a candidate is only CONFIRMED when two reads a tick
+// apart agree on its fingerprint. That costs up to forty seconds of latency
+// on a stop that will sit there for minutes or hours, and it is what keeps a
+// desktop notification from firing on a session that was never waiting.
 let blockedKey = '';
+const waitSeen = new Map(); // name -> { fp, confirmed: {kind, detail, fingerprint} | null }
+function scanWaiting(name) {
+  const cand = detectWaiting(paneTailStyled(name));
+  if (!cand) { waitSeen.delete(name); return null; }
+  const prev = waitSeen.get(name);
+  const confirmed = prev && prev.fp === cand.fingerprint ? cand : null;
+  waitSeen.set(name, { fp: cand.fingerprint, confirmed });
+  return confirmed;
+}
+function confirmedWaiting(name) {
+  const w = waitSeen.get(name)?.confirmed;
+  if (!w) return null;
+  // Still true of the pane right now? A reply typed since the last tick has
+  // made it false, and leaning to null is the rule.
+  return detectWaiting(paneTailStyled(name))?.fingerprint === w.fingerprint ? w : null;
+}
 function watchBlocks() {
   if (!tmuxAvailable()) return;
-  const key = listStackSessions()
-    .map((s) => `${s.name}:${detectPrompt(paneTail(s.name))?.fingerprint || ''}`)
+  const list = listStackSessions();
+  const key = list
+    .map((s) => {
+      const blocked = detectPrompt(paneTail(s.name))?.fingerprint || '';
+      const waiting = blocked ? '' : (scanWaiting(s.name)?.fingerprint || '');
+      if (blocked) waitSeen.delete(s.name);
+      return `${s.name}:${blocked}:${waiting}`;
+    })
     .join('|');
+  const alive = new Set(list.map((s) => s.name));
+  for (const name of waitSeen.keys()) if (!alive.has(name)) waitSeen.delete(name);
   if (key === blockedKey) return;
   blockedKey = key;
   pushDetached();

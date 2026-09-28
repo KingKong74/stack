@@ -23,7 +23,15 @@ import { getAutoRefreshSeconds, onAutoRefreshChange } from '../store';
 //
 // `enabled` is the caller's own gate (the screen is showing, a slug is known).
 // It never resets the poll to a different cadence — only off and on.
-export function useAutoRefresh(fn: () => void, enabled = true): void {
+//
+// `whileHidden` is the ONE exception to the hidden-tab rule, and it has
+// exactly one caller: the #519 notifier, when the owner has turned desktop
+// notifications on. Its whole job is the moment he is NOT looking — a watcher
+// that sleeps whenever the tab is hidden notifies only people already staring
+// at it. It is still one light read per interval, still governed by the same
+// cadence, and Off still means off.
+export function useAutoRefresh(fn: () => void, enabled = true, opts: { whileHidden?: boolean } = {}): void {
+  const whileHidden = !!opts.whileHidden;
   const latest = useRef(fn);
   useEffect(() => { latest.current = fn; });
 
@@ -38,12 +46,12 @@ export function useAutoRefresh(fn: () => void, enabled = true): void {
     // reason to re-fetch.
     let lastRun = Date.now();
     const run = () => { lastRun = Date.now(); latest.current(); };
-    const t = window.setInterval(() => { if (!document.hidden) run(); }, ms);
+    const t = window.setInterval(() => { if (whileHidden || !document.hidden) run(); }, ms);
     const onVisible = () => { if (!document.hidden && Date.now() - lastRun >= ms) run(); };
     document.addEventListener('visibilitychange', onVisible);
     return () => {
       window.clearInterval(t);
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [enabled, seconds]);
+  }, [enabled, seconds, whileHidden]);
 }
