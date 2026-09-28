@@ -227,7 +227,9 @@ function ModelChip({ model, resolved, show }: {
   );
 }
 
-type Handle = { sendText: (s: string) => void; reconnect: () => void; focus: () => void };
+// `reload` (#518) re-attaches: a fresh renderer, a cleared screen and a new
+// socket onto the SAME tmux session, which redraws it whole. Never a kill.
+type Handle = { sendText: (s: string) => void; reconnect: () => void; reload: () => void; focus: () => void };
 
 // Mounted once by App and never unmounted (#137): sessions, sockets and
 // scrollback survive navigation. `visible` = the #/terminal route is showing;
@@ -1687,6 +1689,15 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
               ↻ Reconnect
             </button>
           )}
+          {/* #518 — every pane at once, for the morning after: the same
+              re-attach each pane's own ↻ does. */}
+          {sessions.length > 1 && (
+            <button className="btn-repo sm"
+              title="Reload every pane — re-attach each claude session on a fresh screen (none is killed); shells are only repainted"
+              onClick={() => { for (const h of handles.current.values()) h.reload(); }}>
+              ↻ All
+            </button>
+          )}
           {/* How many terminals are on screen at once — this replaced the
               wide-mode toggle. Panes are filled from the active tab onwards,
               so picking a tab puts it top-left and its neighbours beside it. */}
@@ -1877,6 +1888,15 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                       </button>
                     );
                   })()}
+                  {/* #518 — ↻ RELOAD THIS PANE when it has stopped moving.
+                      Re-attaches the same host session (never kills it) on a
+                      fresh screen and renderer; on a shell, only repaints. */}
+                  <button className="pane-btn"
+                    title={s.tmux
+                      ? `Reload — re-attach ${s.tmux} on a fresh screen. Use it when this pane has frozen; the session itself is untouched.`
+                      : 'Repaint this pane (a shell cannot be re-attached — reloading one would end it)'}
+                    aria-label="Reload this pane"
+                    onClick={(e) => { e.stopPropagation(); handles.current.get(s.id)?.reload(); }}>↻</button>
                   {/* Two different endings, named as such. Closing a claude
                       tab DETACHES it — the host session keeps running, which
                       is the whole point of #171 — so a control called × must
@@ -2817,9 +2837,27 @@ function TermSession({ sess, visible, focused, fontSize, onStatus, onUsage, onTm
     holderEl?.addEventListener('dragleave', onDragLeave);
     holderEl?.addEventListener('drop', onDropFiles);
 
+    // #518 — A PANE THAT FROZE WAS A SOCKET THAT DIED WITHOUT SAYING SO. This
+    // listened for 'error' and never for 'close', so when the relay went away
+    // (the server redeploys on every push to main) or a restarted daemon left
+    // the relay holding sockets nothing would write to again, the pane stayed
+    // "live" and simply stopped moving — with no Reconnect button either,
+    // because that only shows on closed/error. Now a close nobody asked for is
+    // noticed, and a claude pane RE-ATTACHES its tmux session on its own: the
+    // session lives on the host and survives all of the above, so re-attaching
+    // is always safe and never a restart. A shell has no tmux behind it — its
+    // PTY died with the socket — so it says so and waits for ↻ Reconnect,
+    // because reconnecting a shell is starting a new one.
+    let disposed = false;
+    let ended = false;          // the process really exited — never re-attach
+    let retries = 0;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    const reattachable = () => sess.cmd === 'claude' && !!tmuxRef.current;
+
     const connect = () => {
+      clearTimeout(retryTimer);
       wsRef.current?.close();
-      onStatus('connecting', '');
+      onStatus('connecting', retries ? `connection lost — re-attaching (${retries})` : '');
       safeFit();
       const ws = openTerminal({
         cwd: sess.cwd, cmd: sess.cmd, cols: term.cols, rows: term.rows,
@@ -2892,6 +2930,7 @@ function TermSession({ sess, visible, focused, fontSize, onStatus, onUsage, onTm
           onUsage({ tokens: m.tokens, totalTokens: m.totalTokens, resetAt: m.resetAt, resetLabel: m.resetLabel, sched: m.sched, plan: m.plan });
         }
         else if (m.t === 'ready') {
+          retries = 0;
           if (m.tmuxSession) { tmuxRef.current = m.tmuxSession; onTmux(m.tmuxSession); }
           // Always reported, including when it is null: "the host does not know
           // what this is on" is an answer the rail must be able to draw, and a
@@ -2909,6 +2948,7 @@ function TermSession({ sess, visible, focused, fontSize, onStatus, onUsage, onTm
           // An exit while attached = the underlying process really ended (a
           // detach kills only the shim and no frame reaches us) — let the
           // parent forget the tmux mapping so the next open starts fresh.
+          ended = true;
           onExit(tmuxRef.current);
           tmuxRef.current = null;
           onStatus('closed', `exited (${m.code})`);
@@ -2938,8 +2978,76 @@ function TermSession({ sess, visible, focused, fontSize, onStatus, onUsage, onTm
         else if (m.t === 'err') { onStatus('error', m.msg || 'terminal error'); term.write(`\r\n\x1b[91m${m.msg || 'terminal error'}\x1b[0m\r\n`); }
       });
       ws.addEventListener('error', () => onStatus('error', 'Could not reach the terminal relay.'));
+      ws.addEventListener('close', () => {
+        // Ours (a reconnect replaced it, or the pane is going) or a real end.
+        if (disposed || ended || ws !== wsRef.current) return;
+        if (!reattachable()) {
+          onStatus('closed', 'connection lost');
+          term.write('\r\n\x1b[90m[connection lost — this shell ended with it; ↻ Reconnect starts a new one]\x1b[0m\r\n');
+          return;
+        }
+        // Backed off, and bounded: six tries is about half a minute, which
+        // covers a redeploy. Past that something is genuinely down and the
+        // pane says so, with ↻ Reconnect, rather than hammering the relay.
+        if (retries >= 6) { onStatus('closed', 'connection lost — ↻ Reconnect to try again'); return; }
+        retries++;
+        onStatus('connecting', `connection lost — re-attaching (${retries})`);
+        retryTimer = setTimeout(connect, Math.min(15_000, 500 * 2 ** (retries - 1)));
+      });
     };
     connect();
+
+    // #518 — THE RELOAD. A pane can also freeze with its socket perfectly
+    // alive: a GL context the browser took away mid-frame, a renderer wedged
+    // after sleep. So the reload rebuilds the PAINTING as well as the pipe —
+    // renderer detached and re-attached, screen cleared, grid refitted — and
+    // then re-attaches, and tmux redraws the whole session into the clean
+    // screen. Only when it can re-attach: clearing a SHELL's screen loses what
+    // is on it (nothing redraws a shell), and reconnecting one kills it, so a
+    // live shell gets the repaint alone and a dead one a fresh start.
+    const repaint = () => {
+      detachRenderer();
+      detachRenderer = attachRenderer(term, (why) => console.info(`[term ${sess.id}] ${why}`));
+      safeFit();
+      term.refresh(0, term.rows - 1);
+    };
+    const reload = () => {
+      retries = 0;
+      const open = wsRef.current?.readyState === WebSocket.OPEN;
+      if (reattachable()) {
+        term.reset();
+        repaint();
+        connect();
+      } else if (open) {
+        repaint();
+      } else {
+        connect();
+      }
+      if (focused) term.focus();
+    };
+
+    // #518 — COMING BACK TO THE TAB. A socket that died while the tab slept
+    // is re-attached the moment it is looked at, not on the next backoff tick;
+    // and after a long absence (a laptop lid, a night) a claude pane
+    // re-attaches even if its socket CLAIMS to be open, because a half-open
+    // TCP connection after sleep looks exactly like that and nothing short of
+    // a new one can tell. Short tab flicks do nothing.
+    let hiddenAt = document.hidden ? Date.now() : 0;
+    const onVisibility = () => {
+      if (document.hidden) { hiddenAt = Date.now(); return; }
+      const away = hiddenAt ? Date.now() - hiddenAt : 0;
+      hiddenAt = 0;
+      if (ended || !reattachable()) return;
+      const state = wsRef.current?.readyState;
+      if (state !== WebSocket.OPEN && state !== WebSocket.CONNECTING) { retries = 0; connect(); }
+      else if (away >= 5 * 60_000) { retries = 0; connect(); }
+    };
+    const onOnline = () => {
+      if (ended || !reattachable()) return;
+      if (wsRef.current?.readyState !== WebSocket.OPEN) { retries = 0; connect(); }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('online', onOnline);
 
     // #512 — the name is taken HERE, off the keystrokes on their way to the
     // socket, because this is the only place the human's own words exist in
@@ -3021,11 +3129,16 @@ function TermSession({ sess, visible, focused, fontSize, onStatus, onUsage, onTm
         const ws = wsRef.current;
         if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ t: 'in', data: b64encode(s) }));
       },
-      reconnect: connect,
+      reconnect: () => { retries = 0; connect(); },
+      reload,
       focus: () => term.focus(),
     });
 
     return () => {
+      disposed = true;
+      clearTimeout(retryTimer);
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('online', onOnline);
       register(null);
       clearTimeout(resizeTimer);
       window.removeEventListener('resize', onResize);

@@ -428,12 +428,39 @@ export function attachTerm(httpServer) {
     for (const ws of watchers) ws.ping();
   }, 30_000).unref();
 
+  // The sids the current daemon has re-announced since it connected (#518).
+  let announced = new Set();
   function acceptAgent(ws) {
     if (agent) { send(agent, { t: 'err', msg: 'Replaced by a newer daemon connection.' }); agent.close(); }
     agent = ws;
     agentConnected = true;
     agentSend = (obj) => send(agent, obj);
     console.log('[term] daemon connected');
+    // #518 — A BROWSER SOCKET THE NEW DAEMON DOES NOT KNOW IS A FROZEN PANE.
+    // Browser connections are deliberately kept across a daemon gap (see the
+    // close handler below), because a daemon that merely lost its uplink
+    // re-announces its surviving PTYs in a `hello`. But a daemon that
+    // RESTARTED has none — it sends no hello at all — and every pane that was
+    // open stayed "live" on a socket nothing would ever write to again: the
+    // visual freeze. So whatever was open when this daemon arrived and has not
+    // been re-announced a few seconds later is closed, and the pane's own
+    // close handler re-attaches its tmux session (which a daemon restart does
+    // not touch). Sessions started AFTER this connection are not candidates.
+    const before = new Set(sessions.keys());
+    announced = new Set();
+    if (before.size) {
+      setTimeout(() => {
+        if (agent !== ws) return; // replaced again; the next one sweeps
+        for (const sid of before) {
+          if (announced.has(sid)) continue;
+          const browser = sessions.get(sid);
+          if (!browser) continue;
+          sessions.delete(sid); termMeta.delete(sid);
+          try { browser.close(4001, 'daemon restarted'); } catch { /* already gone */ }
+        }
+        broadcastStatus();
+      }, 5_000).unref?.();
+    }
     ws.on('message', (raw) => {
       let m;
       try { m = JSON.parse(raw.toString()); } catch { return; }
@@ -565,6 +592,7 @@ export function attachTerm(httpServer) {
       if (m.t === 'hello' && Array.isArray(m.sids)) {
         console.log(`[term] daemon re-announced ${m.sids.length} surviving session(s): ${m.sids.join(', ')}`);
         for (const sid of m.sids) {
+          announced.add(sid);
           if (!sessions.has(sid)) {
             // No browser waiting — tell the daemon to close this orphan PTY.
             send(ws, { t: 'kill', sid });
