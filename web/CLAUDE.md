@@ -35,7 +35,8 @@ on two screens gets acted on twice; a row on none has silently vanished.
 - **Promoting is two writes with two meanings**: Roadmap sends `{reviewed:true, committed:false}`
   ("keep this"); board sends `{reviewed:true, committed:true, parentId:null}` ("do this").
   `committed` defaults true, is read `!== false` on both sides, and no other PATCH branch touches it.
-- A hand-typed idea is kept on Roadmap by `committed` false, not by a hold (a manual row is never
+- **The board is for work we know we'll build; the Roadmap is for ideas** (owner's call). A
+  hand-typed idea is kept on Roadmap by `committed` false, not by a hold (a manual row is never
   held). New idea files a free-standing one in the scoped area; ＋ on a board item files one under it.
 
 ## Ordering
