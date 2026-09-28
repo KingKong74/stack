@@ -358,12 +358,19 @@ const IDEAS_PANELS = [
   },
   {
     // #472 — ＋ on a board item opens the composer whose row is born under it.
-    // The only way to file an idea on this screen, and the half of the ask
-    // that was "see what we are working on and add ideas into it".
+    // The half of the ask that was "see what we are working on and add ideas
+    // into it".
     id: 'ideas-add',
     label: 'Roadmap — an idea under a board item',
     click: '.rm-under .rm-work .add',
     expect: '.rm-composer textarea',
+  },
+  {
+    // #523 — the free-standing door. Opened, never submitted.
+    id: 'ideas-new',
+    label: 'Roadmap — New idea opens its composer',
+    click: '.rm-new',
+    expect: '.im > .rm-composer textarea',
   },
   {
     id: 'ideas-scope',

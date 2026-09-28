@@ -47,13 +47,16 @@
 //     puts it in a sprint, so the Ready column is a recommendation now rather
 //     than a queue position, which is the honest thing for a triage screen to
 //     be.
-//  2. THERE IS NO FREE-FLOATING CAPTURE, and that is not an omission. A manual
-//     row is NEVER held (CLAUDE.md — blocking hand-written work is the failure
-//     mode approval must not have), so a hand-typed row with no parent is
-//     committed work by definition and belongs on the board, where the
-//     composer and the create dialog already put it. Capture here always hangs
-//     off something: press ＋ on a board item and the idea is born under it,
-//     `committed` false so the stored bit agrees with the parent.
+//  2. AN IDEA IS BORN `committed` FALSE, and that bit is what keeps a manual
+//     row here. A manual row is NEVER held (CLAUDE.md — blocking hand-written
+//     work is the failure mode approval must not have), so being unapproved
+//     cannot be what makes it an idea; not being committed to is. Two doors
+//     (#523): ＋ on a board item files one under it, and New idea files a
+//     free-standing one in the scoped area. Both are a create and then a
+//     `committed: false` patch, because the create route takes no `committed`
+//     — the row is board work for the instant between them, outside every
+//     sprint, so nothing can run it. A failed second write says so and leaves
+//     the row on the board, where Edit… can still find it.
 //  3. AN AREA IS A LANE, so this screen says so in the same words the board
 //     does — `(project, area)` admits one overnight worker (#267), each section
 //     header names the branch holding its lane, and untagged says it can never
@@ -69,7 +72,7 @@
 // across the whole app, and a verdicted row is board work, so it is not this
 // screen's to fix. Board.tsx's header carries the debt.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { KitIcon } from './kit/KitIcon';
 import type { BoardArea, Priority, RoadmapItem } from '../types';
 import { PRIORITY_META, PRIORITY_DEFAULT, priorityMeta } from '../lib/ui';
@@ -249,24 +252,25 @@ export function Roadmap({ slug, projectName, items, onRefresh, onEdit, highlight
       setRows((r) => r.filter((x) => x.id !== it.id));
       onRefresh();
     });
-  // Born UNDER something, which is what keeps it on this screen: a manual row
-  // with no parent is committed work and belongs on the board (decision 2).
-  const addIdea = (parent: RoadmapItem, title: string) =>
+  // `committed: false` is what keeps the row on this screen (decision 2). A
+  // child also gets its parent, whose area it inherits; a free-standing idea
+  // takes the scoped area, or none.
+  const addIdea = (parent: RoadmapItem | null, title: string, area: string) =>
     guard(async () => {
       const made = await createRoadmapItem(slug, {
         title, note: '', bucket: PRIORITY_DEFAULT,
-        ...(parent.area ? { area: parent.area } : {}),
+        ...(area ? { area } : {}),
       });
-      // `committed: false` alongside the parent so the STORED bit agrees with
-      // what the parent already implies. The predicate reads either leg, so
-      // this changes no behaviour — it stops the column from lying about a row.
-      const child = await patchRoadmapItem(slug, made.id, { parentId: parent.id, committed: false });
-      setRows((r) => [...r, child]);
+      const idea = await patchRoadmapItem(slug, made.id,
+        parent ? { parentId: parent.id, committed: false } : { committed: false });
+      setRows((r) => [...r, idea]);
+      setOpen(idea.id);
       onRefresh();
     });
 
   const [open, setOpen] = useState<number | null>(null);
   const [composeUnder, setComposeUnder] = useState<number | null>(null);
+  const [capturing, setCapturing] = useState(false);
 
   useEffect(() => {
     const n = Number(highlightId);
@@ -287,6 +291,7 @@ export function Roadmap({ slug, projectName, items, onRefresh, onEdit, highlight
     () => (scope ? ideas.filter((it) => areaKey(it) === scope) : ideas),
     [ideas, scope]);
   const ready = scoped.filter((it) => colOf(it) === 'ready').length;
+  const captureArea = scope && scope !== UNTAGGED ? scope : '';
 
   return (
     <div className="im">
@@ -298,7 +303,23 @@ export function Roadmap({ slug, projectName, items, onRefresh, onEdit, highlight
         <span className="im-lede">
           {scoped.length} idea{scoped.length === 1 ? '' : 's'} · {ready} ready in this scope
         </span>
+        <button className="k-btn sm accent rm-new" aria-expanded={capturing}
+          onClick={() => { setComposeUnder(null); setCapturing(!capturing); }}>
+          <KitIcon name="plus" size={13} />New idea
+        </button>
       </div>
+
+      {/* A FREE-STANDING IDEA (#523), filed in the scoped area. The label says
+          which, because the chip row is the only other place that does. */}
+      {capturing && (
+        <IdeaComposer
+          label={captureArea
+            ? <>A new idea in <b>{captureArea}</b></>
+            : <>A new idea with no area. Pick an area chip first to file it in one, or set it later with Edit…</>}
+          placeholder="What's the idea?"
+          onClose={() => setCapturing(false)}
+          onAdd={(text) => { setCapturing(false); addIdea(null, text, captureArea); }} />
+      )}
 
       {err && <div className="km-err" role="alert">{err}</div>}
 
@@ -335,23 +356,22 @@ export function Roadmap({ slug, projectName, items, onRefresh, onEdit, highlight
               <span className="n">{sec.count} {sec.count === 1 ? 'idea' : 'ideas'}</span>
             </div>
 
-            {/* ON THE BOARD — this area's committed work, and the only way to
-                file an idea. Pressing ＋ opens a composer whose row is born
-                under that item, which is what keeps it on this screen. */}
+            {/* ON THE BOARD — this area's committed work. Pressing ＋ opens a
+                composer whose row is born under that item. */}
             {sec.work.length > 0 && (
               <div className="rm-under">
                 <span className="lbl">On the board</span>
                 {sec.work.map((w) => (
                   <span key={w.id} className={`rm-work${composeUnder === w.id ? ' on' : ''}`}>
                     <button className="t" title={w.note || w.title}
-                      onClick={() => setComposeUnder(composeUnder === w.id ? null : w.id)}>
+                      onClick={() => { setCapturing(false); setComposeUnder(composeUnder === w.id ? null : w.id); }}>
                       {w.claimedBy.trim() && <KitIcon name="git-branch" size={11} />}
                       <span className="v">{w.title}</span>
                       <span className="n">{rows.filter((x) => x.parentId === w.id && !x.archived).length}</span>
                     </button>
                     <button className="add" aria-label={`Add an idea under ${w.title}`}
                       title={`Add an idea under "${w.title}"`}
-                      onClick={() => setComposeUnder(composeUnder === w.id ? null : w.id)}>
+                      onClick={() => { setCapturing(false); setComposeUnder(composeUnder === w.id ? null : w.id); }}>
                       <KitIcon name="plus" size={13} />
                     </button>
                   </span>
@@ -360,12 +380,14 @@ export function Roadmap({ slug, projectName, items, onRefresh, onEdit, highlight
             )}
 
             {composeUnder !== null && sec.work.some((w) => w.id === composeUnder) && (
-              <IdeaComposer parent={parentOf.get(composeUnder)!}
+              <IdeaComposer
+                label={<>An idea under <b>{parentOf.get(composeUnder)!.title}</b></>}
+                placeholder="What would you add to it?"
                 onClose={() => setComposeUnder(null)}
                 onAdd={(text) => {
                   const p = parentOf.get(composeUnder);
                   setComposeUnder(null);
-                  if (p) addIdea(p, text);
+                  if (p) addIdea(p, text, p.area);
                 }} />
             )}
 
@@ -399,7 +421,7 @@ export function Roadmap({ slug, projectName, items, onRefresh, onEdit, highlight
           <span className="im-empty">
             {query.trim()
               ? 'No idea matches that.'
-              : 'No ideas kept yet. Keep one in For you → Auto-ideas, or press ＋ on a board item to file one by hand.'}
+              : 'No ideas kept yet. Press New idea, keep one in For you → Auto-ideas, or press ＋ on a board item to file one under it.'}
           </span>
         )}
       </div>
@@ -419,8 +441,8 @@ function AreaChip({ label, dot, count, active, onClick }: {
   );
 }
 
-function IdeaComposer({ parent, onClose, onAdd }: {
-  parent: RoadmapItem; onClose: () => void; onAdd: (text: string) => void;
+function IdeaComposer({ label, placeholder, onClose, onAdd }: {
+  label: ReactNode; placeholder: string; onClose: () => void; onAdd: (text: string) => void;
 }) {
   const [text, setText] = useState('');
   const ref = useRef<HTMLTextAreaElement | null>(null);
@@ -428,8 +450,8 @@ function IdeaComposer({ parent, onClose, onAdd }: {
   const submit = () => { const t = text.trim(); if (t) onAdd(t); else onClose(); };
   return (
     <div className="km-composer rm-composer">
-      <span className="rm-under-lbl">An idea under <b>{parent.title}</b></span>
-      <textarea ref={ref} rows={2} value={text} placeholder="What would you add to it?"
+      <span className="rm-under-lbl">{label}</span>
+      <textarea ref={ref} rows={2} value={text} placeholder={placeholder}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === 'Escape') onClose();

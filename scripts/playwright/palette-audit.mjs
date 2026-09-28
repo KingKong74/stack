@@ -162,6 +162,7 @@ const SCREENS = [
   { slug: 'ideas', hash: '#/p/{slug}/ideas' },
   { slug: 'ideas-open', hash: '#/p/{slug}/ideas', press: ['.im-col:has(.im-card) .im-card'] },
   { slug: 'ideas-compose', hash: '#/p/{slug}/ideas', press: ['.rm-under .rm-work .add'] },
+  { slug: 'ideas-new', hash: '#/p/{slug}/ideas', press: ['.rm-new'] },
   // Plans is six sub-views behind one strip and first paint reaches ONE of
   // them, so each of the other five is walked as its own row. Nearly every row
   // on this screen lightens — a timeline row on hover, an area row when it is
