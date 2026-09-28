@@ -2068,6 +2068,28 @@ function CreateDialog({ onClose, onCreate }: {
  *  It exists so the count next to the running box is honest. A sprint may
  *  legitimately hold parked, claimed and finished work, and none of it is
  *  something tonight will take. */
+/**
+ * WHICH ROWS THE BACKLOG TAB DRAWS AT ALL — one predicate, because the pool and
+ * the scope chips' counts must be the same set or a chip counts rows nobody can
+ * find under it.
+ *
+ * A BACKLOG ROW IN THE BOARD'S DONE COLUMN IS NOT DRAWN (#517). "Done" here is
+ * the column, not the tick: `listKeyOf` is the client twin of the server's
+ * `listFor`, so a row lands in `shipped` by `done`, by a verdict, or by a card
+ * somebody dropped on Done — exactly the set the kanban one tab across draws in
+ * that column, and a row the owner can see is finished there has nothing left
+ * to be planned here. Keyed on `shipped`, never on the name: the keys outlive
+ * the names (server/src/lists.js).
+ *
+ * A SPRINT KEEPS ITS SHIPPED ROWS, and that is deliberate: a box is the record
+ * of what was committed to (#477), its header counts "N built" and its squares
+ * count the Done column, and dropping the finished work out of the box would
+ * make a sprint that delivered read as one that shrank.
+ */
+const onBacklogScreen = (it: RoadmapItem): boolean =>
+  !it.archived && isBoardWork(it)
+  && (it.sprintId != null || listKeyOf(it) !== 'shipped');
+
 const runnable = (it: RoadmapItem): boolean =>
   !it.done && !it.skipped && !it.archived && !it.claimedBy.trim()
   && isBoardWork(it) && !isHeld(it);
@@ -2289,14 +2311,13 @@ function BacklogView({
 
   // THE ROWS THIS SCREEN RANKS. Committed work only — an idea belongs to the
   // Roadmap tab and cannot be dragged into a sprint from here, which is the
-  // same `isBoardWork` line the board above draws (#472, #496). Done and archived rows
-  // are out too: this screen is about what is still to be built, and a
-  // finished item in a box is history the sprint keeps rather than a row
-  // anybody needs to rank again.
+  // same `isBoardWork` line the board above draws (#472, #496). Archived rows
+  // are out, and so is a BACKLOG row sitting in the board's Done column (#517)
+  // — see `onBacklogScreen` for why a sprint keeps its own.
   const pool = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return rows
-      .filter((it) => !it.archived && isBoardWork(it))
+      .filter(onBacklogScreen)
       .filter((it) => (scope ? (it.area.trim() || UNTAGGED) === scope : true))
       .filter((it) => !needle
         || it.title.toLowerCase().includes(needle)
@@ -2453,7 +2474,7 @@ function BacklogView({
   // ---- the scope chips, the board's own ------------------------------------
   const chips = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const it of rows.filter((r) => !r.archived && isBoardWork(r))) {
+    for (const it of rows.filter(onBacklogScreen)) {
       const k = it.area.trim() || UNTAGGED;
       counts.set(k, (counts.get(k) || 0) + 1);
     }
@@ -2593,7 +2614,7 @@ function BacklogView({
         </div>
         {bags.loose.length === 0 ? (
           <div className="km-bl-empty">
-            {pool.length === 0 ? 'No committed work on this board yet.' : 'Everything is in a sprint.'}
+            {pool.length === 0 ? 'No committed work on this board yet.' : 'Everything is in a sprint or done.'}
           </div>
         ) : bags.loose.map((it, i) => (
           <BacklogRow key={it.id} row={it} rank={i + 1} inSprint={false} runs={false} lists={lists}
