@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { Project, ProjectStatus, Overview, Spaces, SpaceArea, WishIdea, IdeaStage, Workflow } from '../types';
+import type { Project, ProjectStatus, Spaces, SpaceArea, WishIdea, IdeaStage, Workflow } from '../types';
 import {
-  getProjects, getOverview, createProject, patchProject, getSpaces, createSpaceArea, renameSpaceArea, deleteSpaceArea,
+  getProjects, createProject, patchProject, getSpaces, createSpaceArea, renameSpaceArea, deleteSpaceArea,
   createIdea, patchIdea, deleteIdea, createWorkflow, patchWorkflow, getAreaRailFolded, setAreaRailFolded,
 } from '../store';
 import { hrefTo } from '../lib/route';
@@ -9,7 +9,6 @@ import { NewProjectModal, type ModalInit, type ModalValue } from '../components/
 import { ConnectGuide } from '../components/ConnectGuide';
 import { HowToGuide } from '../components/HowToGuide';
 import { TopBar } from '../components/TopBar';
-import { ResumeHero } from '../components/CommandDeck';
 
 // THE PROJECTS PAGE: an area rail (owner-named groupings, foldable), then one
 // section per area holding its app cards and its hubs (a hub is a project
@@ -46,8 +45,6 @@ export function Dashboard({ onOpenSearch }: { onOpenSearch: () => void }) {
   const [renaming, setRenaming] = useState<{ key: string; name: string } | null>(null);
   const [guideOpen, setGuideOpen] = useState(false);
   const [howToOpen, setHowToOpen] = useState(false);
-  const [overview, setOverview] = useState<Overview | null>(null);
-  const [deckError, setDeckError] = useState('');
 
   useEffect(() => {
     let live = true;
@@ -59,14 +56,6 @@ export function Dashboard({ onOpenSearch }: { onOpenSearch: () => void }) {
     return () => { live = false; };
   }, []);
 
-  // The resume card loads on its own so an overview hiccup never blanks the grid.
-  useEffect(() => {
-    let live = true;
-    getOverview()
-      .then((o) => { if (live) { setOverview(o); setDeckError(''); } })
-      .catch((e) => { if (live) setDeckError(e?.message || 'Failed to load the resume card.'); });
-    return () => { live = false; };
-  }, []);
 
   // Close an open card menu on Escape or a press anywhere else.
   useEffect(() => {
@@ -390,11 +379,6 @@ export function Dashboard({ onOpenSearch }: { onOpenSearch: () => void }) {
         {rail}
 
         <main className="sp-main">
-          {deckError ? (
-            <div className="deck-error">Couldn’t load where you left off — {deckError}</div>
-          ) : overview ? (
-            <ResumeHero overview={overview} project={projects.find((p) => p.id === overview.resume?.slug)} />
-          ) : null}
 
           {actionError && (
             <div className="action-error" role="alert">
