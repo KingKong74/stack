@@ -10,6 +10,10 @@ file headers carry their own rules; read one before editing its file: `agent-run
   never a broad `pkill` pattern. Restarting the daemon detaches live sessions.
 - **`prompt-scan.mjs` is pure and leans hard towards null.** A false block puts an Approve button in
   front of a question nobody asked, which is far worse than a real block noticed late.
+- **`input-wait.mjs` (#519) is the OTHER stop, and the one the owner's sessions make**: bypass
+  permissions means `prompt-scan` never fires for him. It reads a STYLED capture (`-e`), because
+  claude's dimmed input suggestion is indistinguishable from a typed draft in a plain one. Same lean
+  towards null; the daemon confirms a candidate across two reads before advertising `waiting`.
 - **`edit-watch.mjs` reads who is editing what from transcripts, not git.** Two sessions in one
   checkout share a dirty tree, so git can't say who wrote what.
 - **`agent-run.mjs` is unused but kept** as the reference host-side model call. Its sandbox (every

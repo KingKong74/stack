@@ -16,7 +16,8 @@ its file: `lib/branch.ts`, `lib/plan.ts`, `lib/quality.ts`, `lib/termClipboard.t
 - **For you is three route keys on one screen** (`overview`, `activity`, `auto`), switched by a strip
   that writes the key. Don't collapse them into component state.
 - **A recurring re-fetch goes through `lib/autoRefresh.ts`.** One device-local setting governs every
-  screen that polls the host, and it also stops a hidden tab polling.
+  screen that polls the host, and it also stops a hidden tab polling — except `whileHidden`, whose
+  one caller is the #519 notifier while desktop notifications are on (its job is the unwatched tab).
 - `lib/brief.ts` holds the resume brief and the `DIRECTIVES` catalogue, whose keys mirror the
   server's `SESSION_DEFAULTS`.
 
