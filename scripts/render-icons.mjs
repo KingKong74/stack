@@ -7,7 +7,8 @@
 // somebody nudges a plate is if the binaries are OUTPUT, not artwork. This file
 // carries the geometry a second time — a PNG renderer cannot import a TSX
 // component — so THE TWO COPIES MUST BE CHANGED TOGETHER. Brandmark.tsx's
-// header says so from its side.
+// header says so from its side, and scripts/brandmark.test.mjs fails when
+// PLATES below stops matching its rects (#494).
 //
 // The hexes are literal here on purpose, and this is the one place in the repo
 // where that is allowed: a standalone .svg served as a favicon has no

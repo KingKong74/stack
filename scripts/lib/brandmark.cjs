@@ -11,11 +11,13 @@
 // and cannot `require` an .mjs. An ESM script that wants the banner can still
 // `import brandmark from './lib/brandmark.cjs'`.
 //
-// The RGB triplets are a third copy of three kit tokens, and this is the only
-// one with no drift check on it — scripts/render-icons.mjs verifies its own
-// against styles.css and refuses to write, but a banner cannot afford to read a
-// 270 KB stylesheet to print four lines. Run `node scripts/render-icons.mjs
-// --check` after a palette change and fix all three copies together.
+// The RGB triplets are a third copy of three kit tokens, and a banner cannot
+// afford to read a 270 KB stylesheet to print four lines — so the drift check
+// is a TEST, not a runtime read (#494): scripts/brandmark.test.mjs paints the
+// banner, reads the triplets back out of its escapes and holds them to
+// styles.css, and holds the plate columns to Brandmark.tsx's edges and widths.
+// Run it (and `node scripts/render-icons.mjs --check`) after a palette or
+// geometry change, and fix all three copies together.
 //
 // TWO RULES, both about not writing escape codes where they will be read as
 // data. `banner()` returns the PLAIN form unless it is told colour is wanted —
