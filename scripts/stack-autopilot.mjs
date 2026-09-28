@@ -240,7 +240,7 @@ async function attachReview(runId, verdict, architect) {
 // going — duplication, boundaries, drift from what is already there. It files
 // nothing and gates nothing; it is a second opinion for the morning's review.
 // Keyless = skipped silently, like every other Gemini surface here.
-function runArchitect(wt, tag, range = 'main..HEAD') {
+function runArchitect(wt, tag, range = `${MAIN}..HEAD`) {
   if (!GEMINI_KEY) return null;
   const file = join(lockDir, 'autopilot', `${SLUG}-${tag}-architect.json`);
   try { rmSync(file); } catch { /* none from a previous attempt */ }
@@ -432,6 +432,13 @@ if (!appSettings.autopilotEnabled && !FORCE) {
   log('autopilot is switched OFF in Settings — nothing run. (--force overrides for a manual test.)');
   process.exit(0);
 }
+// Every branch starts from origin's main, never from whatever the human has
+// checked out in REPO: runs happen while people work, and a feature branch or
+// unpushed commits in the shared checkout would otherwise ride along into the
+// autopilot's diff. Local `main` is the fallback only when origin can't be read.
+git(REPO, ['fetch', '--quiet', 'origin', 'main']);
+const MAIN = git(REPO, ['rev-parse', '--verify', '--quiet', 'origin/main']) ? 'origin/main' : 'main';
+if (MAIN === 'main') log('could not read origin/main — branching from the local main instead.');
 const MINUTES = Math.max(15, parseInt(MINUTES_ARG ?? '', 10) || appSettings.autopilotMinutes || 120);
 // Budgets come from Mission Control unless the CLI/env overrides; a token
 // budget of 0 means UNLIMITED — the wall clock is then the only governor.
@@ -644,7 +651,7 @@ async function runBug(bug, capMin) {
   if (branch !== bugLaneFor(bug)) log(`${key}: ${bugLaneFor(bug)} is taken — building on ${branch} instead`);
 
   mkdirSync(join(lockDir, 'autopilot'), { recursive: true });
-  const added = git(REPO, ['worktree', 'add', wt, '-b', branch]);
+  const added = git(REPO, ['worktree', 'add', wt, '-b', branch, MAIN]);
   if (!existsSync(join(wt, '.git'))) throw new Error(`worktree add failed (${added || 'no output'})`);
 
   const prompt = `You are Stack's overnight DEBUGGER, working unattended in a dedicated git worktree on branch ${branch}.
@@ -671,7 +678,7 @@ Rules for this run:
     ...(tmuxSession ? { tmux_session: tmuxSession } : {}),
   };
 
-  const nCommits = parseInt(git(wt, ['rev-list', '--count', 'main..HEAD']) || '0', 10) || 0;
+  const nCommits = parseInt(git(wt, ['rev-list', '--count', `${MAIN}..HEAD`]) || '0', 10) || 0;
   if (nCommits === 0) {
     git(REPO, ['worktree', 'remove', '--force', wt]);
     git(REPO, ['branch', '-D', branch]);
@@ -699,7 +706,7 @@ Rules for this run:
     summary: (r.resultText || `${nCommits} commit(s) on ${branch}.`).slice(0, 1800) });
 
   if (GEMINI_KEY) {
-    const review = spawnSync('node', [join(REPO, 'hook', 'stack-gemini-review.mjs'), '--range', 'main..HEAD'], {
+    const review = spawnSync('node', [join(REPO, 'hook', 'stack-gemini-review.mjs'), '--range', `${MAIN}..HEAD`], {
       cwd: wt, stdio: ['ignore', 'inherit', 'inherit'], timeout: 120_000,
     });
     log(review.status === 0 ? 'gemini review posted to the inbox.' : 'gemini review did not post (see above).');
@@ -796,7 +803,7 @@ async function auditNight() {
   if (branch !== auditLaneFor(day)) log(`audit: ${auditLaneFor(day)} is taken — building on ${branch} instead`);
 
   mkdirSync(join(lockDir, 'autopilot'), { recursive: true });
-  const added = git(REPO, ['worktree', 'add', wt, '-b', branch]);
+  const added = git(REPO, ['worktree', 'add', wt, '-b', branch, MAIN]);
   if (!existsSync(join(wt, '.git'))) throw new Error(`worktree add failed (${added || 'no output'})`);
 
   const prompt = `You are Stack's overnight AUDITOR, working unattended in a dedicated git worktree on branch ${branch}. Tonight is an AUDIT session: hunt for real defects and harden the safety net — no feature work.
@@ -809,7 +816,7 @@ Work through, in order:
 5. Author a rich checkpoint (see ~/.claude/commands/checkpoint.md) piped to \`node ~/.stack/stack-checkpoint.mjs\`: what was checked, what was filed, what was hardened.`;
 
   const r = execSession(prompt, wt, remainingMin());
-  const nCommits = parseInt(git(wt, ['rev-list', '--count', 'main..HEAD']) || '0', 10) || 0;
+  const nCommits = parseInt(git(wt, ['rev-list', '--count', `${MAIN}..HEAD`]) || '0', 10) || 0;
   if (nCommits > 0) {
     git(wt, ['push', '-u', 'origin', branch]);
     log(`audit: ${nCommits} hardening commit(s) on ${branch}, pushed.`);
@@ -846,7 +853,7 @@ async function runPlanItem(item, northStar, capMin) {
   const wt = join(lockDir, 'autopilot', `${SLUG}-plan`);
   git(REPO, ['worktree', 'remove', '--force', wt]);
   mkdirSync(join(lockDir, 'autopilot'), { recursive: true });
-  const added = git(REPO, ['worktree', 'add', '--detach', wt]);
+  const added = git(REPO, ['worktree', 'add', '--detach', wt, MAIN]);
   if (!existsSync(join(wt, '.git'))) throw new Error(`plan worktree add failed (${added || 'no output'})`);
 
   const prompt = `You are Stack's overnight PLANNER on a design-doc night. Do NOT write or change any code, do NOT commit, do NOT touch the tracker — you read the codebase and author a short design doc for ONE roadmap item, so a later build session executes against an agreed design instead of a title.
@@ -996,7 +1003,7 @@ function resolveRunBranch(base) {
   // `branch -D` was actually clearing. Delete just that one branch and reuse
   // the name; anything else (pushed, or holding commits) is left alone.
   if (localExists(base) && !remoteNames.has(base)) {
-    const ahead = parseInt(git(REPO, ['rev-list', '--count', `main..${base}`]) || '0', 10) || 0;
+    const ahead = parseInt(git(REPO, ['rev-list', '--count', `${MAIN}..${base}`]) || '0', 10) || 0;
     if (ahead === 0) {
       git(REPO, ['branch', '-D', base]);
       return base;
@@ -1115,7 +1122,7 @@ async function runItem(item, northStar, capMin) {
   } else {
     if (KIND === 'refine') log(`refine round: no branch found for #${item.id} on origin — the previous work already landed on main; building fresh on ${branch}.`);
     git(REPO, ['branch', '-D', branch]); // (branch survives on origin if pushed)
-    added = git(REPO, ['worktree', 'add', wt, '-b', branch]);
+    added = git(REPO, ['worktree', 'add', wt, '-b', branch, MAIN]);
     if (!existsSync(join(wt, '.git'))) throw new Error(`worktree add failed (${added || 'no output'})`);
   }
 
@@ -1128,7 +1135,7 @@ async function runItem(item, northStar, capMin) {
   // do; re-reviewing them would spend a review on a diff a human has
   // already seen. Every non-refine run, and a refine round with no branch
   // to continue, bases off `main` and nothing changes.
-  let base = 'main';
+  let base = MAIN;
   if (continuing) {
     const head = git(wt, ['rev-parse', 'HEAD']);
     if (head) base = head;
@@ -1356,8 +1363,6 @@ Rules for this run:
         + `${reviewClean ? 'review clean' : reviewVerdict ? `review flagged ${reviewVerdict.bugs} bug(s)` : 'no review verdict'}.`);
     }
   }
-  return { landed: true, limitHit, resultText, branch };
-
   // Auto-verdict (#263) — one step further than #212: a low-risk night that is
   // green on every signal AND stayed inside the files the item itself declared
   // may write its own review_tag, so the human's morning click becomes a
@@ -1367,7 +1372,7 @@ Rules for this run:
   // that never writes an "Interfaces: …" line simply never auto-verdicts.
   // This writes the VERDICT only, never `done` — ticking an item complete
   // stays the human's call, exactly like the auto-merge above never ticks it.
-  const changedFiles = git(wt, ['diff', '--name-only', 'main...HEAD'])
+  const changedFiles = git(wt, ['diff', '--name-only', `${MAIN}...HEAD`])
     .split('\n').map((s) => s.trim()).filter(Boolean);
   const declared = declaredFiles([item.note || '', (item.plan || []).map((s) => s.text).join(' ')].join(' '));
   const verdict = autoVerdict({
@@ -1403,7 +1408,7 @@ Rules for this run:
     log(`#${item.id} is low risk but NOT auto-verdicted: ${verdict.missing.join('; ')}.`);
   }
 
-  return { landed: true, limitHit, resultText, autoVerdicted };
+  return { landed: true, limitHit, resultText, branch, autoVerdicted };
 }
 
 // ---- the night loop: items until a budget runs dry ----
@@ -1642,7 +1647,6 @@ try {
       // branch and a collision resolves to a `-2` suffix, so the name the night
       // REPORTS has to be the one the run actually pushed.
       nightLines.push(`#${item.id} ${item.title}: ${r.landed ? (PLAN_ONLY ? 'design saved' : `${r.branch || laneFor(item)} pushed`) : (PLAN_ONLY ? 'no design' : 'no commits')}${stepNote}${r.limitHit ? ' (hit the usage limit)' : ''}`);
-      nightLines.push(`#${item.id} ${item.title}: ${r.landed ? (PLAN_ONLY ? 'design saved' : `${laneFor(item)} pushed`) : (PLAN_ONLY ? 'no design' : 'no commits')}${r.limitHit ? ' (hit the usage limit)' : ''}`);
       // #263 — an auto-verdict is reversible from the Review room, but only if
       // the morning report shows it happened; give it its own line + evidence.
       if (r.autoVerdicted) {
@@ -1685,8 +1689,7 @@ try {
         ? `${stepsTicked} step(s) ticked (${stepsRemaining} still open), ${stepBudgetSpent}, `
         : `no plan steps on tonight's items, `);
   const closing = `${landed} ${PLAN_ONLY ? 'design(s) awaiting review' : 'branch(es) awaiting the morning verdict'}, ${attempted.size} item(s) attempted, `
-    + `${stepsReport}~${Math.round(tokensSpent / 1000)}k tokens${costSpent ? ` ($${costSpent.toFixed(2)})` : ''}, ${Math.round(elapsedMin())}m elapsed.`;
-    + `~${Math.round(tokensSpent / 1000)}k tokens${costSpent ? ` ($${costSpent.toFixed(2)})` : ''}, ${Math.round(elapsedMin())}m elapsed`
+    + `${stepsReport}~${Math.round(tokensSpent / 1000)}k tokens${costSpent ? ` ($${costSpent.toFixed(2)})` : ''}, ${Math.round(elapsedMin())}m elapsed`
     + `${autoVerdictCount > 0 ? `, ${autoVerdictCount} auto-verdicted` : ''}.`;
   log(`night over: ${closing}`);
   if (attempted.size > 0) {

@@ -842,6 +842,14 @@ autopilotGlobal.get('/next', async (req, res) => {
        ON CONFLICT DO NOTHING`);
   }
 
+  // A one-off only matches its own date and only retires itself when it
+  // fires, so one whose date passed without firing (disarmed, dispatcher
+  // down) would sit enabled forever. Retire it once its date is behind us.
+  await q(
+    `UPDATE autopilot_schedule SET enabled = false
+      WHERE enabled AND run_date IS NOT NULL AND run_date < $1::date
+        AND jsonb_array_length(days) = 0`, [localDate]);
+
   // Due calendar rows (the arm switch pauses the whole calendar; Run-now stays
   // manual-only while disarmed).
   if (settings.autopilot_enabled && Number.isFinite(nowMin)) {
