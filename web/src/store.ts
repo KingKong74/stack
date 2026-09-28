@@ -63,23 +63,6 @@ function readStoredJSON<T>(key: string, shape: (p: any) => T): T {
   return shape(null);
 }
 
-// ---- export-brief preferences (device-local, like the token) ----
-
-const BRIEF_PREFS_KEY = 'stack.briefPrefs';
-
-export interface BriefPrefs { compact: boolean; directives: string[] }
-
-export function getBriefPrefs(): BriefPrefs {
-  return readStoredJSON(BRIEF_PREFS_KEY, (p) => ({
-    compact: p?.compact === true,
-    directives: Array.isArray(p?.directives) ? p.directives : [],
-  }));
-}
-
-export function setBriefPrefs(prefs: BriefPrefs) {
-  localStorage.setItem(BRIEF_PREFS_KEY, JSON.stringify(prefs));
-}
-
 // THE HALF-TYPED-ITEM DRAFT IS GONE. The add modal saved one when a stray click
 // dismissed it, and a strip on the Roadmap tab was the only thing that ever
 // offered it back. That tab is a mockup now, so keeping the draft would be

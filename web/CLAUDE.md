@@ -19,8 +19,8 @@ its file: `lib/branch.ts`, `lib/plan.ts`, `lib/quality.ts`, `lib/termClipboard.t
 - **A recurring re-fetch goes through `lib/autoRefresh.ts`.** One device-local setting governs every
   screen that polls the host, and it also stops a hidden tab polling — except `whileHidden`, whose
   one caller is the #519 notifier while desktop notifications are on (its job is the unwatched tab).
-- `lib/brief.ts` holds the resume brief and the `DIRECTIVES` catalogue, whose keys mirror the
-  server's `SESSION_DEFAULTS`.
+- `lib/brief.ts` holds the `DIRECTIVES` catalogue, whose keys mirror the server's
+  `SESSION_DEFAULTS`.
 
 ## Which screen a row is on
 

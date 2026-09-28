@@ -200,8 +200,7 @@ function Pill({ tone, children }: { tone: Tone; children: ReactNode }) {
 }
 
 // The kit's Switch, as a real `role="switch"` button rather than a clickable
-// span — the app already spells one this way in ExportBriefModal, and a toggle
-// a keyboard cannot reach is not a toggle.
+// span: a toggle a keyboard cannot reach is not a toggle.
 function Switch({ checked, onChange, label, disabled }: {
   checked: boolean; onChange: (v: boolean) => void; label?: string; disabled?: boolean;
 }) {

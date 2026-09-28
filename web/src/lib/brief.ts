@@ -1,29 +1,6 @@
-import type { Project, Activity, Bug, Roadmap } from '../types';
-import { PRODUCT_NAME, SEVERITY_ORDER } from './ui';
-
-// Builds the exportable "resume brief" — a concise markdown template with the
-// essentials for starting back into a project (paste it into an agent or an
-// editor). Pure formatting: callers hand in data already loaded via store.ts,
-// and the export modal hands in the options (detail level + session
-// preferences) the user curated.
-
-export interface BriefInput {
-  project: Project;
-  currentPhase: string;
-  blockers: string[];
-  directives: string[];   // the standing steer list — echoed near the top
-  activity: Activity[];
-  bugs: Bug[];
-  roadmap: Roadmap;
-}
-
-export interface BriefOptions {
-  compact: boolean;      // efficiency mode — tighter caps, essentials only
-  directives: string[];  // selected DIRECTIVES keys, rendered as session preferences
-}
-
-// The chop-and-change session preferences offered before export. `line` is the
-// sentence written into the brief; label/hint are what the modal shows.
+// The session-defaults catalogue Settings offers. Keys mirror the server's
+// SESSION_DEFAULTS (server/src/settings.js); `line` is the sentence a session
+// is handed, label/hint are what Settings shows.
 export const DIRECTIVES: { key: string; label: string; hint: string; line: string }[] = [
   {
     key: 'lean',
@@ -35,10 +12,8 @@ export const DIRECTIVES: { key: string; label: string; hint: string; line: strin
     key: 'ship',
     label: 'Commit + push each unit',
     hint: 'Land every completed unit of work on the remote.',
-    // Verbatim the server twin. It used to read "Commit and push after every
-    // completed unit of work." — the same instruction with the PERMISSION taken
-    // out, so a session handed an exported brief still stopped to ask for what
-    // a session handed the SessionStart block had already been granted.
+    // Verbatim the server twin, permission included: a line without it has a
+    // session stop to ask for what it was already granted.
     line: 'Commits are pre-authorised: commit and push after every completed unit of work — no need to ask.',
   },
   {
@@ -64,10 +39,6 @@ export const DIRECTIVES: { key: string; label: string; hint: string; line: strin
     label: 'Open a card for ad-hoc work',
     hint: 'Work you ask for in a session gets a ⚡ FLY roadmap card.',
     // VERBATIM the server twin's line (server/src/settings.js SESSION_DEFAULTS).
-    // Both copies end up in front of a session — that one through the
-    // SessionStart hook, this one through the exported brief a human pastes in —
-    // so both have to carry the whole recipe, and any difference between them is
-    // a session behaving differently depending on which door it came through.
     line: 'If you are asked to build something that is not already a roadmap item, open a card for it first: '
       + 'POST /api/projects/<slug>/roadmap with {"source":"fly","session":"<your tmux session name>","title":…,"note":…}, '
       + 'bearer $STACK_TOKEN from ~/.stack/env. It is held out of the overnight runner until the owner signs it off, '
@@ -75,113 +46,3 @@ export const DIRECTIVES: { key: string; label: string; hint: string; line: strin
       + 'A 409 with "dismissed":true means the owner deleted that card — do not post it again.',
   },
 ];
-
-const STATUS_LABEL = { live: 'Live', building: 'Building', paused: 'Paused', archived: 'Archived' } as const;
-
-const clip = (s: string, n: number) => {
-  const one = s.replace(/\s+/g, ' ').trim();
-  if (one.length <= n) return one;
-  return `${one.slice(0, n).replace(/\s+\S*$/, '')}…`;
-};
-
-const bullets = (items: string[]) => items.map((t) => `- ${t}`).join('\n');
-
-function section(title: string, body: string): string {
-  return body ? `## ${title}\n${body}` : '';
-}
-
-export function buildBrief(
-  { project, currentPhase, blockers, directives: steer, activity, bugs, roadmap }: BriefInput,
-  { compact, directives }: BriefOptions = { compact: false, directives: [] },
-): string {
-  const r = project.resume;
-  const latest = activity[0];
-  const caps = compact
-    ? { bugs: 5, roadmap: 3, activity: 1, clip: 90 }
-    : { bugs: 8, roadmap: 6, activity: 3, clip: 160 };
-
-  // Header facts as a tight bullet block.
-  const facts = [
-    `- **Status:** ${[
-      STATUS_LABEL[project.status],
-      project.progress > 0 && `${project.progress}%`,
-      currentPhase,
-    ].filter(Boolean).join(' · ')}`,
-    latest && `- **Last push:** \`${latest.hash}\` on ${latest.branch} · ${latest.when}`,
-    (project.repoUrl || project.siteUrl) &&
-      `- **Links:** ${[project.repoUrl, project.siteUrl].filter(Boolean).join(' · ')}`,
-  ].filter(Boolean).join('\n');
-
-  const prefLines = DIRECTIVES.filter((d) => directives.includes(d.key)).map((d) => d.line);
-
-  // Open bugs, worst first, capped.
-  const openBugs = bugs
-    .filter((b) => b.status !== 'fixed')
-    .sort((a, b) => SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity));
-  const bugLines = openBugs.slice(0, caps.bugs)
-    .map((b) => `- ${b.id} · ${b.severity} — ${b.title}${b.status !== 'open' ? ` _(${b.status})_` : ''}`);
-  if (openBugs.length > caps.bugs) bugLines.push(`- …and ${openBugs.length - caps.bugs} more`);
-
-  // Open Highest/High roadmap items not already covered by the resume's next-up list.
-  const covered = new Set((r?.nextUp || []).map((t) => t.trim().toLowerCase()));
-  const openRoadmap = [...roadmap.highest, ...roadmap.high]
-    .filter((it) => !it.done && !covered.has(it.title.trim().toLowerCase()));
-  const roadLines = openRoadmap.slice(0, caps.roadmap)
-    .map((it) => `- [ ] ${it.title}${it.bucket === 'highest' ? ' _(highest)_' : ''}`);
-  if (openRoadmap.length > caps.roadmap) roadLines.push(`- …and ${openRoadmap.length - caps.roadmap} more`);
-
-  const pushLines = activity.slice(0, caps.activity)
-    .map((a) => `- \`${a.hash}\` (${a.when}) — ${clip(a.summary, caps.clip) || '—'}`);
-
-  const exported = new Date().toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' });
-
-  const parts = [
-    `# ${project.name} — resume brief`,
-    project.subtitle && `> ${project.subtitle}`,
-    facts,
-    section('Session preferences', bullets(prefLines)),
-    section('Directives — honour these first', bullets(steer)),
-    section('Where you left off', r?.summary || ''),
-    section('In progress', bullets(r?.inProgress || [])),
-    section('Next up', bullets(r?.nextUp || [])),
-    section('Blockers', bullets(blockers)),
-    openBugs.length ? section(`Open bugs (${openBugs.length})`, bugLines.join('\n')) : '',
-    roadLines.length ? section('Roadmap — still open (must/should)', roadLines.join('\n')) : '',
-    compact ? '' : section('Working well — keep', bullets(r?.liked || [])),
-    section('Recent pushes', pushLines.join('\n')),
-    `---\n_Exported from ${PRODUCT_NAME} · ${exported}. Paste this at the start of a session to pick up where you left off._`,
-  ];
-  return `${parts.filter(Boolean).join('\n\n')}\n`;
-}
-
-export const briefFilename = (slug: string) => `${slug}-resume-brief.md`;
-
-// Rough token estimate (~4 chars/token) — enough to compare before/after.
-export const estimateTokens = (text: string) => Math.max(1, Math.round(text.length / 4));
-
-// Deterministic token-saving reformat (no AI API): strips markdown decoration
-// and the footer, collapses whitespace. The content survives; the chrome goes.
-export function tightenBrief(md: string): string {
-  return md
-    .replace(/\n---\n_Exported from [^\n]*\n?/, '\n')  // footer
-    .replace(/\*\*/g, '')                              // bold markers
-    .replace(/^> /gm, '')                              // blockquote marker
-    .replace(/`/g, '')                                 // inline code ticks
-    .replace(/ _\(([^)]+)\)_/g, ' ($1)')               // italic parentheticals
-    .replace(/[ \t]+$/gm, '')                          // trailing spaces
-    .replace(/\n{3,}/g, '\n\n')                        // stacked blank lines
-    .trim() + '\n';
-}
-
-// Hand any text to the browser as a markdown download.
-export function downloadText(filename: string, text: string) {
-  const blob = new Blob([text], { type: 'text/markdown;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-}
