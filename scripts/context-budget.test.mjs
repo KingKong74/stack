@@ -27,7 +27,14 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 // ~4 characters per token is the rule of thumb these numbers were set by; the
 // budget is in BYTES because that is what can be measured exactly.
 const BUDGETS = [
-  { path: 'CLAUDE.md', max: 40_000, what: 'loaded into every session in this repo' },
+  { path: 'CLAUDE.md', max: 15_000, what: 'loaded into every session in this repo' },
+  // The nested files load only when a session works in that directory. A rule
+  // governing one package goes there, not in the root.
+  { path: 'web/CLAUDE.md', max: 8_000, what: 'loaded when working in web/' },
+  { path: 'server/CLAUDE.md', max: 10_000, what: 'loaded when working in server/' },
+  { path: 'scripts/CLAUDE.md', max: 5_000, what: 'loaded when working in scripts/' },
+  { path: 'hook/CLAUDE.md', max: 4_000, what: 'loaded when working in hook/' },
+  { path: 'terminal/CLAUDE.md', max: 4_000, what: 'loaded when working in terminal/' },
   { path: 'templates/stack-agent-context.md', max: 16_000, what: 'the portable agent manual, exported verbatim' },
 ];
 
