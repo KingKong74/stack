@@ -905,17 +905,17 @@ export function clearTermTmuxName(cwd: string, name: string) {
 // its process died with the socket, so the pane comes back and the shell is
 // new. Order is the tab order, so the grid comes back the way it was left.
 export interface TermOpenTab { cwd: string; cmd: 'shell' | 'claude'; tmux?: string }
-// #487 — A NAME THE OWNER TYPED, overriding the labeller's.
+// #487/#512 — A SESSION'S NAME ON THIS DEVICE, overriding the labeller's.
 //
-// The Gemini labeller names a session from what it is doing, which is right
-// almost always and wrong exactly when you have decided a session is "the
-// migration one" regardless of what it is reading this minute. The design has
-// a rename on every rail row; this is where it lands.
+// Two writers: the first line you sent the session (#512, written once and
+// never over an entry already here) and a double-click rename, which replaces
+// whatever is here. The Gemini labeller's reading sits underneath both.
 //
 // KEYED BY TMUX NAME, never by the tab id. A tab id is a per-mount counter, so
 // a name keyed on it would attach to a different session after a reload — and
 // a terminal wearing another session's name is worse than an unnamed one.
-// A session with no tmux name yet cannot be renamed, which the row reflects.
+// A session with no tmux name yet (every shell tab) is renamed for the life of
+// its tab only, in the screen's own per-mount map.
 //
 // Device-local, like every other way-of-looking on this screen: it is what YOU
 // call that session, and the labeller's answer is still there underneath.

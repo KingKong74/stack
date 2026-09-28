@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type RefObject, type MouseEvent as ReactMouseEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type RefObject, type MouseEvent as ReactMouseEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { Terminal as XTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
@@ -963,24 +963,23 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   // Named by sid first (every session has one), falling back to the tmux name
   // so a tab that re-attached a detached session inherits the name it wore as
   // a chip instead of reading as unnamed until the next ask.
-  // #512 — A SESSION IS NAMED BY WHAT YOU TYPED INTO IT, AND RENAMING IS GONE
-  // (owner's call). #487 gave every row a pencil and both surfaces a
-  // double-click, on the reasoning that a name you typed beats a name a model
-  // guessed. That reasoning was right and the control was the wrong way to act
-  // on it: the words you would have typed into the editor are the words you
-  // already typed into the SESSION, so the rename was asking you to say a
-  // second time what the screen had watched you say once.
+  // #512 — A SESSION IS NAMED BY WHAT YOU TYPED INTO IT: the first line it is
+  // sent becomes its title (lib/termName does the reading), so the common case
+  // needs no gesture at all.
   //
-  // So the first line a session is sent becomes its title (lib/termName does
-  // the reading), and there is no editor on either surface. What went with it:
-  // the `renaming`/`draft` pair, its `where` discriminator — which existed
-  // only because two autoFocus inputs for one session fought over the focus —
-  // the ✎ button, and both double-click handlers. A gesture that opens an
-  // editor is not disabled anywhere; it does not exist.
+  // AND A NAME YOU TYPE STILL WINS (owner's call, after #512 took the editor
+  // away). #512's reasoning — the words you would put in a rename box are the
+  // words you already sent the session — holds for a session opened with a
+  // question and fails for every other kind: one opened with `ls`, a pasted
+  // screenshot path, or a question that stopped describing it an hour in. So
+  // double-click the name, on the rail row or the pane title, and what you
+  // type replaces it. There is no ✎ on the rows for the reason the pin is only
+  // drawn when lit: a control on every row marks nothing.
   //
-  // `names` STAYS, and is no longer an override: it is where a typed name is
-  // kept so it survives a reload, keyed by tmux name the same as before. See
-  // store.ts for why the key cannot be the tab id.
+  // `names` holds both kinds, keyed by tmux name (store.ts says why never the
+  // tab id), and the persist effect below never writes over an entry, so a
+  // rename is never overwritten by a first line. Clearing one (an empty
+  // rename) hands the row back to the first line and then the labeller.
   const [names, setNames] = useState<Record<string, string>>(() => getTermNames());
   // This mount's captures, keyed by tab id, for the window between "you pressed
   // Enter" and "the daemon told us the tmux name" — a session named in its
@@ -990,6 +989,21 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   const noteTyped = (id: number, text: string) => {
     setTyped((cur) => (cur[id] ? cur : { ...cur, [id]: text }));
   };
+  // WHICH SESSION IS BEING RENAMED, AND ON WHICH SURFACE. The `where` is not
+  // bookkeeping: the rail row and the pane title both draw an editor for the
+  // same session, and an id alone opens BOTH. Two inputs carrying `autoFocus`
+  // then fight over the focus on mount, the loser's onBlur commits an empty
+  // draft, and the rename closes itself the instant it opens. One editor at a
+  // time, and the surface you double-clicked is the one that gets it.
+  const [renaming, setRenaming] = useState<{ id: number; where: 'rail' | 'pane' } | null>(null);
+  const [draft, setDraft] = useState('');
+  // This mount's renames, keyed by tab id, for the same reason `typed` is: a
+  // SHELL tab never gets a tmux name (its process dies with the socket), and a
+  // claude tab has none for its first second. Refusing those a rename is what
+  // made "I can't rename my session" true of every shell. Held here for the
+  // tab's life, and copied into `names` once there is a tmux name to key on.
+  // '' is a rename to nothing — it clears, and must shadow nothing.
+  const [renamed, setRenamed] = useState<Record<number, string>>({});
   const [setsOpen, setSetsOpen] = useState(false);
   const setsRef = useRef<HTMLDivElement | null>(null);
   const setsBtn = useRef<HTMLButtonElement | null>(null);
@@ -1006,7 +1020,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   // carries the first thing ever asked of it, which is why the stored name
   // wins over a line typed into it this afternoon.
   const labelOf = (s: Sess) =>
-    (s.tmux && names[s.tmux]) || typed[s.id]
+    renamed[s.id] || (s.tmux && names[s.tmux]) || typed[s.id]
     || (s.sid && labels[s.sid]) || (s.tmux && labels[s.tmux]) || '';
   // PERSIST ONCE THE SESSION HAS SOMETHING TO KEY ON, and never over a name
   // that is already there — the stored one is older, and older is the whole
@@ -1014,13 +1028,38 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   useEffect(() => {
     let wrote = false;
     for (const x of sessions) {
+      if (!x.tmux) continue;
+      // A rename made before the tmux name arrived IS written over an entry:
+      // it is newer than anything stored and it was a decision.
+      const r = renamed[x.id];
+      if (r && names[x.tmux] !== r) { setTermName(x.tmux, r); wrote = true; continue; }
       const t = typed[x.id];
-      if (!t || !x.tmux || names[x.tmux]) continue;
+      if (!t || r !== undefined || names[x.tmux]) continue;
       setTermName(x.tmux, t); wrote = true;
     }
     if (wrote) setNames(getTermNames());
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [typed, sessions]);
+  }, [typed, renamed, sessions]);
+  const startRename = (x: Sess, where: 'rail' | 'pane') => {
+    setRenaming({ id: x.id, where }); setDraft(labelOf(x));
+  };
+  // BLUR COMMITS rather than discarding — losing a name you just typed by
+  // clicking away is the worst of the three outcomes, which is the same call
+  // the board's inline rename makes. An unchanged draft writes nothing, so
+  // opening the editor on a labeller's name and leaving does not promote a
+  // machine's guess into a name you chose.
+  const commitRename = (x: Sess) => {
+    const next = draft.trim().slice(0, 60);
+    if (next !== labelOf(x)) {
+      setRenamed((cur) => ({ ...cur, [x.id]: next }));
+      if (x.tmux) { setTermName(x.tmux, next); setNames(getTermNames()); }
+    }
+    setRenaming(null); setDraft('');
+  };
+  const renameKeys = (x: Sess) => (e: ReactKeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') commitRename(x);
+    if (e.key === 'Escape') { setRenaming(null); setDraft(''); }
+  };
   // WHICH SESSIONS ARE ON SCREEN, and WHERE (#487).
   //
   // It was a sliding WINDOW over the session list — start at the active tab,
@@ -1667,12 +1706,9 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
               {endingAll ? `⏻ Ending ${endingAllCount}…` : `⏻ End all ${sessions.length}`}
             </button>
           )}
-          {/* NOTHING ON THIS BAR RE-NAMES A SESSION, and #512 finished what
-              #490 started: ✧ Re-label went with the re-asking it belonged to,
-              and the rail's ✎ has now gone the same way. A session is named
-              after the first thing you sent it, which is a fact rather than a
-              guess, so a control whose only job is to overwrite it would be
-              overwriting your own words with your own words. */}
+          {/* NOTHING ON THIS BAR RE-NAMES A SESSION: ✧ Re-label went with
+              the re-asking it belonged to (#490). Renaming is a double-click
+              on the name itself, rail or pane — see `renaming`. */}
           {/* #305 — the grid takes the whole window. Sits beside the pane
               count because they are the same question asked twice: how much
               screen do these terminals get. The head bar itself survives, so
@@ -1853,19 +1889,26 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                   <span className={`term-mark ${s.cmd}`} aria-hidden="true">
                     {s.cmd === 'claude' ? 'C' : '$'}
                   </span>
-                  {/* THE NAME IS READ-ONLY ON BOTH SURFACES (#512). It is the
-                      first thing you sent this session, so the way to change
-                      it is not an editor — there is nothing here you did not
-                      already say. The tooltip says where it came from, because
-                      a title nobody can edit invites the question. */}
-                  <span className="what"
-                    title={labelOf(s)
-                      ? `Named after the first thing you sent this session — ${labelOf(s)}`
-                      : 'Named after the first thing you send it'}>
-                    {labelOf(s) || (s.status === 'live'
-                      ? (labelBusy ? 'naming this session…' : 'not named yet')
-                      : s.note || s.status)}
-                  </span>
+                  {/* THE NAME IS EDITABLE ON BOTH SURFACES, on a double-click.
+                      The rail is where you rename a session you are looking
+                      FOR; the pane is where you rename the one you are looking
+                      AT. */}
+                  {renaming?.id === s.id && renaming.where === 'pane' ? (
+                    <input className="tcg-edit pane-edit" autoFocus value={draft}
+                      aria-label="Session name"
+                      onClick={(e) => e.stopPropagation()}
+                      onChange={(e) => setDraft(e.target.value)}
+                      onBlur={() => commitRename(s)}
+                      onKeyDown={renameKeys(s)} />
+                  ) : (
+                    <span className="what"
+                      title={`${labelOf(s) || 'Not named yet'} — double-click to rename`}
+                      onDoubleClick={(e) => { e.stopPropagation(); startRename(s, 'pane'); }}>
+                      {labelOf(s) || (s.status === 'live'
+                        ? (labelBusy ? 'naming this session…' : 'not named yet')
+                        : s.note || s.status)}
+                    </span>
+                  )}
                   <span className="where">
                     {`${s.cmd === 'claude' ? 'claude' : 'shell'} · ${s.cwd || '~'}`}
                   </span>
@@ -2115,17 +2158,25 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                                 onClick={(e) => {
                                   if (isPickClick(e)) { e.preventDefault(); toggleEndPick(x.id); return; }
                                   setEndPick([]);
-                                  showInLead(x.id);
+                                  if (renaming?.id !== x.id) showInLead(x.id);
                                 }}>
                                 <span className={`dot ${x.status}`} />
-                                <span className="t"
-                                  title={labelOf(x)
-                                    ? `Named after the first thing you sent it — ${labelOf(x)}`
-                                    : 'Named after the first thing you send it'}>
-                                  {labelOf(x) || (x.status === 'live'
-                                    ? (labelBusy ? 'naming…' : 'not named yet')
-                                    : x.note || x.status)}
-                                </span>
+                                {renaming?.id === x.id && renaming.where === 'rail' ? (
+                                  <input className="tcg-edit" autoFocus value={draft}
+                                    aria-label="Session name"
+                                    onClick={(e) => e.stopPropagation()}
+                                    onChange={(e) => setDraft(e.target.value)}
+                                    onBlur={() => commitRename(x)}
+                                    onKeyDown={renameKeys(x)} />
+                                ) : (
+                                  <span className="t"
+                                    title={`${labelOf(x) || 'Not named yet'} — double-click to rename`}
+                                    onDoubleClick={(e) => { e.stopPropagation(); startRename(x, 'rail'); }}>
+                                    {labelOf(x) || (x.status === 'live'
+                                      ? (labelBusy ? 'naming…' : 'not named yet')
+                                      : x.note || x.status)}
+                                  </span>
+                                )}
                                 {/* THE ASK MARK — a session that has STOPPED to
                                     ask you something. The group head already
                                     counts them ("2 asking") and the strip above
