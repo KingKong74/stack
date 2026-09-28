@@ -292,6 +292,62 @@ export function Settings() {
               </div>
             </section>
 
+            {/* ---- The continuous loop's budget. The arm switch and the mode
+                live on #/inbox beside the loop's status; these are the
+                limits it builds inside, which you set once and leave. ---- */}
+            <section className="set-card">
+              <div className="set-card-head">
+                <div className="set-card-title">Autopilot budget</div>
+                <div className="set-card-sub">
+                  The limits the loop builds inside when it runs <b>whenever there is budget</b>. The
+                  on switch and the mode are on the <a href={hrefTo.inbox}>Inbox</a>.
+                </div>
+              </div>
+              <div className="set-row col">
+                <div className="set-row-text">
+                  <div className="set-row-label">Token cap</div>
+                  <div className="set-row-hint">
+                    The loop starts no new job once the fleet has spent this many tokens in the window
+                    below. A run already going is never cut short. A typical run spends about 2–4M tokens.
+                    {settings.autopilotRollingTokens === 0 && settings.autopilotMode === 'continuous' && (
+                      <> <b>No cap is set, so continuous mode builds until the Ready queue is empty.</b></>
+                    )}
+                  </div>
+                </div>
+                <div className="seg-control" role="tablist" aria-label="Rolling token cap">
+                  {[0, 5_000_000, 10_000_000, 20_000_000, 50_000_000].map((t) => (
+                    <button key={t} role="tab" aria-selected={settings.autopilotRollingTokens === t}
+                      className={`seg-opt ${settings.autopilotRollingTokens === t ? 'on' : ''}`}
+                      onClick={() => update({ autopilotRollingTokens: t })}>
+                      {t === 0 ? 'No cap' : `${t / 1_000_000}M`}
+                    </button>
+                  ))}
+                </div>
+                {![0, 5_000_000, 10_000_000, 20_000_000, 50_000_000].includes(settings.autopilotRollingTokens) && (
+                  <div className="set-detail-blurb">Currently {Math.round(settings.autopilotRollingTokens / 1000)}k, set through the API.</div>
+                )}
+              </div>
+              <div className="set-row col">
+                <div className="set-row-text">
+                  <div className="set-row-label">Over the last</div>
+                  <div className="set-row-hint">
+                    The rolling window the cap counts over. Spend ages out of it, so the loop picks up
+                    again on its own.
+                  </div>
+                </div>
+                <div className="seg-control" role="tablist" aria-label="Rolling window in hours">
+                  {[3, 5, 12, 24].map((h) => (
+                    <button key={h} role="tab" aria-selected={settings.autopilotRollingHours === h}
+                      className={`seg-opt ${settings.autopilotRollingHours === h ? 'on' : ''}`}
+                      onClick={() => update({ autopilotRollingHours: h })}>
+                      {h}h
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <QuietHours value={settings.autopilotQuiet} onSave={(v) => update({ autopilotQuiet: v })} />
+            </section>
+
             {/* ---- Roadmap (#247) — the parked-item stale threshold ---- */}
             <section className="set-card">
               <div className="set-card-head">
@@ -635,6 +691,36 @@ export function Settings() {
             </section>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+// Quiet hours are 'HH:MM-HH:MM' host-local or '' (never quiet). The two
+// times are held locally and saved only as a pair, because the server
+// clears a half-written or zero-length range to '' — which reads as "off".
+function QuietHours({ value, onSave }: { value: string; onSave: (v: string) => void }) {
+  const pad = (t: string) => t.padStart(5, '0'); // a time input wants 07:00, not 7:00
+  const [from, to] = value ? value.split('-').map(pad) : ['', ''];
+  const [a, setA] = useState(from);
+  const [b, setB] = useState(to);
+  useEffect(() => { setA(from); setB(to); }, [from, to]);
+  const dirty = !!a && !!b && a !== b && `${a}-${b}` !== `${from}-${to}`;
+  return (
+    <div className="set-row col">
+      <div className="set-row-text">
+        <div className="set-row-label">Quiet hours</div>
+        <div className="set-row-hint">
+          The loop starts nothing in this range (host time; it may run past midnight). A job already
+          running finishes. {value ? <>Quiet from <b>{from}</b> to <b>{to}</b>.</> : 'Off: the loop may start work at any hour.'}
+        </div>
+      </div>
+      <div className="set-quiet">
+        <input type="time" className="field-input sm" aria-label="Quiet from" value={a} onChange={(e) => setA(e.target.value)} />
+        <span>to</span>
+        <input type="time" className="field-input sm" aria-label="Quiet until" value={b} onChange={(e) => setB(e.target.value)} />
+        <button className="btn-accent" disabled={!dirty} onClick={() => onSave(`${a}-${b}`)}>Save</button>
+        {value && <button className="btn-repo" onClick={() => { setA(''); setB(''); onSave(''); }}>Turn off</button>}
       </div>
     </div>
   );
