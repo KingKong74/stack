@@ -1597,3 +1597,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS session_plans_fp_idx
   ON session_plans (project_id, session_id, fingerprint);
 CREATE INDEX IF NOT EXISTS session_plans_project_idx
   ON session_plans (project_id, created_at DESC);
+-- The roadmap items a human made from a plan (Split) or fed it into (Attach),
+-- in the order they were linked. A record, not a foreign key: an item deleted
+-- since stays listed, and the reader drops ids the board no longer has. It
+-- exists so a plan already split says so before it is split twice.
+ALTER TABLE session_plans ADD COLUMN IF NOT EXISTS item_ids JSONB NOT NULL DEFAULT '[]'::jsonb;

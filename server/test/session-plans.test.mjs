@@ -7,6 +7,7 @@
 //  • A POST NEVER CREATES A PROJECT. A plan from an unknown checkout 404s.
 //  • A RETRIED HOOK IS A NO-OP and a revised plan is a new row.
 //  • THE LIST CARRIES NO BODIES, and one project's plan is not another's.
+//  • /:id/items RECORDS ONLY THIS PROJECT'S ROWS, once each, in order.
 //
 // Needs a running server on a throwaway database (it writes real rows):
 //   docker run -d --rm --name pg -e POSTGRES_PASSWORD=t -e POSTGRES_USER=t \
@@ -94,6 +95,21 @@ test('the route', async () => {
   assert.equal(full.body.body, '# Ship it\n\n1. a');
   assert.equal((await call('GET', `/projects/${other}/plans/${one.body.id}`)).status, 404);
   assert.equal((await call('DELETE', `/projects/${other}/plans/${one.body.id}`)).status, 404);
+
+  const mine = [];
+  for (const t of ['a', 'b']) {
+    const r = await call('POST', `/projects/${slug}/roadmap`, { title: `from plan ${t}` });
+    assert.equal(r.status, 201, r.text);
+    mine.push(r.body.id);
+  }
+  const theirs = (await call('POST', `/projects/${other}/roadmap`, { title: 'not mine' })).body.id;
+  const linked = await call('POST', `${base}/${one.body.id}/items`, { ids: [mine[1], theirs, mine[1], 'x', 999999999] });
+  assert.equal(linked.status, 200, linked.text);
+  assert.deepEqual(linked.body.itemIds, [mine[1]], 'a foreign, junk or repeated id is dropped');
+  const again2 = await call('POST', `${base}/${one.body.id}/items`, { ids: [mine[0], mine[1]] });
+  assert.deepEqual(again2.body.itemIds, [mine[1], mine[0]], 'appended, never repeated');
+  assert.equal((await call('POST', `/projects/${other}/plans/${one.body.id}/items`, { ids: [theirs] })).status, 404);
+  assert.deepEqual((await call('GET', base)).body.find((x) => x.id === one.body.id).itemIds, [mine[1], mine[0]]);
 
   assert.equal((await call('DELETE', `${base}/${one.body.id}`)).status, 200);
   assert.equal((await call('GET', base)).body.length, 1);

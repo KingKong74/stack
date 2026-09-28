@@ -493,6 +493,7 @@ export function sessionPlanShape(row, { withBody = false } = {}) {
     branch: row.branch || '',
     commit: row.commit_hash || '',
     size: Number(row.size ?? (row.body ? row.body.length : 0)),
+    itemIds: Array.isArray(row.item_ids) ? row.item_ids.map(Number) : [],
     createdAt: row.created_at,
     when: relativeTime(row.created_at) || 'just now',
   };

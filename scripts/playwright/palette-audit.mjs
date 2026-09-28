@@ -187,6 +187,8 @@ const SCREENS = [
   { slug: 'plans-progress-open', hash: '#/p/{slug}/plans', press: ['.pl-tabs .k-tab:nth-child(2)', '.pl-childrow'] },
   { slug: 'plans-calendar', hash: '#/p/{slug}/plans', press: ['.pl-tabs .k-tab:nth-child(4)'] },
   { slug: 'plans-sessions', hash: '#/p/{slug}/plans', press: ['.pl-tabs .k-tab:nth-child(5)'] },
+  // Opens the Split dialog and stops: its Make button writes, and is never pressed.
+  { slug: 'plans-split', hash: '#/p/{slug}/plans', press: ['.pl-tabs .k-tab:nth-child(5)', '.sp-acts .k-btn:first-child'] },
   { slug: 'plans-releases', hash: '#/p/{slug}/plans', press: ['.pl-tabs .k-tab:nth-child(6)'] },
   { slug: 'plans-deps', hash: '#/p/{slug}/plans', press: ['.pl-tabs .k-tab:nth-child(7)'] },
   { slug: 'settings', hash: '#/settings' },

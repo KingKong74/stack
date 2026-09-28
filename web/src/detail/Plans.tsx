@@ -583,7 +583,7 @@ const LINKS: { rel: string; from: DepNode; to: DepNode }[] = [
  */
 const MOCK_SUBS = new Set<SubTab>(['summary', 'progress', 'releases', 'dependencies']);
 
-export function Plans({ slug, items, sprints, weekZero, onBoard }: {
+export function Plans({ slug, items, sprints, weekZero, onBoard, onRefresh }: {
   /** Keys the Timeline's device-local column filters (#515). */
   slug: string;
   /** EVERY roadmap row, in the payload's own order — the same flattened list the
@@ -597,6 +597,8 @@ export function Plans({ slug, items, sprints, weekZero, onBoard }: {
    *  answers nulls rather than throwing. */
   weekZero: string | null;
   onBoard?: () => void;
+  /** Re-reads the project after Session plans writes to the board. */
+  onRefresh?: () => void;
 }) {
   const [sub, setSub] = useState<SubTab>('timeline');
 
@@ -634,7 +636,7 @@ export function Plans({ slug, items, sprints, weekZero, onBoard }: {
       {sub === 'progress' && <ProgressView onBoard={onBoard} />}
       {sub === 'timeline' && <TimelineView key={slug} slug={slug} rows={plan} sprints={sprints} weekZero={weekZero} />}
       {sub === 'calendar' && <CalendarView rows={plan} sprints={sprints} weekZero={weekZero} />}
-      {sub === 'sessions' && <SessionPlansView key={slug} slug={slug} />}
+      {sub === 'sessions' && <SessionPlansView key={slug} slug={slug} items={items} onRefresh={onRefresh} />}
       {sub === 'releases' && <ReleasesView />}
       {sub === 'dependencies' && <DependenciesView />}
     </div>

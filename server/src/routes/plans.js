@@ -13,7 +13,8 @@ import { projectBySlug } from '../resolve.js';
 // stderr. Otherwise any directory a plan was approved in becomes a project.
 //
 // NOTHING HERE WRITES THE ROADMAP. Turning a plan into items is a human's
-// action on the Plans tab; capture only records (schema.sql says why).
+// action on the Plans tab, written through /roadmap like any other item;
+// /:id/items only records which ones came from here.
 export const plans = Router({ mergeParams: true });
 
 plans.param('id', numericId);
@@ -39,7 +40,7 @@ plans.get('/', async (req, res) => {
   const p = await resolve(req, res);
   if (!p) return;
   const { rows } = await q(
-    `SELECT id, session_id, title, plan_file, branch, commit_hash, created_at, length(body) AS size
+    `SELECT id, session_id, title, plan_file, branch, commit_hash, item_ids, created_at, length(body) AS size
        FROM session_plans WHERE project_id = $1 ORDER BY created_at DESC, id DESC LIMIT 200`,
     [p.id]
   );
@@ -84,6 +85,31 @@ plans.post('/', async (req, res) => {
     [p.id, sessionId, fingerprint]
   );
   res.json(sessionPlanShape(rows[0]));
+});
+
+// POST /:id/items -> record roadmap items made from (or fed) this plan, after
+// the client has written them through /roadmap like any other item. Only ids
+// of this project's rows are kept, so a stale or foreign id is dropped rather
+// than recorded; already-listed ids are not repeated.
+plans.post('/:id/items', async (req, res) => {
+  const p = await resolve(req, res);
+  if (!p) return;
+  const want = (Array.isArray(req.body?.ids) ? req.body.ids : [])
+    .map(Number).filter((n) => Number.isInteger(n) && n > 0).slice(0, 100);
+  const { rows: real } = await q(
+    'SELECT id FROM roadmap_items WHERE project_id = $1 AND id = ANY($2::int[])', [p.id, want]);
+  const keep = new Set(real.map((r) => r.id));
+  const { rows } = await q(
+    `UPDATE session_plans
+        SET item_ids = item_ids || (
+          SELECT COALESCE(jsonb_agg(x), '[]'::jsonb)
+            FROM unnest($3::int[]) WITH ORDINALITY AS t(x, n)
+           WHERE NOT item_ids @> to_jsonb(x))
+      WHERE id = $1 AND project_id = $2 RETURNING *`,
+    [Number(req.params.id), p.id, want.filter((n, i) => keep.has(n) && want.indexOf(n) === i)]
+  );
+  if (!rows.length) return res.status(404).json({ error: 'No such plan.' });
+  res.json(sessionPlanShape(rows[0], { withBody: true }));
 });
 
 // DELETE /:id -> a human discarding a plan. Nothing else refers to one.

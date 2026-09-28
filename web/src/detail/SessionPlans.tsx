@@ -1,10 +1,9 @@
 // PLANS → SESSION PLANS — the plan-mode plans a human approved, as captured by
 // hook/stack-plan.mjs. A list on the left, the chosen plan read on the right.
 //
-// IT READS AND DISCARDS, AND THAT IS ALL. Turning a plan into roadmap items is
-// the next piece and it is a human's action; nothing here writes the board, so
-// a plan the fleet could build from without anyone looking cannot come from
-// this screen.
+// IT WRITES THE BOARD ONLY THROUGH PlanToItems, on a human's press: Split
+// makes backlog items, Attach appends steps to one. That file says why its
+// rows are manual and not held. Everything else here reads or discards.
 //
 // AN EMPTY LIST IS NOT "NO PLANS". The capture is a hook on each machine that
 // runs Claude Code, and a machine without it posts nothing, so the empty state
@@ -17,12 +16,15 @@ import { useEffect, useState } from 'react';
 import { KitIcon } from './kit/KitIcon';
 import { Markdown } from '../components/Markdown';
 import { ConfirmModal } from '../components/ConfirmModal';
+import { PlanToItems } from './PlanToItems';
 import { deleteSessionPlan, getSessionPlan, getSessionPlans } from '../store';
-import type { SessionPlan } from '../types';
+import type { RoadmapItem, SessionPlan } from '../types';
 
 const kb = (n: number) => (n < 1024 ? `${n} B` : `${Math.round(n / 1024)} KB`);
 
-export function SessionPlansView({ slug }: { slug: string }) {
+export function SessionPlansView({ slug, items, onRefresh }: {
+  slug: string; items: RoadmapItem[]; onRefresh?: () => void;
+}) {
   const [list, setList] = useState<SessionPlan[] | null>(null);
   const [err, setErr] = useState('');
   const [picked, setPicked] = useState<number | null>(null);
@@ -30,6 +32,8 @@ export function SessionPlansView({ slug }: { slug: string }) {
   const [readErr, setReadErr] = useState('');
   const [discard, setDiscard] = useState<SessionPlan | null>(null);
   const [tick, setTick] = useState(0);
+  const [act, setAct] = useState<'split' | 'attach' | null>(null);
+  const [said, setSaid] = useState('');
 
   useEffect(() => {
     let live = true;
@@ -49,7 +53,7 @@ export function SessionPlansView({ slug }: { slug: string }) {
     let live = true;
     setReadErr('');
     getSessionPlan(slug, picked)
-      .then((p) => { if (live) setOpen(p); })
+      .then((p) => { if (live) { setOpen(p); setSaid(''); } })
       .catch((e: Error) => { if (live) { setOpen(null); setReadErr(e.message || 'Could not load this plan.'); } });
     return () => { live = false; };
   }, [slug, picked]);
@@ -70,7 +74,7 @@ export function SessionPlansView({ slug }: { slug: string }) {
   const head = (
     <div className="pl-toolbar">
       <span className="pl-saved">
-        Plans you approved in Claude Code’s plan mode, newest first. Reading only: nothing here changes the board.
+        Plans you approved in Claude Code’s plan mode, newest first. Split or Attach turns one into board work.
       </span>
       <div className="right">
         <button className="k-btn sm secondary" onClick={() => setTick((t) => t + 1)}>↻ Refresh</button>
@@ -127,16 +131,27 @@ export function SessionPlansView({ slug }: { slug: string }) {
                   )}
                   {open.sessionId && <span className="mono" title={`Session ${open.sessionId}`}>session {open.sessionId.slice(0, 8)}</span>}
                 </div>
-                <button className="k-btn sm ghost" onClick={() => setDiscard(open)}>
-                  <KitIcon name="trash-2" size={13} />Discard
-                </button>
+                <span className="sp-acts">
+                  <button className="k-btn sm secondary" onClick={() => setAct('split')}>Split into items</button>
+                  <button className="k-btn sm secondary" onClick={() => setAct('attach')}>Attach to item</button>
+                  <button className="k-btn sm ghost" onClick={() => setDiscard(open)}>
+                    <KitIcon name="trash-2" size={13} />Discard
+                  </button>
+                </span>
               </div>
+              {said && <div className="sp-said" role="status">{said}</div>}
+              <Linked ids={open.itemIds} items={items} />
               <Markdown text={open.body ?? ''} />
             </>
           )}
         </div>
       </div>
 
+      {act && open && (
+        <PlanToItems slug={slug} plan={open} mode={act} items={items}
+          onClose={() => setAct(null)}
+          onDone={(p, line) => { setAct(null); setOpen(p); setSaid(line); setTick((t) => t + 1); onRefresh?.(); }} />
+      )}
       {discard && (
         <ConfirmModal title="Discard this plan?"
           body={<>“{discard.title || 'Untitled plan'}” comes off this list. The file in <code>~/.claude/plans</code> is
@@ -144,6 +159,22 @@ export function SessionPlansView({ slug }: { slug: string }) {
           confirmLabel="Discard" danger
           onConfirm={confirmDiscard} onCancel={() => setDiscard(null)} />
       )}
+    </div>
+  );
+}
+
+// What this plan has already become on the board. An id the board no longer
+// has (deleted since) is counted, not dropped silently.
+function Linked({ ids, items }: { ids: number[]; items: RoadmapItem[] }) {
+  if (!ids.length) return null;
+  const byId = new Map(items.map((it) => [it.id, it]));
+  const live = ids.map((id) => byId.get(id)).filter((it): it is RoadmapItem => !!it);
+  const gone = ids.length - live.length;
+  return (
+    <div className="sp-linked">
+      <span className="lbl">On the board from this plan</span>
+      {live.map((it) => <span key={it.id} className="k-tag">#{it.id} {it.title}</span>)}
+      {gone > 0 && <span className="gone">{gone} no longer on the board</span>}
     </div>
   );
 }

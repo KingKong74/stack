@@ -5935,7 +5935,18 @@ body[data-mc-full] .totop { display: none; }
 .sp-readhead { display: flex; align-items: center; gap: var(--space-5); flex-wrap: wrap; margin-bottom: var(--space-6); padding-bottom: var(--space-5); border-bottom: 1px solid var(--border-subtle); }
 .sp-meta { display: flex; align-items: center; gap: var(--space-5); flex-wrap: wrap; min-width: 0; font: var(--text-xs)/1.3 var(--font-sans); color: var(--text-tertiary); }
 .sp-meta .mono { font-family: var(--font-mono); overflow-wrap: anywhere; }
-.sp-readhead .k-btn { margin-left: auto; }
+.sp-acts { margin-left: auto; display: flex; gap: var(--space-3); flex-wrap: wrap; }
+.sp-said { margin-bottom: var(--space-5); padding: var(--space-4) var(--space-5); border-radius: var(--radius-md); background: var(--status-success-bg); color: var(--status-success-fg); font: var(--text-sm)/var(--leading-snug) var(--font-sans); }
+.sp-linked { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); margin-bottom: var(--space-6); }
+.sp-linked .lbl, .sp-linked .gone { font: var(--text-xs)/1.3 var(--font-sans); color: var(--text-tertiary); }
+.sp-linked .lbl { margin-right: var(--space-2); }
+.ptl-rows { display: flex; flex-direction: column; gap: var(--space-3); margin: var(--space-6) 0; max-height: 50vh; overflow-y: auto; }
+.ptl-row { display: flex; align-items: center; gap: var(--space-4); }
+.ptl-row input[type="checkbox"] { flex: none; width: 16px; height: 16px; }
+.ptl-row.off .field-input { color: var(--text-tertiary); }
+.ptl-target { display: flex; flex-direction: column; margin-top: var(--space-6); }
+.ptl-warn { margin-top: var(--space-5); padding: var(--space-4) var(--space-5); border-radius: var(--radius-md); background: var(--status-warning-bg); color: var(--status-warning-fg); font-size: var(--text-sm); }
+.ptl-err { margin-bottom: var(--space-5); padding: var(--space-4) var(--space-5); border-radius: var(--radius-md); background: var(--status-danger-bg); color: var(--status-danger-fg); font-size: var(--text-sm); }
 .sp-empty { padding: var(--space-8); border: 1px dashed var(--border-default); border-radius: var(--radius-lg); color: var(--text-secondary); font: var(--text-sm)/var(--leading-normal) var(--font-sans); }
 .sp-empty code { font-family: var(--font-mono); font-size: var(--text-xs); }
 @media (max-width: 900px) {

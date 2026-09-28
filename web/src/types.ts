@@ -850,5 +850,7 @@ export interface Spaces { areas: SpaceArea[]; workflows: Workflow[]; ideas: Wish
 export interface SessionPlan {
   id: number; sessionId: string; title: string; planFile: string;
   branch: string; commit: string; size: number; createdAt: string; when: string;
+  /** Roadmap ids made from (Split) or given (Attach) this plan, oldest first. */
+  itemIds: number[];
   body?: string;
 }

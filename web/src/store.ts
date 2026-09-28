@@ -1372,6 +1372,11 @@ export async function getSessionPlans(slug: string): Promise<SessionPlan[]> {
 export async function getSessionPlan(slug: string, id: number): Promise<SessionPlan> {
   return request<SessionPlan>(`${plansBase(slug)}/${id}`);
 }
+// Record items made from, or given, a plan. The rows themselves are written
+// through /roadmap first; this is only the plan's note of them.
+export async function linkSessionPlanItems(slug: string, id: number, ids: number[]): Promise<SessionPlan> {
+  return request<SessionPlan>(`${plansBase(slug)}/${id}/items`, { method: 'POST', body: { ids } });
+}
 export async function deleteSessionPlan(slug: string, id: number): Promise<void> {
   await request<void>(`${plansBase(slug)}/${id}`, { method: 'DELETE' });
 }
