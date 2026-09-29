@@ -1,11 +1,12 @@
-// THE FOR-YOU SCREEN IS TWO MOCKUPS AND ONE WIRED PANE (#444, #496).
+// THE FOR-YOU SCREEN IS ONE MOCKUP AND TWO WIRED PANES (#444, #496).
 //
-// Overview and Activity are `ui_kits/console/ForYouScreen.jsx` ported to TS, on
-// the kit's OWN sample rows (KING-18, king/col-virtualisation) — they read
-// nothing and write nothing, and each says so on its own sub-tab rather than on
-// the rail row, because a chip over the whole screen would warn about the two
-// panes it is wrong for. AUTO-IDEAS IS REAL: it draws this project's rows and
-// it writes.
+// Overview is `ui_kits/console/ForYouScreen.jsx` ported to TS, on the kit's OWN
+// sample rows (KING-18, king/col-virtualisation) — it reads nothing and writes
+// nothing, and says so on its own sub-tab rather than on the rail row, because
+// a chip over the whole screen would warn about the panes it is wrong for.
+// AUTO-IDEAS IS REAL: it draws this project's rows and it writes. ACTIVITY IS
+// REAL and read-only: the kit's day-grouped feed drawn from the payload's own
+// `activity` (the last 50 pushes), one event per push.
 //
 // ---- Auto-ideas (#496) ----------------------------------------------------
 //
@@ -63,14 +64,11 @@
 //    editors. `PATCH /projects/:slug` still takes all four and SessionStart
 //    still injects the directives, so what is set stays set and only the
 //    browser's way of changing it went.
-//  • `hl` ON THE ACTIVITY TAB NAMES A COMMIT THIS SCREEN CANNOT DRAW. The route
-//    still resolves (lib/route.ts) and the deep link still lands here; the
-//    highlight is ignored rather than 404ing, same as the board's. Quality's
-//    "open the commit that caught this" still crosses to this tab and now
-//    dead-ends on the kit's feed — it was left pointing here on purpose rather
-//    than quietly rewired, because where it should point instead is a decision.
+//  • `hl` ON THE ACTIVITY TAB IS A COMMIT HASH, and the feed rings that push
+//    (the Timeline's rows link here with one). A hash older than the payload's
+//    50 pushes matches nothing and is ignored quietly, same as the board's.
 //
-// The interactions in those two are the kit's own and are all local state: the
+// The interactions in Overview are the kit's own and are all local state: the
 // working copy's fold, the model list's open row and its Close. They persist
 // nothing — leaving the tab is the undo. The three PANES are NOT state: each is
 // its own route key and the strip in ProjectDetail writes it (see the Tab union
@@ -78,7 +76,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { KitIcon, type KitIconName } from './kit/KitIcon';
-import type { RoadmapItem } from '../types';
+import type { Activity, RoadmapItem } from '../types';
 import { isAutoIdea } from '../lib/plan';
 import { priorityMeta, timeAgo } from '../lib/ui';
 import { patchRoadmapItem, deleteRoadmapItem } from '../store';
@@ -248,54 +246,13 @@ const TVR: {
   },
 ];
 
-const FEED: {
-  day: string;
-  events: { kind: 'push' | 'check' | 'pr' | 'merge' | 'tag'; branch: string; ago: string; text?: string; tone?: Tone; commits?: { sha: string; msg: string }[] }[];
-}[] = [
-  {
-    day: 'Today · 2 September',
-    events: [
-      {
-        kind: 'push', branch: 'king/col-virtualisation', ago: '17m', commits: [
-          { sha: '4f2ac1d', msg: 'wip: recycle row nodes on scroll' },
-          { sha: '9be0742', msg: 'measure row height once per column' },
-          { sha: 'c14e5b8', msg: 'extract useVirtual from Column' },
-        ],
-      },
-      { kind: 'check', branch: 'king/token-split', ago: '41m', text: 'Snapshot suite failed — 2 of 40 suites', tone: 'danger' },
-      { kind: 'pr', branch: 'king/col-virtualisation', ago: '1h', text: 'Opened draft PR #212 · Board column virtualisation', tone: 'info' },
-    ],
-  },
-  {
-    day: 'Monday · 31 August',
-    events: [
-      { kind: 'merge', branch: 'main', ago: '', text: 'Merged PR #209 · Replace legacy grey ramp', tone: 'success' },
-      {
-        kind: 'push', branch: 'king/token-split', ago: '', commits: [
-          { sha: 'a7d31f0', msg: 'split colors, type, spacing into separate files' },
-          { sha: '2c88b45', msg: 'point styles.css at the new imports' },
-        ],
-      },
-      { kind: 'tag', branch: 'main', ago: '', text: 'Tagged tokens-v1.4', tone: 'neutral' },
-    ],
-  },
-  {
-    day: 'Sunday · 30 August',
-    events: [
-      { kind: 'push', branch: 'king/print-styles', ago: '', commits: [{ sha: '5ea9c72', msg: 'first pass at print sheet geometry' }] },
-    ],
-  },
-];
-
-const KIND_ICON: Record<string, KitIconName> = {
-  push: 'arrow-up-right', check: 'circle-alert', pr: 'code', merge: 'git-branch', tag: 'bookmark',
-};
-
 export type ForYouPane = 'overview' | 'activity' | 'auto';
 
-export function ForYou({ pane, slug, items, onRefresh, onEdit, highlightId }: {
+export function ForYou({ pane, slug, items, activity, onRefresh, onEdit, highlightId }: {
   pane: ForYouPane;
   slug: string;
+  /** The payload's pushes, newest first — the Activity pane's only input. */
+  activity: Activity[];
   /** The project payload's own roadmap, flattened and in payload order — the
    *  SAME list the board, Roadmap and Plans are given, so one list is
    *  partitioned across four screens rather than four fetches disagreeing. */
@@ -303,10 +260,10 @@ export function ForYou({ pane, slug, items, onRefresh, onEdit, highlightId }: {
   onRefresh: () => void;
   /** Open the item modal — note, title, area, sub-area and plan. */
   onEdit: (it: RoadmapItem) => void;
-  /** A row id this pane may recognise; Overview and Activity ignore theirs. */
+  /** A row id (Auto-ideas) or commit hash (Activity) this pane may recognise. */
   highlightId: string | null;
 }) {
-  if (pane === 'activity') return <ActivityPane />;
+  if (pane === 'activity') return <ActivityPane activity={activity} highlightId={highlightId} />;
   if (pane === 'auto') {
     return <AutoPane slug={slug} items={items} onRefresh={onRefresh} onEdit={onEdit}
       highlightId={highlightId} />;
@@ -603,40 +560,94 @@ function Trail() {
 
 /* ---------- Activity ---------- */
 
-function ActivityPane() {
+// ONE EVENT PER PUSH, grouped by the day it landed. A push is a session's row,
+// so it carries ONE commit (where the session ended) and a summary written for
+// it — the kit's per-push commit list has nothing real to draw, and the summary
+// is what the old feed was for: what changed, without reading diffs.
+//
+// DAYS ARE LOCAL, because "today" is the reader's today. A payload from an
+// older server has no `at`; its pushes land under one undated group rather
+// than being guessed onto a day.
+function dayLabel(iso: string, now: Date): string {
+  const d = new Date(iso);
+  const date = d.toLocaleDateString('en-AU', { day: 'numeric', month: 'long' });
+  const start = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const days = Math.round((start(now) - start(d)) / 86_400_000);
+  if (days === 0) return `Today · ${date}`;
+  if (days === 1) return `Yesterday · ${date}`;
+  const weekday = d.toLocaleDateString('en-AU', { weekday: 'long' });
+  return days < 7 ? `${weekday} · ${date}`
+    : `${weekday} · ${d.toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' })}`;
+}
+
+const fmtTokens = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : `${Math.round(n / 1000)}k`);
+
+function ActivityPane({ activity, highlightId }: { activity: Activity[]; highlightId: string | null }) {
+  // A summary is a paragraph, so a row shows three lines and a click reads the
+  // rest. Local state: leaving the tab is the reset. A highlighted push opens.
+  const [open, setOpen] = useState<string | null>(null);
+  useEffect(() => { if (highlightId) setOpen(highlightId); }, [highlightId]);
+  const groups = useMemo(() => {
+    const now = new Date();
+    const out: { day: string; events: Activity[] }[] = [];
+    for (const a of activity) {
+      const day = a.at && !Number.isNaN(Date.parse(a.at)) ? dayLabel(a.at, now) : 'Recent';
+      const last = out[out.length - 1];
+      if (last && last.day === day) last.events.push(a);
+      else out.push({ day, events: [a] });
+    }
+    return out;
+  }, [activity]);
+
+  if (!activity.length) {
+    return (
+      <span className="im-empty">
+        No pushes yet. Every push posts a summary here, so you can scan what changed without
+        reading diffs.
+      </span>
+    );
+  }
+
   return (
     <div className="fy-feed">
-      {FEED.map((g) => (
-        <div className="fy-day" key={g.day}>
+      {groups.map((g, gi) => (
+        <div className="fy-day" key={`${g.day}-${gi}`}>
           <span className="fy-dim">{g.day}</span>
-          {g.events.map((e, i) => {
-            const isPush = e.kind === 'push';
-            const tone: Tone = isPush ? 'info' : (e.tone || 'neutral');
-            return (
-              <div className="fy-event" key={i}>
-                <span className={`fy-chip tone-${tone}`}><KitIcon name={KIND_ICON[e.kind]} size={13} /></span>
-                <div className="mid">
-                  <div className="top">
-                    <span className="t">
-                      {isPush ? `Pushed ${e.commits?.length} commit${e.commits?.length === 1 ? '' : 's'} to` : e.text}
+          {g.events.map((a, i) => (
+            // `data-hl` is the hash ProjectDetail's scroller looks for; the
+            // ring is drawn here because only this pane knows the row matched.
+            <div className={`fy-event${highlightId && a.hash === highlightId ? ' hl' : ''}`}
+              key={`${a.hash}-${i}`} data-hl={a.hash}
+              onClick={() => setOpen(open === a.hash ? null : a.hash)}>
+              <span className="fy-chip tone-info"><KitIcon name="arrow-up-right" size={13} /></span>
+              <div className="mid">
+                <div className="top">
+                  <span className="t">Pushed to</span>
+                  <span className="br">{a.branch}</span>
+                  {(a.tokens ?? 0) > 0 && (
+                    <span className="fy-dim" title="Real token usage for the session, from its transcript (#178)">
+                      {fmtTokens(a.tokens!)} tok
                     </span>
-                    <span className={isPush ? 'br' : 'br dim'}>{e.branch}</span>
-                    {e.ago && <span className="fy-ago">{e.ago}</span>}
-                  </div>
-                  {isPush && (
-                    <div className="fy-col tight">
-                      {e.commits?.map((c) => (
-                        <div className="fy-commit" key={c.sha}>
-                          <span className="sha">{c.sha}</span>
-                          <span className="msg">{c.msg}</span>
-                        </div>
-                      ))}
-                    </div>
                   )}
+                  <span className="fy-ago">{a.when}</span>
                 </div>
+                <div className="fy-commit">
+                  <span className="sha">{a.hash === '—' ? '—' : a.hash.slice(0, 7)}</span>
+                  <span className={`msg${open === a.hash ? '' : ' clamp'}`}>{a.summary.trim() || 'No summary was posted for this push.'}</span>
+                </div>
+                {/* THE SECOND MODEL ANNOTATES; it is drawn in the accent and
+                    labelled as Gemini's, never as a verdict. Empty until stamped. */}
+                {a.geminiNote.trim() && (
+                  <div className="fy-gem"><span className="star">✦</span><b>Gemini</b> {a.geminiNote}</div>
+                )}
+                {a.tags.length > 0 && (
+                  <div className="fy-tags">
+                    {a.tags.map((t, ti) => <span className="k-tag" key={ti}>{t}</span>)}
+                  </div>
+                )}
               </div>
-            );
-          })}
+            </div>
+          ))}
         </div>
       ))}
     </div>

@@ -267,6 +267,9 @@ export function activityShape(row) {
     hash: row.commit_hash || '—',
     branch: row.branch || 'main',
     when: relativeTime(row.created_at) || 'just now',
+    // The absolute stamp, so a feed can group pushes by day. `when` is relative
+    // and says nothing about which day "3d" fell on.
+    at: row.created_at ? new Date(row.created_at).toISOString() : '',
     summary: row.summary || '',
     tags: Array.isArray(row.tags) ? row.tags : [],
     geminiNote: row.gemini_note || '', // the second model's take, '' until stamped

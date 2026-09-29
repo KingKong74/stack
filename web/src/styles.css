@@ -5303,6 +5303,13 @@ body[data-mc-full] .totop { display: none; }
 .fy-event .top .br { font: var(--weight-medium) var(--text-xs)/1 var(--font-mono); color: var(--text-link); }
 .fy-event .top .br.dim { color: var(--text-tertiary); }
 .fy-event .top .fy-ago { margin-left: auto; }
+.fy-event.hl { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent); }
+.fy-event:has(.fy-commit .msg) { cursor: pointer; }
+.fy-commit .msg.clamp { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.fy-gem { font: var(--type-body-sm); color: var(--text-secondary); text-wrap: pretty; }
+.fy-gem .star { color: var(--accent-text); margin-right: var(--space-2); }
+.fy-gem b { font-weight: var(--weight-medium); color: var(--text-primary); margin-right: var(--space-2); }
+.fy-tags { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 
 /* ---- Backlog: rank order, and the line the board pulls from ---- */
 .km-bl, .km-dev { display: flex; flex-direction: column; gap: var(--space-5); }

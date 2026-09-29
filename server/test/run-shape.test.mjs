@@ -8,7 +8,7 @@
 // are where the copies had already drifted: node-postgres hands back BIGINT and
 // NUMERIC as STRINGS, and '' vs null carries meaning here ("no pass ran" is not
 // "nothing found").
-import { agentReads, runCore } from '../src/shape.js';
+import { agentReads, runCore, activityShape } from '../src/shape.js';
 
 let fails = 0;
 const check = (label, got, want) => {
@@ -75,6 +75,10 @@ check('null branch → empty string', n.branch, '');
 check('zero tokens → 0', n.tokens, 0);
 const u = runCore(rows[3].r);
 check('missing agent columns → no-pass-ran markers', [u.reviewVerdict, u.reviewFindings, u.architectObs], ['', null, []]);
+
+console.log('\n--- activityShape: the absolute stamp the Activity feed groups by ---');
+check('Date → ISO string', activityShape({ created_at: new Date('2026-09-28T10:00:00Z') }).at, '2026-09-28T10:00:00.000Z');
+check('no created_at → empty string', activityShape({}).at, '');
 
 console.log(fails === 0 ? '\nALL PASS' : `\n${fails} FAILED`);
 process.exit(fails === 0 ? 0 : 1);

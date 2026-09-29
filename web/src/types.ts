@@ -407,6 +407,7 @@ export interface Activity {
   hash: string;
   branch: string;
   when: string;
+  at?: string;        // ISO push time, for grouping by day; absent on an older server
   summary: string;
   tags: string[];
   geminiNote: string; // the second model's one-line take on the push ('' until stamped)

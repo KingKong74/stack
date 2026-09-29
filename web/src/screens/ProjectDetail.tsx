@@ -139,12 +139,9 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
 
   const initialTab = asTab(routeTab);
   const [tab, setTab] = useState<Tab>(initialTab);
-  // ONE HIGHLIGHT CHANNEL NOW: a row id (a bug key, a roadmap id) that the tab
-  // it lands on may recognise. The second channel was the ACTIVITY tab's commit
-  // hash, and that tab is the kit's mockup — it draws the kit's commits, so a
-  // real hash names a row it cannot show. The route still resolves and the
-  // highlight is simply ignored, which is the board's `hl` situation exactly
-  // and the right nothing to do (ForYouMock's header).
+  // ONE HIGHLIGHT CHANNEL: a row id (a bug key, a roadmap id) or, on the
+  // Activity tab, a commit hash. A tab that cannot draw the row it names simply
+  // ignores it, which is the board's `hl` situation and the right nothing to do.
   const [highlightId, setHighlightId] = useState<string | null>(routeHighlight ?? null);
   // #473 — the project's REGISTERED areas (`project_areas`), reported up by the
   // Board, which is the only screen that reads the board's own shape. Empty
@@ -159,12 +156,9 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
     setHighlightId(routeHighlight ?? null);
   }, [routeTab, routeHighlight]);
 
-  // NO TAB RENDERS A `data-hl` ANCHOR ANY MORE. Quality was the last one that
-  // honoured a highlight (a bug key) and it is a mockup now, so this look-up
-  // matches nothing on every screen and gives up quietly after ~600ms. It is
-  // kept rather than deleted because the route still CARRIES `hl` — every deep
-  // link, search payload and ⌘K target still lands correctly — and the #303
-  // lesson below is the part a rewiring would otherwise have to relearn.
+  // Auto-ideas (a row id) and Activity (a commit hash) render `data-hl`
+  // anchors; on any other tab this look-up matches nothing and gives up
+  // quietly after ~600ms.
   //
   // The row highlight is a brief flag; clear it after a moment so it doesn't
   // linger.
@@ -653,34 +647,34 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
             reason to press it; Overview and Activity carry none. */}
         {isForYou(tab) && (
           <TabStrip<Tab>
-            // THE MOCK CHIP IS ON THE SUB-TAB, NOT THE RAIL ROW (#496). Two
-            // of these three panes are the console kit's and one is real, and a
-            // chip over the whole screen would warn about the wrong two thirds
-            // of it — the same finest-grain rule Plans' sub-tabs follow.
+            // THE MOCK CHIP IS ON THE SUB-TAB, NOT THE RAIL ROW (#496). One
+            // of these three panes is still the console kit's, and a chip over
+            // the whole screen would warn about the two real ones — the same
+            // finest-grain rule Plans' sub-tabs follow.
             //
             // AUTO-IDEAS' COUNT IS REAL, and it is the same rows the pane
             // draws: a row's number and the screen behind it must agree, and
             // this is now the third count on this screen read off `homeOf`.
             tabs={[
               { key: 'overview', label: 'Overview', mock: true },
-              { key: 'activity', label: 'Activity', mock: true },
+              { key: 'activity', label: 'Activity' },
               { key: 'auto', label: 'Auto-ideas', count: autoIdeaRows.length },
             ]}
             active={tab} onPick={setTab} />
         )}
 
-        {/* FOR YOU — Overview and Activity are still the kit's mockup;
-            AUTO-IDEAS IS WIRED (#496) and draws this project's own held rows,
+        {/* FOR YOU — Overview is still the kit's mockup; ACTIVITY draws the
+            payload's own pushes, and AUTO-IDEAS IS WIRED (#496) and draws this project's own held rows,
             which is the third screen a roadmap row can live on. The PANE is the
             ROUTE KEY and not component state, so every deep link and legacy
             spelling lands where it always did, and `hl` on Auto-ideas opens
             that row's card. It takes the same flattened payload the board,
             Roadmap and Plans take — ONE list partitioned four ways by `homeOf`
             rather than four fetches that can disagree. ForYou.tsx's header
-            lists what the other two panes still cost. */}
+            lists what Overview still costs. */}
         {isForYou(tab) && (
           <ForYou pane={tab as 'overview' | 'activity' | 'auto'} slug={slug} items={allRoadmap}
-            onRefresh={reread} highlightId={highlightId}
+            activity={data.activity} onRefresh={reread} highlightId={highlightId}
             onEdit={(it) => setRoadModal({ open: true, title: it.title, note: it.note, editing: it })} />
         )}
         {/* QUALITY IS WIRED (#497) — the kit's QualityScreen on this project's
