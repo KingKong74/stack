@@ -104,7 +104,7 @@ One row, in client camelCase; PATCH takes any subset. Full list in `routes/setti
 | `keepResumeCard` | off → ingest skips the resume refresh and the card is dropped |
 | `sessionDefaults` | catalogue keys (lean/ship/checkpoint/confirm/verify/fly) injected by SessionStart into every project. `ship` = commits pre-authorised; `fly` is what makes a session open its own card |
 | `autopilotEnabled` | the arm switch. Nightly and scheduled jobs enqueue only while on; ▶ Run now is always manual |
-| `autopilotMode` | `nightly` builds the Ready queue in one batch after `autopilotTime`; `continuous` builds it one job at a time whenever `loopHold` allows. `GET /autopilot/loop` says why it is holding |
+| `autopilotMode` | always `continuous` (the nightly batch was retired 2026-10-10; a stored or PATCHed `nightly` reads as continuous). The loop builds the Ready queue one job at a time whenever `loopHold` allows; `GET /autopilot/loop` says why it is holding |
 | `autopilotQuiet` / `autopilotRollingTokens` / `autopilotRollingHours` | continuous only: `HH:MM-HH:MM` quiet hours (may wrap midnight), and a token cap over a rolling window (0 = none). A pending usage-limit resume also holds it |
 | `autopilotWorkers` | fleet-wide concurrent job cap (0 = unlimited, default 3, clamped 1–8) |
 | `autopilotAdvisorModel` / `autopilotExecutorModel` | the advisor runs the session (plans, delegates, verifies, commits); the executor is its subagent with the write tools. Advisor unset = single model |

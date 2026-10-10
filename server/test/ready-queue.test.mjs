@@ -73,16 +73,16 @@ test('a held item is refused out loud and nothing is written', async () => {
   assert.equal((await call('PUT', `/projects/${SLUG}/ready`, { items: [a.id, held.id] })).status, 200);
 });
 
-test('the nightly builds Ready rows only, never the sprint', async () => {
+test('the loop builds Ready rows only, never the sprint', async () => {
   const sp = (await call('POST', `/projects/${SLUG}/sprints`, { name: 'planning' })).body;
   await call('PUT', `/projects/${SLUG}/sprints/${sp.id}/order`, { items: [sprinted.id] });
   await call('PATCH', `/projects/${SLUG}/sprints/${sp.id}`, { status: 'active' });
   await call('PATCH', `/projects/${SLUG}`, { automode: true });
-  await call('PATCH', '/settings', { autopilotEnabled: true, autopilotTime: '03:00', autopilotMaxItems: 8 });
-  await call('GET', '/autopilot/next?local=2026-09-29T03:01&dow=2');
+  await call('PATCH', '/settings', { autopilotEnabled: true, autopilotQuiet: '', autopilotRollingTokens: 0 });
+  await call('GET', '/autopilot/next?local=2026-09-29T14:01&dow=2');
   const jobs = (await call('GET', `/autopilot/jobs?slug=${SLUG}&limit=50`)).body;
   const list = Array.isArray(jobs) ? jobs : jobs.jobs;
-  const built = list.filter((j) => j.kind === 'nightly').map((j) => Number(j.itemId)).sort();
+  const built = list.filter((j) => j.kind === 'loop').map((j) => Number(j.itemId)).sort();
   assert.ok(built.includes(a.id), `a Ready row gets a build job (got ${JSON.stringify(built)})`);
   assert.ok(!built.includes(sprinted.id), 'a sprint-only row gets no build job');
   await call('PATCH', '/settings', { autopilotEnabled: false });

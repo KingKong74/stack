@@ -86,7 +86,7 @@ settings.patch('/', async (req, res) => {
   }
   if ('autopilotMode' in body) {
     fields.push(`autopilot_mode = $${i++}`);
-    values.push(oneOf(body.autopilotMode, AUTOPILOT_MODES, 'nightly'));
+    values.push(oneOf(body.autopilotMode, AUTOPILOT_MODES, 'continuous'));
   }
   if ('autopilotQuiet' in body) {
     fields.push(`autopilot_quiet = $${i++}`);

@@ -58,16 +58,18 @@ test('setup', async () => {
   await call('PATCH', `/projects/${SLUG}`, { automode: true });
 });
 
-test('nightly mode makes no loop jobs', async () => {
-  await call('PATCH', '/settings', { autopilotEnabled: true, autopilotMode: 'nightly', autopilotTime: '03:00' });
+test('the arm switch off makes no loop jobs, and nightly is gone', async () => {
+  await call('PATCH', '/settings', { autopilotEnabled: false });
   await poll('12:00');
   assert.equal((await jobs()).length, 0);
-  const loop = (await call('GET', '/autopilot/loop')).body;
-  assert.match(loop.hold, /nightly mode/);
+  assert.match((await call('GET', '/autopilot/loop')).body.hold, /switched off/);
+  // The nightly batch was retired: asking for it reads back as continuous.
+  const s = (await call('PATCH', '/settings', { autopilotEnabled: true, autopilotMode: 'nightly' })).body;
+  assert.equal(s.autopilotMode, 'continuous');
 });
 
 test('quiet hours hold the loop, and say so', async () => {
-  await call('PATCH', '/settings', { autopilotMode: 'continuous', autopilotQuiet: '11:00-13:00' });
+  await call('PATCH', '/settings', { autopilotQuiet: '11:00-13:00' });
   await poll('12:00');
   assert.equal((await jobs()).length, 0);
   assert.match((await call('GET', '/autopilot/loop')).body.hold, /quiet hours/);
@@ -108,5 +110,5 @@ test('a pending usage-limit resume holds the loop', async () => {
 });
 
 test('teardown', async () => {
-  await call('PATCH', '/settings', { autopilotEnabled: false, autopilotMode: 'nightly', autopilotQuiet: '' });
+  await call('PATCH', '/settings', { autopilotEnabled: false, autopilotQuiet: '' });
 });

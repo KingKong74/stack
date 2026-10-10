@@ -295,7 +295,7 @@ export interface ModelUsageEntry {
 // `seen: false` means Stack cannot see the dispatcher, which is not "idle".
 export interface LoopStatus {
   seen: boolean;
-  mode: 'nightly' | 'continuous';
+  mode: 'continuous'; // the only mode since the nightly batch was retired
   armed: boolean;
   hold: string;
   ready: number;
@@ -569,7 +569,7 @@ export interface Settings {
   autopilotTime: string;      // nightly start, host-local HH:MM
   autopilotMaxItems: number;  // most items attempted per night
   autopilotPlanSweep: boolean; // #255 — stand up a plan session for unplanned highest/high work
-  autopilotMode: 'nightly' | 'continuous'; // continuous builds the Ready queue whenever it may spend
+  autopilotMode: 'continuous'; // the nightly batch was retired; kept so old payloads still type
   autopilotQuiet: string;     // 'HH:MM-HH:MM' host-local quiet hours, '' = none
   autopilotRollingTokens: number; // continuous: token cap over the rolling window; 0 = none
   autopilotRollingHours: number;

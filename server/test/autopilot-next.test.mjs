@@ -49,7 +49,7 @@ async function makeProject(slug) {
 
 // Queue one job. Options let a test backdate created_at (ordering case) or
 // set kind/status/not_before directly.
-async function queueJob(projectId, { kind = 'nightly', status = 'queued', notBefore = null, createdAt = null } = {}) {
+async function queueJob(projectId, { kind = 'loop', status = 'queued', notBefore = null, createdAt = null } = {}) {
   const { rows } = await q(
     `INSERT INTO autopilot_jobs (project_id, kind, status, not_before, created_at)
      VALUES ($1, $2, $3, $4, COALESCE($5, now())) RETURNING id`,
@@ -167,17 +167,17 @@ async function assertQuietFleet() {
   }
   await wipe();
 
-  console.log('\n--- 6. ordering survived (non-nightly ahead of a nightly batch) ---');
+  console.log('\n--- 6. ordering survived (a manual job ahead of the loop) ---');
   {
     const [a, b] = await Promise.all([makeProject(SLUGS[0]), makeProject(SLUGS[1])]);
-    // Project a: a nightly queued first (earlier created_at).
-    const nightly = await queueJob(a, { kind: 'nightly', createdAt: new Date(Date.now() - 60_000) });
+    // Project a: a loop job queued first (earlier created_at).
+    const looped = await queueJob(a, { kind: 'loop', createdAt: new Date(Date.now() - 60_000) });
     // Project b: a manual job queued LATER.
     const manual = await queueJob(b, { kind: 'manual', createdAt: new Date() });
     const first = await claim(0);
-    check('the later manual job is claimed ahead of the earlier nightly one', first, manual);
+    check('the later manual job is claimed ahead of the earlier loop one', first, manual);
     const second = await claim(0);
-    check('the nightly job claims second', second, nightly);
+    check('the loop job claims second', second, looped);
   }
   await wipe();
 

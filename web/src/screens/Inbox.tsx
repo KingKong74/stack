@@ -198,14 +198,6 @@ export function Inbox() {
                     onChange={(e) => act(async () => { await patchSettings({ autopilotEnabled: e.target.checked }); })} />
                   Autopilot on
                 </label>
-                <span className="ib-seg" role="group" aria-label="Loop mode">
-                  {(['continuous', 'nightly'] as const).map((m) => (
-                    <button key={m} className={loop?.mode === m ? 'on' : ''} disabled={busy}
-                      onClick={() => act(async () => { await patchSettings({ autopilotMode: m }); })}>
-                      {m === 'continuous' ? 'Whenever there is budget' : 'Nightly'}
-                    </button>
-                  ))}
-                </span>
               </div>
               <div className="ib-projects">
                 {data.projects.map((p) => (

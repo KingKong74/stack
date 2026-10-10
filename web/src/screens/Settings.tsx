@@ -299,8 +299,8 @@ export function Settings() {
               <div className="set-card-head">
                 <div className="set-card-title">Autopilot budget</div>
                 <div className="set-card-sub">
-                  The limits the loop builds inside when it runs <b>whenever there is budget</b>. The
-                  on switch and the mode are on the <a href={hrefTo.inbox}>Inbox</a>.
+                  The limits the loop builds inside: it builds the Ready queue <b>whenever there is
+                  budget</b>. The on switch is on the <a href={hrefTo.inbox}>Inbox</a>.
                 </div>
               </div>
               <div className="set-row col">
@@ -309,8 +309,8 @@ export function Settings() {
                   <div className="set-row-hint">
                     The loop starts no new job once the fleet has spent this many tokens in the window
                     below. A run already going is never cut short. A typical run spends about 2–4M tokens.
-                    {settings.autopilotRollingTokens === 0 && settings.autopilotMode === 'continuous' && (
-                      <> <b>No cap is set, so continuous mode builds until the Ready queue is empty.</b></>
+                    {settings.autopilotRollingTokens === 0 && (
+                      <> <b>No cap is set, so the loop builds until the Ready queue is empty.</b></>
                     )}
                   </div>
                 </div>

@@ -109,7 +109,7 @@ const DEFAULTS = {
   autopilot_time: '23:05',     // nightly start, host-local HH:MM
   autopilot_max_items: 3,
   autopilot_plan_sweep: true,  // #255 — stand up a plan job for unplanned work
-  autopilot_mode: 'nightly',   // 'nightly' | 'continuous' — see schema.sql's THE LOOP
+  autopilot_mode: 'continuous', // the only mode since the nightly batch was retired (2026-10-10)
   autopilot_quiet: '',         // 'HH:MM-HH:MM' host-local, '' = none
   autopilot_rolling_tokens: 0, // the continuous loop's cap over the rolling window; 0 = none
   autopilot_rolling_hours: 5,
@@ -127,7 +127,10 @@ const DEFAULTS = {
   gcal_calendar_id: '',
 };
 
-export const AUTOPILOT_MODES = ['nightly', 'continuous'];
+// 'nightly' was retired (owner's decision, 2026-10-10): the automation builds
+// the Ready queue continuously, plus direct runs and calendar rows. A stored or
+// PATCHed 'nightly' reads as 'continuous' rather than as an error.
+export const AUTOPILOT_MODES = ['continuous'];
 // '' or 'HH:MM-HH:MM'. A window may wrap midnight (22:00-07:00).
 export const cleanQuiet = (v) => {
   const m = /^\s*(([01]?\d|2[0-3]):[0-5]\d)\s*-\s*(([01]?\d|2[0-3]):[0-5]\d)\s*$/.exec(String(v || ''));
@@ -162,7 +165,7 @@ export async function readSettings(client) {
     // #255 — default ON: a column added by the migration is true, and a row that
     // predates it reads as true too, so the sweep is the standing behaviour.
     autopilot_plan_sweep: r.autopilot_plan_sweep == null ? true : Boolean(r.autopilot_plan_sweep),
-    autopilot_mode: oneOf(r.autopilot_mode, AUTOPILOT_MODES, 'nightly'),
+    autopilot_mode: oneOf(r.autopilot_mode, AUTOPILOT_MODES, 'continuous'),
     autopilot_quiet: cleanQuiet(r.autopilot_quiet),
     autopilot_rolling_tokens: Number.isFinite(Number(r.autopilot_rolling_tokens)) ? Number(r.autopilot_rolling_tokens) : 0,
     autopilot_rolling_hours: Number.isFinite(r.autopilot_rolling_hours) ? r.autopilot_rolling_hours : 5,
@@ -197,7 +200,7 @@ export function settingsShape(s) {
     autopilotTime: s.autopilot_time,         // host-local HH:MM
     autopilotMaxItems: s.autopilot_max_items,
     autopilotPlanSweep: s.autopilot_plan_sweep, // #255 — auto-plan unplanned must/should work
-    autopilotMode: s.autopilot_mode,         // 'nightly' | 'continuous'
+    autopilotMode: s.autopilot_mode,         // always 'continuous' (nightly retired)
     autopilotQuiet: s.autopilot_quiet,       // 'HH:MM-HH:MM' or ''
     autopilotRollingTokens: s.autopilot_rolling_tokens, // 0 = no cap
     autopilotRollingHours: s.autopilot_rolling_hours,

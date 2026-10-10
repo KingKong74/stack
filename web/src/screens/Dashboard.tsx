@@ -203,7 +203,7 @@ export function Dashboard({ onOpenSearch }: { onOpenSearch: () => void }) {
             </span>
           ) : <span className="ph">preview</span>}
           <span className={`sp-pill st-${p.status}`}>{STATUS_LABEL[p.status]}</span>
-          {p.automode && <span className="sp-pill auto" title="Automode — the overnight autopilot may work this project">⚙ auto</span>}
+          {p.automode && <span className="sp-pill auto" title="Automode — the autopilot may build this project's Ready queue">⚙ auto</span>}
         </span>
         <span className="sp-card-body">
           <span className="name"><span className="dot" style={{ background: p.tint }} />{p.name}</span>

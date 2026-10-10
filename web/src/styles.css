@@ -7852,9 +7852,6 @@ button.sp-pill { cursor: pointer; }
 .ib-loopn { font: var(--text-xs)/1 var(--font-mono); color: var(--muted); }
 .ib-controls, .ib-projects { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; }
 .ib-switch { display: inline-flex; align-items: center; gap: 6px; font-size: var(--text-sm); color: var(--text-secondary); cursor: pointer; }
-.ib-seg { display: inline-flex; border: 1px solid var(--border-default); border-radius: 10px; overflow: hidden; }
-.ib-seg button { height: 30px; padding: 0 12px; font-size: var(--text-xs); color: var(--text-secondary); background: transparent; }
-.ib-seg button.on { background: var(--surface-selected); color: var(--ink); }
 
 /* THE BOARD'S LIST VIEW (detail/BoardList.tsx) — one row per item, area as a
    tag. A grid rather than a <table> so a row is one focusable, clickable box;

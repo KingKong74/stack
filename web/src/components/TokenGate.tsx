@@ -42,7 +42,7 @@ const NOUNS = [
 const ONE_LINERS = [
   { title: 'Agents in their own lanes', body: 'Several runs at once, each held to one area of the project so parallel branches do not collide.' },
   { title: 'Computed progress', body: 'Worked out from what has actually landed, not from a slider you dragged.' },
-  { title: 'An overnight queue', body: 'Leave a list at the end of the day. Stack works through it and has the verdicts ready by morning.' },
+  { title: 'A queue that builds itself', body: 'Put work in the Ready queue. Stack builds it whenever there is budget and has it waiting for your verdict.' },
   { title: 'Logs and a terminal', body: 'The full output of every run, plus a web terminal onto the host when you would rather just type.' },
 ];
 

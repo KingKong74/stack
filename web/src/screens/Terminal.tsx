@@ -2497,7 +2497,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                             <span className="tt-sub">
                               of{' '}
                               {serverUsage && serverUsage.tokenBudget > 0
-                                ? <span title="The nightly token budget, set in Stack settings">{fmtTok(serverUsage.tokenBudget)} budget</span>
+                                ? <span title="The per-run token budget, set in Stack settings">{fmtTok(serverUsage.tokenBudget)} budget</span>
                                 : editLimit
                                   ? (
                                     <input className="field-input tu-edit" autoFocus value={limitDraft}

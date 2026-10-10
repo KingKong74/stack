@@ -63,10 +63,10 @@ The block is a snapshot. For the current state at any moment, read the API:
   are standing instructions from the owner — honour them before anything else,
   and don't remove them yourself (they're cleared from the dashboard).
 - `GET /api/agent-profiles` — Stack's agents, and since #520 the only thing the
-  word means here: the SPAWN PROFILES an overnight run hands `claude --agents`.
+  word means here: the SPAWN PROFILES an autopilot run hands `claude --agents`.
   Each is a subagent with its own prompt, model and granted tools.
   **These are not you** — you are the session; these are what a *run* delegates
-  to. Worth reading to explain what an overnight build actually spawned, or why
+  to. Worth reading to explain what an autopilot build actually spawned, or why
   it spawned nothing: `--agents` is passed only when an ADVISOR model is set, so
   on a single-model install every profile is inert. `policy.spawnsAgents` says
   which, and `defaultSpawn` is the server resolving a real one.
@@ -106,7 +106,7 @@ fingerprint of their title. So:
 ## Suggest the tests this session showed were missing (#500)
 
 `extract.tests` on a checkpoint files what nothing checks yet. It lands in
-**For you → Auto-ideas**, held from the overnight runner until the owner keeps,
+**For you → Auto-ideas**, held from the autopilot until the owner keeps,
 promotes or dismisses it — never straight onto the board.
 
 ```json
@@ -237,7 +237,7 @@ Open roadmap items can carry a claim (`claimedBy` — the branch name, e.g.
   Tick it yourself (`{"done":true,"built_note":"…"}`) only when what you built
   is already on the main branch.
 - **Manual execution sessions report usage like autopilot runs do.** When you
-  complete a roadmap item outside the overnight runner, also land a run-ledger
+  complete a roadmap item outside the autopilot, also land a run-ledger
   row so the Reviews view shows the same branch/commits/tokens chip for manual
   work (tokens/cost optional — include them when you know them):
 
@@ -258,7 +258,7 @@ Open roadmap items can carry a claim (`claimedBy` — the branch name, e.g.
   ```
 
   Stopping partway is fine — ticked steps tell the next session (or the
-  overnight autopilot, which injects the plan into its prompt) where to resume.
+  autopilot, which injects the plan into its prompt) where to resume.
 
   The **plan sweep** designs the sprint's plan-less items, filing big ones as
   held `plan` pieces; it never builds, ticks or touches a started plan.

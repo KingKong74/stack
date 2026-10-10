@@ -7,7 +7,7 @@ one before editing its file: `stack-autopilot-dispatch.mjs`, `lib/autoverdict.mj
 
 ## The autopilot
 
-- **The nightly is how this repo builds itself.** Any change to `stack-autopilot.mjs` is a real
+- **The runner is how this repo builds itself** (the continuous loop, Run now and calendar rows; the nightly batch is retired). Any change to `stack-autopilot.mjs` is a real
   behaviour change. For example, it still inlines its own `git worktree add/remove` rather than
   calling `lib/worktree.mjs`, and that is deliberate.
 - The runner's pick is one of three copies of the run order, the approval predicate and the area

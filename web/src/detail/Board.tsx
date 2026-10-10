@@ -926,7 +926,7 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
           {/* Parked is a FILTER and never the default — see `hideParked`. */}
           <button className={`k-btn sm secondary km-parked${hideParked ? ' on' : ''}`}
             onClick={() => setHideParked(!hideParked)}
-            title="Parked items are planned and deliberately not picked up. The overnight runner skips them.">
+            title="Parked items are planned and deliberately not picked up. The autopilot skips them.">
             <KitIcon name="layers" size={14} />{hideParked ? 'Parked hidden' : `Parked shown${parked ? ` (${parked})` : ''}`}
           </button>
 
@@ -1644,10 +1644,10 @@ function IssueCard({
               "auto-found on a push" sends you looking through commits for it. */}
           {held && (
             <span className="k-tag warning" title={item.source === 'fly'
-              ? 'Opened by a live session and not signed off — the overnight runner will not take it until you do (card menu → Sign off)'
+              ? 'Opened by a live session and not signed off — the autopilot will not take it until you do (card menu → Sign off)'
               : item.source === 'plan'
               ? 'Written by a planning run and not signed off — it cannot be queued to build until you do (card menu → Sign off)'
-              : 'Auto-found on a push and not signed off — the overnight runner will not take it until you do (card menu → Sign off)'}>
+              : 'Auto-found on a push and not signed off — the autopilot will not take it until you do (card menu → Sign off)'}>
               held
             </span>
           )}
@@ -1725,7 +1725,7 @@ function IssueCard({
               <KitIcon name="git-branch" size={11} /><span className="v">{item.claimedBy}</span>
             </span>
           )}
-          {item.skipped && <span className="k-tag warning" title="Parked — the overnight runner skips it">parked</span>}
+          {item.skipped && <span className="k-tag warning" title="Parked — the autopilot skips it">parked</span>}
           {/* #263 — a verdict a machine gave SAYS SO. It is still not reversible
               from here, which is the debt named in this file's header. */}
           {item.reviewTag && (
@@ -1799,7 +1799,7 @@ function IssueCard({
               built reads as a verdict, which this is emphatically not. */}
           {held && (
             <button className="km-menuitem" onClick={onSignOff}
-              title="Clears the #359 hold: the row counts as agreed work, and the overnight runner may pick it up if there is still anything to build">
+              title="Clears the #359 hold: the row counts as agreed work, and the autopilot may build it once it is in the Ready queue">
               Sign off — clear the hold
             </button>
           )}
@@ -2169,7 +2169,7 @@ function CreateDialog({ onClose, onCreate }: {
               rank (#477). */}
           <span className="d">
             It lands in To Do, in this bucket, at the end of the queue. A due date is yours to
-            watch — it does not change what the overnight runner takes.
+            watch — it does not change what the autopilot builds.
           </span>
         </div>
         <label className="km-field">
@@ -2780,16 +2780,16 @@ function BacklogView({
           <>
             <span className="ids"><span className="k-tag mono">{active.name}</span></span>
             <span className="say">
-              The overnight runner builds this sprint and nothing else —
+              The sprint in progress is the planning lane; the autopilot builds the Ready queue —
               {' '}{activeRunnable} of {(bags.byBox.get(active.id) || []).length} item
-              {(bags.byBox.get(active.id) || []).length === 1 ? '' : 's'} in it {activeRunnable === 1 ? 'is' : 'are'} runnable
+              {(bags.byBox.get(active.id) || []).length === 1 ? '' : 's'} in it {activeRunnable === 1 ? 'is' : 'are'} open
               {activeRunnable === 0 ? ' (the rest are parked, claimed or already built)' : ''}, top of the box first.
             </span>
           </>
         ) : (
           <span className="say">
-            No sprint is in progress, so the overnight runner has nothing to take tonight.
-            Start one to hand it work.
+            No sprint is in progress, so there is nothing to plan. Building is the Ready
+            queue's job, on the Inbox.
           </span>
         )}
       </div>
@@ -3035,7 +3035,7 @@ function SprintBox({
             <button className="k-btn sm accent" onClick={onStart} disabled={items.length === 0}
               title={items.length === 0
                 ? 'Put something in it first — an empty sprint gives the runner nothing to do'
-                : 'Hand this sprint to the overnight runner'}>
+                : 'Make this the sprint in progress — the one the planner works on'}>
               Start sprint
             </button>
           )}
@@ -3203,7 +3203,7 @@ function BacklogRow({ row, rank, inSprint, runs, lists, dragging, landed, onGrab
           tonight's, and a screen that shows the count without the reasons
           leaves somebody hunting for the missing items. */}
       {why && <span className="k-tag warning">{why}</span>}
-      {inSprint && runs && <span className="k-tag success" title="Runnable tonight">runs</span>}
+      {inSprint && runs && <span className="k-tag success" title="Open, approved and unclaimed">open</span>}
       <span className="pri" style={{ color: pri.color }} title={`Priority — ${pri.label}`}>{pri.glyph}</span>
       {row.estimate !== null && <span className="pts" title="Estimate, in weeks">{row.estimate}w</span>}
     </div>

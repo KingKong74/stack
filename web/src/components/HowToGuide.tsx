@@ -60,7 +60,7 @@ export function HowToGuide({ onClose }: { onClose: () => void }) {
           <div className="guide-step-body">
             Checkpoints auto-extract bugs and next steps into the trackers, and nothing
             auto-extracted is trusted until you've seen it — it's <b>held</b>, which means the
-            overnight runner skips it. <b>Keep</b> signs it off; <b>Dismiss</b> deletes it and
+            autopilot skips it. <b>Keep</b> signs it off; <b>Dismiss</b> deletes it and
             remembers the dismissal so the next push can't re-create it (which is why it has no
             undo). Work you wrote by hand is never held.
           </div>
@@ -84,11 +84,10 @@ export function HowToGuide({ onClose }: { onClose: () => void }) {
           <div className="guide-step-title"><span className="n">5</span> What the machine builds</div>
           <div className="guide-step-body">
             A <b>sprint</b> is a named, ordered box of board items, and the order inside it is the
-            priority — top first. The overnight runner reads <b>only the sprint in progress</b>,
-            one per project. Drag a row in and you've committed it; no active sprint means the
-            night does nothing, said out loud rather than quietly falling back to the whole board.
-            Priority still orders candidates below the sprint, but it no longer decides who runs.
-            The arm switch, the fleet-wide worker cap and the two models are in Settings.
+            priority — top first. The sprint in progress is what gets <b>planned</b>; what gets
+            <b> built</b> is the Ready queue, which the autopilot works through whenever there is
+            budget. A session can file a plan straight into a sprint. The arm switch is on the
+            Inbox; the worker cap, the budget and the two models are in Settings.
           </div>
         </div>
 

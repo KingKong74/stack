@@ -184,7 +184,7 @@ than treating a missing database as a blocker, and unset `STACK_API`, which poin
 ./stack ui-smoke                           # layout smoke (Playwright)
 node scripts/context-budget.test.mjs       # the CLAUDE.md budgets
 node scripts/roadmap-refs.mjs              # checks every #id cited in the repo against the board
-node scripts/stack-autopilot.mjs --project stack --repo /home/bailey/stack --dry   # tonight's pick
+node scripts/stack-autopilot.mjs --project stack --repo /home/bailey/stack --dry   # the next pick
 cp hook/*.mjs ~/.stack/                    # install hooks — ~/.stack holds COPIES
 crontab -l                                 # the dispatcher line; remove it to disable all runs
 tail -f ~/.stack/{term,autopilot,preview}.log
