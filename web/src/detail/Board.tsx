@@ -82,10 +82,11 @@
 //     which makes it a clip on BOTH axes, and the card menu was being cut in
 //     half by it. Its header carries the three rules that replaced the
 //     stylesheet's anchoring.
-//  6. NO ASSIGNEE AVATARS AND NO LIST/BOARD VIEW TOGGLE. Stack has no assignees
-//     and this screen has one layout; two buttons where one does nothing is a
-//     lie the mockup could afford and a wired screen cannot. The kit's check-run
-//     banner went for the same reason — the board reads no checks.
+//  6. NO ASSIGNEE AVATARS. Stack has no assignees, and a button that does
+//     nothing is a lie the mockup could afford and a wired screen cannot. The
+//     kit's check-run banner went for the same reason — the board reads no
+//     checks. THE LAYOUT TOGGLE IS REAL (2026-10-10): Areas is the sections
+//     below, List is detail/BoardList.tsx, the finder across every screen.
 //  7. `hl` NAMES A ROW THIS SCREEN CAN DRAW AGAIN. Every card carries
 //     `data-hl`, so the fourteen links that dead-ended here since #443 —
 //     Overview's Next up and Shipped rows, the Timeline's bars, the Terminal's
@@ -136,7 +137,7 @@ import { PRIORITY_META, PRIORITY_DEFAULT, priorityMeta, dueRead, ITEM_KIND_LABEL
 import {
   getBoardShape, createList, patchList, deleteList,
   createArea, patchArea, deleteArea,
-  getBoardFolds, setBoardFolds,
+  getBoardFolds, setBoardFolds, getBoardView, setBoardView,
   createRoadmapItem, patchRoadmapItem, deleteRoadmapItem,
   createSprint, patchSprint, putSprintOrder, deleteSprint, putReadyQueue,
   startBuild, planSprint,
@@ -144,7 +145,8 @@ import {
 } from '../store';
 import { go } from '../lib/route';
 import { newTermName, termClaim, launchBrief } from '../lib/termLaunch';
-import type { BoardFolds } from '../store';
+import type { BoardFolds, BoardView, BoardSort, BoardShow } from '../store';
+import { BoardListView, SORT_LABEL, SHOW_LABEL } from './BoardList';
 
 // The five priorities, their glyphs and their tones come from `lib/ui.ts` —
 // ONE list, shared with the ＋ dock. This file carried its own copy of it while
@@ -361,6 +363,17 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
   // becomes invisible work, which is the state #247 existed to end.
   const [hideParked, setHideParked] = useState(false);
 
+  // AREAS OR LIST (owner's request, 2026-10-10). Areas is the lane-steering
+  // layout below; List (detail/BoardList.tsx) is the finder: every row, area
+  // as a tag, sortable, ideas included. Device-local per project, like folds.
+  const [bview, setBview] = useState<BoardView>(() => getBoardView(slug));
+  useEffect(() => { setBview(getBoardView(slug)); }, [slug]);
+  const writeView = (patch: Partial<BoardView>) => {
+    const next = { ...bview, ...patch }; setBview(next); setBoardView(slug, next);
+  };
+  const [listArea, setListArea] = useState('');
+  const listMode = bview.layout === 'list';
+
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return rows
@@ -381,6 +394,24 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
         || it.note.toLowerCase().includes(needle)
         || String(it.id) === needle.replace(/^#/, ''));
   }, [rows, query, hideParked]);
+
+  // The List view's rows: the same search and parked filters, but NOT
+  // `isBoardWork` — it is a finder across every screen (BoardList.tsx's header).
+  const listRows = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    return rows
+      .filter((it) => !it.archived)
+      .filter((it) => (hideParked ? !it.skipped : true))
+      .filter((it) => !needle
+        || it.title.toLowerCase().includes(needle)
+        || it.note.toLowerCase().includes(needle)
+        || String(it.id) === needle.replace(/^#/, ''));
+  }, [rows, query, hideParked]);
+  const listAreas = useMemo(() => {
+    const names = new Set<string>();
+    for (const it of listRows) if (it.area.trim()) names.add(it.area.trim());
+    return [...names].sort((a, b) => a.localeCompare(b));
+  }, [listRows]);
 
   // ---- the columns, grouped into AREA SECTIONS ------------------------------
   //
@@ -868,6 +899,30 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
               onChange={(e) => setQuery(e.target.value)} />
           </span>
 
+          <div className="seg-control sm km-layout" role="tablist" aria-label="Board layout">
+            <button role="tab" aria-selected={!listMode} className={`seg-opt${listMode ? '' : ' on'}`}
+              onClick={() => writeView({ layout: 'areas' })}>Areas</button>
+            <button role="tab" aria-selected={listMode} className={`seg-opt${listMode ? ' on' : ''}`}
+              onClick={() => writeView({ layout: 'list' })}>List</button>
+          </div>
+
+          {listMode && <>
+            <select className="k-select sm" aria-label="Sort" value={bview.sort}
+              onChange={(e) => writeView({ sort: e.target.value as BoardSort })}>
+              {(Object.keys(SORT_LABEL) as BoardSort[]).map((k) => <option key={k} value={k}>{SORT_LABEL[k]}</option>)}
+            </select>
+            <select className="k-select sm" aria-label="Show" value={bview.show}
+              onChange={(e) => writeView({ show: e.target.value as BoardShow })}>
+              {(Object.keys(SHOW_LABEL) as BoardShow[]).map((k) => <option key={k} value={k}>{SHOW_LABEL[k]}</option>)}
+            </select>
+            <select className="k-select sm" aria-label="Area" value={listArea}
+              onChange={(e) => setListArea(e.target.value)}>
+              <option value="">All areas</option>
+              {listAreas.map((a) => <option key={a} value={a}>{a}</option>)}
+              <option value={UNTAGGED}>No area</option>
+            </select>
+          </>}
+
           {/* Parked is a FILTER and never the default — see `hideParked`. */}
           <button className={`k-btn sm secondary km-parked${hideParked ? ' on' : ''}`}
             onClick={() => setHideParked(!hideParked)}
@@ -878,7 +933,7 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
           {/* Collapse all folds every AREA; the columns keep their own folds.
               Expanding is the "All areas" chip's job. Gone while searching,
               like every other fold control. */}
-          {!searching && (
+          {!searching && !listMode && (
             <button className="k-btn sm secondary km-collapseall" onClick={collapseAll}
               disabled={allFolded} title="Fold every area to its header">
               <KitIcon name="chevron-right" size={14} />Collapse all
@@ -886,10 +941,20 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
           )}
 
           <span className="km-count">
-            {shown} of {onBoard.length} on the board
-            {foldsSuspended && <span className="km-unfolded"> · folds suspended while searching</span>}
+            {listMode
+              ? `${listRows.length} item${listRows.length === 1 ? '' : 's'}, ideas included`
+              : <>{shown} of {onBoard.length} on the board
+                {foldsSuspended && <span className="km-unfolded"> · folds suspended while searching</span>}</>}
           </span>
         </div>
+
+        {listMode && lists && (
+          <BoardListView rows={listRows} sort={bview.sort} show={bview.show} area={listArea}
+            lists={lists} areas={areas} sprints={boxes} activeId={activeId}
+            selected={selected} onOpen={(it) => { setSelected(it.id); onEdit(it); }} />
+        )}
+
+        {!listMode && <>
 
         {/* THE AREA JUMP BAR — the Roadmap tab's own chips, on this project's
             real areas and their own stored colours, but a press here navigates
@@ -1140,6 +1205,7 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
             </div>
           )}
         </div>
+        </>}
         </>}
       </div>
 

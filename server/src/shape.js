@@ -117,6 +117,7 @@ export function roadmapItemShape(row) {
     spec: cleanSpec(row.spec),         // {goal?, acceptance?, files?, outOfScope?}; {} = none
     agentProfile: row.agent_profile || '', // '' = default executor; else the agent_profiles key to build this
     updatedAt: row.updated_at || null, // ISO — the archive sorts latest-touched first
+    createdAt: row.created_at || null, // ISO — the board's List view sorts newest first
 
     // ---- the Roadmap tab v2 ----
     parentId: row.parent_id ?? null,   // the feature this ticket belongs to (null = a feature itself)

@@ -7855,3 +7855,51 @@ button.sp-pill { cursor: pointer; }
 .ib-seg { display: inline-flex; border: 1px solid var(--border-default); border-radius: 10px; overflow: hidden; }
 .ib-seg button { height: 30px; padding: 0 12px; font-size: var(--text-xs); color: var(--text-secondary); background: transparent; }
 .ib-seg button.on { background: var(--surface-selected); color: var(--ink); }
+
+/* THE BOARD'S LIST VIEW (detail/BoardList.tsx) — one row per item, area as a
+   tag. A grid rather than a <table> so a row is one focusable, clickable box;
+   the narrow layout drops the sprint and the two stamps before the title. */
+.km-layout { flex: none; }
+.km-toolbar .k-select { width: auto; flex: none; max-width: 100%; }
+.bl-list { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.bl-row {
+  display: grid; align-items: center; gap: var(--space-4);
+  grid-template-columns: 52px minmax(0, 1fr) 140px 150px 32px 36px 150px 72px 72px;
+  padding: var(--space-3) var(--space-5);
+  background: var(--surface-card); border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md); cursor: pointer;
+  transition: var(--transition-control);
+}
+.bl-row:hover { background: var(--surface-hover); }
+.bl-row:focus-visible { outline: none; border-color: var(--border-focus); box-shadow: 0 0 0 3px var(--accent-tint); }
+.bl-row.selected { border-color: var(--border-accent); }
+.bl-row.done .t { color: var(--text-secondary); text-decoration: line-through; }
+.bl-head {
+  background: transparent; border-color: transparent; cursor: default;
+  font: var(--weight-medium) var(--text-2xs)/1 var(--font-mono);
+  color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.04em;
+}
+.bl-head:hover { background: transparent; }
+.bl-id { font: var(--weight-regular) var(--text-xs)/1 var(--font-mono); color: var(--text-tertiary); }
+.bl-title { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.bl-title .t { font: var(--type-body-sm); color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bl-parent { font: var(--weight-regular) var(--text-2xs)/1.3 var(--font-sans); color: var(--text-tertiary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bl-row > span { min-width: 0; }
+.bl-row .k-tag { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bl-status { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+.bl-area.none { color: var(--text-tertiary); font-style: italic; }
+.bl-row .km-status.st-progress { color: var(--status-info-fg); }
+.bl-row .km-status.st-review { color: var(--status-warning-fg); }
+.bl-row .km-status.st-shipped { color: var(--status-success-fg); }
+.bl-c-pri { text-align: center; }
+.bl-c-pts { text-align: right; font: var(--weight-regular) var(--text-xs)/1 var(--font-mono); color: var(--text-secondary); }
+.bl-c-when { font: var(--type-body-sm); color: var(--text-tertiary); white-space: nowrap; }
+@media (max-width: 1100px) {
+  .bl-row { grid-template-columns: 52px minmax(0, 1fr) 120px 130px 28px 32px; }
+  .bl-c-sprint, .bl-c-when { display: none; }
+}
+@media (max-width: 640px) {
+  .bl-row { grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-2) var(--space-3); }
+  .bl-head { display: none; }
+  .bl-id, .bl-c-pri, .bl-c-pts { display: none; }
+}

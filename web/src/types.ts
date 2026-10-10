@@ -183,6 +183,7 @@ export interface RoadmapItem {
   ready: boolean;      // in the build queue (routes/ready.js); readyRank is its place
   readyRank: number;
   updatedAt: string | null; // ISO — latest-first ordering in the archive
+  createdAt: string | null; // ISO — the board's List view sorts newest first
   agentProfile: string; // '' = the default executor; else the agent profile that should build it
 
   // ---- the Roadmap tab v2 ----

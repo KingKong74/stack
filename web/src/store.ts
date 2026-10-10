@@ -1534,6 +1534,33 @@ export function setBoardFolds(slug: string, folds: BoardFolds) {
   catch { /* storage full or unavailable — a fold is a nicety, never a blocker */ }
 }
 
+// ---- the board's VIEW (Areas | List) ----
+//
+// Device-local and per project, like the folds: which layout you read a board
+// in, and how the List view is sorted and scoped, is a preference and not a
+// fact about the work. Unknown or corrupt storage lands on the Areas view,
+// newest first, everything shown.
+export type BoardViewLayout = 'areas' | 'list';
+export type BoardSort = 'newest' | 'oldest' | 'updated' | 'priority' | 'run' | 'area' | 'title';
+export type BoardShow = 'all' | 'board' | 'ideas';
+export interface BoardView { layout: BoardViewLayout; sort: BoardSort; show: BoardShow }
+const BOARD_SORTS: BoardSort[] = ['newest', 'oldest', 'updated', 'priority', 'run', 'area', 'title'];
+const BOARD_VIEW_KEY = (slug: string) => `stack.boardView.${slug}`;
+export function getBoardView(slug: string): BoardView {
+  return readStoredJSON(BOARD_VIEW_KEY(slug), (p) => {
+    const o = (p && typeof p === 'object') ? p as Record<string, unknown> : {};
+    return {
+      layout: o.layout === 'list' ? 'list' : 'areas',
+      sort: BOARD_SORTS.includes(o.sort as BoardSort) ? o.sort as BoardSort : 'newest',
+      show: o.show === 'board' || o.show === 'ideas' ? o.show : 'all',
+    };
+  });
+}
+export function setBoardView(slug: string, view: BoardView) {
+  try { localStorage.setItem(BOARD_VIEW_KEY(slug), JSON.stringify(view)); }
+  catch { /* storage unavailable — the view still switches for this visit */ }
+}
+
 // ---- the Roadmap tab's folds ----
 //
 // Which AREA SECTIONS are open on one project's Roadmap tab. The board's rules
