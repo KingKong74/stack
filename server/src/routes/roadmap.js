@@ -26,7 +26,8 @@ const RISKS = ['low', 'normal', 'high'];
 // THE DESIRE TIER (#227) IS GONE (#477). S/A/B/C was the run queue's primary
 // sort and it is now the item's place inside the sprint it was dragged into —
 // see routes/sprints.js. This route writes `sprint_id` and `sprint_rank` only
-// as a SINGLE-ITEM move (drag one card out of a box, or into the backlog); the
+// as a SINGLE-ITEM move (drag one card out of a box, or into the backlog) or
+// as a create filed straight into an open sprint (appended at the bottom); the
 // ordered kind goes through `PUT /sprints/:id/order`, which rewrites a whole
 // box at once and is the only way a rank stops being ambiguous.
 import { roadmapItemShape, groupRoadmap, cleanDate } from '../shape.js';
@@ -212,6 +213,26 @@ async function createItem(db, projectId, body) {
     if (!par.length) return { status: 400, body: { error: `parentId ${body.parentId} is not a top-level item in this project.` } };
     parentId = pid;
   }
+  // FILING STRAIGHT INTO A SPRINT (owner's decision, 2026-10-10). A plan is
+  // set up and pushed into a sprint in one go, by a human or by a session
+  // acting on one, rather than filed to the backlog and dragged in card by
+  // card. Any OPEN sprint (planned or active) takes it; a finished one is
+  // refused out loud, because a done sprint is the record of what was
+  // committed to. What still stands between a title and a build is APPROVAL:
+  // a held source ('fly', 'plan') stays held in whatever sprint it lands in,
+  // and 'hook' never comes through here at all (only ingest writes it).
+  // Refused rather than downgraded to the backlog: a caller that asked for a
+  // sprint must not be told 201 and find its work somewhere else.
+  let sprintId = null;
+  if (body?.sprintId !== undefined && body?.sprintId !== null) {
+    const sid = Number(body.sprintId);
+    const { rows: sp } = Number.isInteger(sid) && sid > 0 ? await db(
+      'SELECT id, status FROM sprints WHERE id = $1 AND project_id = $2', [sid, projectId]) : { rows: [] };
+    if (!sp.length) return { status: 400, body: { error: `sprintId ${body.sprintId} is not a sprint in this project.` } };
+    if (sp[0].status === 'done') return { status: 400, body: { error: `Sprint ${sid} is finished; file into an open sprint or the backlog.` } };
+    sprintId = sid;
+  }
+
   // A planning run that runs twice over the same parent must not file its
   // children twice: an open child with the same title is returned, not copied.
   if (source === 'plan' && parentId) {
@@ -272,16 +293,17 @@ async function createItem(db, projectId, body) {
     // branches that each rewrote this one statement. Both columns are real;
     // the merge left two whole INSERTs stacked, which JS read as a tagged
     // template call rather than a syntax error.
-    // A NEW ROW IS ALWAYS BORN IN THE BACKLOG. `sprint_id` is not settable
-    // here and that is deliberate: putting work into a sprint is a commitment
-    // somebody makes by dragging it into a box, and a POST that could land
-    // straight in the ACTIVE sprint would let any caller — the extractor, a
-    // fly card, a script — commission tonight's work by writing a title.
+    // A row is born in the backlog unless the caller named an open sprint
+    // (checked above). It lands at the BOTTOM of the box: the top is a claim
+    // about what gets built first, and a create has no opinion about that.
     `INSERT INTO roadmap_items (project_id, bucket, title, note, position, source, fingerprint, claimed_by, area, plan, risk, risk_source, agent_profile, fly_session,
-                                sched_start_min, sched_len_min, plan_start_min, plan_len_min, sub_area, points, due_on, item_kind, spec, parent_id)
-     VALUES ($1,$2,$3,$4,$5,$13,$6,$7,$8,$9::jsonb,$10,$11,$12,$14,$15,$16,$15,$16,$17,$18,$19,$20,$21::jsonb,$22) RETURNING *`,
+                                sched_start_min, sched_len_min, plan_start_min, plan_len_min, sub_area, points, due_on, item_kind, spec, parent_id,
+                                sprint_id, sprint_rank)
+     VALUES ($1,$2,$3,$4,$5,$13,$6,$7,$8,$9::jsonb,$10,$11,$12,$14,$15,$16,$15,$16,$17,$18,$19,$20,$21::jsonb,$22,
+             $23::bigint, CASE WHEN $23::bigint IS NULL THEN 0
+                          ELSE (SELECT COALESCE(MAX(sprint_rank), -1) + 1 FROM roadmap_items WHERE sprint_id = $23::bigint) END) RETURNING *`,
     [projectId, bucket, title, note, pos[0].p, fp, claimedBy, area, JSON.stringify(plan), risk, riskSource, agentProfile, source, flySession,
-      schedStart, schedLen, subArea, points, dueOn, kind, JSON.stringify(spec), parentId]
+      schedStart, schedLen, subArea, points, dueOn, kind, JSON.stringify(spec), parentId, sprintId]
   );
   return { status: 201, body: roadmapItemShape(rows[0]) };
 }
@@ -293,8 +315,9 @@ roadmap.post('/', async (req, res) => {
 
 // POST /batch  -> {items: [...]}: many creates in ONE transaction, each item
 // exactly what POST / takes. All or nothing: a planning run that files half a
-// breakdown leaves a parent that looks planned and isn't. Like POST /, nothing
-// here can set a sprint or the Ready queue — see createItem.
+// breakdown leaves a parent that looks planned and isn't. Like POST /, each item
+// may name an open sprint (appended in batch order) but never the Ready queue —
+// see createItem.
 export const BATCH_MAX = 50;
 roadmap.post('/batch', async (req, res) => {
   const items = Array.isArray(req.body?.items) ? req.body.items : null;

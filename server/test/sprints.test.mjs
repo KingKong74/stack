@@ -17,9 +17,10 @@
 //    never delete the work, so the FK is ON DELETE SET NULL and the rank is
 //    zeroed with it — a rank left behind is a position in a box that no longer
 //    exists, and the next drop would read it as a real one.
-//  • A NEW ITEM IS BORN IN THE BACKLOG and the route will not take a sprint on
-//    a POST. Otherwise any caller — the extractor, a fly card, a script — could
-//    commission tonight's work by writing a title.
+//  • A NEW ITEM IS BORN IN THE BACKLOG unless it names an OPEN sprint, which it
+//    joins at the bottom (owner's decision, 2026-10-10). A finished sprint or
+//    another project's is refused out loud. Filing is not approval: a held
+//    source stays held, and the build lane is the Ready queue, not the sprint.
 //  • AN ITEM FROM ANOTHER PROJECT IS IGNORED, not obeyed and not fatal. The
 //    body is a snapshot of one box on one screen; a stale id must not take the
 //    whole reorder down with it, and it must certainly not file a stranger's
@@ -84,14 +85,43 @@ test('a sprint needs a name', async () => {
   assert.equal(r.status, 400);
 });
 
-test('a new roadmap item is born in the BACKLOG, and a POST cannot put it in a sprint', async () => {
+test('a new roadmap item is born in the BACKLOG unless it names an open sprint', async () => {
+  const loose = await makeItem('born loose');
+  assert.equal(loose.sprintId, null);
+  assert.equal(loose.sprintRank, 0);
+});
+
+test('a POST may file straight into an OPEN sprint, at the bottom of the box', async () => {
   const { body: boxes } = await call('GET', sprintsPath);
   const one = boxes[0];
-  // Sent deliberately — the route must IGNORE it rather than honour it, or a
-  // typed title could commission tonight's work.
-  const it = await makeItem('born loose', { sprintId: one.id });
-  assert.equal(it.sprintId, null);
-  assert.equal(it.sprintRank, 0);
+  assert.equal(one.status, 'planned');
+  const a = await makeItem('filed one', { sprintId: one.id });
+  const b = await makeItem('filed two', { sprintId: one.id });
+  assert.equal(a.sprintId, one.id);
+  assert.equal(b.sprintId, one.id);
+  assert.ok(b.sprintRank > a.sprintRank, 'each create lands below the last');
+  // Batch: appended in batch order, in one transaction.
+  const r = await call('POST', `${roadPath}/batch`, {
+    items: [{ title: 'batch one', sprintId: one.id }, { title: 'batch two', sprintId: one.id }],
+  });
+  assert.equal(r.status, 201, r.text);
+  assert.ok(r.body.items[1].sprintRank > r.body.items[0].sprintRank);
+  assert.ok(r.body.items[0].sprintRank > b.sprintRank);
+  // A held source stays held in the sprint: filing is not approval.
+  const held = await makeItem('filed held', { sprintId: one.id, source: 'fly' });
+  assert.equal(held.sprintId, one.id);
+  assert.equal(held.reviewed, false);
+});
+
+test('a POST naming another project\'s sprint, or no real sprint, is REFUSED, not downgraded', async () => {
+  const theirs = (await call('POST', `/projects/${otherSlug}/sprints`, { name: 'Theirs' })).body;
+  const r = await call('POST', roadPath, { title: 'stray', sprintId: theirs.id });
+  assert.equal(r.status, 400, r.text);
+  const r2 = await call('POST', roadPath, { title: 'stray', sprintId: 999999 });
+  assert.equal(r2.status, 400, r2.text);
+  // And a batch with one bad sprint files nothing.
+  const b = await call('POST', `${roadPath}/batch`, { items: [{ title: 'ok' }, { title: 'bad', sprintId: theirs.id }] });
+  assert.equal(b.status, 400, b.text);
 });
 
 test('starting a sprint stamps it, and starting a SECOND finishes the first', async () => {
@@ -118,6 +148,13 @@ test('starting a sprint stamps it, and starting a SECOND finishes the first', as
   assert.equal(wasFirst.status, 'done');
   assert.ok(wasFirst.endedAt, 'the sprint that was running is finished, not merely deactivated');
   assert.ok(wasFirst.startedAt, 'and it keeps the start stamp, so it can say how long it ran');
+
+  // A finished sprint is the record of what was committed to: nothing files into it.
+  const late = await call('POST', roadPath, { title: 'too late', sprintId: wasFirst.id });
+  assert.equal(late.status, 400, late.text);
+  // The ACTIVE one takes a create like a planned one does.
+  const now = await makeItem('into the running sprint', { sprintId: two.id });
+  assert.equal(now.sprintId, two.id);
 });
 
 test('the order PUT writes ranks from 0, adopts loose rows, and is idempotent', async () => {

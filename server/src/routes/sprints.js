@@ -346,12 +346,11 @@ sprints.delete('/:id', async (req, res) => {
 // ---------------------------------------------------------------------------
 //
 // Proposes an order for one sprint, and pulls the backlog rows it wants into
-// that order. It WRITES NOTHING. That is not caution, it is the standing rule —
-// **agents never write `sprint_id` or `sprint_rank`** — and the reason is the
-// same one the sprint gate exists for: sprint membership IS what the machine
-// works tonight, so a model that could edit the box would be commissioning its
-// own work. The human presses Apply, and Apply is `PUT /:id/order`, which is
-// the same call a drag makes.
+// that order. It WRITES NOTHING. That is the standing rule: an agent may FILE a
+// new item into an open sprint (POST /roadmap's `sprintId`, owner's decision
+// 2026-10-10), but ORDERING a box and moving existing rows between boxes is the
+// human's. The human presses Apply, and Apply is `PUT /:id/order`, which is the
+// same call a drag makes.
 //
 // WHAT MAKES THIS WORTH ASKING A MODEL, and it is not "rank by priority" —
 // bucket already does that, and a sort needs no model. It is the AREA LANE, and

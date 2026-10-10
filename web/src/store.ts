@@ -1330,7 +1330,8 @@ export async function patchSprint(
 // not the request.
 // ✧ THE PLANNER (#522) — propose an order for one sprint. WRITES NOTHING; the
 // answer is applied with `putSprintOrder` below, which is the same call a drag
-// makes. The split is the rule: agents never write `sprint_id` or `sprint_rank`.
+// makes. The split is the rule: an agent may FILE a new item into an open sprint,
+// but ordering a box (or moving an existing row) is the human's.
 export async function planSprint(slug: string, sprintId: number): Promise<SprintPlan> {
   return request<SprintPlan>(`${sprintsBase(slug)}/${sprintId}/plan`, { method: 'POST', body: {} });
 }

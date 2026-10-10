@@ -6,7 +6,8 @@
 //    empty spec is {}.
 //  • A BATCH IS ALL OR NOTHING: one bad item (a parent in another project, a
 //    source the route refuses) makes none of them.
-//  • A BATCH CANNOT COMMISSION WORK: a sprint sent along is ignored, like POST /.
+//  • A BATCH NEVER TOUCHES THE READY QUEUE (the build lane). It may name an open
+//    sprint, like POST / (sprints.test.mjs covers that).
 //  • A 'plan' ROW IS HELD until approved, dedups per parent, and a dismissed
 //    one is not re-created.
 //
@@ -72,7 +73,7 @@ test('a batch makes every item, children under their parent, held when plan', as
   const parent = await call('POST', rm(SLUG), { title: 'the feature' });
   const r = await call('POST', `${rm(SLUG)}/batch`, {
     items: [
-      { title: 'piece one', source: 'plan', parentId: parent.body.id, spec: { goal: 'one' }, sprintId: 1 },
+      { title: 'piece one', source: 'plan', parentId: parent.body.id, spec: { goal: 'one' } },
       { title: 'piece two', source: 'plan', parentId: parent.body.id },
     ],
   });
@@ -82,7 +83,7 @@ test('a batch makes every item, children under their parent, held when plan', as
     assert.equal(it.parentId, parent.body.id);
     assert.equal(it.source, 'plan');
     assert.equal(it.reviewed, false, 'a plan row is held');
-    assert.equal(it.sprintId, null, 'a batch never sets a sprint');
+    assert.equal(it.sprintId, null, 'no sprint named, so the backlog');
   }
   // Re-filing the same breakdown returns the open children, not copies.
   const again = await call('POST', `${rm(SLUG)}/batch`, {

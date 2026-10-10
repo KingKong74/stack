@@ -2308,10 +2308,10 @@ function windowLabel(startsOn: string | null, endsOn: string | null): string {
 //
 // IT PROPOSES; THE HUMAN DISPOSES, and here that is structural rather than
 // polite: the route writes nothing, and Apply is `putSprintOrder` — the very
-// call a drag makes. The standing rule is that agents never write `sprint_id`
-// or `sprint_rank`, because sprint membership IS what the machine works
-// tonight, so a model that could edit the box would be commissioning its own
-// work.
+// call a drag makes. The standing rule is that ordering a box, and moving an
+// existing row between boxes, is the human's: an agent may FILE new work into
+// an open sprint (owner's decision, 2026-10-10) but never rearrange what is
+// already committed.
 //
 // THREE THINGS THIS PANEL MUST SAY THAT THE ORDER ALONE DOES NOT:
 //

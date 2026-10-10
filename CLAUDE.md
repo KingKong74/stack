@@ -80,9 +80,10 @@ Gates, outermost first. Each is enforced where it is explained:
 
 Who writes what:
 
-- **Agents never write `sprint_id`, `sprint_rank`, `ready_at` or `ready_rank`.** A POST never sets
-  them, or the extractor could commission a build by writing a title. Ready refuses a held item. The ✧ Planner proposes; Apply is the human's
-  drag route.
+- **Agents never write `ready_at` or `ready_rank`**: Ready is the build lane, and Ready refuses a
+  held item. A new item MAY be filed straight into an open sprint (`sprintId` on POST or batch,
+  appended at the bottom; owner's decision, 2026-10-10). Filing is not approval: a held source stays
+  held. Moving an existing row or reordering a box stays the human's drag; the ✧ Planner proposes.
 - **`risk` is written only through `PATCH /roadmap/:id`**, whose CASE guard lets an auto write
   replace only a NULL `risk_source`. A `low` item whose run lands green auto-queues its own merge, so
   a casual risk write is expensive.

@@ -181,9 +181,13 @@ Open roadmap items can carry a claim (`claimedBy` — the branch name, e.g.
   `readyRank` order, lowest first. The sprint in progress (`status: "active"`
   in the payload's `sprints`) is the PLANNING lane: its items are designed and
   broken down, not built. An empty Ready queue means nothing to build unattended.
-- **Never set `sprintId`, `sprintRank`, `ready` or `readyRank` yourself.** They
-  are the owner's call on what the machine does next. A new item you file is
-  always born in the backlog.
+- **Never set `ready` or `readyRank`, or move or reorder an existing item's
+  sprint.** Those are the owner's call. Asked to set up a plan in a sprint, you
+  MAY file NEW items straight into an open sprint with `sprintId` on
+  `POST /roadmap` (or on each item of
+  `POST /roadmap/batch`); they land at the bottom. A finished sprint is
+  refused; without `sprintId` an item is born in the backlog. Filing is not
+  approval: a `fly`/`plan` item stays held until signed off.
 - **A claim is on the ITEM; the collision is on the FILE.** A claim says who
   owns a roadmap row, not who owns a file — two sessions in one checkout share
   a dirty tree, so git cannot tell their edits apart. If you are in a shared
