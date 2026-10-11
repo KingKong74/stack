@@ -337,91 +337,82 @@ const ROADMAP_PANELS = [
   },
 ];
 
-// THE ROADMAP TAB IS WIRED NOW (#472, detail/Roadmap.tsx) — the idea surface:
-// held hook/fly rows the board deliberately does not draw, plus the child
-// ideas filed under something already on it.
+// THE ROADMAP TAB IS A CANVAS (detail/Roadmap.tsx): kept ideas as notes you
+// drag, group, merge and mature, with an inbox rail of unplaced ones.
 //
-// READ-ONLY, on the same terms as the board's presses. Each one OPENS
-// something: a card's actions, the composer for an idea under a board item, a
-// scope. None commits — the tier picker inside an open card is pressed by
-// nobody, and the composer is opened and never submitted.
+// READ-ONLY, on the same terms as the board's presses. Every press below is
+// view state: the layout and inbox switches (device-local, through store.ts),
+// a filter chip, the zoom, the Tidy menu opened and never chosen from, and a
+// note selected. NEVER pressed: a tidy option, a drag, a double-click (each
+// writes positions or files an idea), and nothing inside the inspector.
 //
-// The card press names the SECOND column (Thinking) and scopes it with
-// `:has(.im-card)`, so it finds one wherever the first idea happens to sit.
-// An EMPTY Roadmap reports both card presses as `control-missing`, which is the
-// honest answer: with no idea on screen there is no idea control to test. It
-// fills itself — every `/checkpoint` carrying `next_steps` files hook rows here,
-// and every `fly` card a session opens lands here until it is promoted.
-//
-// THE AREAS ARE THE BOARD'S NOW (owner's request): every section lands FOLDED,
-// a chip jumps rather than filters, and the fold persists in
-// `stack.roadmapFolds.<slug>`. So this list is ordered the way the board's is:
-// All areas FIRST (a folded section draws no card to press), the area presses
-// before the jump (which folds every other area), then Collapse all and All
-// areas, which leaves every section open for the card presses and the narrow
-// pass. The AREA presses come before the CARD presses because they need no
-// idea on screen: an empty Roadmap fails the first card press, and everything
-// after a failure on a screen is abandoned untested.
+// ORDER: the area and chrome presses first, because they need no idea on
+// screen. The note press comes last: an empty canvas reports it as
+// `control-missing`, which is the honest answer, and everything after a
+// failure on a screen is abandoned untested.
 const IDEAS_PANELS = [
   {
-    id: 'ideas-openall',
-    label: 'Roadmap — lands folded; All areas opens every area',
-    click: '.im .km-scope .im-chip:first-of-type',
-    expect: '.im .im-sections:not(:has(.im-section.km-folded)) .im-cols',
+    id: 'ideas-scope',
+    label: 'Roadmap — an area chip filters the canvas',
+    click: '.rc .km-scope .im-chip:last-of-type',
+    expect: '.rc .km-scope .im-chip:last-of-type.on',
+  },
+  {
+    id: 'ideas-all',
+    label: 'Roadmap — All clears the filter',
+    click: '.rc .km-scope .im-chip:first-of-type',
+    expect: '.rc .km-scope .im-chip:first-of-type.on',
   },
   {
     // Opened, never submitted: its blur commits an empty name, which AddArea
-    // drops before it reaches the wire.
+    // drops before it reaches the wire. AFTER the chips: open, it is wider, and
+    // the press that closes it reflows the chip row under the next click.
     id: 'ideas-newarea',
     label: 'Roadmap — + New area opens its name field',
-    click: '.im .km-addarea',
-    expect: '.im .km-addarea.open input',
+    click: '.rc .km-addarea',
+    expect: '.rc .km-addarea.open input',
   },
   {
-    id: 'ideas-areamenu',
-    label: 'Roadmap — area actions menu',
-    click: '.im [aria-label^="Area actions"]',
-    expect: 'body > .km-menu .km-dots',
+    id: 'ideas-tidymenu',
+    label: 'Roadmap — Tidy up opens its menu (no option is chosen)',
+    click: '.rc .rc-tidywrap .rc-btn',
+    expect: '.rc .rc-tidywrap .rc-menu',
   },
   {
-    id: 'ideas-scope',
-    label: 'Roadmap — area chip jumps to its section',
-    click: '.im .km-scope .im-chip:last-of-type',
-    expect: '.im .km-scope .im-chip:last-of-type.on',
+    id: 'ideas-lanes',
+    label: 'Roadmap — Lanes draws the stage lanes',
+    click: '.rc .rc-layout:nth-child(2)',
+    expect: '.rc .rc-band',
   },
   {
-    id: 'ideas-collapseall',
-    label: 'Roadmap — Collapse all folds every area',
-    click: '.im .km-collapseall',
-    expect: '.im .im-sections:not(:has(.im-section:not(.km-folded)))',
+    id: 'ideas-canvas',
+    label: 'Roadmap — Canvas puts the free canvas back',
+    click: '.rc .rc-layout:nth-child(1)',
+    expect: '.rc .rc-world:not(.lanes)',
   },
   {
-    id: 'ideas-allareas',
-    label: 'Roadmap — All areas opens every area again',
-    click: '.im .km-scope .im-chip:first-of-type',
-    expect: '.im .im-sections:not(:has(.im-section.km-folded)) .im-cols',
+    id: 'ideas-zoom',
+    label: 'Roadmap — zoom in',
+    click: '.rc [aria-label="Zoom in"]',
+    expectTextChangeIn: '.rc .rc-zoom .pct',
   },
   {
-    id: 'ideas-expand',
-    label: 'Roadmap — an idea opens its actions',
-    click: '.im-col:has(.im-card) .im-card',
-    expect: '.im-card.open .im-acts',
+    id: 'ideas-inbox-fold',
+    label: 'Roadmap — the inbox folds to a rail',
+    click: '.rc [aria-label="Collapse inbox"]',
+    expect: '.rc .rc-inboxrail',
   },
   {
-    // #472 — ＋ on a board item opens the composer whose row is born under it.
-    // The half of the ask that was "see what we are working on and add ideas
-    // into it".
-    id: 'ideas-add',
-    label: 'Roadmap — an idea under a board item',
-    click: '.rm-under .rm-work .add',
-    expect: '.rm-composer textarea',
+    id: 'ideas-inbox-open',
+    label: 'Roadmap — the rail opens the inbox again',
+    click: '.rc .rc-inboxrail',
+    expect: '.rc .rc-inbox',
   },
   {
-    // #523 — the free-standing door. Opened, never submitted.
-    id: 'ideas-new',
-    label: 'Roadmap — New idea opens its composer',
-    click: '.rm-new',
-    expect: '.im > .rm-composer textarea',
+    id: 'ideas-select',
+    label: 'Roadmap — a note opens the inspector',
+    click: '.rc .rc-note:not([data-ghost]) .t',
+    expect: '.rc .rc-insp',
   },
 ];
 

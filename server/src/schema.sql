@@ -1631,3 +1631,13 @@ ALTER TABLE settings ALTER COLUMN autopilot_mode SET DEFAULT 'continuous';
 UPDATE settings SET autopilot_mode = 'continuous' WHERE autopilot_mode <> 'continuous';
 UPDATE autopilot_jobs SET status = 'failed', detail = 'nightly mode retired', finished_at = now()
  WHERE kind = 'nightly' AND status = 'queued';
+
+-- THE ROADMAP CANVAS: where a kept idea sits on the idea canvas, and how far
+-- along it is (web/src/detail/Roadmap.tsx). One JSONB rather than eight
+-- columns because nothing but that screen reads any of it, and none of it is a
+-- run condition: an idea's `stage` (raw | exploring | shaped) is how shaped it
+-- is, not whether it may run. Promoting is still the committed write. Shape
+-- and caps live in util.js cleanCanvas; {} = an idea nobody has placed, which
+-- is what puts it in the canvas's inbox. Written through PUT /roadmap/canvas,
+-- which does not touch updated_at: moving a note is not movement on the work.
+ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS canvas JSONB NOT NULL DEFAULT '{}'::jsonb;
