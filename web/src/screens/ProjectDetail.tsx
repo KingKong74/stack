@@ -20,6 +20,9 @@ import { ForYou } from '../detail/ForYou';
 import { Plans } from '../detail/Plans';
 import { Board } from '../detail/Board';
 import { Roadmap } from '../detail/Roadmap';
+import { Artifacts } from '../detail/Artifacts';
+import { SkillsAgents } from '../detail/SkillsAgents';
+import { Loops } from '../detail/Loops';
 import { TabStrip } from '../components/TabStrip';
 import { Modal } from '../components/Modal';
 import { RoadmapModal, type RoadmapFields } from '../components/RoadmapModal';
@@ -36,7 +39,8 @@ import { PRIORITY_DEFAULT, crumbName } from '../lib/ui';
 // bookmarks and in every older search payload, `hl` on it means a commit hash,
 // and Quality's "open the commit that caught this" link targets it. An inner
 // strip that swallowed the key would have broken all three at once.
-type Tab = 'overview' | 'quality' | 'roadmap' | 'activity' | 'auto' | 'ideas' | 'plans';
+type Tab = 'overview' | 'quality' | 'roadmap' | 'activity' | 'auto' | 'ideas' | 'plans'
+  | 'artifacts' | 'agents' | 'loops';
 /** The keys that land on the For-you screen, in strip order. */
 const FORYOU_TABS: Tab[] = ['overview', 'activity', 'auto'];
 const isForYou = (t: Tab) => FORYOU_TABS.includes(t);
@@ -45,11 +49,12 @@ const isForYou = (t: Tab) => FORYOU_TABS.includes(t);
  *  would stack a second one above them. The board is wired now (#443's mockup
  *  is Board.tsx) and still draws its own head, so it stays on this list: what
  *  the list means is "brings a heading", never "is a mockup". */
-const isMockTab = (t: Tab) => t === 'roadmap' || t === 'ideas';
+const isMockTab = (t: Tab) => t === 'roadmap' || t === 'ideas'
+  || t === 'artifacts' || t === 'agents' || t === 'loops';
 // The four readings of a project. `navSections` below is the ONE list of them
 // — #432 moved them from a horizontal strip into the console's left rail, and
 // a second copy anywhere is how the two would drift.
-const TAB_KEYS = new Set<Tab>(['overview', 'quality', 'roadmap', 'activity', 'auto', 'ideas', 'plans']);
+const TAB_KEYS = new Set<Tab>(['overview', 'quality', 'roadmap', 'activity', 'auto', 'ideas', 'plans', 'artifacts', 'agents', 'loops']);
 // 'bugs' and 'audit' both land on Quality — old deep links (bookmarks, a search
 // payload from an older server, a ⌘K target) keep working. 'tips' still
 // resolves too: the recipe library was a tab, then the bottom-left dock, and
@@ -503,6 +508,24 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
           count: ideaRows.length,
           menu: placeMenu(hrefTo.detail(slug, 'ideas'), 'ideas'), onClick: () => setTab('ideas'),
         },
+        // THE DESIGN'S THREE NEW ROWS ("Roadmap Canvas", 2026-10-12). Skills &
+        // agents is wired to the app-wide profile and skill rows, so it carries
+        // no chip and no count (a count would be the app's, not this
+        // project's). Artifacts and Loops are mockups with no backend: each
+        // wears the chip, and neither shows a number, because the mockup's
+        // number would sit beside real ones in the same rail.
+        {
+          key: 'artifacts', label: 'Artifacts', icon: NavIcons.paperclip, mock: true,
+          menu: placeMenu(hrefTo.detail(slug, 'artifacts'), 'artifacts'), onClick: () => setTab('artifacts'),
+        },
+        {
+          key: 'agents', label: 'Skills & agents', icon: NavIcons.bot,
+          menu: placeMenu(hrefTo.detail(slug, 'agents'), 'agents'), onClick: () => setTab('agents'),
+        },
+        {
+          key: 'loops', label: 'Loops', icon: NavIcons.loop, mock: true,
+          menu: placeMenu(hrefTo.detail(slug, 'loops'), 'loops'), onClick: () => setTab('loops'),
+        },
         {
           key: 'plans', label: 'Plans', icon: NavIcons.route,
           menu: placeMenu(hrefTo.detail(slug, 'plans'), 'plans'), onClick: () => setTab('plans'),
@@ -732,6 +755,11 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
           <Plans items={allRoadmap} sprints={data.sprints} weekZero={project.weekZero}
             slug={slug} onBoard={() => setTab('roadmap')} onRefresh={reread} />
         )}
+
+        {/* The design's three tabs: each file's header says what is real. */}
+        {tab === 'artifacts' && <Artifacts />}
+        {tab === 'agents' && <SkillsAgents />}
+        {tab === 'loops' && <Loops />}
 
         {/* Deleting a project lives in Settings → Projects now. A destructive,
             once-a-year action does not belong at the foot of the screen you

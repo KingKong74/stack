@@ -123,6 +123,16 @@ const SCREENS = [
   // --surface-overlay under the cursor, which is the exact shape of the #450
   // findings. First paint measures the cards at rest; the two presses below
   // measure the two popovers, each over a card the press has left lit.
+  // The design's other three views. Each press opens tone first paint lacks:
+  // the artifact editor and New menu, a profile's fold, the skill library,
+  // and a loop's Event picker.
+  { slug: 'artifacts', hash: '#/p/{slug}/artifacts' },
+  { slug: 'artifacts-edit', hash: '#/p/{slug}/artifacts', press: ['.ar .ar-edit'] },
+  { slug: 'artifacts-newmenu', hash: '#/p/{slug}/artifacts', press: ['.ar .ar-new'] },
+  { slug: 'agents', hash: '#/p/{slug}/agents', press: ['.sa .sa-profname'] },
+  { slug: 'agents-skills', hash: '#/p/{slug}/agents', press: ['.sa .sa-tabs button:nth-child(2)'] },
+  { slug: 'loops', hash: '#/p/{slug}/loops' },
+  { slug: 'loops-event', hash: '#/p/{slug}/loops', press: ['.lp .lp-node.when .lp-seg button:nth-child(2)'] },
   { slug: 'roadmap', hash: '#/p/{slug}/roadmap' },
   { slug: 'board-priority', hash: '#/p/{slug}/roadmap', press: ['.km-card [aria-label^="Priority"]'] },
   { slug: 'board-cardmenu', hash: '#/p/{slug}/roadmap', press: ['.km-card [aria-label^="More actions for #"]'] },

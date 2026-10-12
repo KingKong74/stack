@@ -416,6 +416,66 @@ const IDEAS_PANELS = [
   },
 ];
 
+// THE DESIGN'S OTHER THREE VIEWS (detail/Artifacts.tsx, SkillsAgents.tsx,
+// Loops.tsx). Artifacts and Loops are mockups on component state, so a press
+// there writes nothing anywhere. Skills & agents is WIRED to app-wide rows:
+// its presses are view state only (a tab, a fold opened), and NEVER a switch,
+// a tool cell, a model picker, New or Adopt, each of which writes.
+const ARTIFACTS_PANELS = [
+  {
+    id: 'artifacts-type',
+    label: 'Artifacts — a type tab filters the list',
+    click: '.ar .ar-type:nth-child(2)',
+    expect: '.ar .ar-type:nth-child(2).on',
+  },
+  {
+    id: 'artifacts-group',
+    label: 'Artifacts — Group by Idea regroups the list',
+    click: '.ar .ar-gb:nth-of-type(3)',
+    expect: '.ar .ar-gb:nth-of-type(3).on',
+  },
+  {
+    id: 'artifacts-newmenu',
+    label: 'Artifacts — New opens its menu (no option is chosen)',
+    click: '.ar .ar-new',
+    expect: '.ar .ar-menu',
+  },
+  {
+    id: 'artifacts-edit',
+    label: 'Artifacts — Edit opens the editor on the selected artifact',
+    click: '.ar .ar-edit',
+    expect: '.ar .ar-titlein',
+  },
+];
+const AGENTS_PANELS = [
+  {
+    id: 'agents-fold',
+    label: 'Skills & agents — a profile name opens its prompt',
+    click: '.sa .sa-profname',
+    expect: '.sa .sa-profbody',
+  },
+  {
+    id: 'agents-skills',
+    label: 'Skills & agents — the Skills tab draws the library',
+    click: '.sa .sa-tabs button:nth-child(2)',
+    expect: '.sa .sa-hostline',
+  },
+];
+const LOOPS_PANELS = [
+  {
+    id: 'loops-select',
+    label: 'Loops — a row selects that loop',
+    click: '.lp .lp-tlrow:nth-of-type(3)',
+    expect: '.lp .lp-tlrow:nth-of-type(3).on',
+  },
+  {
+    id: 'loops-event',
+    label: 'Loops — the Event trigger swaps the schedule pickers',
+    click: '.lp .lp-node.when .lp-seg button:nth-child(2)',
+    expect: '.lp .lp-node.when select[aria-label="Event"]',
+  },
+];
+
 // The Quality screen is WIRED (#497), so these six presses now walk a screen
 // drawing this project's own checks and bugs. A tab is still where the screen
 // keeps the rest of itself and an unpressed tab is one this harness has
@@ -738,6 +798,24 @@ export const SCREENS = [
     label: 'Project — Roadmap capture',
     path: '#/p/<slug>/ideas',
     interactions: IDEAS_PANELS,
+  },
+  {
+    id: 'project-artifacts',
+    label: 'Project — Artifacts (mockup)',
+    path: '#/p/<slug>/artifacts',
+    interactions: ARTIFACTS_PANELS,
+  },
+  {
+    id: 'project-agents',
+    label: 'Project — Skills & agents',
+    path: '#/p/<slug>/agents',
+    interactions: AGENTS_PANELS,
+  },
+  {
+    id: 'project-loops',
+    label: 'Project — Loops (mockup)',
+    path: '#/p/<slug>/loops',
+    interactions: LOOPS_PANELS,
   },
   {
     id: 'project-plans',
