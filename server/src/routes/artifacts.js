@@ -2,7 +2,7 @@
 // links and files. Mounted at /api/projects/:slug/artifacts; the screen is
 // web/src/detail/Artifacts.tsx.
 //
-// Four rules, each one load-bearing:
+// Five rules, each one load-bearing:
 //
 //  • THE BYTES NEVER RIDE A LIST. `file_data` is named by no SELECT here but
 //    the one in GET /:id/file. A list that shipped a 10 MB mockup on every
@@ -14,6 +14,8 @@
 //    an octet-stream attachment under a sandbox CSP. The client turns the
 //    bytes into a blob: URL, and a blob URL carries the APP's origin, so an
 //    HTML or SVG file opened from one would run script as Stack.
+//  • APPROVED PLAN-MODE PLANS LAND HERE as docs, through routes/plans.js
+//    (the hook's door); `origin` and `fingerprint` are written only there.
 //  • `links` ARE roadmap_items IDS IN THIS PROJECT. A write keeps only the ids
 //    that are, so an artifact cannot point at another project's row; a row
 //    deleted later simply drops out of the read.
@@ -37,9 +39,10 @@ artifacts.use(async (req, res, next) => {
 export const ARTIFACT_TYPES = ['doc', 'plan', 'design', 'link', 'file'];
 export const FILE_CAP = 10 * 1024 * 1024;
 const INLINE_IMAGES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
-const COLS = 'id, type, title, body, url, tags, links, file_name, file_mime, file_size, created_at, updated_at';
+export const ARTIFACT_COLS = 'id, type, title, body, url, tags, links, origin, file_name, file_mime, file_size, created_at, updated_at';
+const COLS = ARTIFACT_COLS;
 
-const shape = (r) => ({
+export const artifactShape = (r) => ({
   id: r.id,
   type: r.type,
   title: r.title,
@@ -47,6 +50,8 @@ const shape = (r) => ({
   url: r.url,
   tags: Array.isArray(r.tags) ? r.tags : [],
   links: Array.isArray(r.links) ? r.links : [],
+  // Where it came from: {} by hand, {kind:'plan-mode', …} from routes/plans.js.
+  origin: r.origin && typeof r.origin === 'object' ? r.origin : {},
   file: r.file_size > 0 || r.file_name
     ? { name: r.file_name, size: Number(r.file_size), mime: r.file_mime, image: INLINE_IMAGES.has(r.file_mime) }
     : null,
@@ -90,7 +95,7 @@ artifacts.get('/', async (req, res) => {
     `SELECT ${COLS} FROM artifacts WHERE project_id = $1 ORDER BY updated_at DESC, id DESC`, [req.project.id]);
   const { rows: live } = await q('SELECT id FROM roadmap_items WHERE project_id = $1', [req.project.id]);
   const ok = new Set(live.map((r) => r.id));
-  res.json(rows.map(shape).map((a) => ({ ...a, links: a.links.filter((n) => ok.has(n)) })));
+  res.json(rows.map(artifactShape).map((a) => ({ ...a, links: a.links.filter((n) => ok.has(n)) })));
 });
 
 artifacts.post('/', async (req, res) => {
@@ -100,7 +105,7 @@ artifacts.post('/', async (req, res) => {
     `INSERT INTO artifacts (project_id, ${keys.join(', ')})
      VALUES ($1, ${keys.map((_, i) => `$${i + 2}`).join(', ')}) RETURNING ${COLS}`,
     [req.project.id, ...keys.map((k) => f[k])]);
-  res.status(201).json(shape(rows[0]));
+  res.status(201).json(artifactShape(rows[0]));
 });
 
 artifacts.patch('/:id', async (req, res) => {
@@ -112,7 +117,7 @@ artifacts.patch('/:id', async (req, res) => {
      WHERE id = $1 AND project_id = $2 RETURNING ${COLS}`,
     [Number(req.params.id), req.project.id, ...keys.map((k) => f[k])]);
   if (!rows.length) return res.status(404).json({ error: 'No such artifact.' });
-  res.json(shape(rows[0]));
+  res.json(artifactShape(rows[0]));
 });
 
 artifacts.delete('/:id', async (req, res) => {
@@ -138,7 +143,7 @@ artifacts.put('/:id/file',
        WHERE id = $1 AND project_id = $2 RETURNING ${COLS}`,
       [Number(req.params.id), req.project.id, name, mime, data.length, data]);
     if (!rows.length) return res.status(404).json({ error: 'No such artifact.' });
-    res.json(shape(rows[0]));
+    res.json(artifactShape(rows[0]));
   });
 
 // GET /:id/file -> the bytes, served as data (see the header).

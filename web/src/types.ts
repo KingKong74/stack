@@ -910,17 +910,6 @@ export type IdeaStage = 'spark' | 'scoped' | 'ready';
 export interface WishIdea { id: number; area: string; title: string; note: string; stage: IdeaStage }
 export interface Spaces { areas: SpaceArea[]; workflows: Workflow[]; ideas: WishIdea[] }
 
-// ---- plan-mode plans captured on approval (GET /api/projects/:slug/plans) ----
-// The list carries no `body`; GET /plans/:id does. `commit` is HEAD when the
-// plan was approved, not what built it. `planFile` is '' when unknown.
-export interface SessionPlan {
-  id: number; sessionId: string; title: string; planFile: string;
-  branch: string; commit: string; size: number; createdAt: string; when: string;
-  /** Roadmap ids made from (Split) or given (Attach) this plan, oldest first. */
-  itemIds: number[];
-  body?: string;
-}
-
 // An artifact (server routes/artifacts.js): a doc, plan, design, link or file a
 // project keeps beside its work. `tags` are area names; `links` are this
 // project's roadmap_items ids. The bytes are never in this shape: `file` is
@@ -934,6 +923,8 @@ export interface Artifact {
   url: string;
   tags: string[];
   links: number[];
+  /** {} by hand; a captured plan-mode plan says where it came from. */
+  origin: { kind?: 'plan-mode'; sessionId?: string; branch?: string; commit?: string; planFile?: string };
   file: { name: string; size: number; mime: string; image: boolean } | null;
   createdAt: string;
   updatedAt: string;

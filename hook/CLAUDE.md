@@ -22,7 +22,7 @@ The root `CLAUDE.md` holds the cross-package rules. This file holds what applies
   `stack-checkpoint.mjs`, which sets `authored:true`, fills commit/branch from git and posts to
   `/api/ingest` with the token from `~/.stack/env`. SessionEnd is the silent metadata backstop.
 - **`stack-plan.mjs`** (PostToolUse on `ExitPlanMode`) posts an approved plan-mode plan to
-  `/plans`. The tool carries no plan text, so the file is found via the transcript; its header has
+  `/plans`, which files it as an Artifacts doc. The tool carries no plan text, so the file is found via the transcript; its header has
   the order. It records only, and never writes the roadmap.
 - Tokens come only from `~/.stack/env`, never the shell profile or settings.json.
 

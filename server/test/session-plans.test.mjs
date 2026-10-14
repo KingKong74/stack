@@ -1,13 +1,14 @@
 #!/usr/bin/env node
-// SESSION PLANS — plan-mode plans captured by hook/stack-plan.mjs on approval.
+// PLAN-MODE PLANS — captured by hook/stack-plan.mjs on approval, filed as
+// `doc` artifacts by routes/plans.js.
 //
 //  • THE HOOK FINDS THIS SESSION'S PLAN FILE. ExitPlanMode carries no plan
 //    text, so the transcript's last ~/.claude/plans path must beat a newer
 //    file another session wrote; an inline `plan` beats both.
 //  • A POST NEVER CREATES A PROJECT. A plan from an unknown checkout 404s.
-//  • A RETRIED HOOK IS A NO-OP and a revised plan is a new row.
-//  • THE LIST CARRIES NO BODIES, and one project's plan is not another's.
-//  • /:id/items RECORDS ONLY THIS PROJECT'S ROWS, once each, in order.
+//  • A RETRIED HOOK IS A NO-OP and a revised plan is a new artifact.
+//  • IT LANDS IN THIS PROJECT'S ARTIFACTS ONLY, with its origin, and the old
+//    plan reads (GET /plans, /plans/:id/items, DELETE) are gone.
 //
 // Needs a running server on a throwaway database (it writes real rows):
 //   docker run -d --rm --name pg -e POSTGRES_PASSWORD=t -e POSTGRES_USER=t \
@@ -73,10 +74,12 @@ test('the route', async () => {
   assert.equal((await call('POST', `/projects/${slug}-never/plans`, { body: '# x' })).status, 404);
   assert.equal((await call('POST', base, { body: '   ' })).status, 400);
 
-  const one = await call('POST', base, { body: '# Ship it\n\n1. a', sessionId: 's1', planFile: '/home/x/.claude/plans/a-b.md' });
+  const one = await call('POST', base, { body: '# Ship it\n\n1. a', sessionId: 's1', planFile: '/home/x/.claude/plans/a-b.md', branch: 'main' });
   assert.equal(one.status, 201, one.text);
+  assert.equal(one.body.type, 'doc');
   assert.equal(one.body.title, 'Ship it');
-  assert.equal(one.body.planFile, 'a-b.md', 'only the basename is kept');
+  assert.deepEqual(one.body.origin, { kind: 'plan-mode', sessionId: 's1', branch: 'main', commit: '', planFile: 'a-b.md' },
+    'only the basename is kept');
 
   const again = await call('POST', base, { body: '# Ship it\n\n1. a', sessionId: 's1' });
   assert.equal(again.status, 200);
@@ -84,33 +87,17 @@ test('the route', async () => {
 
   const revised = await call('POST', base, { body: '# Ship it\n\n1. a\n2. b', sessionId: 's1' });
   assert.equal(revised.status, 201);
+  const elsewhere = await call('POST', base, { body: '# Ship it\n\n1. a', sessionId: 's2' });
+  assert.equal(elsewhere.status, 201, 'the same text from another session is its own plan');
 
-  const list = await call('GET', base);
-  assert.equal(list.body.length, 2);
-  assert.equal(list.body[0].id, revised.body.id, 'newest first');
-  assert.equal(list.body[0].body, undefined, 'the list carries no bodies');
-  assert.ok(list.body[0].size > 0);
+  const arts = await call('GET', `/projects/${slug}/artifacts`);
+  assert.equal(arts.body.length, 3);
+  assert.equal(arts.body.find((a) => a.id === one.body.id).body, '# Ship it\n\n1. a');
+  assert.equal((await call('GET', `/projects/${other}/artifacts`)).body.length, 0, 'one project\'s plan is not another\'s');
 
-  const full = await call('GET', `${base}/${one.body.id}`);
-  assert.equal(full.body.body, '# Ship it\n\n1. a');
-  assert.equal((await call('GET', `/projects/${other}/plans/${one.body.id}`)).status, 404);
-  assert.equal((await call('DELETE', `/projects/${other}/plans/${one.body.id}`)).status, 404);
+  // A hand-made artifact with the same text never collides with a captured one.
+  assert.equal((await call('POST', `/projects/${slug}/artifacts`, { title: 'Ship it', body: '# Ship it\n\n1. a' })).status, 201);
 
-  const mine = [];
-  for (const t of ['a', 'b']) {
-    const r = await call('POST', `/projects/${slug}/roadmap`, { title: `from plan ${t}` });
-    assert.equal(r.status, 201, r.text);
-    mine.push(r.body.id);
-  }
-  const theirs = (await call('POST', `/projects/${other}/roadmap`, { title: 'not mine' })).body.id;
-  const linked = await call('POST', `${base}/${one.body.id}/items`, { ids: [mine[1], theirs, mine[1], 'x', 999999999] });
-  assert.equal(linked.status, 200, linked.text);
-  assert.deepEqual(linked.body.itemIds, [mine[1]], 'a foreign, junk or repeated id is dropped');
-  const again2 = await call('POST', `${base}/${one.body.id}/items`, { ids: [mine[0], mine[1]] });
-  assert.deepEqual(again2.body.itemIds, [mine[1], mine[0]], 'appended, never repeated');
-  assert.equal((await call('POST', `/projects/${other}/plans/${one.body.id}/items`, { ids: [theirs] })).status, 404);
-  assert.deepEqual((await call('GET', base)).body.find((x) => x.id === one.body.id).itemIds, [mine[1], mine[0]]);
-
-  assert.equal((await call('DELETE', `${base}/${one.body.id}`)).status, 200);
-  assert.equal((await call('GET', base)).body.length, 1);
+  assert.equal((await call('GET', base)).status, 404, 'the old list is gone');
+  assert.equal((await call('DELETE', `${base}/${one.body.id}`)).status, 404, 'the old delete is gone');
 });

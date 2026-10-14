@@ -25,7 +25,7 @@ Three Claude Code hooks keep Stack in sync with reality:
   files touched, tools used and the last substantive message, and posts that so
   the activity feed never has gaps, and never overwrites a richer authored
   checkpoint or the resume card.
-- **PostToolUse on ExitPlanMode** files an approved plan in the Plans tab. It
+- **PostToolUse on ExitPlanMode** files an approved plan as an Artifacts doc. It
   adds no roadmap items.
 
 When a "where you left off" block is present, **trust it** rather than

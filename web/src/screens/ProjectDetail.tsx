@@ -754,7 +754,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
             schedule (#401) a reader again after #451 took its last one. */}
         {tab === 'plans' && (
           <Plans items={allRoadmap} sprints={data.sprints} weekZero={project.weekZero}
-            slug={slug} onBoard={() => setTab('roadmap')} onRefresh={reread} />
+            slug={slug} onBoard={() => setTab('roadmap')} />
         )}
 
         {/* The design's three tabs: each file's header says what is real. */}

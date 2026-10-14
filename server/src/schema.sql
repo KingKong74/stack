@@ -1566,43 +1566,6 @@ CREATE INDEX IF NOT EXISTS roadmap_sprint_idx ON roadmap_items (sprint_id, sprin
 ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS test_kind   TEXT;
 ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS test_target TEXT;
 
--- SESSION PLANS — what Claude Code's plan mode wrote, captured on approval by
--- the PostToolUse hook on ExitPlanMode (`hook/stack-plan.mjs`). A plan-mode
--- plan lives in ~/.claude/plans/<random-slug>.md, which names neither the
--- project nor the session, so the hook is what joins the two; a folder scan
--- could not.
---
--- A TABLE OF ITS OWN, not roadmap rows and not `roadmap_items.plan`. That
--- column is ONE item's steps; a plan-mode plan usually spans several items,
--- and turning it into rows is a human's action, never the capture's — a row
--- born here would be approved-to-run by its source, and a plan the fleet
--- could build from without anyone looking is exactly what the gate forbids.
---
--- A session that revises its plan and exits plan mode again posts a new row:
--- the history is the point. The fingerprint (sha256 of the body) only stops
--- the SAME text landing twice from a retried hook.
-CREATE TABLE IF NOT EXISTS session_plans (
-  id          SERIAL PRIMARY KEY,
-  project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  session_id  TEXT NOT NULL DEFAULT '',
-  title       TEXT NOT NULL DEFAULT '',   -- the plan's first `#` heading
-  body        TEXT NOT NULL,              -- the markdown, capped at 200 KB by the route
-  plan_file   TEXT NOT NULL DEFAULT '',   -- basename under ~/.claude/plans, '' if unknown
-  branch      TEXT NOT NULL DEFAULT '',
-  commit_hash TEXT NOT NULL DEFAULT '',   -- HEAD when the plan was approved, not what built it
-  fingerprint TEXT NOT NULL,
-  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-CREATE UNIQUE INDEX IF NOT EXISTS session_plans_fp_idx
-  ON session_plans (project_id, session_id, fingerprint);
-CREATE INDEX IF NOT EXISTS session_plans_project_idx
-  ON session_plans (project_id, created_at DESC);
--- The roadmap items a human made from a plan (Split) or fed it into (Attach),
--- in the order they were linked. A record, not a foreign key: an item deleted
--- since stays listed, and the reader drops ids the board no longer has. It
--- exists so a plan already split says so before it is split twice.
-ALTER TABLE session_plans ADD COLUMN IF NOT EXISTS item_ids JSONB NOT NULL DEFAULT '[]'::jsonb;
-
 -- An item's SPEC (goal, acceptance[], files[], outOfScope[]; util.js cleanSpec).
 -- '{}' = no spec, which is most rows. The build prompt prints what is here, and
 -- the auto-verdict reads `files` as the item's declared scope.
@@ -1667,3 +1630,29 @@ CREATE TABLE IF NOT EXISTS artifacts (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS artifacts_project_idx ON artifacts (project_id, updated_at DESC);
+
+-- PLAN-MODE PLANS ARE ARTIFACTS. hook/stack-plan.mjs posts an approved plan
+-- to POST /plans, which files it as a `doc` artifact with `origin` saying where
+-- it came from ({kind:'plan-mode', sessionId, branch, commit, planFile}).
+-- `fingerprint` is sha256(sessionId + '\n' + body), so a retried hook lands
+-- once and a revised plan is a new artifact; '' for everything typed by hand.
+ALTER TABLE artifacts ADD COLUMN IF NOT EXISTS origin      JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE artifacts ADD COLUMN IF NOT EXISTS fingerprint TEXT  NOT NULL DEFAULT '';
+CREATE UNIQUE INDEX IF NOT EXISTS artifacts_fp_idx ON artifacts (project_id, fingerprint) WHERE fingerprint <> '';
+-- The old session_plans table moves across once, then goes. One statement, so
+-- the copy and the drop land together or not at all. A plan's item_ids (the
+-- rows it was split into) become the artifact's links.
+DO $$
+BEGIN
+  IF to_regclass('session_plans') IS NOT NULL THEN
+    INSERT INTO artifacts (project_id, type, title, body, links, origin, fingerprint, created_at, updated_at)
+    SELECT project_id, 'doc', title, body, item_ids,
+           jsonb_build_object('kind', 'plan-mode', 'sessionId', session_id, 'branch', branch,
+                              'commit', commit_hash, 'planFile', plan_file),
+           encode(sha256(convert_to(session_id || E'\n' || body, 'UTF8')), 'hex'),
+           created_at, created_at
+      FROM session_plans
+    ON CONFLICT DO NOTHING;
+    DROP TABLE session_plans;
+  END IF;
+END $$;

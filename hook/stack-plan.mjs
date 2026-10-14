@@ -2,7 +2,7 @@
 // Stack — Claude Code PostToolUse hook on ExitPlanMode.
 //
 // When a human APPROVES a plan-mode plan, this posts it to
-// /api/projects/<slug>/plans so the Plans tab can show it. PostToolUse fires
+// /api/projects/<slug>/plans, which files it as an Artifacts doc. PostToolUse fires
 // only after the tool ran, and ExitPlanMode only runs on approval, so a
 // rejected plan never lands. It records and nothing else: it writes no
 // roadmap row (routes/plans.js says why).

@@ -20,11 +20,17 @@
 //     reply would roll back the letters typed since. Pending saves flush when
 //     the tab closes. Discard is a real delete, so a row with anything in it
 //     asks first.
+//
+// APPROVED PLAN-MODE PLANS LAND HERE AS DOCS (hook/stack-plan.mjs → POST
+// /plans; `origin.kind` 'plan-mode'). They are Claude's markdown, so they read
+// through components/Markdown.tsx rather than the design's line parser, which
+// would draw fences and tables as loose text; editing one is the same textarea.
 
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import type { Artifact as Art, ArtifactType as ArtType, RoadmapItem } from '../types';
 import { homeOf, isBoardWork } from '../lib/plan';
 import { ConfirmModal } from '../components/ConfirmModal';
+import { Markdown } from '../components/Markdown';
 import {
   getArtifacts, createArtifact, patchArtifact, deleteArtifact, uploadArtifactFile,
   getArtifactFileUrl, downloadArtifactFile, getBoardShape, ARTIFACT_FILE_CAP,
@@ -67,7 +73,9 @@ function parseBody(body: string): Block[] {
     const t = ln.trim();
     if (!t) return;
     const m = t.match(/^- \[( |x)\] ?(.*)$/i);
-    if (m) out.push({ k: 'check', text: m[2], done: m[1].toLowerCase() === 'x', line: i });
+    const hd = t.match(/^#{1,6}\s+(.*)$/);
+    if (hd) out.push({ k: 'h', text: hd[1] });
+    else if (m) out.push({ k: 'check', text: m[2], done: m[1].toLowerCase() === 'x', line: i });
     else if (t.startsWith('- ')) out.push({ k: 'li', text: t.slice(2) });
     else if ((i === 0 || !L[i - 1].trim()) && L[i + 1] && L[i + 1].trim() && t.length < 40 && !/[.?!:,]$/.test(t)) out.push({ k: 'h', text: t });
     else out.push({ k: 'p', text: t });
@@ -94,6 +102,17 @@ const excerpt = (a: Art) => {
   if (a.type === 'file') return extOf(a) + (a.file ? ` · ${fmtSize(a.file.size)}` : '');
   const b = parseBody(a.body).find((x) => x.k !== 'h');
   return b ? b.text : a.type === 'design' ? (a.file ? 'Mockup attached' : 'No mockup yet') : 'Nothing written yet';
+};
+/** "plan mode on main @ 1a2b3c4", for a plan the hook filed; '' otherwise. */
+const fromPlan = (a: Art) => {
+  const o = a.origin;
+  if (o?.kind !== 'plan-mode') return '';
+  return ['plan mode', o.branch && `on ${o.branch}`, o.commit && `@ ${o.commit.slice(0, 7)}`].filter(Boolean).join(' ');
+};
+/** A plan opens on its own `# Title`, which the page already draws. */
+const dropTitle = (a: Art) => {
+  const m = a.body.match(/^\s*#\s+(.*)\n?/);
+  return m && m[1].replace(/[#*`]/g, '').trim() === a.title.trim() ? a.body.slice(m[0].length) : a.body;
 };
 const isBlank = (a: Art) => !a.title.trim() && !a.body.trim() && !a.url.trim() && !a.file && !a.links.length;
 
@@ -403,7 +422,9 @@ export function Artifacts({ slug, items }: {
           return (<>
             <div className="ar-viewbar">
               <span className="ar-badge" style={{ color: t.fg }}>{t.badge}</span>
-              <span className="when">{t.label} · edited {ageMs(atOf(cur))}</span>
+              <span className="when">
+                {t.label}{fromPlan(cur) ? ` · ${fromPlan(cur)}` : ''} · edited {ageMs(atOf(cur))}
+              </span>
               <span className="rc-grow" />
               <button className="ar-discard" onClick={() => (isBlank(cur) ? discard(cur) : setConfirming(cur))}>
                 Discard
@@ -494,6 +515,8 @@ export function Artifacts({ slug, items }: {
                       onChange={(e) => { const v = e.target.value; upd(cur.id, () => ({ body: v })); }} />
                     <span className="hint">A short line on its own becomes a heading. Start a line with - for a bullet, - [ ] for a step.</span>
                   </div>
+                ) : cur.origin.kind === 'plan-mode' ? (
+                  <div className="ar-md"><Markdown text={dropTitle(cur)} /></div>
                 ) : (
                   <div className="ar-body">
                     {blocks.map((b, i) => {
