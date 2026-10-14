@@ -1641,3 +1641,29 @@ UPDATE autopilot_jobs SET status = 'failed', detail = 'nightly mode retired', fi
 -- is what puts it in the canvas's inbox. Written through PUT /roadmap/canvas,
 -- which does not touch updated_at: moving a note is not movement on the work.
 ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS canvas JSONB NOT NULL DEFAULT '{}'::jsonb;
+
+-- ARTIFACTS: what a project keeps beside its work — docs, plans, designs,
+-- links and files (web/src/detail/Artifacts.tsx, routes/artifacts.js). Its own
+-- table rather than a column on roadmap_items because an image or a file in a
+-- row would ride the project payload the SessionStart hook reads on every
+-- session. `links` holds roadmap_items ids (no foreign key: a deleted idea just
+-- drops out of the list on read). `tags` are area NAMES, free strings like
+-- roadmap_items.area. The bytes live in `file_data` and are never selected by a
+-- list; GET /artifacts/:id/file is the only reader.
+CREATE TABLE IF NOT EXISTS artifacts (
+  id         SERIAL PRIMARY KEY,
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  type       TEXT NOT NULL DEFAULT 'doc',      -- doc | plan | design | link | file
+  title      TEXT NOT NULL DEFAULT '',
+  body       TEXT NOT NULL DEFAULT '',
+  url        TEXT NOT NULL DEFAULT '',
+  tags       JSONB NOT NULL DEFAULT '[]'::jsonb,
+  links      JSONB NOT NULL DEFAULT '[]'::jsonb,
+  file_name  TEXT NOT NULL DEFAULT '',
+  file_mime  TEXT NOT NULL DEFAULT '',
+  file_size  INTEGER NOT NULL DEFAULT 0,
+  file_data  BYTEA,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS artifacts_project_idx ON artifacts (project_id, updated_at DESC);

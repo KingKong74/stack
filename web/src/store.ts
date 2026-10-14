@@ -5,6 +5,7 @@ import type {
   SchedSpan, ProjectPulse, BoardShape, BoardList, BoardArea, ItemKind,
   AgentProfile, AgentProfilesRoom, ModelsRoom, ContextRoom, ClaudeMdRead,
   ProjectKind, Spaces, SpaceArea, Workflow, WishIdea, IdeaStage, SessionPlan, InboxData,
+  Artifact, ArtifactType,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -1816,4 +1817,56 @@ export async function putClaudeMd(slug: string, path: string, sha: string, body:
     method: 'PUT',
     body: { slug, path, sha, body },
   });
+}
+
+// ---- artifacts -------------------------------------------------------------
+//
+// The project's kept docs, plans, designs, links and files (routes/artifacts.js).
+// The bytes travel on their own: an upload is a raw PUT, and a read comes back
+// as a blob: URL the caller must revoke when it is done with it.
+const artifactsBase = (slug: string) => `/projects/${encodeURIComponent(slug)}/artifacts`;
+export const ARTIFACT_FILE_CAP = 10 * 1024 * 1024;
+type ArtifactFields = Partial<{ type: ArtifactType; title: string; body: string; url: string; tags: string[]; links: number[] }>;
+export const getArtifacts = (slug: string) => request<Artifact[]>(artifactsBase(slug));
+export const createArtifact = (slug: string, input: ArtifactFields) =>
+  request<Artifact>(artifactsBase(slug), { method: 'POST', body: input });
+export const patchArtifact = (slug: string, id: number, patch: ArtifactFields) =>
+  request<Artifact>(`${artifactsBase(slug)}/${id}`, { method: 'PATCH', body: patch });
+export const deleteArtifact = (slug: string, id: number) =>
+  request<void>(`${artifactsBase(slug)}/${id}`, { method: 'DELETE' });
+
+async function artifactFileRequest(slug: string, id: number, init: RequestInit = {}): Promise<Response> {
+  const token = getToken();
+  const res = await fetch(`/api${artifactsBase(slug)}/${id}/file`, {
+    ...init,
+    headers: { ...(init.headers as Record<string, string> || {}), ...(token ? { authorization: `Bearer ${token}` } : {}) },
+  });
+  if (res.status === 401) { clearToken(); throw new AuthError(); }
+  if (!res.ok) {
+    let msg = `Request failed (${res.status})`;
+    try { const j = await res.json(); if (j?.error) msg = j.error; } catch { /* keep default */ }
+    throw new HttpError(res.status, msg);
+  }
+  return res;
+}
+export async function uploadArtifactFile(slug: string, id: number, file: File): Promise<Artifact> {
+  if (file.size > ARTIFACT_FILE_CAP) throw new Error(`${file.name} is over the 10 MB cap.`);
+  const res = await artifactFileRequest(slug, id, {
+    method: 'PUT', body: file,
+    headers: { 'content-type': file.type || 'application/octet-stream', 'x-file-name': encodeURIComponent(file.name) },
+  });
+  return (await res.json()) as Artifact;
+}
+/** The file as a blob: URL. The caller revokes it. */
+export async function getArtifactFileUrl(slug: string, id: number): Promise<string> {
+  const res = await artifactFileRequest(slug, id);
+  return URL.createObjectURL(await res.blob());
+}
+/** Save the file to the device under its own name. */
+export async function downloadArtifactFile(slug: string, id: number, name: string): Promise<void> {
+  const href = await getArtifactFileUrl(slug, id);
+  const a = document.createElement('a');
+  a.href = href; a.download = name || 'file';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(href), 10_000);
 }

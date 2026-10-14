@@ -417,10 +417,12 @@ const IDEAS_PANELS = [
 ];
 
 // THE DESIGN'S OTHER THREE VIEWS (detail/Artifacts.tsx, SkillsAgents.tsx,
-// Loops.tsx). Artifacts and Loops are mockups on component state, so a press
-// there writes nothing anywhere. Skills & agents is WIRED to app-wide rows:
-// its presses are view state only (a tab, a fold opened), and NEVER a switch,
-// a tool cell, a model picker, New or Adopt, each of which writes.
+// Loops.tsx). Loops is a mockup on component state, so a press there writes
+// nothing anywhere. Artifacts and Skills & agents are WIRED: their presses are
+// view state only (a type tab, a grouping, a fold opened), and NEVER New, Edit,
+// a switch, a tool cell, a model picker or Adopt. New's menu creates a row from
+// one more click, and Edit leaves a real artifact one keystroke from a save
+// (and a project with none has no Edit to press).
 const ARTIFACTS_PANELS = [
   {
     id: 'artifacts-type',
@@ -433,18 +435,6 @@ const ARTIFACTS_PANELS = [
     label: 'Artifacts — Group by Idea regroups the list',
     click: '.ar .ar-gb:nth-of-type(3)',
     expect: '.ar .ar-gb:nth-of-type(3).on',
-  },
-  {
-    id: 'artifacts-newmenu',
-    label: 'Artifacts — New opens its menu (no option is chosen)',
-    click: '.ar .ar-new',
-    expect: '.ar .ar-menu',
-  },
-  {
-    id: 'artifacts-edit',
-    label: 'Artifacts — Edit opens the editor on the selected artifact',
-    click: '.ar .ar-edit',
-    expect: '.ar .ar-titlein',
   },
 ];
 const AGENTS_PANELS = [
@@ -801,7 +791,7 @@ export const SCREENS = [
   },
   {
     id: 'project-artifacts',
-    label: 'Project — Artifacts (mockup)',
+    label: 'Project — Artifacts',
     path: '#/p/<slug>/artifacts',
     interactions: ARTIFACTS_PANELS,
   },

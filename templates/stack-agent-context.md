@@ -70,10 +70,10 @@ The block is a snapshot. For the current state at any moment, read the API:
   it spawned nothing: `--agents` is passed only when an ADVISOR model is set, so
   on a single-model install every profile is inert. `policy.spawnsAgents` says
   which, and `defaultSpawn` is the server resolving a real one.
-  There was a second, unrelated agents surface — a registry of ✧ buttons on
-  `/api/agents`, each with its own switch. It is culled. **A ✧ is now a plain
-  Gemini route**, so a 503 from one means `GEMINI_API_KEY`, never a daemon.
+  **A ✧ is a plain Gemini route**, so a 503 from one means `GEMINI_API_KEY`.
 
+- `GET /api/projects/<slug>/artifacts` — docs, plans, designs, links and files
+  kept beside the work (`…/artifacts/<id>/file` is the bytes). Write only when asked.
 - `GET /api/spaces` — areas, hubs' workflows, the wishlist. **Report each run
   of a hub workflow you run**: `POST /api/spaces/workflows/<id>/runs {"ok":bool}`.
 

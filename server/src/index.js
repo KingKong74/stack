@@ -27,6 +27,7 @@ import { previews, previewsGlobal } from './routes/previews.js';
 import { terminal } from './routes/terminal.js';
 import { triage } from './routes/triage.js';
 import { tips } from './routes/tips.js';
+import { artifacts } from './routes/artifacts.js';
 import { plans } from './routes/plans.js';
 import { skills } from './routes/skills.js';
 import { models } from './routes/models.js';
@@ -87,6 +88,8 @@ app.use('/api/projects/:slug/sprints', requireToken, sprints);
 // The build queue — see routes/ready.js.
 app.use('/api/projects/:slug/ready', requireToken, ready);
 app.use('/api/projects/:slug/checks', requireToken, checks);
+// The project's kept docs, plans, designs, links and files — see routes/artifacts.js.
+app.use('/api/projects/:slug/artifacts', requireToken, artifacts);
 // Plan-mode plans captured by hook/stack-plan.mjs — see routes/plans.js.
 app.use('/api/projects/:slug/plans', requireToken, plans);
 app.use('/api/projects/:slug/autopilot', requireToken, autopilot);

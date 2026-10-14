@@ -1,45 +1,40 @@
-// ARTIFACTS IS A MOCKUP, from the Claude Design project's "Roadmap Canvas"
-// (its `artifacts` view, 2026-10-12). It reads nothing and writes nothing: the
-// rows are the design's own sample docs, plans, designs, links and files, and
-// the ideas they link to are the design's sample notes, not this project's.
-// The rail row wears the Mock chip for exactly that reason.
+// ARTIFACTS: what a project keeps beside its work — docs, plans, designs,
+// links and files. Imported from the Claude Design project's "Roadmap Canvas"
+// (its `artifacts` view, 2026-10-12) and wired to routes/artifacts.js; the
+// screen keeps the design's layout, keys and copy.
 //
-// EVERYTHING HERE IS COMPONENT STATE AND DIES WITH THE TAB. The design kept it
-// in localStorage; store.ts is the only module allowed device storage, and a
-// mockup that remembered edits across reloads would read as a feature that
-// saved them. Wiring it means an artifact store first: an image or a file in a
-// roadmap row would ride the payload the SessionStart hook reads (the same
-// reason the Roadmap canvas left out the design's image well).
+// FOUR DECISIONS WORTH THE INK:
+//
+//  1. ITS OWN TABLE, NEVER THE PAYLOAD. An image or a file in a roadmap row
+//     would ride the project payload the SessionStart hook reads on every
+//     session, so artifacts are fetched here, on their own, and the bytes are
+//     fetched apart again (getArtifactFileUrl), only for the one on screen.
+//  2. AREAS ARE THE PROJECT'S AREAS (getBoardShape), and an artifact's tags are
+//     area NAMES, free strings like roadmap_items.area. A tag whose area was
+//     deleted still shows, with no colour, rather than vanishing.
+//  3. "FROM THE ROADMAP" LINKS ARE THIS PROJECT'S ROWS. The picker offers the
+//     Roadmap's kept ideas (homeOf 'roadmap'); a linked idea promoted since
+//     stays linked and reads "promoted · on the board", as on the canvas.
+//  4. TYPING SAVES ITSELF, DEBOUNCED; THE SCREEN NEVER RE-READS UNDER YOU. A
+//     PATCH answer is not merged back into the row being typed in, or a slow
+//     reply would roll back the letters typed since. Pending saves flush when
+//     the tab closes. Discard is a real delete, so a row with anything in it
+//     asks first.
 
-import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
+import type { Artifact as Art, ArtifactType as ArtType, RoadmapItem } from '../types';
+import { homeOf, isBoardWork } from '../lib/plan';
+import { ConfirmModal } from '../components/ConfirmModal';
+import {
+  getArtifacts, createArtifact, patchArtifact, deleteArtifact, uploadArtifactFile,
+  getArtifactFileUrl, downloadArtifactFile, getBoardShape, ARTIFACT_FILE_CAP,
+} from '../store';
 
 const H = 3_600_000;
 
-type ArtType = 'doc' | 'plan' | 'design' | 'link' | 'file';
 type Group = 'recent' | 'area' | 'idea';
-
-interface Artifact {
-  id: number;
-  type: ArtType;
-  title: string;
-  tags: string[];
-  links: number[];
-  body: string;
-  at: number;
-  url: string;
-  img: string | null;
-  file: { name: string; size: number } | null;
-}
-
-// The design's sample areas and ideas, verbatim — this project's are not read.
-const AREAS = [
-  { key: 'board', label: 'project/board', color: 'var(--lime-600)' },
-  { key: 'plans', label: 'plans', color: 'var(--red-500)' },
-  { key: 'roadmap', label: 'roadmap', color: 'var(--blue-400)' },
-  { key: 'foryou', label: 'for you', color: 'var(--amber-500)' },
-  { key: 'quality', label: 'quality', color: 'var(--lime-700)' },
-];
-const areaOf = (k: string) => AREAS.find((a) => a.key === k);
+type Fields = Partial<Pick<Art, 'type' | 'title' | 'body' | 'url' | 'tags' | 'links'>>;
+type AreaTag = { key: string; label: string; color: string };
 
 type Stage = 'raw' | 'exploring' | 'shaped' | 'promoted';
 const STAGE_TINT: Record<Stage, { bg: string; fg: string }> = {
@@ -48,22 +43,7 @@ const STAGE_TINT: Record<Stage, { bg: string; fg: string }> = {
   shaped: { bg: 'var(--status-success-bg)', fg: 'var(--status-success-fg)' },
   promoted: { bg: 'var(--surface-raised)', fg: 'var(--text-tertiary)' },
 };
-const IDEAS: { id: number; title: string; stage: Stage; taskId?: string }[] = [
-  { id: 1, title: 'Lane holder as an avatar, not a term id', stage: 'exploring' },
-  { id: 2, title: 'Drag ideas between areas on the board', stage: 'raw' },
-  { id: 3, title: 'Plans could auto-draft from a shaped idea', stage: 'exploring' },
-  { id: 4, title: 'Flaky test heatmap?', stage: 'raw' },
-  { id: 5, title: 'Quality gate summary on merge', stage: 'shaped' },
-  { id: 6, title: 'For you: what changed since your last visit', stage: 'exploring' },
-  { id: 7, title: 'Keyboard nav across board columns', stage: 'shaped' },
-  { id: 8, title: 'Morning digest of overnight runs', stage: 'raw' },
-  { id: 9, title: 'Batch keep / dismiss in Auto-ideas', stage: 'raw' },
-  { id: 10, title: 'Retry a failed overnight worker from its card', stage: 'raw' },
-  { id: 11, title: 'Sprint burndown on Plans', stage: 'raw' },
-  { id: 14, title: 'Area colour picker', stage: 'promoted', taskId: '#523' },
-  { id: 15, title: 'Run log inline on the board card', stage: 'raw' },
-];
-const ideaOf = (id: number) => IDEAS.find((n) => n.id === id);
+const stageOf = (it: RoadmapItem): Stage => (isBoardWork(it) ? 'promoted' : it.canvas?.stage ?? 'raw');
 
 const TYPES: { key: ArtType; label: string; plural: string; hint: string; ph: string; badge: string; fg: string }[] = [
   { key: 'doc', label: 'Doc', plural: 'Docs', hint: 'Write-up, spec or research', ph: 'Write it up…', badge: 'DOC', fg: 'var(--blue-300)' },
@@ -73,21 +53,10 @@ const TYPES: { key: ArtType; label: string; plural: string; hint: string; ph: st
   { key: 'file', label: 'File', plural: 'Files', hint: '', ph: 'What this file is for…', badge: 'FIL', fg: 'var(--grey-300)' },
 ];
 const typeOf = (k: ArtType) => TYPES.find((t) => t.key === k) || TYPES[0];
-
-function seed(): Artifact[] {
-  const now = Date.now();
-  const A = (id: number, type: ArtType, title: string, tags: string[], links: number[], body: string, hrs: number, x: Partial<Artifact> = {}): Artifact =>
-    ({ id, type, title, tags, links, body, at: now - hrs * H, url: '', img: null, file: null, ...x });
-  return [
-    A(1, 'doc', 'Lane holder: names instead of term ids', ['roadmap'], [1], 'Problem\nThe lane header shows the raw term id (term:stack-term-111cee94). Nobody reads it.\n\nProposal\nShow the holder\'s avatar and short name. Full id on hover, copy on click.\n\nOpen questions\n- Do bots get an avatar?\n- What shows when the holder has left?', 3),
-    A(2, 'plan', 'Quality gate summary: rollout', ['quality'], [5], 'Goal\nOne summary card per PR: what ran, what failed, who signed off.\n\nSteps\n- [x] Summary card component\n- [ ] Link from the board item\n- [ ] Backfill the last 30 days of PRs\n\nRisks\n- Sign-off data lives in two places.', 20),
-    A(3, 'design', 'Board card with inline run log', ['board', 'quality'], [15, 10], 'Two states: collapsed (last line only) and expanded (last 40 lines, scrolls).', 30),
-    A(4, 'link', 'Keyboard shortcut conventions', ['board'], [7], 'Reference for j/k, h/l and Enter. Check against what Plans already binds.', 50, { url: 'https://github.com/stack/stack/discussions/412' }),
-    A(5, 'doc', 'Overnight runs: what people asked for', ['foryou'], [8, 9, 10], 'Collected from standups this month.\n\n- What finished while I was asleep?\n- Let me retry from the card, not the log.\n- Keep or dismiss ten ideas at once.', 72),
-    A(6, 'plan', 'Q4 roadmap', ['roadmap'], [], 'Now\n- Lane holder names\n- Quality gate summary\n\nNext\n- Keyboard nav on the board\n- Morning digest\n\nLater\n- Plans auto-draft', 120),
-    A(7, 'file', 'area-colours.json', ['board'], [14], 'Palette export used by routes/board.js.', 160, { file: { name: 'area-colours.json', size: 1840 } }),
-  ];
-}
+// The raster types the server serves inline; anything else is a file.
+const PREVIEWABLE = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
+const atOf = (a: Art) => Date.parse(a.updatedAt) || 0;
+const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 // A short line on its own is a heading; `- ` a bullet; `- [ ]` a step.
 type Block = { k: 'h' | 'p' | 'li' | 'check'; text: string; done?: boolean; line?: number };
@@ -118,23 +87,44 @@ const hostOf = (u: string): [string, string] => {
   catch { return [u || 'No URL yet', '']; }
 };
 const fmtSize = (b: number) => (b < 1024 ? `${b} B` : b < 1048576 ? `${(b / 1024).toFixed(1)} KB` : `${(b / 1048576).toFixed(1)} MB`);
-const extOf = (a: Artifact) => (((a.file?.name || a.title).match(/\.([^.]+)$/) || [])[1] || 'file').toUpperCase();
-const untitled = (a: Artifact) => `Untitled ${typeOf(a.type).label.toLowerCase()}`;
-const excerpt = (a: Artifact) => {
+const extOf = (a: Art) => (((a.file?.name || a.title).match(/\.([^.]+)$/) || [])[1] || 'file').toUpperCase();
+const untitled = (a: Art) => `Untitled ${typeOf(a.type).label.toLowerCase()}`;
+const excerpt = (a: Art) => {
   if (a.type === 'link') return hostOf(a.url)[0];
   if (a.type === 'file') return extOf(a) + (a.file ? ` · ${fmtSize(a.file.size)}` : '');
   const b = parseBody(a.body).find((x) => x.k !== 'h');
-  return b ? b.text : a.type === 'design' ? (a.img ? 'Mockup attached' : 'No mockup yet') : 'Nothing written yet';
+  return b ? b.text : a.type === 'design' ? (a.file ? 'Mockup attached' : 'No mockup yet') : 'Nothing written yet';
 };
-const readImage = (f: File, then: (src: string) => void) => {
-  const r = new FileReader();
-  r.onload = () => then(String(r.result));
-  r.readAsDataURL(f);
-};
+const isBlank = (a: Art) => !a.title.trim() && !a.body.trim() && !a.url.trim() && !a.file && !a.links.length;
 
-export function Artifacts() {
-  const [arts, setArts] = useState<Artifact[]>(seed);
-  const [nextId, setNextId] = useState(8);
+/** The mockup, fetched as a blob: URL for as long as it is on screen. */
+function ArtImage({ slug, a }: { slug: string; a: Art }) {
+  const [src, setSrc] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+  const ver = `${a.id}:${a.file?.name}:${a.file?.size}`;
+  useEffect(() => {
+    let live = true;
+    let url: string | null = null;
+    setSrc(null); setFailed(false);
+    getArtifactFileUrl(slug, a.id)
+      .then((u) => { if (live) { url = u; setSrc(u); } else URL.revokeObjectURL(u); })
+      .catch(() => { if (live) setFailed(true); });
+    return () => { live = false; if (url) URL.revokeObjectURL(url); };
+  }, [slug, ver]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (src) return <img src={src} alt={a.title || 'Mockup'} />;
+  return <span className="ar-wellempty">{failed ? 'The mockup could not be loaded.' : 'Loading the mockup…'}</span>;
+}
+
+export function Artifacts({ slug, items }: {
+  slug: string;
+  /** The project payload's roadmap, flattened: what "From the roadmap" links to. */
+  items: RoadmapItem[];
+}) {
+  const [arts, setArts] = useState<Art[] | null>(null);
+  const [areas, setAreas] = useState<AreaTag[]>([]);
+  const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(0);
+  const [confirming, setConfirming] = useState<Art | null>(null);
   const [type, setType] = useState<ArtType | 'all'>('all');
   const [query, setQuery] = useState('');
   const [group, setGroup] = useState<Group>('recent');
@@ -146,63 +136,121 @@ export function Artifacts() {
   const searchRef = useRef<HTMLInputElement>(null);
   const titleRef = useRef<HTMLTextAreaElement>(null);
   const focusTitle = useRef(false);
+  const artsRef = useRef<Art[]>([]);
+  artsRef.current = arts ?? [];
 
-  const upd = (id: number, fn: (a: Artifact) => Partial<Artifact>) =>
-    setArts((xs) => xs.map((a) => (a.id === id ? { ...a, ...fn(a), at: Date.now() } : a)));
-  const add = (t: ArtType, x: Partial<Artifact> = {}, focus = true) => {
-    const id = nextId;
-    setNextId((n) => n + 1);
-    setArts((xs) => [{ id, type: t, title: '', tags: [], links: [], body: '', at: Date.now(), url: '', img: null, file: null, ...x }, ...xs]);
-    focusTitle.current = focus;
-    setSel(id); setEditing(focus); setMenu(false); setLinkOpen(false); setType('all'); setQuery('');
+  useEffect(() => {
+    let live = true;
+    setArts(null);
+    getArtifacts(slug).then((xs) => { if (live) setArts(xs); }).catch((e) => { if (live) { setArts([]); setErr(errText(e)); } });
+    getBoardShape(slug)
+      .then((sh) => { if (live) setAreas(sh.areas.map((x) => ({ key: x.name, label: x.name, color: x.dot || 'var(--text-tertiary)' }))); })
+      .catch(() => { /* no areas offered; tags still show */ });
+    return () => { live = false; };
+  }, [slug]);
+
+  const areaOf = (k: string): AreaTag => areas.find((x) => x.key === k) ?? { key: k, label: k, color: 'var(--border-strong)' };
+  const byId = useMemo(() => new Map(items.map((it) => [it.id, it])), [items]);
+  const ideaOf = (id: number) => byId.get(id);
+  const ideas = useMemo(() => items.filter((it) => homeOf(it) === 'roadmap'), [items]);
+
+  // Saves, debounced per artifact and merged, so a word typed is one PATCH.
+  const pending = useRef(new Map<number, { patch: Fields; t: number }>());
+  const flush = useCallback((id: number) => {
+    const p = pending.current.get(id);
+    if (!p) return;
+    window.clearTimeout(p.t);
+    pending.current.delete(id);
+    patchArtifact(slug, id, p.patch).catch((e) => setErr(`Not saved: ${errText(e)}`));
+  }, [slug]);
+  useEffect(() => () => { [...pending.current.keys()].forEach(flush); }, [flush]);
+  const upd = (id: number, fn: (a: Art) => Fields) => {
+    const a = artsRef.current.find((x) => x.id === id);
+    if (!a) return;
+    const patch = fn(a);
+    setArts((xs) => (xs ?? []).map((x) => (x.id === id ? { ...x, ...patch, updatedAt: new Date().toISOString() } : x)));
+    const prev = pending.current.get(id);
+    if (prev) window.clearTimeout(prev.t);
+    const typed = 'title' in patch || 'body' in patch || 'url' in patch;
+    pending.current.set(id, { patch: { ...prev?.patch, ...patch }, t: window.setTimeout(() => flush(id), typed ? 600 : 0) });
   };
-  // Ids are handed out one per file up front: a FileReader answers later, and
-  // two images read in one drop must not both take the same next id.
+  const put = (a: Art) => setArts((xs) => [a, ...(xs ?? []).filter((x) => x.id !== a.id)]);
+  // An upload's answer carries the new `file`, and only that is taken from it.
+  const withFile = (a: Art) => setArts((xs) => (xs ?? []).map((x) => (x.id === a.id ? { ...x, file: a.file, updatedAt: a.updatedAt } : x)));
+  const work = async (fn: () => Promise<void>) => {
+    setBusy((n) => n + 1);
+    try { await fn(); } catch (e) { setErr(errText(e)); } finally { setBusy((n) => n - 1); }
+  };
+
+  const add = (t: ArtType) => {
+    setMenu(false); setLinkOpen(false); setType('all'); setQuery('');
+    void work(async () => {
+      const a = await createArtifact(slug, { type: t });
+      put(a);
+      focusTitle.current = true;
+      setSel(a.id); setEditing(true);
+    });
+  };
+  // One at a time, in order: each is a create then an upload, and a failed
+  // upload takes its empty row back out rather than leaving "Untitled file".
   const addFiles = (files: FileList | null) => {
     const list = [...(files || [])];
     if (!list.length) return;
-    const base = nextId;
-    setNextId((n) => n + list.length);
-    list.forEach((f, i) => {
-      const id = base + i;
-      const put = (x: Partial<Artifact>) =>
-        setArts((xs) => [{ id, type: 'file', title: '', tags: [], links: [], body: '', at: Date.now(), url: '', img: null, file: null, ...x }, ...xs]);
-      if (f.type.startsWith('image/')) readImage(f, (src) => put({ type: 'design', title: f.name.replace(/\.[^.]+$/, ''), img: src }));
-      else put({ type: 'file', title: f.name, file: { name: f.name, size: f.size } });
+    void work(async () => {
+      for (const f of list) {
+        if (f.size > ARTIFACT_FILE_CAP) { setErr(`${f.name} is over the ${ARTIFACT_FILE_CAP / 1048576} MB cap.`); continue; }
+        const img = PREVIEWABLE.has(f.type);
+        const a = await createArtifact(slug, { type: img ? 'design' : 'file', title: img ? f.name.replace(/\.[^.]+$/, '') : f.name });
+        try { put(await uploadArtifactFile(slug, a.id, f)); }
+        catch (e) { await deleteArtifact(slug, a.id).catch(() => {}); throw e; }
+      }
     });
   };
   const setImg = (files: FileList | null, id: number) => {
     const f = [...(files || [])].find((x) => x.type.startsWith('image/'));
-    if (f) readImage(f, (src) => upd(id, () => ({ img: src })));
+    if (!f) return;
+    if (!PREVIEWABLE.has(f.type)) { setErr('A mockup previews as PNG, JPEG, GIF or WebP. Upload anything else as a file.'); return; }
+    void work(async () => { withFile(await uploadArtifactFile(slug, id, f)); });
+  };
+  const discard = (a: Art) => {
+    setConfirming(null);
+    const t = pending.current.get(a.id);
+    if (t) { window.clearTimeout(t.t); pending.current.delete(a.id); }
+    void work(async () => {
+      await deleteArtifact(slug, a.id);
+      setArts((xs) => (xs ?? []).filter((x) => x.id !== a.id));
+      setSel(null); setEditing(false);
+    });
   };
 
   const q = query.trim().toLowerCase();
-  const pre = arts.filter((a) => !q || `${a.title} ${a.body} ${a.url}`.toLowerCase().includes(q));
-  const shown = pre.filter((a) => type === 'all' || a.type === type).sort((a, b) => b.at - a.at);
+  const pre = (arts ?? []).filter((a) => !q || `${a.title} ${a.body} ${a.url}`.toLowerCase().includes(q));
+  const shown = pre.filter((a) => type === 'all' || a.type === type).sort((a, b) => atOf(b) - atOf(a));
   const selId = shown.some((a) => a.id === sel) ? sel : shown[0]?.id ?? null;
-  const cur = selId != null ? arts.find((a) => a.id === selId) ?? null : null;
+  const cur = selId != null ? (arts ?? []).find((a) => a.id === selId) ?? null : null;
 
   const groups = useMemo(() => {
-    const keyOf = (a: Artifact): [number, string] => {
+    const keyOf = (a: Art): [number, string] => {
       if (group === 'area') {
-        const x = a.tags[0] ? areaOf(a.tags[0]) : undefined;
-        return x ? [AREAS.indexOf(x), x.label] : [99, 'No area'];
+        if (!a.tags[0]) return [1e9, 'No area'];
+        const i = areas.findIndex((x) => x.key === a.tags[0]);
+        return [i < 0 ? 1e6 + a.tags[0].charCodeAt(0) : i, a.tags[0]];
       }
       if (group === 'idea') {
         const n = a.links.map(ideaOf).find(Boolean);
         return n ? [n.id, `#${n.id}  ${n.title}`] : [1e9, 'Not linked to an idea'];
       }
-      const d = Date.now() - a.at;
+      const d = Date.now() - atOf(a);
       return d < 24 * H ? [0, 'Today'] : d < 7 * 24 * H ? [1, 'This week'] : [2, 'Earlier'];
     };
-    const m = new Map<number, { k: number; label: string; rows: Artifact[] }>();
+    const m = new Map<number, { k: number; label: string; rows: Art[] }>();
     shown.forEach((a) => {
       const [k, label] = keyOf(a);
       if (!m.has(k)) m.set(k, { k, label, rows: [] });
       m.get(k)!.rows.push(a);
     });
     return [...m.values()].sort((x, y) => (group === 'idea' ? Number(x.k === 1e9) - Number(y.k === 1e9) : x.k - y.k));
-  }, [shown, group]);
+  }, [shown, group, areas, byId]); // eslint-disable-line react-hooks/exhaustive-deps
   const order = groups.flatMap((g) => g.rows.map((a) => a.id));
 
   // The design's keys: ↑↓ (or j/k) move, e edits, / searches, Esc backs out.
@@ -246,7 +294,8 @@ export function Artifacts() {
   };
   const onDrop = (e: DragEvent) => { e.preventDefault(); setDropping(false); addFiles(e.dataTransfer.files); };
 
-  const linkedCount = arts.filter((a) => a.links.length).length;
+  const all = arts ?? [];
+  const linkedCount = all.filter((a) => a.links.length).length;
   const blocks = cur ? parseBody(cur.body) : [];
 
   return (
@@ -256,7 +305,7 @@ export function Artifacts() {
           <div className="ar-titlerow">
             <div className="ar-title">
               <h1>Artifacts</h1>
-              <span>{arts.length} kept · {linkedCount} linked to ideas</span>
+              <span>{arts ? `${all.length} kept · ${linkedCount} linked to ideas` : 'Loading…'}{busy ? ' · saving…' : ''}</span>
             </div>
             <div className="ar-newwrap">
               <button className="ar-new" onClick={() => setMenu((m) => !m)} aria-expanded={menu}>
@@ -281,6 +330,12 @@ export function Artifacts() {
               )}
             </div>
           </div>
+          {err && (
+            <div className="ar-err" role="alert">
+              <span>{err}</span>
+              <button aria-label="Dismiss" onClick={() => setErr('')}>✕</button>
+            </div>
+          )}
           <div className="ar-search">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
               <circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" />
@@ -319,7 +374,7 @@ export function Artifacts() {
                       <span className="s">{excerpt(a)}</span>
                     </span>
                     <span className="meta">
-                      <span>{ageMs(a.at)}</span>
+                      <span>{ageMs(atOf(a))}</span>
                       <span>{a.links.slice(0, 2).map((i) => `#${i}`).join(' ')}{a.links.length > 2 ? ` +${a.links.length - 2}` : ''}</span>
                     </span>
                   </button>
@@ -329,7 +384,7 @@ export function Artifacts() {
           ))}
           {shown.length === 0 && (
             <div className="ar-empty">
-              <span className="l">{arts.length ? 'Nothing matches' : 'No artifacts yet'}</span>
+              <span className="l">{!arts ? 'Loading…' : all.length ? 'Nothing matches' : 'No artifacts yet'}</span>
               <span>Drop files here, or use New.</span>
             </div>
           )}
@@ -344,13 +399,13 @@ export function Artifacts() {
         {cur ? (() => {
           const t = typeOf(cur.type);
           const [host, path] = hostOf(cur.url);
-          const tags = cur.tags.map(areaOf).filter((x): x is (typeof AREAS)[number] => !!x);
+          const tags = cur.tags.map(areaOf);
           return (<>
             <div className="ar-viewbar">
               <span className="ar-badge" style={{ color: t.fg }}>{t.badge}</span>
-              <span className="when">{t.label} · edited {ageMs(cur.at)}</span>
+              <span className="when">{t.label} · edited {ageMs(atOf(cur))}</span>
               <span className="rc-grow" />
-              <button className="ar-discard" onClick={() => { setArts((xs) => xs.filter((a) => a.id !== cur.id)); setSel(null); setEditing(false); }}>
+              <button className="ar-discard" onClick={() => (isBlank(cur) ? discard(cur) : setConfirming(cur))}>
                 Discard
               </button>
               <button className={`ar-edit${editing ? ' on' : ''}`}
@@ -366,7 +421,7 @@ export function Artifacts() {
                       placeholder={untitled(cur)} aria-label="Title"
                       onChange={(e) => { const v = e.target.value; upd(cur.id, () => ({ title: v })); }} />
                     <div className="ar-tagbtns">
-                      {AREAS.map((a) => {
+                      {[...areas, ...cur.tags.filter((k) => !areas.some((x) => x.key === k)).map(areaOf)].map((a) => {
                         const on = cur.tags.includes(a.key);
                         return (
                           <button key={a.key} className={`ar-tagbtn${on ? ' on' : ''}`} aria-pressed={on}
@@ -390,8 +445,10 @@ export function Artifacts() {
                 {cur.type === 'design' && (
                   <label className="ar-well" onDragOver={(e) => e.preventDefault()}
                     onDrop={(e) => { e.preventDefault(); e.stopPropagation(); setDropping(false); setImg(e.dataTransfer.files, cur.id); }}>
-                    {cur.img
-                      ? <img src={cur.img} alt={cur.title || 'Mockup'} />
+                    {cur.file?.image
+                      ? <ArtImage slug={slug} a={cur} />
+                      : cur.file
+                      ? <span className="ar-wellempty">{cur.file.name} can't be previewed. Drop a PNG, JPEG, GIF or WebP to replace it.</span>
                       : <span className="ar-wellempty"><span className="plus">+</span>Drop a mockup, or click to pick an image</span>}
                     <input type="file" accept="image/*" hidden
                       onChange={(e) => { setImg(e.target.files, cur.id); e.target.value = ''; }} />
@@ -421,8 +478,13 @@ export function Artifacts() {
                     <span className="ar-fileicon">{extOf(cur)}</span>
                     <div className="main">
                       <span className="fname">{cur.file?.name || cur.title}</span>
-                      <span className="path">{cur.file ? fmtSize(cur.file.size) : ''}</span>
+                      <span className="path">{cur.file ? fmtSize(cur.file.size) : 'No file attached'}</span>
                     </div>
+                    {cur.file && (
+                      <button className="ar-open" onClick={() => { const f = cur.file!; void work(() => downloadArtifactFile(slug, cur.id, f.name)); }}>
+                        Download ↓
+                      </button>
+                    )}
                   </div>
                 )}
 
@@ -464,23 +526,26 @@ export function Artifacts() {
                     <button className="ar-linkbtn" onClick={() => setLinkOpen((o) => !o)} aria-expanded={linkOpen}>+ Link an idea</button>
                   </div>
                   <div className="ar-linkgrid">
-                    {cur.links.map(ideaOf).filter((n): n is (typeof IDEAS)[number] => !!n).map((n) => (
-                      <div key={n.id} className="ar-idea" style={{ background: STAGE_TINT[n.stage].bg }}>
+                    {cur.links.map(ideaOf).filter((n): n is RoadmapItem => !!n).map((n) => { const st = stageOf(n); return (
+                      <div key={n.id} className="ar-idea" style={{ background: STAGE_TINT[st].bg }}>
                         <div className="top">
-                          <span className="stage" style={{ color: STAGE_TINT[n.stage].fg }}>{n.stage}</span>
+                          <span className="stage" style={{ color: STAGE_TINT[st].fg }}>{st}</span>
                           <span className="rc-grow" />
                           <button className="x" title="Unlink" aria-label={`Unlink #${n.id}`}
                             onClick={() => upd(cur.id, (x) => ({ links: x.links.filter((i) => i !== n.id) }))}>✕</button>
                         </div>
                         <span className="t">{n.title}</span>
-                        <span className="ref">#{n.id}{n.taskId ? `  → ${n.taskId}` : ''}</span>
+                        <span className="ref">#{n.id}{st === 'promoted' ? '  · on the board' : ''}</span>
                       </div>
-                    ))}
+                    ); })}
                   </div>
                   {cur.links.length === 0 && <span className="ar-nolinks">Not linked to an idea yet.</span>}
                   {linkOpen && (
                     <div className="ar-linkopts">
-                      {IDEAS.filter((n) => !cur.links.includes(n.id)).map((n) => (
+                      {!ideas.some((n) => !cur.links.includes(n.id)) && (
+                        <span className="ar-nolinks">No kept ideas left to link. Ideas live on the Roadmap.</span>
+                      )}
+                      {ideas.filter((n) => !cur.links.includes(n.id)).map((n) => (
                         <button key={n.id} onClick={() => { upd(cur.id, (x) => ({ links: [...x.links, n.id] })); setLinkOpen(false); }}>
                           <span className="ref">#{n.id}</span><span className="t">{n.title}</span>
                         </button>
@@ -497,6 +562,11 @@ export function Artifacts() {
       </section>
 
       {dropping && <div className="ar-drop">Drop to add. Images become designs.</div>}
+      {confirming && (
+        <ConfirmModal title={`Discard ${confirming.title || untitled(confirming)}?`} danger confirmLabel="Discard"
+          body={confirming.file ? 'It is deleted with its file, and there is no undo.' : 'It is deleted, and there is no undo.'}
+          onConfirm={() => discard(confirming)} onCancel={() => setConfirming(null)} />
+      )}
     </div>
   );
 }

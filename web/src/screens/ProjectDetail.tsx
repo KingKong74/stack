@@ -511,11 +511,12 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
         // THE DESIGN'S THREE NEW ROWS ("Roadmap Canvas", 2026-10-12). Skills &
         // agents is wired to the app-wide profile and skill rows, so it carries
         // no chip and no count (a count would be the app's, not this
-        // project's). Artifacts and Loops are mockups with no backend: each
-        // wears the chip, and neither shows a number, because the mockup's
-        // number would sit beside real ones in the same rail.
+        // project's). Artifacts is wired to this project's artifacts, which
+        // are not in the payload, so it shows no count rather than fetch them
+        // for a badge. Loops is a mockup with no backend: it wears the chip,
+        // and shows no number beside real ones in the same rail.
         {
-          key: 'artifacts', label: 'Artifacts', icon: NavIcons.paperclip, mock: true,
+          key: 'artifacts', label: 'Artifacts', icon: NavIcons.paperclip,
           menu: placeMenu(hrefTo.detail(slug, 'artifacts'), 'artifacts'), onClick: () => setTab('artifacts'),
         },
         {
@@ -757,7 +758,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
         )}
 
         {/* The design's three tabs: each file's header says what is real. */}
-        {tab === 'artifacts' && <Artifacts />}
+        {tab === 'artifacts' && <Artifacts slug={slug} items={allRoadmap} />}
         {tab === 'agents' && <SkillsAgents />}
         {tab === 'loops' && <Loops />}
 

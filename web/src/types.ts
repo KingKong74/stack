@@ -920,3 +920,21 @@ export interface SessionPlan {
   itemIds: number[];
   body?: string;
 }
+
+// An artifact (server routes/artifacts.js): a doc, plan, design, link or file a
+// project keeps beside its work. `tags` are area names; `links` are this
+// project's roadmap_items ids. The bytes are never in this shape: `file` is
+// only their description, fetched on demand by getArtifactFileUrl.
+export type ArtifactType = 'doc' | 'plan' | 'design' | 'link' | 'file';
+export interface Artifact {
+  id: number;
+  type: ArtifactType;
+  title: string;
+  body: string;
+  url: string;
+  tags: string[];
+  links: number[];
+  file: { name: string; size: number; mime: string; image: boolean } | null;
+  createdAt: string;
+  updatedAt: string;
+}
