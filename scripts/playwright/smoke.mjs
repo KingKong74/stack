@@ -69,8 +69,8 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 //   dblclick  press it twice, for a control whose gesture IS the double press.
 //
 // THE BOARD TAB IS WIRED (web/src/detail/Board.tsx), and so are its two
-// sibling tabs, Backlog and Development; Development draws the host's live
-// branch report, so its press checks the report strip, not a branch row.
+// sibling tabs, Backlog and Development; Development draws live session data,
+// so its press checks that the ledger answered, not that a row exists.
 //
 // THIS HARNESS IS READ-ONLY, and a wired board is full of controls that write.
 // Every press here OPENS something — a popover, a menu, a composer, a filter —
@@ -325,13 +325,11 @@ const ROADMAP_PANELS = [
     id: 'board-dev-tab',
     label: 'Board — Development tab',
     click: '.km-tabs .k-tab:nth-child(3)',
-    // The head strip, not a branch row: the tab reads the host's live report,
-    // and a project with no branches on origin is a real state. `.km-devhead`
-    // is drawn once the read has answered (report or no report), never while
-    // it is still loading. There is no fold press: whether a branch exists to
-    // fold depends on the host, and a step that needs one would fail on a
-    // clean repo.
-    expect: '.km-dev .km-devhead',
+    // The ledger, not a row: the tab reads live data, and a project with no
+    // sessions yet is a real state. `.km-devledger.ready` is drawn once the
+    // read has answered, never while it is still loading. There is no fold
+    // press, since whether a row exists to fold depends on the data.
+    expect: '.km-dev .km-devledger.ready',
   },
 ];
 

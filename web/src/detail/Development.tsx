@@ -179,7 +179,9 @@ export function DevelopmentView({ slug, items, onOpen }: {
     <div className="km-dev">
       <NowStrip now={now} report={report} reportErr={reportErr} items={items} onOpen={onOpen} />
 
-      <div className="km-devgroup">
+      {/* `.ready` once the read has answered, entries or none: the smoke's
+          hook, since a loading ledger and a loaded one share every other class. */}
+      <div className={`km-devgroup km-devledger${entries !== null ? ' ready' : ''}`}>
         <div className="km-batchhead">
           <span className="lbl">Session ledger</span>
           <span className="rule" />
