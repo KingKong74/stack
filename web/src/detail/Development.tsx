@@ -38,7 +38,6 @@ import type {
   BranchReport, ReportedBranch, ReportedWorktree, LedgerEntry, LedgerNow, LedgerRun, LedgerSession,
 } from '../store';
 import { mergeStateOf, isMergeable, MERGE_STATE_META, parseBranch } from '../lib/branch';
-import { isBuilt } from '../lib/plan';
 import { useAutoRefresh } from '../lib/autoRefresh';
 import { timeAgo, dayLabel } from '../lib/ui';
 
@@ -51,6 +50,8 @@ const REPORT_STALE_MS = 30 * 60_000;
 // A presence ping older than this reads "quiet": the hook pings on activity,
 // so a session sitting at its prompt goes quiet long before its row expires.
 const QUIET_MS = 15 * 60_000;
+// Claimed items past this many fold behind a button: Now is for a glance.
+const CLAIMS_SHOWN = 5;
 
 const KIND_CHIPS: { value: Kind; label: string }[] = [
   { value: '', label: 'All' },
@@ -239,7 +240,13 @@ function NowStrip({ now, report, reportErr, items, onOpen }: {
   now: LedgerNow | null; report: BranchReport | null; reportErr: boolean;
   items: RoadmapItem[]; onOpen: (it: RoadmapItem) => void;
 }) {
-  const claimed = items.filter((it) => it.claimedBy.trim() !== '' && !isBuilt(it));
+  // In flight: claimed, and nothing has landed or been judged yet. A claim
+  // stays until a human merges and ticks, so a claimed row with a built_note
+  // or a verdict is finished work holding an old claim, not current activity.
+  const claimed = items.filter((it) =>
+    it.claimedBy.trim() !== '' && !it.done && it.builtNote.trim() === '' && it.reviewTag === '');
+  const [allClaims, setAllClaims] = useState(false);
+  const shownClaims = allClaims ? claimed : claimed.slice(0, CLAIMS_SHOWN);
   const trees = report ? report.worktrees.filter(holdsWork) : [];
   const seeTrees = !!report?.worktreesAt;
   const stale = !!report?.reportedAt && !(Date.now() - Date.parse(report.reportedAt) < REPORT_STALE_MS);
@@ -270,16 +277,21 @@ function NowStrip({ now, report, reportErr, items, onOpen }: {
         return (
           <NowRow key={`j-${j.id}`} tone={j.status === 'running' ? 'info' : j.status === 'paused' ? 'warning' : 'neutral'}
             icon="clock" title={`Autopilot ${j.kind}${j.itemId !== null ? ` · #${j.itemId}` : ''}`}
-            sub={j.itemTitle || j.detail || j.branch || '—'} tag={j.status}
+            sub={j.itemTitle || j.detail || j.branch || '—'} tag={j.status} plain
             onClick={it ? () => onOpen(it) : undefined} />
         );
       })}
 
-      {claimed.map((it) => (
-        <NowRow key={`c-${it.id}`} tone="neutral" icon="git-branch" title={`#${it.id} ${it.title}`}
-          sub={`claimed by ${it.claimedBy}`} tag={it.reviewTag ? 'sent back' : 'claimed, not built'}
+      {shownClaims.map((it) => (
+        <NowRow key={`c-${it.id}`} tone="neutral" icon="git-branch" title={`#${it.id} ${it.title}`} plain
+          sub={`claimed by ${it.claimedBy}`} tag="claimed, not built"
           onClick={() => onOpen(it)} />
       ))}
+      {claimed.length > CLAIMS_SHOWN && (
+        <button className="k-btn sm ghost km-devmore" onClick={() => setAllClaims(!allClaims)}>
+          {allClaims ? 'Fewer claims' : `${claimed.length - CLAIMS_SHOWN} more claimed item${claimed.length - CLAIMS_SHOWN === 1 ? '' : 's'}`}
+        </button>
+      )}
 
       {trees.map((w) => (
         <NowRow key={`w-${w.path}`} tone="warning" icon="code"
@@ -310,16 +322,18 @@ function NowStrip({ now, report, reportErr, items, onOpen }: {
   );
 }
 
-function NowRow({ tone, icon, title, sub, tag, hint, onClick }: {
+function NowRow({ tone, icon, title, sub, tag, hint, onClick, plain }: {
   tone: Tone; icon: 'terminal' | 'clock' | 'git-branch' | 'code'; title: string; sub: string; tag: string;
   hint?: string; onClick?: () => void;
+  /** A sentence (an item title), drawn in the body face, not as a ref. */
+  plain?: boolean;
 }) {
   const body = (
     <>
       <span className="caret" />
       <span className={`km-branchico tone-${tone}`}><KitIcon name={icon} size={13} /></span>
       <span className="mid">
-        <span className="top"><span className="br">{title}</span></span>
+        <span className="top"><span className={plain ? 'br km-devplain' : 'br'}>{title}</span></span>
         <span className="sub">{sub}</span>
       </span>
       {tag && <span className={tone === 'neutral' || tone === 'info' ? 'k-tag' : `k-tag ${tone}`}>{tag}</span>}
