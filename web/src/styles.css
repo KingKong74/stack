@@ -5544,6 +5544,7 @@ body[data-mc-full] .totop { display: none; }
 }
 .km-batch { display: flex; flex-direction: column; gap: var(--space-2); }
 .km-devgroup { display: flex; flex-direction: column; gap: var(--space-3); }
+.km-devsay { padding: 0 var(--space-4); font: var(--type-body-sm); color: var(--text-secondary); }
 .km-batchhead { display: flex; align-items: center; gap: var(--space-4); padding: 0 var(--space-4) var(--space-2); }
 .km-batchhead .lbl {
   flex: none; font: var(--type-eyebrow); letter-spacing: var(--tracking-caps);

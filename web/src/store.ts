@@ -1230,6 +1230,32 @@ export async function patchRoadmapItem(
 export async function getBoardShape(slug: string): Promise<BoardShape> {
   return request<BoardShape>(`/projects/${encodeURIComponent(slug)}/board`);
 }
+
+// ---- the host's branch report (GET /branches) -------------------------------
+//
+// The server cannot see git; the host dispatcher posts this snapshot every poll
+// (routes/branches.js). `reportedAt` null means NO REPORT HAS EVER ARRIVED,
+// which reads "Stack cannot see", never "no branches". `mergeClean` null means
+// no probe ran, and lib/branch.ts's `mergeStateOf` is the only reader of it.
+export interface ReportedBranch {
+  branch: string; ahead: number; behind: number; mergeClean: boolean | null;
+  subject: string; committedAt: string | null; itemId: number | null;
+  adds: number; dels: number; files: number; area: string;
+  topFiles: { path: string; adds: number; dels: number; binary: boolean }[];
+}
+export interface ReportedWorktree {
+  path: string; name: string; branch: string; head: string; subject: string;
+  committedAt: string | null; dirty: number; ahead: number;
+  unpushed: number | null;   // null = no upstream (never pushed), not zero
+  itemId: number | null; main: boolean; prunable: boolean;
+}
+export interface BranchReport {
+  reportedAt: string | null; branches: ReportedBranch[];
+  worktreesAt: string | null; worktrees: ReportedWorktree[];
+}
+export async function getBranchReport(slug: string): Promise<BranchReport> {
+  return request<BranchReport>(`/projects/${encodeURIComponent(slug)}/branches`);
+}
 // ---- areas (#473) ----------------------------------------------------------
 //
 // The routes have been there since the board's furniture was (routes/board.js);

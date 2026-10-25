@@ -68,9 +68,9 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 //             this harness testing a control and merely photographing it.
 //   dblclick  press it twice, for a control whose gesture IS the double press.
 //
-// THE BOARD TAB IS WIRED NOW (web/src/detail/Board.tsx) and its two sibling
-// tabs, Backlog and Development, are still mockups. That splits this list in
-// two, and the split is the reason for the ordering below.
+// THE BOARD TAB IS WIRED (web/src/detail/Board.tsx), and so are its two
+// sibling tabs, Backlog and Development; Development draws the host's live
+// branch report, so its press checks the report strip, not a branch row.
 //
 // THIS HARNESS IS READ-ONLY, and a wired board is full of controls that write.
 // Every press here OPENS something — a popover, a menu, a composer, a filter —
@@ -325,15 +325,13 @@ const ROADMAP_PANELS = [
     id: 'board-dev-tab',
     label: 'Board — Development tab',
     click: '.km-tabs .k-tab:nth-child(3)',
-    expect: '.km-dev .km-branch',
-  },
-  // The LAST group holds one branch and it is closed at first paint, so its
-  // body is the one thing on this screen that cannot already be there.
-  {
-    id: 'board-branch-fold',
-    label: 'Development — branch folds open',
-    click: '.km-devgroup:last-child .km-branchhead',
-    expect: '.km-devgroup:last-child .km-branchbody',
+    // The head strip, not a branch row: the tab reads the host's live report,
+    // and a project with no branches on origin is a real state. `.km-devhead`
+    // is drawn once the read has answered (report or no report), never while
+    // it is still loading. There is no fold press: whether a branch exists to
+    // fold depends on the host, and a step that needs one would fail on a
+    // clean repo.
+    expect: '.km-dev .km-devhead',
   },
 ];
 

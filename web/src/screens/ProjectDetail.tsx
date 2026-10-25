@@ -722,7 +722,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
             that same payload (#477 — the boxes its Backlog tab fills, and the
             one the runner reads), a re-read, and the item modal, which is still
             the only writer of a human `risk_source`. Its Backlog tab is wired
-            too now; Development is the last mockup on this screen. Board.tsx's
+            too, and Development reads the host's branch report. Board.tsx's
             header lists the decisions each wiring made and the one thing no
             browser can still do — give a verdict. Roadmap is wired (#472) and
             draws what this does not. */}

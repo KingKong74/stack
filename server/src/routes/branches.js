@@ -6,8 +6,8 @@ import { projectBySlug } from '../resolve.js';
 // report (#207). The server can't see git (the repos live on the host, behind
 // the firewall), so the dispatcher pushes a snapshot every ~10 minutes: every
 // origin branch with ahead/behind counts vs origin/main, a merge-tree conflict
-// probe and the item id parsed from the lane name. Write side only — Mission
-// Control reads the report folded into the control payload's merge strip.
+// probe and the item id parsed from the lane name. The board's Development tab
+// reads it back through GET below.
 // #365 — the same post can carry the host's git WORKTREES, surfacing work
 // sitting uncommitted or unpushed in a parallel autopilot checkout that no
 // pushed ref would ever reveal.
@@ -78,6 +78,25 @@ const cleanTree = (w) => {
     prunable: !!w.prunable,
   };
 };
+
+// GET / — the last report as it was posted. `reportedAt` null means the host
+// has never reported this project, which the client must say as "Stack cannot
+// see", never as "no branches". `worktreesAt` is separate because an older
+// dispatcher (or a host git failure) reports branches without worktrees.
+branches.get('/', async (req, res) => {
+  const project = await projectBySlug(req.params.slug);
+  if (!project) return res.status(404).json({ error: 'No such project.' });
+  const { rows } = await q(
+    `SELECT report, reported_at, worktrees, worktrees_at FROM branch_reports WHERE project_id = $1`,
+    [project.id]);
+  const r = rows[0];
+  res.json({
+    reportedAt: r?.reported_at ? new Date(r.reported_at).toISOString() : null,
+    branches: Array.isArray(r?.report) ? r.report : [],
+    worktreesAt: r?.worktrees_at ? new Date(r.worktrees_at).toISOString() : null,
+    worktrees: Array.isArray(r?.worktrees) ? r.worktrees : [],
+  });
+});
 
 // POST / — replace the project's report whole (the dispatcher's snapshot).
 branches.post('/', async (req, res) => {
