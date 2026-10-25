@@ -1,6 +1,6 @@
 // THE BOARD IS WIRED. Its kanban reads `roadmap_items` and writes them back,
 // and so does the Backlog tab since #477 made it the sprint surface. The
-// Development tab reads the host's branch report and writes nothing.
+// Development tab is the audit trail and lives in detail/Development.tsx.
 //
 // This is `ui_kits/console/BoardScreen.jsx` ported to TS (#443/#447) and then
 // given the data it was drawn for. The kanban half now reads the project's own
@@ -133,7 +133,7 @@ import { KitIcon } from './kit/KitIcon';
 import type { BoardArea, BoardList, ItemKind, Priority, RoadmapItem, Sprint, SprintPlan } from '../types';
 import { listKeyOf, queueOrder, isBoardWork } from '../lib/plan';
 import { isHeld } from '../lib/approval';
-import { PRIORITY_META, PRIORITY_DEFAULT, priorityMeta, dueRead, ITEM_KIND_LABEL, timeAgo } from '../lib/ui';
+import { PRIORITY_META, PRIORITY_DEFAULT, priorityMeta, dueRead, ITEM_KIND_LABEL } from '../lib/ui';
 import {
   getBoardShape, createList, patchList, deleteList,
   createArea, patchArea, deleteArea,
@@ -141,11 +141,9 @@ import {
   createRoadmapItem, patchRoadmapItem, deleteRoadmapItem,
   createSprint, patchSprint, putSprintOrder, deleteSprint, putReadyQueue,
   startBuild, planSprint,
-  queueTermLaunch, getBranchReport,
+  queueTermLaunch,
 } from '../store';
-import type { BranchReport, ReportedBranch, ReportedWorktree } from '../store';
-import { mergeStateOf, isMergeable, MERGE_STATE_META, parseBranch } from '../lib/branch';
-import { useAutoRefresh } from '../lib/autoRefresh';
+import { DevelopmentView } from './Development';
 import { go } from '../lib/route';
 import { newTermName, termClaim, launchBrief } from '../lib/termLaunch';
 import type { BoardFolds, BoardView, BoardSort, BoardShow } from '../store';
@@ -854,8 +852,9 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
           </div>
         </div>
 
-        {/* All three are wired; Development reads the host's branch report and
-            polls it on its own (its block further down). Switching tabs changes which is drawn and nothing else — no
+        {/* All three are wired; Development is the project's audit trail
+            (detail/Development.tsx) and polls on its own. Switching tabs
+            changes which is drawn and nothing else — no
             route key, no fetch.
 
             THE BACKLOG'S BADGE IS THE SPRINT IN PROGRESS, not a row count, and
@@ -891,7 +890,7 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
             onCreate={() => setDialog(true)} onEdit={onEdit}
             onWrote={setRows} onRefresh={onRefresh} onError={setErr} />
         )}
-        {view === 'dev' && <DevelopmentView slug={slug} items={rows} />}
+        {view === 'dev' && <DevelopmentView slug={slug} items={rows} onOpen={onEdit} />}
 
         {view === 'board' && <>
         <div className="km-toolbar">
@@ -3209,251 +3208,5 @@ function BacklogRow({ row, rank, inSprint, runs, lists, dragging, landed, onGrab
       <span className="pri" style={{ color: pri.color }} title={`Priority — ${pri.label}`}>{pri.glyph}</span>
       {row.estimate !== null && <span className="pts" title="Estimate, in weeks">{row.estimate}w</span>}
     </div>
-  );
-}
-
-/* ==========================================================================
-   DEVELOPMENT — the host's branch report, read back (GET /branches).
-
-   The server cannot see git. The host dispatcher posts a snapshot every poll:
-   each origin branch with ahead/behind, a merge-tree probe and its diff, plus
-   the host's worktrees. This view draws that snapshot and nothing else.
-
-   THE GROUPS ARE `mergeStateOf`'s FOUR STATES, NEVER A LOCAL GUESS. `unprobed`
-   is not `clean` (lib/branch.ts), so a branch nobody probed sits in its own
-   group and never in Can land. A branch with nothing ahead of main was never
-   probed because there was nothing to probe; it gets its own group too rather
-   than reading as an unprobed risk.
-
-   NO REPORT IS NOT NO BRANCHES. `reportedAt` null says Stack cannot see, out
-   loud; an old report says how old it is.
-
-   THERE ARE NO BUTTONS. A merge is a verdict's consequence and a verdict is
-   not reachable from a browser (web/CLAUDE.md); the Inbox's Approve & merge is
-   the one place that queues one. The kit's Merge, Rebase and Close branch
-   would be a second, ungated route to the same act.
-   ========================================================================== */
-
-type Tone = 'danger' | 'info' | 'warning' | 'success' | 'neutral';
-
-// A report older than this reads as stale. The dispatcher posts every few
-// minutes, so half an hour means it has stopped, not that it is slow.
-const REPORT_STALE_MS = 30 * 60_000;
-
-type DevGroup = { key: string; label: string; tone: Tone; rows: ReportedBranch[]; say: string };
-
-function groupBranches(list: ReportedBranch[]): DevGroup[] {
-  const by: Record<string, ReportedBranch[]> = { conflict: [], land: [], unprobed: [], level: [] };
-  for (const b of list) {
-    if (b.ahead === 0) { by.level.push(b); continue; }
-    const s = mergeStateOf(b);
-    by[s === 'conflict' ? 'conflict' : isMergeable(s) ? 'land' : 'unprobed'].push(b);
-  }
-  return [
-    { key: 'conflict', label: 'Conflicts with main', tone: 'danger' as Tone, rows: by.conflict,
-      say: MERGE_STATE_META.conflict.hint },
-    { key: 'land', label: 'Merges clean', tone: 'success' as Tone, rows: by.land,
-      say: 'The probe says these merge into main. That is not a verdict: they still need one.' },
-    { key: 'unprobed', label: 'Unprobed', tone: 'neutral' as Tone, rows: by.unprobed,
-      say: MERGE_STATE_META.unprobed.hint },
-    { key: 'level', label: 'Nothing ahead of main', tone: 'neutral' as Tone, rows: by.level,
-      say: 'Already landed, or never committed to. Nothing here would merge.' },
-  ].filter((g) => g.rows.length > 0);
-}
-
-// A worktree is worth showing when it holds work that origin cannot see:
-// uncommitted files, commits not pushed, or commits on a branch with no
-// upstream at all. The rest are idle checkouts and are only counted.
-const holdsWork = (w: ReportedWorktree) =>
-  w.dirty > 0 || (w.unpushed ?? 0) > 0 || (w.unpushed === null && w.ahead > 0);
-
-function DevelopmentView({ slug, items }: { slug: string; items: RoadmapItem[] }) {
-  const [report, setReport] = useState<BranchReport | null>(null);
-  const [failed, setFailed] = useState('');
-  const [open, setOpen] = useState<string | null>(null);
-
-  const read = useCallback(async () => {
-    try { setReport(await getBranchReport(slug)); setFailed(''); }
-    catch (e) { setFailed((e as Error)?.message || 'Could not read the branch report.'); }
-  }, [slug]);
-  useEffect(() => { setReport(null); read(); }, [read]);
-  // The report moves on the host's clock, so the tab follows it through the
-  // shared poll rather than going stale while it is open.
-  useAutoRefresh(read);
-
-  const titleOf = useMemo(() => {
-    const m = new Map<number, string>();
-    for (const r of items) m.set(r.id, r.title);
-    return (id: number | null) => (id === null ? '' : m.get(id) || '');
-  }, [items]);
-
-  if (failed && !report) return <div className="km-dev"><div className="km-err" role="alert">{failed}</div></div>;
-  if (!report) return <div className="km-dev"><div className="km-pull"><span className="say">Reading the branch report…</span></div></div>;
-
-  if (!report.reportedAt) {
-    return (
-      <div className="km-dev">
-        <div className="km-pull km-devhead">
-          <span className="lbl">No report</span>
-          <span className="say">
-            Stack cannot see this project’s branches. The host dispatcher has never posted a branch
-            report for it, which is not the same as there being none.
-          </span>
-        </div>
-      </div>
-    );
-  }
-
-  const age = Date.now() - Date.parse(report.reportedAt);
-  const stale = !(age < REPORT_STALE_MS);
-  const groups = groupBranches(report.branches);
-  const working = report.worktrees.filter(holdsWork);
-  const idle = report.worktrees.length - working.length;
-
-  return (
-    <div className="km-dev">
-      <div className={`km-pull km-devhead${stale ? '' : ' on'}`}>
-        <span className="lbl">{stale ? 'Stale report' : 'Host report'}</span>
-        <span className="say">
-          {report.branches.length} branch{report.branches.length === 1 ? '' : 'es'} on origin ·
-          reported {timeAgo(report.reportedAt)}
-          {stale && ' — the dispatcher has stopped posting, so this is what was true then'}
-        </span>
-      </div>
-
-      {failed && <div className="km-err" role="alert">{failed}</div>}
-
-      {groups.length === 0 && (
-        <div className="km-devgroup">
-          <span className="km-devsay">No branches on origin besides main.</span>
-        </div>
-      )}
-
-      {groups.map((g) => (
-        <div className="km-devgroup" key={g.key}>
-          <div className="km-batchhead" title={g.say}>
-            <span className={`lbl tone-${g.tone}`}>{g.label}</span>
-            <span className="n">{g.rows.length}</span>
-            <span className="rule" />
-          </div>
-          {g.rows.map((b) => (
-            <BranchRow key={b.branch} row={b} tone={g.tone} title={titleOf(b.itemId)}
-              open={open === b.branch} onToggle={() => setOpen(open === b.branch ? null : b.branch)} />
-          ))}
-        </div>
-      ))}
-
-      {report.worktreesAt !== null && (
-        <div className="km-devgroup">
-          <div className="km-batchhead"
-            title="Host checkouts holding work origin cannot see: uncommitted files or unpushed commits.">
-            <span className="lbl tone-warning">Not on origin yet</span>
-            <span className="n">{working.length}</span>
-            <span className="rule" />
-          </div>
-          {working.length === 0 && (
-            <span className="km-devsay">
-              Every worktree is clean and pushed{idle > 0 ? ` (${idle} idle)` : ''}.
-            </span>
-          )}
-          {working.map((w) => <WorktreeRow key={w.path} tree={w} title={titleOf(w.itemId)} />)}
-          {working.length > 0 && idle > 0 && (
-            <span className="km-devsay">{idle} more worktree{idle === 1 ? ' is' : 's are'} clean and pushed.</span>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-const TONE_ICON: Record<Tone, 'circle-alert' | 'clock' | 'circle-check' | 'git-branch'> = {
-  danger: 'circle-alert', success: 'circle-check', warning: 'clock', info: 'git-branch', neutral: 'git-branch',
-};
-
-function BranchRow({ row, tone, title, open, onToggle }: {
-  row: ReportedBranch; tone: Tone; title: string; open: boolean; onToggle: () => void;
-}) {
-  const parsed = parseBranch(row.branch);
-  const state = row.ahead === 0 ? null : mergeStateOf(row);
-  const ref = parsed.itemId !== null ? `#${parsed.itemId}` : parsed.bugKey;
-  const more = row.files - row.topFiles.length;
-  return (
-    <section className={`km-branch${open ? ' open' : ''}`}>
-      <button className="km-branchhead" onClick={onToggle} aria-expanded={open}>
-        <span className="caret">{open ? '▾' : '▸'}</span>
-        <span className={`km-branchico tone-${tone}`}><KitIcon name={TONE_ICON[tone]} size={13} /></span>
-
-        <span className="mid">
-          <span className="top">
-            <span className="br">{row.branch}</span>
-            {ref && <span className="id">{ref}</span>}
-          </span>
-          <span className="sub">{title || row.subject || '—'}</span>
-        </span>
-
-        <span className="delta" title="Commits ahead of / behind origin/main">↑{row.ahead} ↓{row.behind}</span>
-        {row.files > 0 && (
-          <span className="diff">
-            <span className="add">+{row.adds}</span>
-            <span className="del">−{row.dels}</span>
-          </span>
-        )}
-        {state && (
-          <span className={state === 'unprobed' ? 'k-tag' : `k-tag ${tone}`} title={MERGE_STATE_META[state].hint}>
-            {MERGE_STATE_META[state].label}
-          </span>
-        )}
-        <span className="age">{timeAgo(row.committedAt).replace(' ago', '')}</span>
-      </button>
-
-      {open && (
-        <div className="km-branchbody">
-          <div className="commits">
-            <div className="commit">
-              <span className="sha">tip</span>
-              <span className="msg">{row.subject || '(no subject)'}</span>
-            </div>
-          </div>
-          {row.topFiles.length > 0 && (
-            <div className="commits">
-              {row.topFiles.map((f) => (
-                <div className="commit" key={f.path}>
-                  <span className="sha">{f.binary ? 'bin' : `+${f.adds} −${f.dels}`}</span>
-                  <span className="msg">{f.path}</span>
-                </div>
-              ))}
-              {more > 0 && <span className="km-devsay">… {more} more file{more === 1 ? '' : 's'}</span>}
-            </div>
-          )}
-          {row.area && <span className="km-devsay">Area: {row.area}</span>}
-        </div>
-      )}
-    </section>
-  );
-}
-
-function WorktreeRow({ tree, title }: { tree: ReportedWorktree; title: string }) {
-  const bits = [
-    tree.dirty > 0 && `${tree.dirty} uncommitted`,
-    (tree.unpushed ?? 0) > 0 && `${tree.unpushed} unpushed`,
-    tree.unpushed === null && tree.ahead > 0 && `${tree.ahead} ahead, no upstream`,
-  ].filter(Boolean).join(' · ');
-  return (
-    <section className="km-branch">
-      <div className="km-branchhead" title={tree.path}>
-        <span className="caret" />
-        <span className="km-branchico tone-warning"><KitIcon name="code" size={13} /></span>
-        <span className="mid">
-          <span className="top">
-            <span className="br">{tree.branch || tree.head}</span>
-            {tree.itemId !== null && <span className="id">#{tree.itemId}</span>}
-            {tree.main && <span className="k-tag">shared checkout</span>}
-          </span>
-          <span className="sub">{title || tree.subject || tree.path}</span>
-        </span>
-        <span className="k-tag warning">{bits}</span>
-        <span className="age">{timeAgo(tree.committedAt).replace(' ago', '')}</span>
-      </div>
-    </section>
   );
 }

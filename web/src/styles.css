@@ -5545,6 +5545,22 @@ body[data-mc-full] .totop { display: none; }
 .km-batch { display: flex; flex-direction: column; gap: var(--space-2); }
 .km-devgroup { display: flex; flex-direction: column; gap: var(--space-3); }
 .km-devsay { padding: 0 var(--space-4); font: var(--type-body-sm); color: var(--text-secondary); }
+/* The Development tab's ledger (detail/Development.tsx). Rows reuse the
+   branch row's box; these are the pieces a session row has and a branch
+   row does not. */
+.km-devbar { padding: 0 var(--space-4); }
+.km-devday { display: flex; flex-direction: column; gap: var(--space-3); }
+.km-devdaylbl { padding: var(--space-3) var(--space-4) 0; font: var(--type-caption); color: var(--text-tertiary); }
+.km-devtime { flex: none; font: var(--weight-regular) var(--text-xs)/1 var(--font-mono); color: var(--text-tertiary); }
+.km-branchhead .top .id { cursor: pointer; }
+.km-branchhead .sub.km-devlede { color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.km-devfield { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: var(--space-4); align-items: baseline; }
+.km-devfield .lbl { font: var(--type-caption); color: var(--text-tertiary); }
+.km-devfield .val { min-width: 0; font: var(--type-body-sm); color: var(--text-secondary); overflow-wrap: anywhere; }
+.km-devfield ul { margin: 0; padding-left: var(--space-6); }
+.km-devtags { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.km-devmore { align-self: center; }
+@media (max-width: 640px) { .km-devfield { grid-template-columns: minmax(0, 1fr); gap: var(--space-1); } }
 .km-batchhead { display: flex; align-items: center; gap: var(--space-4); padding: 0 var(--space-4) var(--space-2); }
 .km-batchhead .lbl {
   flex: none; font: var(--type-eyebrow); letter-spacing: var(--tracking-caps);

@@ -1256,6 +1256,52 @@ export interface BranchReport {
 export async function getBranchReport(slug: string): Promise<BranchReport> {
   return request<BranchReport>(`/projects/${encodeURIComponent(slug)}/branches`);
 }
+
+// ---- the Development tab's audit trail (GET /ledger) -----------------------
+//
+// Interactive Claude Code sessions and autopilot runs on one timeline. Each
+// entry keeps its own spend and nothing here sums the two: a session's tokens
+// are a human's choice, a run's answer to the model policy (root CLAUDE.md).
+// A run's empty `reviewVerdict` means NO REVIEW RAN, never clean.
+export interface LedgerSession {
+  kind: 'session'; id: number; at: string; sessionId: string;
+  authored: boolean;            // a /checkpoint write-up, not the hook's backstop
+  source: string; summary: string; phase: string; branch: string; commit: string;
+  model: string; reason: string;
+  messages: number | null;      // null = unrecorded
+  tokens: number;               // 0 = unknown
+  modelUsage: Record<string, { inputTokens?: number; outputTokens?: number }>;
+  agentCalls: number; agentTypes: Record<string, number>;
+  files: string[]; filesTotal: number; tools: string[];
+  nextSteps: string[]; blockers: string[]; geminiNote: string;
+}
+export interface LedgerRun {
+  kind: 'run'; id: string; at: string; startedAt: string | null;
+  itemId: number | null; itemTitle: string; branch: string; outcome: string;
+  commits: number; tokens: number; costUsd: number;
+  checksFailing: number | null;  // null = the suite did not run
+  summary: string; autoVerdict: string;
+  reviewVerdict: string; reviewNote: string;   // '' = no review ran
+  architectVerdict: string; architectNote: string;
+  tmuxSession: string | null;
+}
+export type LedgerEntry = LedgerSession | LedgerRun;
+export interface LedgerNow {
+  sessions: { sessionId: string; branch: string; cwd: string; startedAt: string | null; lastSeenAt: string | null }[];
+  jobs: { id: number; kind: string; itemId: number | null; itemTitle: string; status: string;
+    detail: string; branch: string; createdAt: string | null; startedAt: string | null }[];
+}
+export interface LedgerPage { entries: LedgerEntry[]; nextBefore: string | null; now: LedgerNow | null }
+export async function getLedger(
+  slug: string, opts: { before?: string; kind?: '' | 'session' | 'run'; limit?: number } = {},
+): Promise<LedgerPage> {
+  const qs = [
+    opts.before ? `before=${encodeURIComponent(opts.before)}` : '',
+    opts.kind ? `kind=${opts.kind}` : '',
+    opts.limit ? `limit=${opts.limit}` : '',
+  ].filter(Boolean).join('&');
+  return request<LedgerPage>(`/projects/${encodeURIComponent(slug)}/ledger${qs ? `?${qs}` : ''}`);
+}
 // ---- areas (#473) ----------------------------------------------------------
 //
 // The routes have been there since the board's furniture was (routes/board.js);

@@ -23,6 +23,7 @@ import { auth } from './routes/auth.js';
 import { devices } from './routes/devices.js';
 import { autopilot, autopilotGlobal } from './routes/autopilot.js';
 import { branches } from './routes/branches.js';
+import { ledger } from './routes/ledger.js';
 import { previews, previewsGlobal } from './routes/previews.js';
 import { terminal } from './routes/terminal.js';
 import { triage } from './routes/triage.js';
@@ -94,6 +95,8 @@ app.use('/api/projects/:slug/artifacts', requireToken, artifacts);
 app.use('/api/projects/:slug/plans', requireToken, plans);
 app.use('/api/projects/:slug/autopilot', requireToken, autopilot);
 app.use('/api/projects/:slug/branches', requireToken, branches);
+// The Development tab's audit trail: sessions and autopilot runs, plus what is live.
+app.use('/api/projects/:slug/ledger', requireToken, ledger);
 app.use('/api/projects/:slug/previews', requireToken, previews);
 app.use('/api/autopilot', requireToken, autopilotGlobal);
 // Everything waiting on the human, across projects — see routes/inbox.js.

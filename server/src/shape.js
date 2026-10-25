@@ -280,6 +280,42 @@ export function activityShape(row) {
   };
 }
 
+// One interactive Claude Code session as the Development tab's ledger draws it:
+// activityShape's narrative plus the audit columns Activity leaves out. The
+// list fields are capped here so one huge session can't bloat a page of the
+// trail; `filesTotal` is the true count, so a reader can say "… N more".
+// `modelUsage` '{}' means the post carried none, not that it ran nothing, and
+// it is a human's spend: never summed with autopilot_runs (root CLAUDE.md).
+const LEDGER_FILES = 40;
+export function ledgerSessionShape(row) {
+  const files = Array.isArray(row.files_touched) ? row.files_touched : [];
+  return {
+    kind: 'session',
+    id: row.id,
+    at: row.created_at ? new Date(row.created_at).toISOString() : '',
+    sessionId: row.session_id || '',
+    authored: !!row.authored,           // a /checkpoint write-up, not the hook's backstop
+    source: row.source || 'hook',
+    summary: row.summary || '',
+    phase: row.current_phase || '',
+    branch: row.branch || '',
+    commit: row.commit_hash || '',
+    model: row.model || '',
+    reason: row.reason || '',
+    messages: row.message_count ?? null, // null = unrecorded, not zero
+    tokens: Number(row.tokens_used) || 0, // BIGINT → string; 0 = unknown
+    modelUsage: row.model_usage && typeof row.model_usage === 'object' ? row.model_usage : {},
+    agentCalls: Number(row.agent_calls) || 0,
+    agentTypes: row.agent_types && typeof row.agent_types === 'object' ? row.agent_types : {},
+    files: files.slice(0, LEDGER_FILES).map(String),
+    filesTotal: files.length,
+    tools: Array.isArray(row.tools_used) ? row.tools_used.slice(0, 30) : [],
+    nextSteps: Array.isArray(row.next_steps) ? row.next_steps : [],
+    blockers: Array.isArray(row.blockers) ? row.blockers : [],
+    geminiNote: row.gemini_note || '',
+  };
+}
+
 // Per-week push count helper input is just a number; metaLine/progress are
 // computed by the caller (they need cross-table data).
 export function projectListShape(p, { progress, metaLine, pushesThisWeek }) {
