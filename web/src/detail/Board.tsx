@@ -41,16 +41,16 @@
 //     FLEET cap, not a column's.
 //  6a. THE AREAS ARE GROUPED INSIDE THE COLUMNS (Board v5). The columns lead;
 //     inside each one the cards group by area under a small head (dot, name,
-//     count), which can be switched off for flat columns (`bview.flat`). The
-//     area chips across the top FILTER, several at once, and "All areas"
-//     clears them; one area picked gets its own head above the columns, which
-//     is where an area is renamed, recoloured and deleted (`scope`). `.im-chip`
-//     and `.im-sechead` are SHARED with detail/Roadmap.tsx rather than copied
-//     as `.km-*`: two stylesheets for one look is how two screens stop matching.
+//     count, the area's ⋯), which can be switched off for flat columns
+//     (`bview.flat`). The filter row lists EVERY area on the board as a toggle,
+//     several at once, with a Clear while any is on — the design's legend,
+//     exactly. ＋ New area sits in the toolbar. `.im-chip` is SHARED with
+//     detail/Roadmap.tsx rather than copied as `.km-*`: two stylesheets for
+//     one look is how two screens stop matching.
 //     Two things the kit's version could not know. An area here is
 //     `roadmap_items.area`, and **(project, area) IS THE OVERNIGHT LANE**
-//     (#267) — so a group head says when its lane is HELD and the scope head
-//     says by which branch; and untagged is an area like any other, which can
+//     (#267) — so a group head says when its lane is HELD, and by which
+//     branch on hover; and untagged is an area like any other, which can
 //     never be a lane at all. A DROP NEVER RE-FILES AN AREA: it writes
 //     `list_key` alone, because re-filing would re-partition the night's
 //     concurrency as a side effect of moving a card to In Progress.
@@ -442,17 +442,21 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
   // Registered areas first, in the board's own order, then any area that
   // exists only because some row mentions it — `area` is a free string and a
   // pushed-in area is a real area (routes/board.js says why). Untagged last.
+  // Read off every row on the board, NOT the searched set: the filter row lists
+  // every area whatever the search box says (Board v5), and a chip that
+  // vanished mid-search would take a live pick with it.
   const areaOrder = useMemo(() => {
     const order = [...areas.map((a) => a.name)];
     let untagged = false;
-    for (const it of visible) {
+    for (const it of rows) {
+      if (it.archived || !isBoardWork(it)) continue;
       const k = areaKey(it);
       if (k === UNTAGGED) untagged = true;
       else if (!order.includes(k)) order.push(k);
     }
     if (untagged) order.push(UNTAGGED);
     return order;
-  }, [visible, areas]);
+  }, [rows, areas]);
 
   // The lane holder per area: an OPEN item with a branch on it. Same predicate
   // as the server's holders query — not done, claim non-empty — and read off
@@ -509,25 +513,17 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
   }, [drawn, lists, areaOrder, grouped, activeId]);
 
   // The chips: every area with cards on the board right now, plus untagged.
+  // THE FILTER ROW, AS THE DESIGN HAS IT: every area on the board, each with
+  // the number of its cards the search box still matches — zero included, so
+  // a chip says what pressing it would show rather than disappearing.
   const chips = useMemo(() => {
     const counts = new Map<string, number>();
     for (const it of visible) counts.set(areaKey(it), (counts.get(areaKey(it)) || 0) + 1);
-    const registered = new Set(areas.filter((a) => a.registered).map((a) => a.name));
-    // A registered area earns a chip at zero — you cannot pick an area the bar
-    // refuses to draw, and a just-created area is exactly that.
-    return areaOrder
-      .filter((k) => counts.has(k) || registered.has(k))
-      .map((k) => ({ ...areaMeta(k), n: counts.get(k) || 0 }));
+    return areaOrder.map((k) => ({ ...areaMeta(k), n: counts.get(k) || 0 }));
   }, [visible, areas, areaOrder, holders]);
-
-  // ONE AREA PICKED GETS ITS OWN HEAD above the columns: the lane line, the
-  // total and the area's ⋯. That is where an area is renamed, recoloured and
-  // deleted now that it has no section — and it is drawn even at zero cards,
-  // which is what makes a just-created area usable immediately.
-  const scope = picked.length === 1 ? (() => {
-    const mine = drawn;
-    return { ...areaMeta(picked[0]), count: mine.length, pts: pointsOf(mine) };
-  })() : null;
+  // What an area's ⋯ says it would untag on delete: every card in it, not the
+  // searched few.
+  const areaTotal = (k: string) => rows.filter((it) => !it.archived && isBoardWork(it) && areaKey(it) === k).length;
 
   // How many ideas hang off each item. Counted off `rows`, never `visible`: a
   // child is by definition not on the board, so counting the drawn set would
@@ -781,8 +777,7 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
   // AND PICK IT. An area is registered with nothing in it by definition, so
   // without this the create would land, the chip would appear, and the board
   // would look exactly as it did. Picking it alone is what makes it "usable
-  // immediately": its head appears with its ⋯, and the next card created is
-  // born in it (`homeArea`). The key comes off the RESPONSE rather than off the
+  // immediately": the next card created is born in it (`homeArea`). The key comes off the RESPONSE rather than off the
   // typed string, because the server normalises a name (lowercase, trimmed to
   // 40) and picking what was typed would miss.
   const addArea = (name: string) =>
@@ -952,6 +947,10 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
             </button>
           )}
 
+          {/* #473 — registering an area. It lives in the toolbar rather than the
+              filter row, which holds the areas and nothing else (Board v5). */}
+          {!listMode && <AddArea onAdd={addArea} />}
+
           <span className="km-count">
             {listMode
               ? `${listRows.length} item${listRows.length === 1 ? '' : 's'}, ideas included`
@@ -968,69 +967,21 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
 
         {!listMode && <>
 
-        {/* THE AREA FILTER — the Roadmap tab's own chips, on this project's
-            real areas and their own stored colours. Each toggles; several can
-            be on; "All areas" clears them. A chip left out of a live filter
-            dims, so the row says which areas you are NOT looking at. */}
+        {/* THE AREA FILTER (Board v5) — every area on the board, each a toggle;
+            several can be on at once. While any is, the rest dim and Clear
+            appears; nothing picked is every area. The chips are the Roadmap
+            tab's own (`AreaChip`), on this project's stored colours. */}
         <div className="im-bar km-scope">
-          <AreaChip label="All areas" count={visible.length}
-            active={picked.length === 0} onClick={clearPicked} />
-          <span className="im-chipsep" />
-          {/* #473 — this registers an area. It sits at the FRONT of the chips
-              so the row's last chip is always an area, which is what
-              `scripts/playwright/smoke.mjs` presses. */}
-          <AddArea onAdd={addArea} />
           {chips.map((c) => (
             <AreaChip key={c.key} areaKey={c.key} label={c.name} dot={c.dot} count={c.n}
               active={picked.includes(c.key)}
               dim={picked.length > 0 && !picked.includes(c.key)}
               onClick={() => pickArea(c.key)} />
           ))}
+          {picked.length > 0 && (
+            <button className="km-clearpick" onClick={clearPicked}>Clear</button>
+          )}
         </div>
-
-        {scope && (
-          <div className="im-sechead km-scopehead" data-area={scope.key}>
-            {/* THE DOT IS A LEAF, and that is not cosmetic. An area's colour is
-                DATA (`project_areas.dot`), and the palette audit exempts a data
-                tone only on the element whose own `style` names that property.
-                A `background` on a childless span leaks onto nothing. */}
-            <span className={`ico${scope.untagged ? ' global' : ''}`}>
-              <KitIcon name={scope.untagged ? 'layers' : 'layout-grid'} size={13} />
-            </span>
-            {scope.dot && <span className="km-dot" style={{ background: scope.dot }} />}
-            <span className="nm">{scope.name}</span>
-            {/* THE ONE FACT ABOUT AN AREA THAT CHANGES WHAT THE NIGHT CAN DO. */}
-            <span className="scope">
-              {scope.untagged
-                ? 'Never a lane — untagged work neither holds one nor waits on one'
-                : scope.holder
-                  ? `Lane held by ${scope.holder} — no second worker until it lands`
-                  : 'Lane free'}
-            </span>
-            <span className="n">{scope.count} {scope.count === 1 ? 'card' : 'cards'}</span>
-            {/* #507 — the total, and how much of it is missing. Absent when
-                nothing here has points: "0 pts" over unpointed work is a lie. */}
-            {scope.pts.sum > 0 && (
-              <span className="n km-pts-total"
-                title={scope.pts.unsized
-                  ? `${scope.pts.sum} points across this area, with ${scope.pts.unsized} card${scope.pts.unsized === 1 ? '' : 's'} unsized and not counted`
-                  : `${scope.pts.sum} points across this area — every card is sized`}>
-                {scope.pts.sum} pts{scope.pts.unsized ? ` · ${scope.pts.unsized} unsized` : ''}
-              </span>
-            )}
-            {/* Not on untagged: it is not a row in `project_areas`, so there is
-                nothing to rename, colour or delete. */}
-            {!scope.untagged && (
-              <AreaMenu name={scope.key} count={scope.count} holder={scope.holder}
-                dot={scope.dot} palette={palette}
-                open={areaMenu === scope.key}
-                onOpen={(e) => { e.stopPropagation(); closeAll(); setAreaMenu(areaMenu === scope.key ? null : scope.key); }}
-                onRename={(to) => { setAreaMenu(null); renameArea(scope.key, to); }}
-                onColour={(dot) => { setAreaMenu(null); recolourArea(scope.key, dot); }}
-                onDelete={() => { setAreaMenu(null); dropArea(scope.key); }} />
-            )}
-          </div>
-        )}
 
         {shown === 0 && (
           <div className="km-colempty">
@@ -1162,6 +1113,18 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
                         )}
                         <span className="rule" />
                         <span className="n">{g.items.length}</span>
+                        {/* The area's ⋯ (rename, colour, delete), on every group
+                            head it has. Not on untagged: it is not a row in
+                            `project_areas`, so there is nothing to change. */}
+                        {!meta.untagged && (
+                          <AreaMenu name={g.key} count={areaTotal(g.key)} holder={meta.holder}
+                            dot={meta.dot} palette={palette}
+                            open={areaMenu === `${col.key}::${g.key}`}
+                            onOpen={(e) => { e.stopPropagation(); closeAll(); setAreaMenu(areaMenu === `${col.key}::${g.key}` ? null : `${col.key}::${g.key}`); }}
+                            onRename={(to) => { setAreaMenu(null); renameArea(g.key, to); }}
+                            onColour={(dot) => { setAreaMenu(null); recolourArea(g.key, dot); }}
+                            onDelete={() => { setAreaMenu(null); dropArea(g.key); }} />
+                        )}
                       </div>
                       {!gFolded && g.items.map(card)}
                     </div>
@@ -1981,7 +1944,7 @@ function Composer({ onClose, onAdd }: { onClose: () => void; onAdd: (text: strin
 }
 
 /**
- * ＋ NEW AREA — #473's first half, on the scope bar beside the chips.
+ * ＋ NEW AREA — #473's first half, in the board's toolbar (and on the Roadmap's chip row).
  *
  * Shaped exactly like `AddColumn` below it, and deliberately so: they are the
  * same gesture on the same screen (name a thing, press Enter), and two

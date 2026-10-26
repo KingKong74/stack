@@ -190,29 +190,30 @@ const ROADMAP_PANELS = [
     expect: '.km-addarea.open input',
   },
   {
-    // Board v5 — the chips FILTER, several at once. The press lands on the
-    // first NAMED area (untagged is a real scope but has no ⋯, so the next
-    // press needs a named one). Picking exactly one area draws its scope head.
-    id: 'board-scope',
-    label: 'Board — area chip filters to its area',
-    click: '.km-scope .im-chip[data-area]:not([data-area=" untagged"])',
-    expect: '.km-scopehead',
-  },
-  {
-    // The area's ⋯ lives on that scope head. `.km-dots` is what tells this
-    // menu from the COLUMN menu: both are `body > .km-menu`, and only the
-    // area's carries a colour row.
+    // The area's ⋯ lives on its group heads, so it is pressed BEFORE the
+    // filter below, while every open area still has a group on screen.
+    // `.km-dots` is what tells this menu from the COLUMN menu: both are
+    // `body > .km-menu`, and only the area's carries a colour row.
     id: 'board-areamenu',
     label: 'Board — area actions menu',
     click: '[aria-label^="Area actions"]',
     expect: 'body > .km-menu .km-dots',
   },
   {
-    // …and "All areas" clears the filter, which every press after this needs.
-    id: 'board-allareas',
-    label: 'Board — All areas clears the filter',
-    click: '.km-scope .im-chip:first-of-type',
-    expect: '.km-scope .im-chip:first-of-type.on',
+    // Board v5 — the filter row lists every area, each a toggle. The press
+    // lands on the first one and proves it turns on.
+    id: 'board-scope',
+    label: 'Board — area chip filters to its area',
+    click: '.km-scope .im-chip[data-area]',
+    expect: '.km-scope .im-chip.on',
+  },
+  {
+    // …and Clear, which exists only while a filter is on, takes it off again —
+    // which every press after this one needs.
+    id: 'board-clear',
+    label: 'Board — Clear removes the area filter',
+    click: '.km-clearpick',
+    expect: '.km-scope:not(:has(.im-chip.on))',
   },
   // THE FOLDS (#510, #511), AND THEY COME IN PAIRS ON PURPOSE. This harness is
   // read-only, and a fold is the one press on this screen that persists

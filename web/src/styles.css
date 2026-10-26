@@ -4687,8 +4687,23 @@ body[data-mc-full] .totop { display: none; }
 /* A chip a live filter leaves out — still pressable, visibly not in view. */
 .im-chip.km-chipdim { opacity: 0.55; }
 .im-chip.km-chipdim:hover { opacity: 1; }
-/* One area picked: its head sits between the chips and the columns. */
-.km-scopehead { margin-top: var(--space-2); }
+/* Clear — only while a filter is on, as a link rather than a chip, so it is
+   never read as one more area. */
+.km-clearpick {
+  border: 0; background: transparent; cursor: pointer; flex: none;
+  padding: 4px 8px; border-radius: var(--radius-sm);
+  font: var(--type-caption); color: var(--text-link);
+  transition: var(--transition-control);
+}
+.km-clearpick:hover { color: var(--text-link-hover); }
+.km-clearpick:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 1px; }
+/* The area's ⋯ on a group head: tight against the count, and quiet until the
+   head is hovered or the menu is open. */
+.km-grouphead .km-areatools { margin-left: 0; }
+.km-grouphead .km-colbtn { width: 20px; height: 20px; opacity: 0; }
+.km-grouphead:hover .km-colbtn, .km-grouphead .km-colbtn.on,
+.km-grouphead .km-colbtn:focus-visible { opacity: 1; }
+.km-grouphead .km-arearename { width: 140px; margin-left: 0; }
 
 /* Said on the count line while a search has every fold suspended. */
 .km-unfolded { color: var(--text-tertiary); }
