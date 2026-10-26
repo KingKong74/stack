@@ -1607,7 +1607,11 @@ export function setBoardFolds(slug: string, folds: BoardFolds) {
 export type BoardViewLayout = 'areas' | 'list';
 export type BoardSort = 'newest' | 'oldest' | 'updated' | 'priority' | 'run' | 'area' | 'title';
 export type BoardShow = 'all' | 'board' | 'ideas';
-export interface BoardView { layout: BoardViewLayout; sort: BoardSort; show: BoardShow }
+export interface BoardView {
+  layout: BoardViewLayout; sort: BoardSort; show: BoardShow;
+  /** Board v5 — true draws each kanban column as one flat list rather than grouped by area. */
+  flat: boolean;
+}
 const BOARD_SORTS: BoardSort[] = ['newest', 'oldest', 'updated', 'priority', 'run', 'area', 'title'];
 const BOARD_VIEW_KEY = (slug: string) => `stack.boardView.${slug}`;
 export function getBoardView(slug: string): BoardView {
@@ -1617,6 +1621,7 @@ export function getBoardView(slug: string): BoardView {
       layout: o.layout === 'list' ? 'list' : 'areas',
       sort: BOARD_SORTS.includes(o.sort as BoardSort) ? o.sort as BoardSort : 'newest',
       show: o.show === 'board' || o.show === 'ideas' ? o.show : 'all',
+      flat: o.flat === true,
     };
   });
 }

@@ -89,10 +89,10 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 // nothing about those controls was tested — and `./stack board-demo --seed`
 // is what puts cards on a board that has none.
 //
-// THE BOARD IS GROUPED BY AREA NOW (#469), so `.km-col` appears once per area
-// SECTION rather than once per board. Every selector below is scoped with
-// `:has(.km-card)` or an `nth-child` inside one `.km-cols`, and the runner takes
-// `.first()`, so each press lands in the first section that can serve it.
+// THE COLUMNS LEAD AND THE AREAS GROUP INSIDE THEM (Board v5), so `.km-col`
+// appears once per board column. Every selector below is scoped with
+// `:has(.km-card)` or an `nth-child` inside `.km-cols`, and the runner takes
+// `.first()`, so each press lands on the first match that can serve it.
 //
 // EVERY BOARD POPOVER IS A CHILD OF `<body>` NOW, and the `expect` selectors
 // below say so deliberately (`body > .km-prilist`, not `.km-card .km-prilist`).
@@ -115,13 +115,15 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 // earlier would empty the board underneath every press that follows.
 const ROADMAP_PANELS = [
   {
-    // #524 — THE BOARD LANDS FOLDED: every area is a header until opened, and
-    // a folded section draws no `.km-col`. So "All areas" goes FIRST, or every
-    // card and column press below reports a control hidden behind the default.
+    // #524 — THE BOARD LANDS FOLDED: every area group is a header until
+    // opened, and a folded group draws no `.km-card`. So Expand all (the
+    // Collapse all button, which reads "Expand all" while everything is
+    // folded) goes FIRST, or every card press below reports a control hidden
+    // behind the default.
     id: 'board-openall',
-    label: 'Board — lands folded; All areas opens every area',
-    click: '.km-scope .im-chip:first-of-type',
-    expect: '.im-sections:not(:has(.im-section.km-folded)) .km-cols',
+    label: 'Board — lands folded; Expand all opens every area',
+    click: '.km-collapseall',
+    expect: '.km-cols:not(:has(.km-group.folded))',
   },
   {
     id: 'board-priority',
@@ -177,16 +179,10 @@ const ROADMAP_PANELS = [
     dblclick: true,
     expect: '.km-card.editing .km-inline',
   },
-  // #473 — THE AREA REGISTRY, and both presses only OPEN things, which is this
-  // harness's rule: no area is created, renamed, recoloured or deleted by a
-  // smoke run. The New area composer is left open on purpose — its blur commits
-  // an empty name, which `AddArea` drops before it reaches the wire.
-  //
-  // BOTH MUST COME BEFORE `board-scope`, and that is not tidiness. The scope
-  // press lands on the LAST chip, which is "No area" — and the untagged section
-  // deliberately has no area menu, because untagged is a real scope and not a
-  // row in `project_areas`. Run after it and the ⋯ this presses is genuinely
-  // not on screen, which is a true finding about the wrong thing.
+  // #473 — THE AREA REGISTRY, and these presses only OPEN things, which is
+  // this harness's rule: no area is created, renamed, recoloured or deleted by
+  // a smoke run. The New area composer is left open on purpose — its blur
+  // commits an empty name, which `AddArea` drops before it reaches the wire.
   {
     id: 'board-newarea',
     label: 'Board — + New area opens its name field',
@@ -194,58 +190,42 @@ const ROADMAP_PANELS = [
     expect: '.km-addarea.open input',
   },
   {
-    // `.km-dots` is what tells this menu from the COLUMN menu above: both are
-    // `body > .km-menu`, and only the area's carries a colour row. The popover
-    // opens BELOW its section head, so it covers no chip — which is what makes
-    // the scope press below safe to run straight after it, and what closes it
-    // (a chip click bubbles to `.km`, whose own onClick is `closeAll`).
+    // Board v5 — the chips FILTER, several at once. The press lands on the
+    // first NAMED area (untagged is a real scope but has no ⋯, so the next
+    // press needs a named one). Picking exactly one area draws its scope head.
+    id: 'board-scope',
+    label: 'Board — area chip filters to its area',
+    click: '.km-scope .im-chip[data-area]:not([data-area=" untagged"])',
+    expect: '.km-scopehead',
+  },
+  {
+    // The area's ⋯ lives on that scope head. `.km-dots` is what tells this
+    // menu from the COLUMN menu: both are `body > .km-menu`, and only the
+    // area's carries a colour row.
     id: 'board-areamenu',
     label: 'Board — area actions menu',
     click: '[aria-label^="Area actions"]',
     expect: 'body > .km-menu .km-dots',
   },
   {
-    // #469 — the area filter was a dropdown and is now the Roadmap tab's scope
-    // chips. The LAST chip is the one that is provably not already selected:
-    // "All areas" is first and starts on.
-    //
-    // #473 PUT A ＋ New area CONTROL IN THIS ROW, and it wears `.im-chip` like
-    // everything else there. It is deliberately drawn at the FRONT rather than
-    // the end so that this selector still lands on an area — read Board.tsx's
-    // note beside it before moving either.
-    id: 'board-scope',
-    label: 'Board — area chip jumps to its section',
-    click: '.km-scope .im-chip:last-of-type',
-    expect: '.km-scope .im-chip:last-of-type.on',
-  },
-  // A CHIP PRESS WRITES FOLDS — it folds every other area, and folds persist
-  // (see THE FOLDS below). So Collapse all runs next and "All areas" last,
-  // and that second press is what leaves every section open for the column
-  // presses after it and for the narrow pass.
-  {
-    id: 'board-collapseall',
-    label: 'Board — Collapse all folds every area',
-    click: '.km-collapseall',
-    expect: '.im-sections:not(:has(.im-section:not(.km-folded)))',
-  },
-  {
+    // …and "All areas" clears the filter, which every press after this needs.
     id: 'board-allareas',
-    label: 'Board — All areas opens every area again',
+    label: 'Board — All areas clears the filter',
     click: '.km-scope .im-chip:first-of-type',
-    expect: '.im-sections:not(:has(.im-section.km-folded)) .km-cols',
+    expect: '.km-scope .im-chip:first-of-type.on',
   },
   // THE FOLDS (#510, #511), AND THEY COME IN PAIRS ON PURPOSE. This harness is
   // read-only, and a fold is the one press on this screen that persists
   // anything: `stack.boardFolds.<slug>` in localStorage, which outlives the
   // page and therefore reaches the NARROW pass that runs after this one. A
   // folded column left behind would have the narrow run photographing a board
-  // nobody folded, and a folded SECTION would take every `.km-col` selector
-  // above it with it. So each fold is pressed and then pressed back, and the
+  // nobody folded, and a folded AREA would hide every card the presses above
+  // need. So each fold is pressed and then pressed back, and the
   // second press is a real assertion rather than a tidy-up: it is what proves
   // the control toggles instead of only closing.
   //
-  // THE COLUMN PAIR GOES FIRST. Folding a section unmounts its columns, so the
-  // other order would have the column press reporting a control that is not
+  // THE COLUMN PAIR GOES FIRST. A folded column unmounts its area groups, so
+  // the other order could have the area press reporting a control that is not
   // missing, only hidden behind a fold this harness itself just made.
   //
   // Column 3 rather than 1 or 2: those two carry the menu and composer presses
@@ -267,17 +247,33 @@ const ROADMAP_PANELS = [
     expect: '.km-col:nth-child(3) .km-add',
   },
   {
+    // An AREA folds in every column at once, so one press folds every group
+    // carrying its key — and it is pressed back, for the reason above.
     id: 'board-secfold',
-    label: 'Board — an area section folds shut',
-    click: '.im-sechead .km-foldbtn',
-    expect: '.im-section.km-folded',
+    label: 'Board — an area folds shut in every column',
+    click: '.km-grouphead .km-foldbtn',
+    expect: '.km-group.folded',
   },
   {
-    // A folded section draws no columns at all, so their return is the proof.
     id: 'board-secunfold',
     label: 'Board — the same area opens again',
-    click: '.im-sechead .km-foldbtn',
-    expect: '.im-section:not(.km-folded) .km-cols',
+    click: '.km-group.folded .km-foldbtn',
+    expect: '.km-cols:not(:has(.km-group.folded))',
+  },
+  {
+    // Collapse all, then the same button back: it reads "Expand all" once
+    // every area is folded, and the second press leaves the board open for the
+    // narrow pass.
+    id: 'board-collapseall',
+    label: 'Board — Collapse all folds every area',
+    click: '.km-collapseall',
+    expect: '.km-cols:has(.km-group):not(:has(.km-group:not(.folded)))',
+  },
+  {
+    id: 'board-expandall',
+    label: 'Board — Expand all opens them again',
+    click: '.km-collapseall',
+    expect: '.km-cols:not(:has(.km-group.folded))',
   },
   {
     // LAST of the board-view presses — it hides every parked row, and every

@@ -4663,6 +4663,30 @@ body[data-mc-full] .totop { display: none; }
 .im-section.km-folded { gap: 0; }
 .im-section.km-folded .im-sechead { border-bottom-color: var(--border-subtle); }
 
+/* ---- AREAS INSIDE THE COLUMNS (Board v5) ---------------------------------
+   Each column groups its cards by area under a small head: chevron, dot, name,
+   a `held` tag when the lane is taken, a hairline, the count. The head is
+   quieter than the column head above it on purpose — the column is the state,
+   the area is only how it is sorted. */
+.km-group { display: flex; flex-direction: column; gap: var(--space-3); }
+.km-grouphead {
+  display: flex; align-items: center; gap: var(--space-3); min-width: 0;
+  padding: 0 2px;
+}
+.km-grouphead .km-foldbtn { width: 18px; height: 18px; }
+.km-grouphead .nm {
+  font: var(--type-caption); color: var(--text-secondary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
+}
+.km-grouphead .k-tag { flex: none; }
+.km-grouphead .rule { flex: 1; min-width: var(--space-4); height: 1px; background: var(--border-subtle); }
+.km-grouphead .n { font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-tertiary); }
+/* A chip a live filter leaves out — still pressable, visibly not in view. */
+.im-chip.km-chipdim { opacity: 0.55; }
+.im-chip.km-chipdim:hover { opacity: 1; }
+/* One area picked: its head sits between the chips and the columns. */
+.km-scopehead { margin-top: var(--space-2); }
+
 /* Said on the count line while a search has every fold suspended. */
 .km-unfolded { color: var(--text-tertiary); }
 

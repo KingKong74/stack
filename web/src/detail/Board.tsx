@@ -39,23 +39,21 @@
 //     are gone: `project_lists` stores no limit, and inventing one here would be
 //     a second truth about concurrency next to `autopilotWorkers` — which is a
 //     FLEET cap, not a column's.
-//  6a. THE COLUMNS ARE GROUPED BY AREA, in the Roadmap tab's own furniture
-//     (#469, owner's request). Area chips across the top, one section per area
-//     with the four columns nested inside it. A chip JUMPS rather than filters:
-//     it opens its own section, folds the rest and scrolls there, so every area
-//     stays on the board (`focusArea`). `.im-chip` / `.im-section` /
-//     `.im-sechead` are SHARED with detail/Roadmap.tsx rather than copied as
-//     `.km-*`: the ask was that the two screens look alike, and two
-//     stylesheets for one look is exactly how they stop.
+//  6a. THE AREAS ARE GROUPED INSIDE THE COLUMNS (Board v5). The columns lead;
+//     inside each one the cards group by area under a small head (dot, name,
+//     count), which can be switched off for flat columns (`bview.flat`). The
+//     area chips across the top FILTER, several at once, and "All areas"
+//     clears them; one area picked gets its own head above the columns, which
+//     is where an area is renamed, recoloured and deleted (`scope`). `.im-chip`
+//     and `.im-sechead` are SHARED with detail/Roadmap.tsx rather than copied
+//     as `.km-*`: two stylesheets for one look is how two screens stop matching.
 //     Two things the kit's version could not know. An area here is
 //     `roadmap_items.area`, and **(project, area) IS THE OVERNIGHT LANE**
-//     (#267) — so each section header says whether its lane is HELD and by
-//     which branch, which is the one fact about an area that changes what the
-//     night can do; and untagged is a SCOPE like any other, whose header says
-//     it can never be a lane at all. A DROP LANDS ONLY WITHIN ITS OWN SECTION
-//     for the same reason: letting a column drag re-file an area would
-//     re-partition the night's concurrency as a side effect of moving a card
-//     to In Progress.
+//     (#267) — so a group head says when its lane is HELD and the scope head
+//     says by which branch; and untagged is an area like any other, which can
+//     never be a lane at all. A DROP NEVER RE-FILES AN AREA: it writes
+//     `list_key` alone, because re-filing would re-partition the night's
+//     concurrency as a side effect of moving a card to In Progress.
 //  6b. TWO DOUBLE-CLICKS, AND WHICH ONE YOU GET IS DECIDED BY WHAT IS UNDER
 //     THE CURSOR. DOUBLE-CLICK THE TITLE RENAMES IT IN PLACE (#469); DOUBLE-
 //     CLICK ANYWHERE ELSE ON THE CARD OPENS THE ITEM, which is the gesture
@@ -85,7 +83,7 @@
 //  6. NO ASSIGNEE AVATARS. Stack has no assignees, and a button that does
 //     nothing is a lie the mockup could afford and a wired screen cannot. The
 //     kit's check-run banner went for the same reason — the board reads no
-//     checks. THE LAYOUT TOGGLE IS REAL (2026-10-10): Areas is the sections
+//     checks. THE LAYOUT TOGGLE IS REAL (2026-10-10): Areas is the columns
 //     below, List is detail/BoardList.tsx, the finder across every screen.
 //  7. `hl` NAMES A ROW THIS SCREEN CAN DRAW AGAIN. Every card carries
 //     `data-hl`, so the fourteen links that dead-ended here since #443 —
@@ -304,6 +302,12 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
   const unfoldColumn = (key: string) => {
     if (folds.columns.includes(key)) writeFolds({ ...folds, columns: folds.columns.filter((k) => k !== key) });
   };
+  // …and the same for the card's area group, which folds in every column. Both
+  // can fire on one drop, so this one reads what the first may have written.
+  const unfoldArea = (key: string) => {
+    const now = getBoardFolds(slug);
+    if (!now.open.includes(key)) writeFolds({ ...now, open: [...now.open, key] });
+  };
 
   // The palette an area may wear, served rather than duplicated here so the
   // picker can only offer what will actually store (routes/board.js). Empty
@@ -349,17 +353,24 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
 
   // ---- filters --------------------------------------------------------------
   const [query, setQuery] = useState('');
-  // THE AREA CHIPS NAVIGATE, THEY DO NOT FILTER (owner's request). A press
-  // unfolds that area, folds every other one and scrolls to it; every section
-  // stays on the board. `focus` is kept only so an EMPTY area — one just
-  // created, which draws no section by the rule below — still has somewhere to
-  // land, and so the create dialog files into the area you are looking at.
-  // Which chip reads as ON is derived from the folds, not from this, so a chip
-  // cannot claim an area is open after its chevron shut it. UNTAGGED is an area
-  // like any other here: real work, and never an overnight lane (#267).
-  const [focus, setFocus] = useState('');
-  // Bumped on every chip press, so pressing the same chip twice scrolls again.
-  const [jump, setJump] = useState<{ key: string; n: number } | null>(null);
+  // THE AREA CHIPS FILTER, AND MORE THAN ONE CAN BE ON (Board v5). A press
+  // toggles that area in or out of `picked`; nothing picked is every area, which
+  // is what "All areas" sets. They filter rather than jump because the columns
+  // lead now and the areas are groups inside them — there is no section to
+  // jump to. UNTAGGED is an area like any other here: real work, and never an
+  // overnight lane (#267). Screen state, not stored: a filter left on across a
+  // reload is how a board looks half-empty for no reason anyone remembers.
+  const [picked, setPicked] = useState<string[]>([]);
+  const pickArea = (key: string) => {
+    closeAll();
+    setPicked((p) => (p.includes(key) ? p.filter((k) => k !== key) : [...p, key]));
+  };
+  const clearPicked = () => { closeAll(); setPicked([]); };
+  // WHERE A NEW CARD IS BORN. With exactly one named area picked it is born in
+  // it — the filter already said which area you are looking at, and a card that
+  // vanished on creation because it landed untagged would read as a lost write.
+  // Anything else files it untagged, which is never a lane and so never blocks.
+  const homeArea = picked.length === 1 && picked[0] !== UNTAGGED ? picked[0] : '';
   // Parked cards SHOW by default. Hiding them by default is how a parked item
   // becomes invisible work, which is the state #247 existed to end.
   const [hideParked, setHideParked] = useState(false);
@@ -375,6 +386,9 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
   const [listArea, setListArea] = useState('');
   const listMode = bview.layout === 'list';
 
+  // Search and the parked filter, but NOT the area filter: the chips count off
+  // this, so a chip says what pressing it would show under the current search
+  // (the counts follow the search box, and a picked chip does not zero the rest).
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return rows
@@ -414,103 +428,106 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
     return [...names].sort((a, b) => a.localeCompare(b));
   }, [listRows]);
 
-  // ---- the columns, grouped into AREA SECTIONS ------------------------------
-  //
-  // The shape is the Roadmap tab's (detail/Roadmap.tsx): a row of scope chips,
-  // then one section per area with the columns nested inside it. It reads the
-  // same because it IS the same furniture — `.im-chip`, `.im-section` and
-  // `.im-sechead` are shared rather than copied as `.km-*`, since two
-  // stylesheets for one look is how two screens stop matching.
-  //
-  // WHAT IT DOES NOT COPY IS THE KIT'S IDEA OF AN AREA. The kit's six labels
-  // are a filing gesture; here `area` is `roadmap_items.area` and (project,
-  // area) IS THE OVERNIGHT LANE (#267) — an area with an open claimed item
-  // admits no second worker. So each header says whether its lane is HELD and
-  // by which branch, which is the one fact about an area that changes what the
-  // night can do, and the untagged section says that it is never a lane at all.
-  const areaKey = (it: RoadmapItem) => it.area.trim() || UNTAGGED;
 
-  const sections = useMemo(() => {
-    const known = new Set((lists || []).map((l) => l.key));
-    const byArea = new Map<string, RoadmapItem[]>();
+  // `area` is `roadmap_items.area`, and (project, area) IS THE OVERNIGHT LANE
+  // (#267) — an area with an open claimed item admits no second worker. So a
+  // group says whether its lane is HELD and by which branch, which is the one
+  // fact about an area that changes what the night can do.
+  const areaKey = (it: RoadmapItem) => it.area.trim() || UNTAGGED;
+  const drawn = useMemo(
+    () => (picked.length ? visible.filter((it) => picked.includes(areaKey(it))) : visible),
+    [visible, picked],
+  );
+
+  // Registered areas first, in the board's own order, then any area that
+  // exists only because some row mentions it — `area` is a free string and a
+  // pushed-in area is a real area (routes/board.js says why). Untagged last.
+  const areaOrder = useMemo(() => {
+    const order = [...areas.map((a) => a.name)];
+    let untagged = false;
     for (const it of visible) {
       const k = areaKey(it);
-      const bag = byArea.get(k);
-      if (bag) bag.push(it); else byArea.set(k, [it]);
+      if (k === UNTAGGED) untagged = true;
+      else if (!order.includes(k)) order.push(k);
     }
+    if (untagged) order.push(UNTAGGED);
+    return order;
+  }, [visible, areas]);
 
-    // Registered areas first, in the board's own order, then any area that
-    // exists only because some row mentions it — `area` is a free string and a
-    // pushed-in area is a real area (routes/board.js says why). Untagged last.
-    const order = [...areas.map((a) => a.name)];
-    for (const k of byArea.keys()) if (k !== UNTAGGED && !order.includes(k)) order.push(k);
-    if (byArea.has(UNTAGGED)) order.push(UNTAGGED);
+  // The lane holder per area: an OPEN item with a branch on it. Same predicate
+  // as the server's holders query — not done, claim non-empty — and read off
+  // the rows rather than fetched, so a hidden parked row can still be the
+  // holder it really is. Untagged is never a lane, so it never has one.
+  const holders = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const it of rows) {
+      const k = areaKey(it);
+      if (it.archived || it.done || k === UNTAGGED || m.has(k) || !it.claimedBy.trim()) continue;
+      m.set(k, it.claimedBy);
+    }
+    return m;
+  }, [rows]);
+  const areaMeta = (k: string) => ({
+    key: k,
+    name: k === UNTAGGED ? 'No area' : k,
+    dot: areas.find((a) => a.name === k)?.dot || '',
+    untagged: k === UNTAGGED,
+    holder: holders.get(k) || null,
+  });
 
-    return order
-      .map((k) => {
-        const mine = byArea.get(k) || [];
-        const byKey = new Map<string, RoadmapItem[]>();
-        for (const it of mine) {
-          const derived = listKeyOf(it);
-          const key = known.has(derived) ? derived : CATCH_ALL;
-          const bag = byKey.get(key);
-          if (bag) bag.push(it); else byKey.set(key, [it]);
-        }
-        // `queueOrder` is a STABLE sort over payload order — see its header.
-        // Curried on the active sprint (#477), because a rank only means
-        // anything inside the box that is running.
-        for (const bag of byKey.values()) bag.sort(queueOrder(activeId));
-        const cols = (lists || []).map((l) => ({ key: l.key, name: l.name, items: byKey.get(l.key) || [], real: true }));
-        const orphans = byKey.get(CATCH_ALL);
-        if (orphans?.length) cols.push({ key: CATCH_ALL, name: 'No column', items: orphans, real: false });
-        // The lane holder: an OPEN item with a branch on it. Same predicate as
-        // the server's holders query — not done, claim non-empty — and it is
-        // read off the rows on screen rather than fetched, so a hidden parked
-        // row can still be the holder it really is.
-        const holder = k === UNTAGGED
-          ? null
-          : (rows.find((it) => !it.archived && areaKey(it) === k && !it.done && it.claimedBy.trim())?.claimedBy || null);
-        return {
-          key: k,
-          name: k === UNTAGGED ? 'No area' : k,
-          dot: areas.find((a) => a.name === k)?.dot || '',
-          // #473 — is this area in `project_areas`, or does it exist only
-          // because some row mentions it? Both are real areas and both can be
-          // renamed and deleted; only a registered one survives losing its last
-          // card, which is what keeps a just-created area on screen.
-          registered: !!areas.find((a) => a.name === k)?.registered,
-          untagged: k === UNTAGGED,
-          holder,
-          count: mine.length,
-          pts: pointsOf(mine),
-          cols,
-        };
-      })
-      // AN EMPTY AREA IS NOT A SECTION, REGISTERED OR NOT. Drawing every
-      // registered area whatever its count was the first cut of #473, and it
-      // put three four-column sections with nothing in them at the top of this
-      // board — `project_areas` outlives the features it was registered for.
-      // What a just-created area needs is not a permanent empty section but a
-      // way IN, and `addArea` focuses it, which this same predicate then
-      // draws. Reachable, and not in the way.
-      .filter((sec) => sec.count > 0 || sec.key === focus);
-  }, [visible, lists, areas, rows, focus, activeId]);
+  // ---- the columns, with the AREAS GROUPED INSIDE THEM (Board v5) -----------
+  //
+  // The columns lead and each one groups its cards by area, so a glance across
+  // the top reads the board's state and a glance down a column reads which
+  // lanes it is spread over. `grouped` off draws each column as one flat list.
+  const grouped = !bview.flat;
+  const columns = useMemo(() => {
+    const known = new Set((lists || []).map((l) => l.key));
+    const byKey = new Map<string, RoadmapItem[]>();
+    for (const it of drawn) {
+      const derived = listKeyOf(it);
+      const key = known.has(derived) ? derived : CATCH_ALL;
+      const bag = byKey.get(key);
+      if (bag) bag.push(it); else byKey.set(key, [it]);
+    }
+    // `queueOrder` is a STABLE sort over payload order — see its header.
+    // Curried on the active sprint (#477), because a rank only means anything
+    // inside the box that is running. An area group is a subsequence of its
+    // column, so it keeps the run order too.
+    for (const bag of byKey.values()) bag.sort(queueOrder(activeId));
+    const cols = (lists || []).map((l) => ({ key: l.key, name: l.name, items: byKey.get(l.key) || [], real: true }));
+    const orphans = byKey.get(CATCH_ALL);
+    if (orphans?.length) cols.push({ key: CATCH_ALL, name: 'No column', items: orphans, real: false });
+    return cols.map((col) => ({
+      ...col,
+      groups: grouped
+        ? areaOrder
+          .map((k) => ({ key: k, items: col.items.filter((it) => areaKey(it) === k) }))
+          .filter((g) => g.items.length > 0)
+        : (col.items.length ? [{ key: '', items: col.items }] : []),
+    }));
+  }, [drawn, lists, areaOrder, grouped, activeId]);
 
   // The chips: every area with cards on the board right now, plus untagged.
   const chips = useMemo(() => {
     const counts = new Map<string, number>();
     for (const it of visible) counts.set(areaKey(it), (counts.get(areaKey(it)) || 0) + 1);
-    const order = [...areas.map((a) => a.name)];
-    for (const k of counts.keys()) if (k !== UNTAGGED && !order.includes(k)) order.push(k);
     const registered = new Set(areas.filter((a) => a.registered).map((a) => a.name));
-    const out = order
-      // A registered area earns a chip at zero, for the same reason it earns a
-      // section — you cannot scope to an area the bar refuses to draw.
+    // A registered area earns a chip at zero — you cannot pick an area the bar
+    // refuses to draw, and a just-created area is exactly that.
+    return areaOrder
       .filter((k) => counts.has(k) || registered.has(k))
-      .map((k) => ({ key: k, name: k, dot: areas.find((a) => a.name === k)?.dot || '', n: counts.get(k) || 0 }));
-    if (counts.has(UNTAGGED)) out.push({ key: UNTAGGED, name: 'No area', dot: '', n: counts.get(UNTAGGED) || 0 });
-    return out;
-  }, [visible, areas]);
+      .map((k) => ({ ...areaMeta(k), n: counts.get(k) || 0 }));
+  }, [visible, areas, areaOrder, holders]);
+
+  // ONE AREA PICKED GETS ITS OWN HEAD above the columns: the lane line, the
+  // total and the area's ⋯. That is where an area is renamed, recoloured and
+  // deleted now that it has no section — and it is drawn even at zero cards,
+  // which is what makes a just-created area usable immediately.
+  const scope = picked.length === 1 ? (() => {
+    const mine = drawn;
+    return { ...areaMeta(picked[0]), count: mine.length, pts: pointsOf(mine) };
+  })() : null;
 
   // How many ideas hang off each item. Counted off `rows`, never `visible`: a
   // child is by definition not on the board, so counting the drawn set would
@@ -525,7 +542,7 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
   }, [rows]);
 
   const onBoard = rows.filter((it) => !it.archived && isBoardWork(it));
-  const shown = sections.reduce((n, sec) => n + sec.count, 0);
+  const shown = drawn.length;
 
   // A SEARCH SUSPENDS EVERY FOLD, and the fold controls go with it. A filter
   // that finds four cards and then draws them inside a folded strip has not
@@ -534,40 +551,24 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
   // the folds come straight back when the box is cleared, which is why this is
   // a read-time override rather than a write.
   const searching = !!query.trim();
-  // Folds store the OPEN areas (a section is folded by default, #524), so a
-  // search reads every section as open rather than none as folded.
-  const sectionOpen = (key: string) => searching || folds.open.includes(key);
+  // Folds store the OPEN areas (an area lands folded, #524), so a search reads
+  // every area as open rather than none as folded.
+  const areaOpen = (key: string) => searching || folds.open.includes(key);
   const foldedColumns = searching ? [] : folds.columns;
-  const foldsSuspended = searching && (sections.some((s) => !folds.open.includes(s.key)) || folds.columns.length > 0);
 
-  // THE CHIPS AND COLLAPSE ALL WRITE THE SAME FOLDS the chevrons do, so a jump
-  // persists like a fold and a chevron can undo it. Columns are left alone:
-  // they are board-wide and a different decision (getBoardFolds' header).
-  const focusArea = (key: string) => {
+  // An AREA fold folds that area's group in EVERY column. Collapse all folds
+  // every area on screen and, once they all are, opens them.
+  const groupKeys = [...new Set(columns.flatMap((c) => c.groups.map((g) => g.key)))];
+  const foldsSuspended = searching && (groupKeys.some((k) => !folds.open.includes(k)) || folds.columns.length > 0);
+  const allFolded = groupKeys.length > 0 && groupKeys.every((k) => !areaOpen(k));
+  const collapseAll = () => {
     closeAll();
-    setFocus(key);
-    writeFolds({ ...folds, open: [key] });
-    setJump((j) => ({ key, n: (j?.n ?? 0) + 1 }));
+    writeFolds({
+      ...folds,
+      open: allFolded ? [...new Set([...folds.open, ...groupKeys])] : folds.open.filter((k) => !groupKeys.includes(k)),
+    });
   };
-  const collapseAll = () => { closeAll(); writeFolds({ ...folds, open: [] }); };
-  const expandAll = () => {
-    closeAll();
-    setFocus('');
-    writeFolds({ ...folds, open: sections.map((s) => s.key) });
-    setJump((j) => ({ key: '', n: (j?.n ?? 0) + 1 }));
-  };
-  // After the render that opened it, so the scroll measures the unfolded
-  // section and not the strip it was a moment ago.
-  useEffect(() => {
-    if (!jump) return;
-    const el = jump.key
-      ? document.querySelector(`.km [data-area="${CSS.escape(jump.key)}"]`)
-      : document.querySelector('.km .km-scope');
-    el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }, [jump]);
-  const openSections = sections.filter((s) => sectionOpen(s.key));
-  const allOpen = sections.length > 0 && openSections.length === sections.length;
-  const allFolded = sections.length > 0 && openSections.length === 0;
+  const setGrouped = (on: boolean) => { closeAll(); writeView({ flat: !on }); };
   const parked = onBoard.filter((it) => it.skipped).length;
   // What the night would actually take out of the sprint in progress — the
   // Backlog tab's badge. `runnable` is the client twin of the runner's own
@@ -777,40 +778,39 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
   // screen carry the old string until the payload comes back, and a section
   // drawn from a stale tag is a section the drop handler will file work into
   // under a name that no longer exists.
-  // AND FOCUS IT. An area is registered with nothing in it by definition, and
-  // an empty area draws no section — so without this the create would land, the
-  // chip would appear, and the board would look exactly as it did. Focusing is
-  // what makes it "usable immediately": the section opens with its four columns
-  // and its composers, and the first card goes straight in. The key comes off
-  // the RESPONSE rather than off the typed string, because the server
-  // normalises a name (lowercase, trimmed to 40) and focusing what was typed
-  // would miss.
+  // AND PICK IT. An area is registered with nothing in it by definition, so
+  // without this the create would land, the chip would appear, and the board
+  // would look exactly as it did. Picking it alone is what makes it "usable
+  // immediately": its head appears with its ⋯, and the next card created is
+  // born in it (`homeArea`). The key comes off the RESPONSE rather than off the
+  // typed string, because the server normalises a name (lowercase, trimmed to
+  // 40) and picking what was typed would miss.
   const addArea = (name: string) =>
     guard(async () => {
       const before = new Set(areas.map((a) => a.name));
       const next = await createArea(slug, name);
       setAreas(next);
       const made = next.find((a) => !before.has(a.name))?.name;
-      if (made) focusArea(made);
+      if (made) setPicked([made]);
     });
-  // The focus follows the area through a rename, and so does its fold.
+  // The filter follows the area through a rename, and so does its fold.
   const renameArea = (from: string, to: string) =>
     guard(async () => {
       setAreas(await patchArea(slug, from, { name: to }));
       const key = to.trim().toLowerCase();
-      setFocus((f) => (f === from ? key : f));
+      setPicked((p) => p.map((k) => (k === from ? key : k)));
       if (folds.open.includes(from)) writeFolds({ ...folds, open: folds.open.map((k) => (k === from ? key : k)) });
       onRefresh();
     });
   const recolourArea = (name: string, dot: string) =>
     guard(async () => { setAreas(await patchArea(slug, name, { dot })); });
   // THE CARDS DO NOT GO WITH IT — the route clears the tag and leaves the work,
-  // which lands it in the untagged section. The focus follows it there rather
-  // than pointing at an area that no longer exists.
+  // which lands it untagged. A filter on it follows it there rather than
+  // pointing at an area that no longer exists.
   const dropArea = (name: string) =>
     guard(async () => {
       setAreas(await deleteArea(slug, name));
-      setFocus((f) => (f === name ? UNTAGGED : f));
+      setPicked((p) => (p.includes(name) ? [...new Set(p.map((k) => (k === name ? UNTAGGED : k)))] : p));
       onRefresh();
     });
 
@@ -931,13 +931,23 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
             <KitIcon name="layers" size={14} />{hideParked ? 'Parked hidden' : `Parked shown${parked ? ` (${parked})` : ''}`}
           </button>
 
-          {/* Collapse all folds every AREA; the columns keep their own folds.
-              Expanding is the "All areas" chip's job. Gone while searching,
-              like every other fold control. */}
-          {!searching && !listMode && (
+          {/* GROUP BY AREA is stored with the layout (device-local, per
+              project): it is how you like to read this board, not a fact
+              about the work. Off draws each column as one flat list. */}
+          {!listMode && <button className={`k-btn sm secondary km-grouped${grouped ? ' on' : ''}`}
+            aria-pressed={grouped} onClick={() => setGrouped(!grouped)}
+            title="Group each column's cards by area">
+            <KitIcon name={grouped ? 'layout-grid' : 'list'} size={14} />{grouped ? 'Grouped by area' : 'Not grouped'}
+          </button>}
+
+          {/* Collapse all folds every AREA in every column, and opens them all
+              once they are folded; the columns keep their own folds. Gone while
+              searching, like every other fold control, and with the grouping. */}
+          {!searching && !listMode && grouped && (
             <button className="k-btn sm secondary km-collapseall" onClick={collapseAll}
-              disabled={allFolded} title="Fold every area to its header">
-              <KitIcon name="chevron-right" size={14} />Collapse all
+              disabled={groupKeys.length === 0}
+              title={allFolded ? 'Open every area' : 'Fold every area to its header, in every column'}>
+              <KitIcon name={allFolded ? 'chevron-down' : 'chevron-right'} size={14} />{allFolded ? 'Expand all' : 'Collapse all'}
             </button>
           )}
 
@@ -957,254 +967,220 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
 
         {!listMode && <>
 
-        {/* THE AREA JUMP BAR — the Roadmap tab's own chips, on this project's
-            real areas and their own stored colours, but a press here navigates
-            (`focusArea`) where Roadmap's filters. "All areas" opens them all. */}
+        {/* THE AREA FILTER — the Roadmap tab's own chips, on this project's
+            real areas and their own stored colours. Each toggles; several can
+            be on; "All areas" clears them. A chip left out of a live filter
+            dims, so the row says which areas you are NOT looking at. */}
         <div className="im-bar km-scope">
-          <AreaChip label="All areas" count={onBoard.length}
-            active={allOpen} onClick={expandAll} />
+          <AreaChip label="All areas" count={visible.length}
+            active={picked.length === 0} onClick={clearPicked} />
           <span className="im-chipsep" />
-          {/* #473 — the board could only ever FILTER by an area that already
-              existed; this registers one. It sits at the FRONT of the chips and
-              not the end, and that is load-bearing: it wears `.im-chip` so the
-              row stays one look with one stylesheet, which makes it the LAST
-              chip if it goes last — and `scripts/playwright/smoke.mjs` presses
-              "the last chip" precisely because that is provably an area nobody
-              has already selected. A create control answering to that is a
-              harness pressing New area and calling the area jump broken. */}
+          {/* #473 — this registers an area. It sits at the FRONT of the chips
+              so the row's last chip is always an area, which is what
+              `scripts/playwright/smoke.mjs` presses. */}
           <AddArea onAdd={addArea} />
           {chips.map((c) => (
-            <AreaChip key={c.key} label={c.name} dot={c.dot} count={c.n}
-              active={openSections.length === 1 && openSections[0].key === c.key}
-              onClick={() => focusArea(c.key)} />
+            <AreaChip key={c.key} areaKey={c.key} label={c.name} dot={c.dot} count={c.n}
+              active={picked.includes(c.key)}
+              dim={picked.length > 0 && !picked.includes(c.key)}
+              onClick={() => pickArea(c.key)} />
           ))}
         </div>
 
-        <div className="im-sections">
-          {sections.map((sec) => {
-          const secFolded = !sectionOpen(sec.key);
-          return (
-            <section className={`im-section${secFolded ? ' km-folded' : ''}`} key={sec.key} data-area={sec.key}>
-              {/* THE FOLD LIVES ON THE BOARD, NOT ON THE FURNITURE (#510).
-                  `.im-sechead` is SHARED with detail/Roadmap.tsx — that is the
-                  whole reason the two screens look alike — so the chevron is a
-                  `.km-*` child inside it and the folded state is a `.km-folded`
-                  class the Roadmap never sets. Roadmap can adopt both the day
-                  it wants them; what it must not do is grow a second
-                  stylesheet for the same look. */}
-              <div className="im-sechead">
-                {!searching && (
-                  <button className="km-foldbtn"
-                    aria-expanded={!secFolded}
-                    aria-label={`${secFolded ? 'Expand' : 'Collapse'} ${sec.name}`}
-                    title={secFolded ? 'Expand this area' : 'Collapse this area'}
-                    onClick={(e) => { e.stopPropagation(); closeAll(); foldSection(sec.key); }}>
-                    <KitIcon name={secFolded ? 'chevron-right' : 'chevron-down'} size={15} />
-                  </button>
-                )}
-                {/* THE DOT IS A LEAF, and that is not cosmetic. An area's colour
-                    is DATA (`project_areas.dot`), and the palette audit exempts a
-                    data tone only on the element whose own `style` names that
-                    property. Painting it as `color` on the icon box leaked it
-                    twice — onto the child `<svg>` by inheritance, and onto
-                    `borderTopColor`, whose initial value is `currentColor` — and
-                    the audit reported both as tones off the `:root` ramp. A
-                    `background` on a childless span, exactly as the scope chips
-                    and the rail's SpaceDot do it, leaks neither. */}
-                <span className={`ico${sec.untagged ? ' global' : ''}`}>
-                  <KitIcon name={sec.untagged ? 'layers' : 'layout-grid'} size={13} />
-                </span>
-                {sec.dot && <span className="km-dot" style={{ background: sec.dot }} />}
-                <span className="nm">{sec.name}</span>
-                {/* THE ONE FACT ABOUT AN AREA THAT CHANGES WHAT THE NIGHT CAN
-                    DO. Not a description — `project_areas` stores none, and an
-                    invented one would be decoration. */}
-                <span className="scope">
-                  {sec.untagged
-                    ? 'Never a lane — untagged work neither holds one nor waits on one'
-                    : sec.holder
-                      ? `Lane held by ${sec.holder} — no second worker until it lands`
-                      : 'Lane free'}
-                </span>
-                <span className="n">{sec.count} {sec.count === 1 ? 'card' : 'cards'}</span>
-                {/* #507 — THE TOTAL, AND HOW MUCH OF IT IS MISSING. A sum with
-                    no count of the unsized beside it reads as the size of the
-                    area; it is the size of the part of it somebody has looked
-                    at. Absent entirely when nothing in the area has points,
-                    because "0 pts" over a section of unpointed work is the same
-                    lie in fewer characters. */}
-                {sec.pts.sum > 0 && (
-                  <span className="n km-pts-total"
-                    title={sec.pts.unsized
-                      ? `${sec.pts.sum} points across this area, with ${sec.pts.unsized} card${sec.pts.unsized === 1 ? '' : 's'} unsized and not counted`
-                      : `${sec.pts.sum} points across this area — every card is sized`}>
-                    {sec.pts.sum} pts{sec.pts.unsized ? ` · ${sec.pts.unsized} unsized` : ''}
-                  </span>
-                )}
-                {/* NOT ON THE UNTAGGED SECTION. Untagged is a REAL scope and
-                    not a missing one, but it is not a row in `project_areas`
-                    and never can be — there is nothing there to rename, colour
-                    or delete, and offering it would promise a write that has
-                    no target. */}
-                {!sec.untagged && (
-                  <AreaMenu name={sec.key} count={sec.count} holder={sec.holder}
-                    dot={sec.dot} palette={palette}
-                    open={areaMenu === sec.key}
-                    onOpen={(e) => { e.stopPropagation(); closeAll(); setAreaMenu(areaMenu === sec.key ? null : sec.key); }}
-                    onRename={(to) => { setAreaMenu(null); renameArea(sec.key, to); }}
-                    onColour={(dot) => { setAreaMenu(null); recolourArea(sec.key, dot); }}
-                    onDelete={() => { setAreaMenu(null); dropArea(sec.key); }} />
-                )}
-              </div>
+        {scope && (
+          <div className="im-sechead km-scopehead" data-area={scope.key}>
+            {/* THE DOT IS A LEAF, and that is not cosmetic. An area's colour is
+                DATA (`project_areas.dot`), and the palette audit exempts a data
+                tone only on the element whose own `style` names that property.
+                A `background` on a childless span leaks onto nothing. */}
+            <span className={`ico${scope.untagged ? ' global' : ''}`}>
+              <KitIcon name={scope.untagged ? 'layers' : 'layout-grid'} size={13} />
+            </span>
+            {scope.dot && <span className="km-dot" style={{ background: scope.dot }} />}
+            <span className="nm">{scope.name}</span>
+            {/* THE ONE FACT ABOUT AN AREA THAT CHANGES WHAT THE NIGHT CAN DO. */}
+            <span className="scope">
+              {scope.untagged
+                ? 'Never a lane — untagged work neither holds one nor waits on one'
+                : scope.holder
+                  ? `Lane held by ${scope.holder} — no second worker until it lands`
+                  : 'Lane free'}
+            </span>
+            <span className="n">{scope.count} {scope.count === 1 ? 'card' : 'cards'}</span>
+            {/* #507 — the total, and how much of it is missing. Absent when
+                nothing here has points: "0 pts" over unpointed work is a lie. */}
+            {scope.pts.sum > 0 && (
+              <span className="n km-pts-total"
+                title={scope.pts.unsized
+                  ? `${scope.pts.sum} points across this area, with ${scope.pts.unsized} card${scope.pts.unsized === 1 ? '' : 's'} unsized and not counted`
+                  : `${scope.pts.sum} points across this area — every card is sized`}>
+                {scope.pts.sum} pts{scope.pts.unsized ? ` · ${scope.pts.unsized} unsized` : ''}
+              </span>
+            )}
+            {/* Not on untagged: it is not a row in `project_areas`, so there is
+                nothing to rename, colour or delete. */}
+            {!scope.untagged && (
+              <AreaMenu name={scope.key} count={scope.count} holder={scope.holder}
+                dot={scope.dot} palette={palette}
+                open={areaMenu === scope.key}
+                onOpen={(e) => { e.stopPropagation(); closeAll(); setAreaMenu(areaMenu === scope.key ? null : scope.key); }}
+                onRename={(to) => { setAreaMenu(null); renameArea(scope.key, to); }}
+                onColour={(dot) => { setAreaMenu(null); recolourArea(scope.key, dot); }}
+                onDelete={() => { setAreaMenu(null); dropArea(scope.key); }} />
+            )}
+          </div>
+        )}
 
-              {/* A FOLDED SECTION DRAWS NO COLUMNS AT ALL, rather than drawing
-                  them empty: the header already carries the count, and the
-                  point of the fold is the vertical space the four columns take.
-                  Unmounting also takes every drop target with it, so a card
-                  cannot be dragged into an area whose cards are not on screen. */}
-              {!secFolded && <div className="km-cols">
-                {sec.cols.map((col, ci) => {
-                  const colFolded = foldedColumns.includes(col.key);
-                  const dragged = dragId === null ? null : rows.find((x) => x.id === dragId) || null;
-                  // A DROP LANDS ONLY INSIDE THE CARD'S OWN AREA. Letting one
-                  // cross would have a column drag re-file the row, and
-                  // re-filing an area re-partitions the night's concurrency
-                  // (#267) — that is a decision with a modal behind it, not a
-                  // side effect of moving a card to In Progress.
-                  const takesDrop = !!dragged && col.real && areaKey(dragged) === sec.key;
-                  // THE COLUMN THE CARD IS ALREADY IN IS NOT A TARGET. `moveTo`
-                  // has always no-opped on it; what is new is that the drag
-                  // SAYS SO — no highlight, no preview, no landing flash — so
-                  // the one gesture that writes nothing is the one gesture that
-                  // never looks like it did. Membership, not `listKeyOf`:
-                  // a card in the catch-all lane derives into a key this board
-                  // has no column for, and every real column is a move for it.
-                  const isSource = dragId !== null && col.items.some((x) => x.id === dragId);
-                  const wouldMove = takesDrop && !isSource;
-                  const overKey = `${sec.key}::${col.key}`;
-                  const isOver = over === overKey && wouldMove;
-                  // THE `dragleave` GUARD BELOW IS WHAT STOPS THE PREVIEW
-                  // STROBING. `dragleave` fires on this column every time the
-                  // cursor crosses onto one of its own cards — the same
-                  // bubbling `mouseout` has — and the `dragover` that follows
-                  // re-sets `over`. That was invisible while the state only
-                  // painted a border; it is a slot animation replaying on every
-                  // card boundary now that the state opens a space. Only a
-                  // leave off the COLUMN ITSELF counts, and a child-to-outside
-                  // exit still fires one of those.
+        {shown === 0 && (
+          <div className="km-colempty">
+            {query.trim() || hideParked || picked.length ? 'Nothing matches those filters.' : 'No cards on this board yet.'}
+          </div>
+        )}
+
+        <div className="km-cols">
+          {columns.map((col, ci) => {
+            const colFolded = foldedColumns.includes(col.key);
+            const dragged = dragId === null ? null : rows.find((x) => x.id === dragId) || null;
+            // A drop writes `list_key` and only that, so it can never re-file an
+            // area: the card keeps its lane (#267) whichever column it lands in.
+            const takesDrop = !!dragged && col.real;
+            // THE COLUMN THE CARD IS ALREADY IN IS NOT A TARGET. `moveTo` has
+            // always no-opped on it; the drag SAYS SO — no highlight, no
+            // preview, no landing flash. Membership, not `listKeyOf`: a card in
+            // the catch-all lane derives into a key this board has no column
+            // for, and every real column is a move for it.
+            const isSource = dragId !== null && col.items.some((x) => x.id === dragId);
+            const wouldMove = takesDrop && !isSource;
+            const isOver = over === col.key && wouldMove;
+            const card = (it: RoadmapItem) => (
+              <IssueCard key={it.id} item={it} ideas={ideaCount.get(it.id) || 0}
+                sprint={boxes.find((b) => b.id === it.sprintId) || null}
+                selected={selected === it.id}
+                onSelect={() => setSelected(it.id)}
+                dragging={dragId === it.id}
+                landed={landedId === it.id}
+                onDragStart={() => { closeAll(); setDragId(it.id); }}
+                onDragEnd={() => { setDragId(null); setOver(null); }}
+                editing={inlineId === it.id}
+                onOpenInline={() => { closeAll(); setInlineId(it.id); }}
+                onInline={(title) => { setInlineId(null); retitle(it, title); }}
+                onCancelInline={() => setInlineId(null)}
+                priOpen={priMenu === it.id}
+                onPri={(e) => { e.stopPropagation(); closeAll(); setPriMenu(priMenu === it.id ? null : it.id); }}
+                onPick={(v) => { setPriMenu(null); setBucket(it, v); }}
+                ptsOpen={ptsMenu === it.id}
+                onPts={(e) => { e.stopPropagation(); closeAll(); setPtsMenu(ptsMenu === it.id ? null : it.id); }}
+                onPoints={(v) => { setPtsMenu(null); setPoints(it, v); }}
+                menuOpen={cardMenu === it.id}
+                onMenu={(e) => { e.stopPropagation(); closeAll(); setCardMenu(cardMenu === it.id ? null : it.id); }}
+                onKind={(v) => setKind(it, v)}
+                onDue={(v) => setDue(it, v)}
+                onEdit={() => { setCardMenu(null); onEdit(it); }}
+                onSignOff={() => { setCardMenu(null); signOff(it); }}
+                activeSprint={boxes.find((b) => b.id === activeId) || null}
+                onBuildNow={() => { setCardMenu(null); buildNow(it); }}
+                onRun={col.key === 'planned' && !it.done && !String(it.claimedBy || '').trim() && !isHeld(it)
+                  ? () => { closeAll(); setCardMenu(null); runInTerminal(it); } : undefined}
+                onAddToSprint={(sid) => { setCardMenu(null); addToSprint(it, sid); }}
+                onReady={(on) => { setCardMenu(null); setReady(it, on); }}
+                onPark={() => { setCardMenu(null); park(it); }}
+                onArchive={() => { setCardMenu(null); archive(it); }}
+                onDerive={() => { setCardMenu(null); derive(it); }}
+                onDelete={() => { setCardMenu(null); remove(it); }} />
+            );
+            // THE `dragleave` GUARD BELOW IS WHAT STOPS THE PREVIEW STROBING.
+            // `dragleave` fires on this column every time the cursor crosses
+            // onto one of its own cards, and the `dragover` that follows
+            // re-sets `over`, replaying the slot animation on every card
+            // boundary. Only a leave off the COLUMN ITSELF counts.
+            return (
+              <div key={col.key}
+                className={`km-col${colFolded ? ' folded' : ''}${isOver ? ' over' : ''}${col.real ? '' : ' catchall'}${dragged && !isOver && !isSource ? ' dim' : ''}`}
+                onDragOver={(e) => { if (wouldMove) { e.preventDefault(); setOver(col.key); } }}
+                onDragLeave={(e) => { if (e.currentTarget === e.target) setOver((o) => (o === col.key ? null : o)); }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setOver(null);
+                  const it = dragged;
+                  setDragId(null);
+                  if (it && wouldMove) {
+                    moveTo(it, col.key);
+                    // A FOLDED COLUMN STILL TAKES A DROP, AND OPENS TO SHOW IT —
+                    // and so does the card's area group. A card that lands
+                    // behind a closed strip has been filed somewhere the owner
+                    // cannot see. Unfold, never toggle.
+                    unfoldColumn(col.key);
+                    unfoldArea(areaKey(it));
+                  }
+                }}>
+                <ColumnHead col={col} first={ci === 0} last={ci === columns.length - 1}
+                  open={menu === col.key}
+                  folded={colFolded}
+                  canFold={!searching}
+                  onFold={() => { closeAll(); foldColumn(col.key); }}
+                  onMenu={(e) => { e.stopPropagation(); closeAll(); setMenu(menu === col.key ? null : col.key); }}
+                  onRename={(name) => { setMenu(null); renameCol(col.key, name); }}
+                  onMove={(d) => { setMenu(null); moveCol(col.key, d); }}
+                  onDelete={() => { setMenu(null); dropCol(col.key); }} />
+
+                {/* The drop preview, opening a space at the top of the column.
+                    The top is not a claim about WHERE the card lands —
+                    `queueOrder` decides that (decision 4). */}
+                {isOver && dragged && !colFolded && (
+                  <DropSlot
+                    from={columns.find((c) => c.items.some((x) => x.id === dragged.id))?.name || 'No column'}
+                    to={col.name}
+                    shipped={col.key === 'shipped'} />
+                )}
+
+                {/* THE CARDS, THE EMPTY LINE AND THE COMPOSER ALL GO WITH THE
+                    FOLD (#511). The head stays, and keeps its count. */}
+                {!colFolded && col.groups.map((g) => {
+                  if (!grouped) return g.items.map(card);
+                  const meta = areaMeta(g.key);
+                  const gFolded = !areaOpen(g.key);
                   return (
-                    <div key={col.key}
-                      className={`km-col${colFolded ? ' folded' : ''}${isOver ? ' over' : ''}${col.real ? '' : ' catchall'}${dragged && !isOver && !isSource ? ' dim' : ''}`}
-                      onDragOver={(e) => { if (wouldMove) { e.preventDefault(); setOver(overKey); } }}
-                      onDragLeave={(e) => { if (e.currentTarget === e.target) setOver((o) => (o === overKey ? null : o)); }}
-                      onDrop={(e) => {
-                        e.preventDefault();
-                        setOver(null);
-                        const it = dragged;
-                        setDragId(null);
-                        if (it && wouldMove) {
-                          moveTo(it, col.key);
-                          // A FOLDED COLUMN STILL TAKES A DROP, AND OPENS TO
-                          // SHOW IT. It is a target like any other — a fold is
-                          // about screen space, not about what the board will
-                          // accept — but a card that lands behind a closed
-                          // strip has been filed somewhere the owner cannot
-                          // see, which is the one outcome a drop must never
-                          // have. Unfold, never toggle: dropping on an OPEN
-                          // column must not close it.
-                          unfoldColumn(col.key);
-                        }
-                      }}>
-                      <ColumnHead col={col} first={ci === 0} last={ci === sec.cols.length - 1}
-                        open={menu === overKey}
-                        folded={colFolded}
-                        canFold={!searching}
-                        onFold={() => { closeAll(); foldColumn(col.key); }}
-                        onMenu={(e) => { e.stopPropagation(); closeAll(); setMenu(menu === overKey ? null : overKey); }}
-                        onRename={(name) => { setMenu(null); renameCol(col.key, name); }}
-                        onMove={(d) => { setMenu(null); moveCol(col.key, d); }}
-                        onDelete={() => { setMenu(null); dropCol(col.key); }} />
-
-                      {/* The drop preview, opening a space at the top of the
-                          column the way the kit draws it. The top is not a
-                          claim about WHERE the card lands — `queueOrder` decides
-                          that, and it is not a position this screen writes
-                          (decision 4) — it is where a space can open without
-                          moving the card under the cursor. */}
-                      {isOver && dragged && !colFolded && (
-                        <DropSlot
-                          from={sec.cols.find((c) => c.items.some((x) => x.id === dragged.id))?.name || 'No column'}
-                          to={col.name}
-                          shipped={col.key === 'shipped'} />
-                      )}
-
-                      {/* THE CARDS, THE EMPTY LINE AND THE COMPOSER ALL GO WITH
-                          THE FOLD (#511). The head stays, and it keeps its
-                          count — a folded column says how much is in it, so
-                          nothing about the board's totals has to be
-                          reconstructed from what happens to be drawn. */}
-                      {!colFolded && col.items.map((it) => (
-                        <IssueCard key={it.id} item={it} ideas={ideaCount.get(it.id) || 0}
-                          sprint={boxes.find((b) => b.id === it.sprintId) || null}
-                          selected={selected === it.id}
-                          onSelect={() => setSelected(it.id)}
-                          dragging={dragId === it.id}
-                          landed={landedId === it.id}
-                          onDragStart={() => { closeAll(); setDragId(it.id); }}
-                          onDragEnd={() => { setDragId(null); setOver(null); }}
-                          editing={inlineId === it.id}
-                          onOpenInline={() => { closeAll(); setInlineId(it.id); }}
-                          onInline={(title) => { setInlineId(null); retitle(it, title); }}
-                          onCancelInline={() => setInlineId(null)}
-                          priOpen={priMenu === it.id}
-                          onPri={(e) => { e.stopPropagation(); closeAll(); setPriMenu(priMenu === it.id ? null : it.id); }}
-                          onPick={(v) => { setPriMenu(null); setBucket(it, v); }}
-                          ptsOpen={ptsMenu === it.id}
-                          onPts={(e) => { e.stopPropagation(); closeAll(); setPtsMenu(ptsMenu === it.id ? null : it.id); }}
-                          onPoints={(v) => { setPtsMenu(null); setPoints(it, v); }}
-                          menuOpen={cardMenu === it.id}
-                          onMenu={(e) => { e.stopPropagation(); closeAll(); setCardMenu(cardMenu === it.id ? null : it.id); }}
-                          onKind={(v) => setKind(it, v)}
-                          onDue={(v) => setDue(it, v)}
-                          onEdit={() => { setCardMenu(null); onEdit(it); }}
-                          onSignOff={() => { setCardMenu(null); signOff(it); }}
-                          activeSprint={boxes.find((b) => b.id === activeId) || null}
-                          onBuildNow={() => { setCardMenu(null); buildNow(it); }}
-                          onRun={col.key === 'planned' && !it.done && !String(it.claimedBy || '').trim() && !isHeld(it)
-                            ? () => { closeAll(); setCardMenu(null); runInTerminal(it); } : undefined}
-                          onAddToSprint={(sid) => { setCardMenu(null); addToSprint(it, sid); }}
-                          onReady={(on) => { setCardMenu(null); setReady(it, on); }}
-                          onPark={() => { setCardMenu(null); park(it); }}
-                          onArchive={() => { setCardMenu(null); archive(it); }}
-                          onDerive={() => { setCardMenu(null); derive(it); }}
-                          onDelete={() => { setCardMenu(null); remove(it); }} />
-                      ))}
-
-                      {!colFolded && col.items.length === 0 && <span className="km-colempty">Nothing here</span>}
-
-                      {!colFolded && col.real && (composer === overKey ? (
-                        <Composer onClose={() => setComposer(null)}
-                          onAdd={(text, bucket) => { setComposer(null); add(text, bucket, col.key, sec.untagged ? '' : sec.key); }} />
-                      ) : (
-                        <button className="km-add" onClick={(e) => { e.stopPropagation(); closeAll(); setComposer(overKey); }}>
-                          <KitIcon name="plus" size={14} />Create
-                        </button>
-                      ))}
+                    <div className={`km-group${gFolded ? ' folded' : ''}`} key={g.key} data-area={g.key}>
+                      <div className="km-grouphead">
+                        {!searching && (
+                          <button className="km-foldbtn"
+                            aria-expanded={!gFolded}
+                            aria-label={`${gFolded ? 'Expand' : 'Collapse'} area — ${meta.name}`}
+                            title={gFolded ? 'Expand this area, in every column' : 'Collapse this area, in every column'}
+                            onClick={(e) => { e.stopPropagation(); closeAll(); foldSection(g.key); }}>
+                            <KitIcon name={gFolded ? 'chevron-right' : 'chevron-down'} size={13} />
+                          </button>
+                        )}
+                        {meta.dot && <span className="km-dot" style={{ background: meta.dot }} />}
+                        <span className="nm">{meta.name}</span>
+                        {meta.holder && (
+                          <span className="k-tag warning"
+                            title={`Lane held by ${meta.holder} — no second worker until it lands`}>held</span>
+                        )}
+                        <span className="rule" />
+                        <span className="n">{g.items.length}</span>
+                      </div>
+                      {!gFolded && g.items.map(card)}
                     </div>
                   );
                 })}
 
-                {lists && <AddColumn onAdd={addCol} />}
-              </div>}
-            </section>
-          );
+                {!colFolded && col.items.length === 0 && <span className="km-colempty">Nothing here</span>}
+
+                {!colFolded && col.real && (composer === col.key ? (
+                  <Composer onClose={() => setComposer(null)}
+                    onAdd={(text, bucket) => { setComposer(null); add(text, bucket, col.key, homeArea); }} />
+                ) : (
+                  <button className="km-add" onClick={(e) => { e.stopPropagation(); closeAll(); setComposer(col.key); }}
+                    title={homeArea ? `Create in ${homeArea}` : 'Create an untagged card — pick one area to create in it'}>
+                    <KitIcon name="plus" size={14} />Create
+                  </button>
+                ))}
+              </div>
+            );
           })}
 
-          {sections.length === 0 && (
-            <div className="km-colempty">
-              {query.trim() || hideParked ? 'Nothing matches those filters.' : 'No cards on this board yet.'}
-            </div>
-          )}
+          {lists && <AddColumn onAdd={addCol} />}
         </div>
         </>}
         </>}
@@ -1212,7 +1188,7 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
 
       {dialog && (
         <CreateDialog onClose={() => setDialog(false)}
-          onCreate={(title, bucket, extra) => { setDialog(false); add(title, bucket, '', focus === UNTAGGED ? '' : focus, extra); }} />
+          onCreate={(title, bucket, extra) => { setDialog(false); add(title, bucket, '', homeArea, extra); }} />
       )}
     </>
   );
@@ -1225,12 +1201,14 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
 // The Roadmap tab's own chip (`.im-chip`), with one substitution: the kit
 // gives each of its six invented areas an ICON, and a real area has no icon —
 // it has a `dot`, chosen by the owner from the board's closed palette. So the
-// dot is what identifies it, and "All areas" and untagged carry none.
-export function AreaChip({ label, dot, count, active, onClick }: {
-  label: string; dot?: string; count: number; active: boolean; onClick: () => void;
+// dot is what identifies it, and "All areas" and untagged carry none. `dim` is
+// an area a live filter leaves out.
+export function AreaChip({ label, areaKey, dot, count, active, dim = false, onClick }: {
+  label: string; areaKey?: string; dot?: string; count: number; active: boolean; dim?: boolean; onClick: () => void;
 }) {
   return (
-    <button className={`im-chip${active ? ' on' : ''}`} onClick={onClick} aria-pressed={active}>
+    <button className={`im-chip${active ? ' on' : ''}${dim ? ' km-chipdim' : ''}`} onClick={onClick}
+      aria-pressed={active} data-area={areaKey}>
       {dot && <span className="km-dot" style={{ background: dot }} />}
       {label}
       <span className="n">{count}</span>
