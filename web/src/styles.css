@@ -2406,8 +2406,18 @@ a.tab { display: inline-block; }
 }
 .tcg-head .asking .d { width: 5px; height: 5px; border-radius: 50%; background: currentColor; animation: term-ask 1.6s ease-in-out infinite; }
 @keyframes term-ask { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+/* Projects inside a tool, each fenced off by a rule and a head, so two
+   projects' sessions never run together down the column. */
+.tcg-proj { display: flex; flex-direction: column; gap: 2px; padding-top: 6px; border-top: 1px solid var(--line-2); }
+.tcg-proj + .tcg-proj { margin-top: 4px; }
+.tcg-projhead { display: flex; align-items: center; gap: 6px; padding: 0 2px 2px 11px; }
+.tcg-projhead .nm {
+  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted);
+}
+.tcg-projhead .n { font-family: var(--mono); font-size: 9.5px; color: var(--fainter); }
 .tcg-row {
-  display: flex; align-items: center; gap: 7px; width: 100%; text-align: left;
+  display: flex; align-items: flex-start; gap: 7px; width: 100%; text-align: left;
   padding: 6px 8px 6px 10px; margin-left: 9px; width: calc(100% - 9px);
   border: 0; border-left: 2px solid var(--line-2); background: transparent;
   cursor: grab; border-radius: 0 6px 6px 0;
@@ -2418,13 +2428,17 @@ a.tab { display: inline-block; }
    is still yours, still costing tokens, and still one CLICK from the screen —
    hiding it is how a session gets forgotten on the host. */
 .tcg-row.off { opacity: .62; }
-.tcg-row .dot { width: 6px; height: 6px; border-radius: 50%; flex: none; background: var(--line-3); }
+.tcg-row .dot { width: 6px; height: 6px; border-radius: 50%; flex: none; background: var(--line-3); margin-top: 5px; }
+/* Line 1 is the name, alone; line 2 carries the model and the sub-path. */
+.tcg-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.tcg-l1, .tcg-l2 { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.tcg-l2:empty { display: none; }
 .tcg-row .dot.live { background: var(--live); }
 .tcg-row .dot.connecting { background: var(--building); }
 .tcg-row .dot.error { background: var(--critical); }
-.tcg-row .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; color: var(--body); }
+.tcg-row .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 500; color: var(--body); }
 .tcg-row.on .t { color: var(--ink); }
-.tcg-row .cw { flex: none; font-family: var(--mono); font-size: 9.5px; color: var(--fainter); }
+.tcg-row .cw { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: 9.5px; color: var(--fainter); }
 /* THE ASK MARK — a session that has stopped for an answer, on its own row.
    The row's left edge goes warning-coloured as well as the dot: the dot is
    what you read once you are on the row, the edge is what pulls you to it down

@@ -166,6 +166,21 @@ const TOOL_GROUPS: { key: Sess['cmd']; name: string; mark: string }[] = [
   { key: 'claude', name: 'Claude Code', mark: 'C' },
   { key: 'shell', name: 'Shell', mark: '$' },
 ];
+// Inside a tool, the rail splits sessions by PROJECT: the first segment of the
+// cwd, which is what `~/slug` opens. Home ('') sorts last. The rest of the path
+// (`src/web`) is what is left to say on the row, since the head names the project.
+function byProject(list: Sess[]): { project: string; rows: Sess[] }[] {
+  const out = new Map<string, Sess[]>();
+  for (const x of list) {
+    const p = (x.cwd || '').replace(/^[/\\~]+/, '').split('/')[0] || '';
+    out.set(p, [...(out.get(p) || []), x]);
+  }
+  return [...out.entries()]
+    .sort(([a], [b]) => (a === '' ? 1 : b === '' ? -1 : a.localeCompare(b)))
+    .map(([project, rows]) => ({ project, rows }));
+}
+const subPathOf = (cwd?: string) =>
+  (cwd || '').replace(/^[/\\~]+/, '').split('/').slice(1).join('/');
 // #503 — WHAT A SESSION IS TALKING TO, as a chip on its row.
 //
 // THREE STATES, and collapsing any two of them is the whole trap:
@@ -2137,7 +2152,13 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                             )}
                             <span className="n">{mine.length}</span>
                           </div>
-                          {mine.map((x) => {
+                          {byProject(mine).map(({ project, rows }) => (
+                          <div className="tcg-proj" key={project || '~'}>
+                          <div className="tcg-projhead">
+                            <span className="nm">{project || '~ home'}</span>
+                            <span className="n">{rows.length}</span>
+                          </div>
+                          {rows.map((x) => {
                             const onScreen = slotIds.includes(x.id);
                             const pinned = !!x.tmux && pinnedOf(x.tmux);
                             // The one thing on this row that is not a reading
@@ -2162,6 +2183,12 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                                   if (renaming?.id !== x.id) showInLead(x.id);
                                 }}>
                                 <span className={`dot ${x.status}`} />
+                                {/* TWO LINES: the name gets the row's full
+                                    width, and everything else — model, sub-path
+                                    — reads beneath it. On one line the chip and
+                                    the cwd squeezed the name to a few letters. */}
+                                <span className="tcg-body">
+                                <span className="tcg-l1">
                                 {renaming?.id === x.id && renaming.where === 'rail' ? (
                                   <input className="tcg-edit" autoFocus value={draft}
                                     aria-label="Session name"
@@ -2224,6 +2251,8 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                                     📌
                                   </button>
                                 )}
+                                </span>
+                                <span className="tcg-l2">
                                 {/* The design's last column is the session's
                                     token count. There is no PER-SESSION token
                                     figure on this screen — the daemon reports
@@ -2236,10 +2265,14 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                                 <ModelChip model={x.model}
                                   resolved={x.resolvedModel || (x.tmux ? resolvedByTmux.get(x.tmux) : '')}
                                   show={x.cmd === 'claude'} />
-                                <span className="cw">{x.cwd || '~'}</span>
+                                {subPathOf(x.cwd) && <span className="cw">{subPathOf(x.cwd)}/</span>}
+                                </span>
+                                </span>
                               </div>
                             );
                           })}
+                          </div>
+                          ))}
                         </div>
                       );
                     })}
