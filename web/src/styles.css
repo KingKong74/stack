@@ -4520,7 +4520,10 @@ body[data-mc-full] .totop { display: none; }
 /* ---- the lanes ---- */
 .km-cols { display: flex; gap: var(--space-5); align-items: flex-start; overflow-x: auto; padding-bottom: var(--space-4); }
 .km-col {
-  width: var(--column-w); flex: 0 0 auto;
+  /* Board v5 — the columns SHARE THE WIDTH rather than sitting at a fixed
+     272px with dead space beside them; `--column-w` is now the floor, below
+     which the row scrolls sideways as it always did. */
+  flex: 1 0 var(--column-w); min-width: var(--column-w);
   background: var(--surface-raised); border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg); padding: var(--space-4);
   display: flex; flex-direction: column; gap: var(--space-4);
@@ -4643,7 +4646,7 @@ body[data-mc-full] .totop { display: none; }
    board can tell. The name turns rather than truncating to two characters:
    "In Review" and "In Progress" share their first six. */
 .km-col.folded {
-  width: auto; min-width: 46px; padding: var(--space-4) var(--space-3);
+  flex: 0 0 auto; width: auto; min-width: 46px; padding: var(--space-4) var(--space-3);
   align-items: center;
 }
 .km-col.folded .km-colhead {
@@ -4849,6 +4852,11 @@ body[data-mc-full] .totop { display: none; }
 }
 .km-card:hover { background: var(--surface-overlay); box-shadow: var(--shadow-md); }
 .km-card.selected { border-color: var(--border-focus); }
+/* Board v5 — the area colour on the card's top edge (Board.tsx sets the
+   resting tone inline; see IssueCard). Two pixels, so it reads as a band and
+   not as a border that failed to match. Full strength on hover. */
+.km-card.tinted { border-top-width: 2px; }
+.km-card.tinted:hover { border-top-color: var(--km-tint) !important; }
 .km-card > .t { font: var(--type-body-sm); color: var(--text-primary); text-wrap: pretty; }
 .km-cardmeta { display: flex; align-items: center; gap: var(--space-3); }
 .km-cardmeta .kind { display: flex; }

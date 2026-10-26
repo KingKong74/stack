@@ -79,6 +79,10 @@ function readStackEnv() {
 // state a reader really sees, so it is kept — and `quality-open` presses a
 // feature fold because `.ql-frow.open` wears the same lightened ground with no
 // cursor on it at all.
+// Expand all, pressed only while every area IS folded. A press list entry
+// starting with `?` is optional: pressed when it matches, skipped when not.
+const OPEN_BOARD = '?.km-collapseall[data-all-folded="true"]';
+
 const SCREENS = [
   { slug: 'dashboard', hash: '#/' },
   // The Projects page's two tones first paint can't reach: a card's actions
@@ -133,10 +137,17 @@ const SCREENS = [
   { slug: 'loops', hash: '#/p/{slug}/loops' },
   { slug: 'loops-event', hash: '#/p/{slug}/loops', press: ['.lp .lp-node.when .lp-seg button:nth-child(2)'] },
   { slug: 'roadmap', hash: '#/p/{slug}/roadmap' },
-  { slug: 'board-priority', hash: '#/p/{slug}/roadmap', press: ['.km-card [aria-label^="Priority"]'] },
-  { slug: 'board-cardmenu', hash: '#/p/{slug}/roadmap', press: ['.km-card [aria-label^="More actions for #"]'] },
+  // #524 — THE BOARD LANDS WITH EVERY AREA FOLDED, so first paint has no card
+  // on it at all. Every screen that measures a card presses Expand all first
+  // — OPTIONALLY (see OPEN_BOARD): the button toggles, the folds persist in
+  // this run's shared context, and a second unconditional press would fold
+  // the board the previous screen had opened. `board-open` is the cards at
+  // rest: their area-coloured top edge (Board v5) and every chip on them.
+  { slug: 'board-open', hash: '#/p/{slug}/roadmap', press: [OPEN_BOARD] },
+  { slug: 'board-priority', hash: '#/p/{slug}/roadmap', press: [OPEN_BOARD, '.km-card [aria-label^="Priority"]'] },
+  { slug: 'board-cardmenu', hash: '#/p/{slug}/roadmap', press: [OPEN_BOARD, '.km-card [aria-label^="More actions for #"]'] },
   { slug: 'board-colmenu', hash: '#/p/{slug}/roadmap', press: ['[aria-label^="Column actions"]'] },
-  // #469 — a scoped board (one area section, its header carrying the lane line)
+  // #469 — a scoped board (one area picked, its head carrying the lane line)
   // and an open inline title editor, which paints its own text over a card in
   // the focus state. Neither exists at first paint.
   { slug: 'board-scoped', hash: '#/p/{slug}/roadmap', press: ['.km-scope .im-chip:last-of-type'] },
@@ -145,7 +156,7 @@ const SCREENS = [
   // pointer is down, and the preview is a whole small surface of its own: two
   // chips, an arrow and a dashed zone, on a --surface-selected ground this
   // audit had never measured anything over. `drag` below is what gets there.
-  { slug: 'board-drag', hash: '#/p/{slug}/roadmap', drag: true },
+  { slug: 'board-drag', hash: '#/p/{slug}/roadmap', press: [OPEN_BOARD], drag: true },
   { slug: 'board-backlog', hash: '#/p/{slug}/roadmap', press: ['.km-tabs .k-tab:nth-child(2)'] },
   // #498 — THE BACKLOG TAB WEARS THE SAME FOUR DRAG STATES, over grounds the
   // kanban's row never measured: a row in flight at the page's full width, a
@@ -497,8 +508,14 @@ async function main() {
       // alternative is auditing the tab underneath and calling it the one
       // named, which is a clean result for a screen nobody looked at.
       let reached = true;
-      for (const sel of screen.press || []) {
+      for (const raw of screen.press || []) {
+        const optional = raw.startsWith('?');
+        const sel = optional ? raw.slice(1) : raw;
         try {
+          // Waited for, not counted: the board paints its groups after its
+          // payload lands, and a count taken before that skips a press the
+          // screen needed.
+          if (optional && !(await page.locator(sel).first().waitFor({ timeout: 4000 }).then(() => true, () => false))) continue;
           await page.locator(sel).first().click({ timeout: 4000 });
           await page.waitForTimeout(400);
         } catch (e) {

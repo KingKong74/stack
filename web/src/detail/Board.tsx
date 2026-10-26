@@ -945,6 +945,7 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
               searching, like every other fold control, and with the grouping. */}
           {!searching && !listMode && grouped && (
             <button className="k-btn sm secondary km-collapseall" onClick={collapseAll}
+              data-all-folded={allFolded}
               disabled={groupKeys.length === 0}
               title={allFolded ? 'Open every area' : 'Fold every area to its header, in every column'}>
               <KitIcon name={allFolded ? 'chevron-down' : 'chevron-right'} size={14} />{allFolded ? 'Expand all' : 'Collapse all'}
@@ -1083,6 +1084,8 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
                   ? () => { closeAll(); setCardMenu(null); runInTerminal(it); } : undefined}
                 onAddToSprint={(sid) => { setCardMenu(null); addToSprint(it, sid); }}
                 onReady={(on) => { setCardMenu(null); setReady(it, on); }}
+                tint={areaMeta(areaKey(it)).dot}
+                showArea={!grouped}
                 onPark={() => { setCardMenu(null); park(it); }}
                 onArchive={() => { setCardMenu(null); archive(it); }}
                 onDerive={() => { setCardMenu(null); derive(it); }}
@@ -1459,9 +1462,17 @@ function IssueCard({
   editing, onOpenInline, onInline, onCancelInline,
   priOpen, onPri, onPick, ptsOpen, onPts, onPoints, menuOpen, onMenu,
   onKind, onDue, onEdit, onSignOff, onPark, onArchive, onDerive, onDelete,
-  activeSprint, onBuildNow, onAddToSprint, onRun, onReady,
+  activeSprint, onBuildNow, onAddToSprint, onRun, onReady, tint, showArea,
 }: {
   item: RoadmapItem;
+  /** Board v5 — the card's AREA COLOUR (`project_areas.dot`), drawn as its top
+   *  edge; '' for untagged or an area with no colour, which draws none. */
+  tint: string;
+  /** Board v5 — whether the card names its area in a tag. Off while the
+   *  column is grouped by area: the group head above already says it, and
+   *  the colour says it again. On in flat columns, where colour alone would
+   *  leave ten similar dots to tell apart. */
+  showArea: boolean;
   /** How many `parent_id` children this item has — its ideas, on the Roadmap tab. */
   ideas: number;
   /** The sprint this card is in, resolved from the project's own list, or null
@@ -1541,12 +1552,23 @@ function IssueCard({
   };
   useEffect(() => { if (!menuOpen) setConfirming(false); }, [menuOpen]);
 
+  const tinted = !!tint && !selected && !dragging && !landed && !editing;
   return (
     // DRAGGABLE IS OFF WHILE THE TITLE IS BEING EDITED. A `draggable` ancestor
     // eats the pointer inside a text input in Chromium — select-by-drag stops
     // working and the card starts flying instead — so the one gesture is
     // switched off for exactly as long as the other one is open.
-    <div ref={cardRef} className={`km-card${selected ? ' selected' : ''}${dragging ? ' dragging' : ''}${landed ? ' landed' : ''}${editing ? ' editing' : ''}`}
+    <div ref={cardRef} className={`km-card${selected ? ' selected' : ''}${dragging ? ' dragging' : ''}${landed ? ' landed' : ''}${editing ? ' editing' : ''}${tinted ? ' tinted' : ''}`}
+      // THE AREA COLOUR IS AN INLINE `border-top-color`, and that is the
+      // palette audit's rule, not taste: a data tone is exempt only on the
+      // element whose own style names the property it paints. At rest it is
+      // mixed 70% into the card (the design's), and the stylesheet takes it to
+      // full strength on hover through `--km-tint`. A selected, dragged,
+      // landed or edited card drops it, so those states keep their whole ring.
+      style={tinted ? {
+        borderTopColor: `color-mix(in oklch, ${tint} 70%, var(--surface-card))`,
+        ['--km-tint' as string]: tint,
+      } : undefined}
       data-hl={item.id} onClick={onSelect} onDoubleClick={openItem}
       draggable={!editing} onDragStart={onDragStart} onDragEnd={onDragEnd}>
       {editing
@@ -1612,7 +1634,7 @@ function IssueCard({
         </span>
       </div>
 
-      {(held || item.ready || fly || sprint || kind || due || item.area || item.claimedBy || item.skipped || item.reviewTag) && (
+      {(held || item.ready || fly || sprint || kind || due || (showArea && item.area) || item.claimedBy || item.skipped || item.reviewTag) && (
         <div className="km-cardtags">
           {/* HELD IS FIRST, ahead of even the sprint chip, because it OUTRANKS
               it: a held row in the box in progress still does not run, so a
@@ -1691,7 +1713,7 @@ function IssueCard({
               <KitIcon name="calendar" size={11} /><span className="v">{due.label}</span>
             </span>
           )}
-          {item.area && <span className="k-tag">{item.area}</span>}
+          {showArea && item.area && <span className="k-tag">{item.area}</span>}
           {item.claimedBy && (
             // A BRANCH NAME IS THE ONE UNBOUNDED STRING ON A CARD. `<kind>/<id>-<summary>`
             // (#363) routinely runs past a 272px column, and `.k-tag` is
