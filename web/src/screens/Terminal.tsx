@@ -169,8 +169,8 @@ const TOOL_GROUPS: { key: Sess['cmd']; name: string; mark: string }[] = [
 // Inside a tool, the rail splits sessions by PROJECT: the first segment of the
 // cwd, which is what `~/slug` opens. Home ('') sorts last. The rest of the path
 // (`src/web`) is what is left to say on the row, since the head names the project.
-function byProject(list: Sess[]): { project: string; rows: Sess[] }[] {
-  const out = new Map<string, Sess[]>();
+function byProject<T extends { cwd?: string }>(list: T[]): { project: string; rows: T[] }[] {
+  const out = new Map<string, T[]>();
   for (const x of list) {
     const p = (x.cwd || '').replace(/^[/\\~]+/, '').split('/')[0] || '';
     out.set(p, [...(out.get(p) || []), x]);
@@ -2292,7 +2292,13 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                           <span className="lbl">Idle on the host</span>
                           <span className="n">{detachedShown.length}</span>
                         </div>
-                        {detachedShown.map((d) => {
+                        {byProject(detachedShown).map(({ project, rows }) => (
+                        <div className="tcg-proj" key={project || '~'}>
+                        <div className="tcg-projhead">
+                          <span className="nm">{project || '~ home'}</span>
+                          <span className="n">{rows.length}</span>
+                        </div>
+                        {rows.map((d) => {
                           const nm = labels[d.name] || d.label || '';
                           const picked = killPick.includes(d.name);
                           return (
@@ -2308,8 +2314,11 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                                   if (isPickClick(e)) { e.preventDefault(); if (!d.attached) toggleKillPick(d.name); return; }
                                   attachDetached(d);
                                 }}>
+                                {/* Name on line 1, as the live rows have it;
+                                    the project head above says where. */}
+                                <span className="t">{nm || 'not named yet'}</span>
                                 <span className="w">
-                                  ↺ {d.cwd ? `~/${d.cwd}` : '~'}
+                                  ↺ {subPathOf(d.cwd) ? `${subPathOf(d.cwd)}/` : ''}
                                   <span className="st">{d.attached ? 'another device' : 'detached'}</span>
                                   {/* An idle row is the one place an unanswered
                                       question can sit unseen for hours: no pane
@@ -2336,7 +2345,6 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                                       only), so the chip always applies here. */}
                                   <ModelChip model={d.model ?? null} resolved={d.resolvedModel} show />
                                 </span>
-                                {nm && <span className="t">{nm}</span>}
                               </button>
                               <span className="tci-acts">
                                 {/* #292 — the keep pin, on EVERY row: the reaper
@@ -2368,6 +2376,8 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                             </div>
                           );
                         })}
+                        </div>
+                        ))}
                         {killable.length > 1 && (
                           <div className="tci-bulk">
                             <button className="btn-repo sm"
