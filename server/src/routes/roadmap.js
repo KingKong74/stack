@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { q, pool } from '../db.js';
 import { projectBySlug } from '../resolve.js';
-import { fingerprint, oneOf, BUCKETS, BUCKET_DEFAULT, cleanPlan, cleanReviewTags, riskWriteSource, capNote, cleanSpec, cleanCanvas, ITEM_NOTE_MAX } from '../util.js';
+import { fingerprint, oneOf, BUCKETS, BUCKET_DEFAULT, cleanPlan, cleanReviewTags, riskWriteSource, capNote, cleanSpec, ITEM_NOTE_MAX } from '../util.js';
 import { cleanLabels, ensureLabels } from '../labels.js';
 
 // How far the timeline spans, and where "now" sits in it. A bar is an OFFSET IN
@@ -338,56 +338,6 @@ roadmap.post('/batch', async (req, res) => {
     }
     await client.query('COMMIT');
     res.status(201).json({ items: made });
-  } catch (e) {
-    await client.query('ROLLBACK').catch(() => {});
-    throw e;
-  } finally {
-    client.release();
-  }
-});
-
-// PUT /canvas  -> {items:[{id, canvas}]}: the Roadmap canvas's layout writes.
-// Each `canvas` is a PARTIAL: its keys are merged over the stored object and a
-// null removes one, so dragging a note never clobbers its stage or votes. One
-// transaction, because a tidy moves every note at once and half a tidy is a
-// mess nobody asked for. It does NOT bump updated_at: the archive sorts and the
-// closure counts read that column as movement on the work, and a note being
-// nudged across a canvas is not.
-export const CANVAS_BATCH_MAX = 300;
-roadmap.put('/canvas', async (req, res) => {
-  const items = Array.isArray(req.body?.items) ? req.body.items : null;
-  if (!items || !items.length) return res.status(400).json({ error: 'items must be a non-empty array.' });
-  if (items.length > CANVAS_BATCH_MAX) return res.status(400).json({ error: `At most ${CANVAS_BATCH_MAX} items per call (got ${items.length}).` });
-  const ids = items.map((it) => Number(it?.id));
-  if (ids.some((id) => !Number.isInteger(id) || id <= 0)) return res.status(400).json({ error: 'every item needs an integer id.' });
-  if (items.some((it) => !it.canvas || typeof it.canvas !== 'object' || Array.isArray(it.canvas))) {
-    return res.status(400).json({ error: 'every item needs a canvas object.' });
-  }
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-    const { rows } = await client.query(
-      'SELECT id, canvas FROM roadmap_items WHERE project_id = $1 AND id = ANY($2) FOR UPDATE',
-      [req.project.id, ids]);
-    const have = new Map(rows.map((r) => [r.id, r.canvas || {}]));
-    const missing = ids.filter((id) => !have.has(id));
-    if (missing.length) {
-      await client.query('ROLLBACK');
-      return res.status(404).json({ error: `Not in this project: #${missing.join(', #')}.` });
-    }
-    const out = [];
-    for (let k = 0; k < items.length; k++) {
-      const merged = { ...have.get(ids[k]) };
-      for (const [key, v] of Object.entries(items[k].canvas)) {
-        if (v === null) delete merged[key]; else merged[key] = v;
-      }
-      const canvas = cleanCanvas(merged);
-      have.set(ids[k], canvas);
-      await client.query('UPDATE roadmap_items SET canvas = $1::jsonb WHERE id = $2', [JSON.stringify(canvas), ids[k]]);
-      out.push({ id: ids[k], canvas });
-    }
-    await client.query('COMMIT');
-    res.json({ items: out });
   } catch (e) {
     await client.query('ROLLBACK').catch(() => {});
     throw e;

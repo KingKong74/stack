@@ -330,86 +330,7 @@ const ROADMAP_PANELS = [
   },
 ];
 
-// THE ROADMAP TAB IS A CANVAS (detail/Roadmap.tsx): kept ideas as notes you
-// drag, group, merge and mature, with an inbox rail of unplaced ones.
-//
-// READ-ONLY, on the same terms as the board's presses. Every press below is
-// view state: the layout and inbox switches (device-local, through store.ts),
-// a filter chip, the zoom, the Tidy menu opened and never chosen from, and a
-// note selected. NEVER pressed: a tidy option, a drag, a double-click (each
-// writes positions or files an idea), and nothing inside the inspector.
-//
-// ORDER: the area and chrome presses first, because they need no idea on
-// screen. The note press comes last: an empty canvas reports it as
-// `control-missing`, which is the honest answer, and everything after a
-// failure on a screen is abandoned untested.
-const IDEAS_PANELS = [
-  {
-    id: 'ideas-scope',
-    label: 'Roadmap — an area chip filters the canvas',
-    click: '.rc .km-scope .im-chip:last-of-type',
-    expect: '.rc .km-scope .im-chip:last-of-type.on',
-  },
-  {
-    id: 'ideas-all',
-    label: 'Roadmap — All clears the filter',
-    click: '.rc .km-scope .im-chip:first-of-type',
-    expect: '.rc .km-scope .im-chip:first-of-type.on',
-  },
-  {
-    // Opened, never submitted: its blur commits an empty name, which AddArea
-    // drops before it reaches the wire. AFTER the chips: open, it is wider, and
-    // the press that closes it reflows the chip row under the next click.
-    id: 'ideas-newarea',
-    label: 'Roadmap — + New area opens its name field',
-    click: '.rc .km-addarea',
-    expect: '.rc .km-addarea.open input',
-  },
-  {
-    id: 'ideas-tidymenu',
-    label: 'Roadmap — Tidy up opens its menu (no option is chosen)',
-    click: '.rc .rc-tidywrap .rc-btn',
-    expect: '.rc .rc-tidywrap .rc-menu',
-  },
-  {
-    id: 'ideas-lanes',
-    label: 'Roadmap — Lanes draws the stage lanes',
-    click: '.rc .rc-layout:nth-child(2)',
-    expect: '.rc .rc-band',
-  },
-  {
-    id: 'ideas-canvas',
-    label: 'Roadmap — Canvas puts the free canvas back',
-    click: '.rc .rc-layout:nth-child(1)',
-    expect: '.rc .rc-world:not(.lanes)',
-  },
-  {
-    id: 'ideas-zoom',
-    label: 'Roadmap — zoom in',
-    click: '.rc [aria-label="Zoom in"]',
-    expectTextChangeIn: '.rc .rc-zoom .pct',
-  },
-  {
-    id: 'ideas-inbox-fold',
-    label: 'Roadmap — the inbox folds to a rail',
-    click: '.rc [aria-label="Collapse inbox"]',
-    expect: '.rc .rc-inboxrail',
-  },
-  {
-    id: 'ideas-inbox-open',
-    label: 'Roadmap — the rail opens the inbox again',
-    click: '.rc .rc-inboxrail',
-    expect: '.rc .rc-inbox',
-  },
-  {
-    id: 'ideas-select',
-    label: 'Roadmap — a note opens the inspector',
-    click: '.rc .rc-note:not([data-ghost]) .t',
-    expect: '.rc .rc-insp',
-  },
-];
-
-// THE DESIGN'S OTHER THREE VIEWS (detail/Artifacts.tsx, SkillsAgents.tsx,
+// THE DESIGN'S THREE OTHER VIEWS (detail/Artifacts.tsx, SkillsAgents.tsx,
 // Loops.tsx). Loops is a mockup on component state, so a press there writes
 // nothing anywhere. Artifacts and Skills & agents are WIRED: their presses are
 // view state only (a type tab, a grouping, a fold opened), and NEVER New, Edit,
@@ -425,7 +346,7 @@ const ARTIFACTS_PANELS = [
   },
   {
     id: 'artifacts-group',
-    label: 'Artifacts — Group by Idea regroups the list',
+    label: 'Artifacts — Group by Item regroups the list',
     click: '.ar .ar-gb:nth-of-type(3)',
     expect: '.ar .ar-gb:nth-of-type(3).on',
   },
@@ -767,12 +688,6 @@ export const SCREENS = [
   // are walked on purpose: the route is the contract, and a strip that stopped
   // honouring one of its keys would still render perfectly on the other.
   { id: 'project-auto', label: 'Project — Auto-ideas', path: '#/p/<slug>/auto' },
-  {
-    id: 'project-ideas',
-    label: 'Project — Roadmap capture',
-    path: '#/p/<slug>/ideas',
-    interactions: IDEAS_PANELS,
-  },
   {
     id: 'project-artifacts',
     label: 'Project — Artifacts',

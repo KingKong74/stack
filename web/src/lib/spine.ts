@@ -57,7 +57,7 @@
 import type { Bug, PulseUsage, Roadmap, RoadmapItem, Severity } from '../types';
 import { hrefTo } from './route';
 import { parseBranch, type LaneKind } from './branch';
-// The Roadmap tab owns the schedule, so its arithmetic is imported and never
+// lib/plan.ts owns the schedule, so its arithmetic is imported and never
 // re-spelt here: one definition of the minute offsets, of slip, and of what "in
 // this cycle" means, or the Overview and the Timeline disagree about the same plan.
 import { SCHED_MINUTES, MIN_SCHED_LEN, slipOf, scopeTotals, isBuilt, flatRoadmap, type ScopeTotals } from './plan';
@@ -129,19 +129,19 @@ export function buildSpine(
     {
       key: 'planned', label: 'Planned', sub: 'open, unclaimed',
       count: planned.length,
-      href: hrefTo.detail(slug, 'roadmap'), hrefLabel: 'Roadmap',
+      href: hrefTo.detail(slug, 'roadmap'), hrefLabel: 'Board',
       blocked: false, lastMovedDays: lastMoved(planned, now),
     },
     {
       key: 'inflight', label: 'In flight', sub: 'claimed right now',
       count: inflight.length,
-      href: hrefTo.detail(slug, 'roadmap'), hrefLabel: 'Roadmap',
+      href: hrefTo.detail(slug, 'roadmap'), hrefLabel: 'Board',
       blocked: false, lastMovedDays: lastMoved(inflight, now),
     },
     {
       key: 'built', label: 'Built', sub: 'awaiting your verdict',
       count: built.length,
-      href: hrefTo.detail(slug, 'roadmap'), hrefLabel: 'Roadmap',
+      href: hrefTo.detail(slug, 'roadmap'), hrefLabel: 'Board',
       blocked: false, lastMovedDays: lastMoved(built, now),
     },
     {

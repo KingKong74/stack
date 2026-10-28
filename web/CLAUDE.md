@@ -4,7 +4,7 @@ The root `CLAUDE.md` holds the cross-package rules (mirrored predicates, fail-sa
 file holds what applies only here. These file headers carry their own rules; read one before editing
 its file: `lib/branch.ts`, `lib/plan.ts`, `lib/quality.ts`, `lib/termClipboard.ts`, `lib/termLaunch.ts`, `styles.css`,
 `components/Brandmark.tsx`, `components/RoadmapModal.tsx`, `components/Asking.tsx`,
-`detail/Board.tsx`, `detail/Roadmap.tsx`, `detail/ForYou.tsx`, `detail/Plans.tsx`,
+`detail/Board.tsx`, `detail/ForYou.tsx`, `detail/Plans.tsx`,
 `detail/Development.tsx`, `detail/SkillsAgents.tsx`, `detail/Loops.tsx`, `detail/Artifacts.tsx`, `components/Markdown.tsx`.
 
 ## Structure
@@ -24,21 +24,17 @@ its file: `lib/branch.ts`, `lib/plan.ts`, `lib/quality.ts`, `lib/termClipboard.t
 
 ## Which screen a row is on
 
-`homeOf` (`lib/plan.ts`) is the one function that decides, returning `auto | roadmap | board`. A row
-on two screens gets acted on twice; a row on none has silently vanished.
+`homeOf` (`lib/plan.ts`) is the one function that decides, returning `auto | board`. A row on both
+screens gets acted on twice; a row on neither has silently vanished.
 
-- **Auto-ideas** (For you): a held row (`hook`/`fly`, not signed off) that nobody has worked.
-- **Roadmap**: a kept idea, either a child (`parent_id`) or a signed-off row with `committed` false.
-- **Board**: everything else. **Once anybody has worked a row** (a claim, a `built_note` or a tick:
-  `isWorked`), it's board work whatever its sign-off says. Its hold then only gates the runner, and
-  the board shows it (the `held` chip, answered from the card menu).
-- **Promoting is two writes with two meanings**: Roadmap sends `{reviewed:true, committed:false}`
-  ("keep this"); board sends `{reviewed:true, committed:true, parentId:null}` ("do this").
-  `committed` defaults true, is read `!== false` on both sides, and no other PATCH branch touches it.
-- **The board is for work we know we'll build; the Roadmap is for ideas** (owner's call). A
-  hand-typed idea is kept on Roadmap by `committed` false, not by a hold (a manual row is never
-  held). A double-click on its canvas files one. The canvas's stage, positions, groups and votes
-  are the row's `canvas` JSONB (`PUT /roadmap/canvas`), never a run condition.
+- **Auto-ideas** (For you): a held row (`hook`/`fly`/`plan`, not signed off) that nobody has worked.
+  Promote sends `{reviewed:true, committed:true, parentId:null}`.
+- **Board**: everything else, child rows and `committed` false rows included. **Once anybody has
+  worked a row** (a claim, a `built_note` or a tick: `isWorked`), it's board work whatever its
+  sign-off says. Its hold then only gates the runner, and the board shows it (the `held` chip,
+  answered from the card menu).
+- **There is no Roadmap tab** (owner's call, 2026-10-28). The `canvas` column is dormant: nothing
+  writes or serves it. Don't bring back a third home without changing `homeOf` with it.
 
 ## Ordering
 

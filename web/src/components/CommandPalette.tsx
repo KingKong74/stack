@@ -15,7 +15,7 @@ type Scope = 'all' | 'bugs' | 'roadmap' | 'activity';
 const SCOPES: { key: Scope; label: string }[] = [
   { key: 'all', label: 'All' },
   { key: 'bugs', label: 'Bugs' },
-  { key: 'roadmap', label: 'Roadmap' },
+  { key: 'roadmap', label: 'Board items' },
   { key: 'activity', label: 'Activity' },
 ];
 
@@ -23,7 +23,7 @@ const SCOPES: { key: Scope; label: string }[] = [
 const GROUP_ORDER: { key: keyof SearchResponse['groups']; label: string }[] = [
   { key: 'projects', label: 'Projects' },
   { key: 'bugs', label: 'Bugs' },
-  { key: 'roadmap', label: 'Roadmap' },
+  { key: 'roadmap', label: 'Board items' },
   { key: 'activity', label: 'Activity' },
 ];
 

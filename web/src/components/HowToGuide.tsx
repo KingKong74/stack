@@ -69,12 +69,10 @@ export function HowToGuide({ onClose }: { onClose: () => void }) {
         <div className="guide-step">
           <div className="guide-step-title"><span className="n">4</span> Inside a project</div>
           <div className="guide-step-body">
-            The left rail holds five surfaces. <b>For you</b> is where you left off, the push feed
-            and the extracted-idea queue. <b>The board</b> — it wears the project's own name — is
-            the committed work: a kanban that writes, and a <b>Backlog</b> tab where sprints are
-            ordered. <b>Roadmap</b> is the other half of that split: ideas a push read off a
-            commit, and children filed under something already on the board; <b>Promote</b> moves
-            one across. <b>Plans</b> reads the stored schedule back as a timeline and a calendar.
+            The left rail holds four surfaces. <b>For you</b> is where you left off, the push feed
+            and the extracted-idea queue, where <b>Promote</b> moves an idea onto the board.
+            <b> The board</b> — it wears the project's own name — is the committed work: a kanban
+            that writes, and a <b>Backlog</b> tab where sprints are ordered. <b>Plans</b> reads the stored schedule back as a timeline and a calendar.
             <b> Quality</b> is checks and bugs — still drawing the kit's sample rows, and it says
             so on its face.
           </div>

@@ -141,7 +141,7 @@ export function Timeline() {
                     ))}
                     {/* #381 — what live sessions STARTED that day, under the
                         pushes rather than mixed into them. Each row clicks
-                        through to the card on the Roadmap tab, which is where
+                        through to the card on the board, which is where
                         it gets signed off, reviewed or reworked. */}
                     {day.flies?.map((f) => (
                       <button className="tld-row fly" key={`fly-${f.id}`}

@@ -44,9 +44,7 @@
 //     count, the area's ⋯), which can be switched off for flat columns
 //     (`bview.flat`). The filter row lists EVERY area on the board as a toggle,
 //     several at once, with a Clear while any is on — the design's legend,
-//     exactly. ＋ New area sits in the toolbar. `.im-chip` is SHARED with
-//     detail/Roadmap.tsx rather than copied as `.km-*`: two stylesheets for
-//     one look is how two screens stop matching.
+//     exactly. ＋ New area sits in the toolbar.
 //     Two things the kit's version could not know. An area here is
 //     `roadmap_items.area`, and **(project, area) IS THE OVERNIGHT LANE**
 //     (#267) — so a group head says when its lane is HELD, and by which
@@ -117,7 +115,7 @@
 // idea pile and had to be Promoted back onto this board by hand. `homeOf` in
 // lib/plan.ts is where that line moved; what this screen owes it is saying the
 // hold out loud (the `held` chip) and being able to answer it (the menu),
-// because Roadmap's Promote can no longer see those rows.
+// because Auto-ideas' Promote can no longer see those rows.
 //
 // GIVING A VERDICT happens on the Inbox (screens/Inbox.tsx), not here: that is
 // where a built row is shown with its evidence (spec, run, both second-model
@@ -394,14 +392,10 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
     return rows
       .filter((it) => !it.archived)
       // #472 — THE BOARD DRAWS COMMITTED WORK. An untouched held row is For
-      // you's Auto-ideas pane now (#496) and an untouched child idea is the
-      // Roadmap tab's; `homeOf` in lib/plan.ts is the one line between the
-      // THREE screens, so no two can claim the same row. A row somebody has
-      // CLAIMED OR BUILT is committed work whatever its sign-off says, and
-      // lands here — which is the whole of "only what we worked on".
-      //
-      // `isBoardWork` and NOT `!isIdea`: with three surfaces the negation
-      // draws the Auto-ideas pile on the board, which is what #496 moved off.
+      // you's Auto-ideas pane (#496); `homeOf` in lib/plan.ts is the one line
+      // between the two screens, so both cannot claim the same row. A row
+      // somebody has CLAIMED OR BUILT is committed work whatever its sign-off
+      // says, and lands here.
       .filter((it) => isBoardWork(it))
       .filter((it) => (hideParked ? !it.skipped : true))
       .filter((it) => !needle
@@ -525,18 +519,6 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
   // searched few.
   const areaTotal = (k: string) => rows.filter((it) => !it.archived && isBoardWork(it) && areaKey(it) === k).length;
 
-  // How many ideas hang off each item. Counted off `rows`, never `visible`: a
-  // child is by definition not on the board, so counting the drawn set would
-  // report zero for everything.
-  const ideaCount = useMemo(() => {
-    const m = new Map<number, number>();
-    for (const it of rows) {
-      if (it.archived || it.parentId === null) continue;
-      m.set(it.parentId, (m.get(it.parentId) || 0) + 1);
-    }
-    return m;
-  }, [rows]);
-
   const onBoard = rows.filter((it) => !it.archived && isBoardWork(it));
   const shown = drawn.length;
 
@@ -625,7 +607,7 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
   // THE SIGN-OFF IS BACK ON THIS SCREEN, because a held row can be on it again:
   // a `fly` or `hook` row a session claimed or built is committed work and is
   // drawn here (`homeOf` in lib/plan.ts), while STILL being held out of the
-  // overnight runner by #359. Roadmap's Promote cannot see it any more, so
+  // overnight runner by #359. Auto-ideas' Promote cannot see it any more, so
   // without this the hold would be unanswerable from any browser — which is the
   // state #444 left and #359 called out by name.
   //
@@ -969,8 +951,8 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
 
         {/* THE AREA FILTER (Board v5) — every area on the board, each a toggle;
             several can be on at once. While any is, the rest dim and Clear
-            appears; nothing picked is every area. The chips are the Roadmap
-            tab's own (`AreaChip`), on this project's stored colours. */}
+            appears; nothing picked is every area. The chips are `AreaChip`,
+            on this project's stored colours. */}
         <div className="im-bar km-scope">
           {chips.map((c) => (
             <AreaChip key={c.key} areaKey={c.key} label={c.name} dot={c.dot} count={c.n}
@@ -1005,7 +987,7 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
             const wouldMove = takesDrop && !isSource;
             const isOver = over === col.key && wouldMove;
             const card = (it: RoadmapItem) => (
-              <IssueCard key={it.id} item={it} ideas={ideaCount.get(it.id) || 0}
+              <IssueCard key={it.id} item={it}
                 sprint={boxes.find((b) => b.id === it.sprintId) || null}
                 selected={selected === it.id}
                 onSelect={() => setSelected(it.id)}
@@ -1160,16 +1142,12 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
   );
 }
 
-// EXPORTED, with AddArea and AreaMenu, FOR THE ROADMAP TAB, which draws its
-// areas exactly as this board does (owner's request): one component per
-// control, so the two screens cannot drift apart.
-//
-// The Roadmap tab's own chip (`.im-chip`), with one substitution: the kit
+// The area chip (`.im-chip`), with one substitution: the kit
 // gives each of its six invented areas an ICON, and a real area has no icon —
 // it has a `dot`, chosen by the owner from the board's closed palette. So the
 // dot is what identifies it, and "All areas" and untagged carry none. `dim` is
 // an area a live filter leaves out.
-export function AreaChip({ label, areaKey, dot, count, active, dim = false, onClick }: {
+function AreaChip({ label, areaKey, dot, count, active, dim = false, onClick }: {
   label: string; areaKey?: string; dot?: string; count: number; active: boolean; dim?: boolean; onClick: () => void;
 }) {
   return (
@@ -1421,7 +1399,7 @@ function DropSlot({ from, to, shipped = false, say = 'Drop to move it here', not
 }
 
 function IssueCard({
-  item, ideas, sprint, selected, onSelect, dragging, landed, onDragStart, onDragEnd,
+  item, sprint, selected, onSelect, dragging, landed, onDragStart, onDragEnd,
   editing, onOpenInline, onInline, onCancelInline,
   priOpen, onPri, onPick, ptsOpen, onPts, onPoints, menuOpen, onMenu,
   onKind, onDue, onEdit, onSignOff, onPark, onArchive, onDerive, onDelete,
@@ -1436,8 +1414,6 @@ function IssueCard({
    *  the colour says it again. On in flat columns, where colour alone would
    *  leave ten similar dots to tell apart. */
   showArea: boolean;
-  /** How many `parent_id` children this item has — its ideas, on the Roadmap tab. */
-  ideas: number;
   /** The sprint this card is in, resolved from the project's own list, or null
    *  for the backlog. RESOLVED BY THE CALLER and not carried on the item: a
    *  name copied onto the row would be stale the moment a box is renamed, on
@@ -1548,17 +1524,10 @@ function IssueCard({
             the board. Held rows are back — the worked ones — but the hold is
             said in the TAG ROW below and answered in the card menu, not here:
             an icon in a 13px slot is the weakest place to put the one fact that
-            decides whether the night touches this card. This slot says whether
-            the item has IDEAS under it instead: `parent_id` children live on the
-            Roadmap tab, and a card that gives no sign of them is a feature whose
-            notes are on a screen you had no reason to open. */}
-        <span className="kind" style={{ color: ideas ? 'var(--lime-500)' : 'var(--blue-400)' }}
-          title={ideas
-            ? `${ideas} idea${ideas === 1 ? '' : 's'} under this on the Roadmap tab`
-            : 'No ideas filed under this'}>
-          <KitIcon name={ideas ? 'bookmark' : 'circle-check'} size={13} />
+            decides whether the night touches this card. */}
+        <span className="kind" style={{ color: 'var(--blue-400)' }}>
+          <KitIcon name="circle-check" size={13} />
         </span>
-        {ideas > 0 && <span className="pts" title="Ideas filed under this item">{ideas}</span>}
         <span className="id">#{item.id}</span>
         {/* #507 — THE SIZE, AND IT IS ALWAYS DRAWN, unsized included. A control
             that only appears once a card already has points is a control nobody
@@ -1756,9 +1725,8 @@ function IssueCard({
           {/* SIGN OFF IS HERE AGAIN, and only on a card that is actually held.
               #472 took it off this screen because no held row was drawn here
               any more; a held row a session has claimed or built IS drawn here
-              now (`homeOf` in lib/plan.ts), and neither Promote — Roadmap's, or
-              Auto-ideas' (#496) — can reach it, because both read the rows
-              nobody has worked. The wording says
+              now (`homeOf` in lib/plan.ts), and Auto-ideas' Promote (#496)
+              cannot reach it, because it reads the rows nobody has worked. The wording says
               what it releases, because "approve" on a change that is already
               built reads as a verdict, which this is emphatically not. */}
           {held && (
@@ -1944,7 +1912,7 @@ function Composer({ onClose, onAdd }: { onClose: () => void; onAdd: (text: strin
 }
 
 /**
- * ＋ NEW AREA — #473's first half, in the board's toolbar (and on the Roadmap's chip row).
+ * ＋ NEW AREA — #473's first half, in the board's toolbar.
  *
  * Shaped exactly like `AddColumn` below it, and deliberately so: they are the
  * same gesture on the same screen (name a thing, press Enter), and two
@@ -1954,7 +1922,7 @@ function Composer({ onClose, onAdd }: { onClose: () => void; onAdd: (text: strin
  * (routes/board.js's `clean`) — so an area typed in Title Case comes back
  * lowercase and the chip shows what actually stored rather than what was typed.
  */
-export function AddArea({ onAdd }: { onAdd: (name: string) => void }) {
+function AddArea({ onAdd }: { onAdd: (name: string) => void }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const commit = () => { const n = name.trim(); setOpen(false); setName(''); if (n) onAdd(n); };
@@ -2503,8 +2471,8 @@ function BacklogView({
     catch (e) { onError((e as Error)?.message || 'Something went wrong.'); }
   };
 
-  // THE ROWS THIS SCREEN RANKS. Committed work only — an idea belongs to the
-  // Roadmap tab and cannot be dragged into a sprint from here, which is the
+  // THE ROWS THIS SCREEN RANKS. Committed work only — an auto-idea belongs to
+  // For you and cannot be dragged into a sprint from here, which is the
   // same `isBoardWork` line the board above draws (#472, #496). Archived rows
   // are out, and so is a BACKLOG row sitting in the board's Done column (#517)
   // — see `onBacklogScreen` for why a sprint keeps its own.

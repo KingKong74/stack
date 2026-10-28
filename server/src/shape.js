@@ -2,7 +2,7 @@
 // contract; these keep every route returning the same shapes so store.ts stays
 // a thin mapping layer.
 
-import { relativeTime, cleanPlan, cleanSpec, cleanCanvas } from './util.js';
+import { relativeTime, cleanPlan, cleanSpec } from './util.js';
 
 // ---- the resume card's provenance ----------------------------------------
 // The resume fields (summary / current_phase / the three sub-lists) are written
@@ -114,8 +114,6 @@ export function roadmapItemShape(row) {
     // In the build queue (routes/ready.js), and where: read the pair.
     ready: row.ready_at != null,
     readyRank: Number(row.ready_rank) || 0,
-    // Where the idea sits on the Roadmap canvas and its stage; {} = unplaced (util.js cleanCanvas).
-    canvas: cleanCanvas(row.canvas),
     spec: cleanSpec(row.spec),         // {goal?, acceptance?, files?, outOfScope?}; {} = none
     agentProfile: row.agent_profile || '', // '' = default executor; else the agent_profiles key to build this
     updatedAt: row.updated_at || null, // ISO — the archive sorts latest-touched first

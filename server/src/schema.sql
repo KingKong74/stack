@@ -1595,14 +1595,9 @@ UPDATE settings SET autopilot_mode = 'continuous' WHERE autopilot_mode <> 'conti
 UPDATE autopilot_jobs SET status = 'failed', detail = 'nightly mode retired', finished_at = now()
  WHERE kind = 'nightly' AND status = 'queued';
 
--- THE ROADMAP CANVAS: where a kept idea sits on the idea canvas, and how far
--- along it is (web/src/detail/Roadmap.tsx). One JSONB rather than eight
--- columns because nothing but that screen reads any of it, and none of it is a
--- run condition: an idea's `stage` (raw | exploring | shaped) is how shaped it
--- is, not whether it may run. Promoting is still the committed write. Shape
--- and caps live in util.js cleanCanvas; {} = an idea nobody has placed, which
--- is what puts it in the canvas's inbox. Written through PUT /roadmap/canvas,
--- which does not touch updated_at: moving a note is not movement on the work.
+-- DORMANT: the Roadmap canvas's note positions and stages. The canvas, its
+-- route and every reader are gone; the column is kept (not dropped) so no
+-- stored data is destroyed. Nothing writes or serves it.
 ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS canvas JSONB NOT NULL DEFAULT '{}'::jsonb;
 
 -- ARTIFACTS: what a project keeps beside its work — docs, plans, designs,

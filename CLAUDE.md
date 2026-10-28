@@ -51,7 +51,7 @@ discipline keeps them in step. Change one copy, change them all, in the same com
 | **Run order** | a build takes Ready rows by `ready_rank`; a plan takes the active sprint's by `sprint_rank`; then `bucket`, then payload order. Each rank only means something inside its lane | `routes/autopilot.js`, the runner, `lib/plan.ts` `queueOrder` |
 | **Schedule** | minutes from week zero (`sched_*_min`; `plan_*_min` is the write-once baseline a drag never moves). BIGINT arrives from pg as a string | `routes/roadmap.js`, `shape.js`, `lib/plan.ts`, `lib/spine.ts` |
 | **Branch name** | `<kind>/<id>-<summary>`. The legacy `auto/item-N-<slug>` must parse forever, with kind `''`, never `feat` | `scripts/lib/lane.mjs`, `web/src/lib/branch.ts` |
-| **Which screen** | `homeOf` → `auto \| roadmap \| board`. Call `isBoardWork`, never `!isIdea` | `lib/plan.ts` (single copy; keep it that way) |
+| **Which screen** | `homeOf` → `auto \| board`. Call `isBoardWork` | `lib/plan.ts` (single copy; keep it that way) |
 | **Brandmark geometry** | the logo's plates | `components/Brandmark.tsx`, `scripts/render-icons.mjs`, `scripts/lib/brandmark.cjs` |
 
 Also:

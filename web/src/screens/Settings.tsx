@@ -351,7 +351,7 @@ export function Settings() {
             {/* ---- Roadmap (#247) — the parked-item stale threshold ---- */}
             <section className="set-card">
               <div className="set-card-head">
-                <div className="set-card-title">Roadmap</div>
+                <div className="set-card-title">Board</div>
                 <div className="set-card-sub">
                   How the board treats work you've set aside.
                 </div>
@@ -360,7 +360,7 @@ export function Settings() {
                 <div className="set-row-text">
                   <div className="set-row-label">Parked items go stale after</div>
                   <div className="set-row-hint">
-                    The Roadmap tab's Parked view counts the days since each item was parked and flags
+                    The board's Parked view counts the days since each item was parked and flags
                     anything past this line as stale. Surfacing only — nothing is auto-changed, unparked
                     or deleted.
                   </div>

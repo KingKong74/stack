@@ -12,9 +12,9 @@
 //  2. AREAS ARE THE PROJECT'S AREAS (getBoardShape), and an artifact's tags are
 //     area NAMES, free strings like roadmap_items.area. A tag whose area was
 //     deleted still shows, with no colour, rather than vanishing.
-//  3. "FROM THE ROADMAP" LINKS ARE THIS PROJECT'S ROWS. The picker offers the
-//     Roadmap's kept ideas (homeOf 'roadmap'); a linked idea promoted since
-//     stays linked and reads "promoted · on the board", as on the canvas.
+//  3. LINKS ARE THIS PROJECT'S BOARD ITEMS. The picker offers open board work
+//     (`isBoardWork`); a linked item that is done since stays linked and says
+//     so.
 //  4. TYPING SAVES ITSELF, DEBOUNCED; THE SCREEN NEVER RE-READS UNDER YOU. A
 //     PATCH answer is not merged back into the row being typed in, or a slow
 //     reply would roll back the letters typed since. Pending saves flush when
@@ -28,7 +28,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import type { Artifact as Art, ArtifactType as ArtType, RoadmapItem } from '../types';
-import { homeOf, isBoardWork } from '../lib/plan';
+import { isBoardWork } from '../lib/plan';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { Markdown } from '../components/Markdown';
 import {
@@ -42,14 +42,6 @@ type Group = 'recent' | 'area' | 'idea';
 type Fields = Partial<Pick<Art, 'type' | 'title' | 'body' | 'url' | 'tags' | 'links'>>;
 type AreaTag = { key: string; label: string; color: string };
 
-type Stage = 'raw' | 'exploring' | 'shaped' | 'promoted';
-const STAGE_TINT: Record<Stage, { bg: string; fg: string }> = {
-  raw: { bg: 'var(--surface-card)', fg: 'var(--text-tertiary)' },
-  exploring: { bg: 'var(--status-info-bg)', fg: 'var(--status-info-fg)' },
-  shaped: { bg: 'var(--status-success-bg)', fg: 'var(--status-success-fg)' },
-  promoted: { bg: 'var(--surface-raised)', fg: 'var(--text-tertiary)' },
-};
-const stageOf = (it: RoadmapItem): Stage => (isBoardWork(it) ? 'promoted' : it.canvas?.stage ?? 'raw');
 
 const TYPES: { key: ArtType; label: string; plural: string; hint: string; ph: string; badge: string; fg: string }[] = [
   { key: 'doc', label: 'Doc', plural: 'Docs', hint: 'Write-up, spec or research', ph: 'Write it up…', badge: 'DOC', fg: 'var(--blue-300)' },
@@ -171,7 +163,7 @@ export function Artifacts({ slug, items }: {
   const areaOf = (k: string): AreaTag => areas.find((x) => x.key === k) ?? { key: k, label: k, color: 'var(--border-strong)' };
   const byId = useMemo(() => new Map(items.map((it) => [it.id, it])), [items]);
   const ideaOf = (id: number) => byId.get(id);
-  const ideas = useMemo(() => items.filter((it) => homeOf(it) === 'roadmap'), [items]);
+  const ideas = useMemo(() => items.filter((it) => !it.archived && !it.done && isBoardWork(it)), [items]);
 
   // Saves, debounced per artifact and merged, so a word typed is one PATCH.
   const pending = useRef(new Map<number, { patch: Fields; t: number }>());
@@ -257,7 +249,7 @@ export function Artifacts({ slug, items }: {
       }
       if (group === 'idea') {
         const n = a.links.map(ideaOf).find(Boolean);
-        return n ? [n.id, `#${n.id}  ${n.title}`] : [1e9, 'Not linked to an idea'];
+        return n ? [n.id, `#${n.id}  ${n.title}`] : [1e9, 'Not linked to an item'];
       }
       const d = Date.now() - atOf(a);
       return d < 24 * H ? [0, 'Today'] : d < 7 * 24 * H ? [1, 'This week'] : [2, 'Earlier'];
@@ -324,7 +316,7 @@ export function Artifacts({ slug, items }: {
           <div className="ar-titlerow">
             <div className="ar-title">
               <h1>Artifacts</h1>
-              <span>{arts ? `${all.length} kept · ${linkedCount} linked to ideas` : 'Loading…'}{busy ? ' · saving…' : ''}</span>
+              <span>{arts ? `${all.length} kept · ${linkedCount} linked to items` : 'Loading…'}{busy ? ' · saving…' : ''}</span>
             </div>
             <div className="ar-newwrap">
               <button className="ar-new" onClick={() => setMenu((m) => !m)} aria-expanded={menu}>
@@ -374,7 +366,7 @@ export function Artifacts({ slug, items }: {
         </div>
         <div className="ar-groupby">
           <span className="lbl">Group by</span>
-          {([['recent', 'Recent'], ['area', 'Area'], ['idea', 'Idea']] as [Group, string][]).map(([k, label]) => (
+          {([['recent', 'Recent'], ['area', 'Area'], ['idea', 'Item']] as [Group, string][]).map(([k, label]) => (
             <button key={k} className={`ar-gb${group === k ? ' on' : ''}`} onClick={() => setGroup(k)}>{label}</button>
           ))}
         </div>
@@ -543,30 +535,30 @@ export function Artifacts({ slug, items }: {
 
                 <div className="ar-links">
                   <div className="ar-linkshead">
-                    <span className="eyebrow">From the roadmap</span>
+                    <span className="eyebrow">Board items</span>
                     <span className="n">{cur.links.length}</span>
                     <span className="rc-grow" />
-                    <button className="ar-linkbtn" onClick={() => setLinkOpen((o) => !o)} aria-expanded={linkOpen}>+ Link an idea</button>
+                    <button className="ar-linkbtn" onClick={() => setLinkOpen((o) => !o)} aria-expanded={linkOpen}>+ Link an item</button>
                   </div>
                   <div className="ar-linkgrid">
-                    {cur.links.map(ideaOf).filter((n): n is RoadmapItem => !!n).map((n) => { const st = stageOf(n); return (
-                      <div key={n.id} className="ar-idea" style={{ background: STAGE_TINT[st].bg }}>
+                    {cur.links.map(ideaOf).filter((n): n is RoadmapItem => !!n).map((n) => (
+                      <div key={n.id} className="ar-idea">
                         <div className="top">
-                          <span className="stage" style={{ color: STAGE_TINT[st].fg }}>{st}</span>
+                          <span className="stage">{n.done ? 'done' : 'open'}</span>
                           <span className="rc-grow" />
                           <button className="x" title="Unlink" aria-label={`Unlink #${n.id}`}
                             onClick={() => upd(cur.id, (x) => ({ links: x.links.filter((i) => i !== n.id) }))}>✕</button>
                         </div>
                         <span className="t">{n.title}</span>
-                        <span className="ref">#{n.id}{st === 'promoted' ? '  · on the board' : ''}</span>
+                        <span className="ref">#{n.id}</span>
                       </div>
-                    ); })}
+                    ))}
                   </div>
-                  {cur.links.length === 0 && <span className="ar-nolinks">Not linked to an idea yet.</span>}
+                  {cur.links.length === 0 && <span className="ar-nolinks">Not linked to an item yet.</span>}
                   {linkOpen && (
                     <div className="ar-linkopts">
                       {!ideas.some((n) => !cur.links.includes(n.id)) && (
-                        <span className="ar-nolinks">No kept ideas left to link. Ideas live on the Roadmap.</span>
+                        <span className="ar-nolinks">No open board items left to link.</span>
                       )}
                       {ideas.filter((n) => !cur.links.includes(n.id)).map((n) => (
                         <button key={n.id} onClick={() => { upd(cur.id, (x) => ({ links: [...x.links, n.id] })); setLinkOpen(false); }}>

@@ -130,21 +130,6 @@ export interface Sprint {
 export const activeSprint = (list: Sprint[]): Sprint | null =>
   list.find((s) => s.status === 'active') || null;
 
-/** An idea's place on the Roadmap canvas (server util.js cleanCanvas). Every
- *  key is optional: no stage = raw, no `c`/`l` = not placed in the Canvas /
- *  Lanes layout, no group = ungrouped. None of it is a run condition. */
-export type CanvasStage = 'raw' | 'exploring' | 'shaped';
-export interface IdeaCanvas {
-  stage?: Exclude<CanvasStage, 'raw'>;
-  c?: { x: number; y: number };
-  l?: { x: number; y: number };
-  pinned?: true;
-  group?: string;
-  votes?: number;
-}
-/** A partial write: a key set to null is removed (PUT /roadmap/canvas). */
-export type IdeaCanvasPatch = { [K in keyof IdeaCanvas]?: IdeaCanvas[K] | null };
-
 export interface RoadmapItem {
   id: number;
   title: string;
@@ -195,7 +180,6 @@ export interface RoadmapItem {
   sprintRank: number;
   plan: PlanStep[];    // the implementation plan ([] = none)
   spec: ItemSpec;      // what a build run is held to ({} = none)
-  canvas: IdeaCanvas;  // where it sits on the Roadmap canvas ({} = unplaced, in the inbox)
   ready: boolean;      // in the build queue (routes/ready.js); readyRank is its place
   readyRank: number;
   updatedAt: string | null; // ISO — latest-first ordering in the archive
@@ -204,9 +188,8 @@ export interface RoadmapItem {
 
   // ---- the Roadmap tab v2 ----
   parentId: number | null;  // the feature this ticket belongs to (null = it IS a feature)
-  // #496 — HAS SOMEBODY COMMITTED TO THIS? The third leg of which screen a row
-  // is on (lib/plan.ts homeOf). false = a signed-off idea kept on the Roadmap;
-  // true = board work, and true is what every row is born as.
+  // #496 — served and still written by Promote, but no screen reads it any
+  // more: the Roadmap tab that drew `false` rows is gone (lib/plan.ts homeOf).
   committed: boolean;
   // The scheduled bar, in MINUTES from the project's week zero (#401). null =
   // UNSCHEDULED, a real state (the tray) and never minute 0.

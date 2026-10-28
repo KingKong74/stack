@@ -144,35 +144,6 @@ export function cleanSpec(v) {
   return out;
 }
 
-// AN IDEA'S PLACE ON THE ROADMAP CANVAS (schema.sql, `canvas`). Every key is
-// optional and absent means the default: no stage = raw, no `c`/`l` = not
-// placed in that layout, no group = ungrouped. A position is world pixels on a
-// bounded canvas, so it is clamped rather than trusted.
-export const CANVAS_STAGES = ['raw', 'exploring', 'shaped'];
-const CANVAS_MAX = 20000;
-const cleanPos = (p) => {
-  if (!p || typeof p !== 'object') return null;
-  const x = Number(p.x), y = Number(p.y);
-  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
-  const clamp = (v) => Math.max(0, Math.min(CANVAS_MAX, Math.round(v)));
-  return { x: clamp(x), y: clamp(y) };
-};
-export function cleanCanvas(v) {
-  if (!v || typeof v !== 'object' || Array.isArray(v)) return {};
-  const out = {};
-  if (CANVAS_STAGES.includes(v.stage) && v.stage !== 'raw') out.stage = v.stage;
-  const c = cleanPos(v.c);
-  if (c) out.c = c;
-  const l = cleanPos(v.l);
-  if (l) out.l = l;
-  if (v.pinned === true) out.pinned = true;
-  const group = String(v.group ?? '').trim().slice(0, 60);
-  if (group) out.group = group;
-  const votes = Math.max(0, Math.min(9999, Math.floor(Number(v.votes) || 0)));
-  if (votes) out.votes = votes;
-  return out;
-}
-
 // The item note's cap. A planning run writes its design here, so it is sized
 // for a design rather than a one-line reminder.
 export const ITEM_NOTE_MAX = 4000;

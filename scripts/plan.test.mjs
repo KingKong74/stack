@@ -39,7 +39,7 @@ const {
   whatsNext, fmtWhen, calendarDays, calendarMonths, CAL_HOUR_FROM,
   slipOf, layoutLane, scopeTotals, defaultLen, DUR_OPTIONS, rolledSched, isRolled,
   newItemSched,
-  listKeyOf, homeOf, isIdea, isAutoIdea, isBoardWork, isWorked, isBuilt, inCycle, areaMatches, horizonOf, UNALLOCATED,
+  listKeyOf, homeOf, isAutoIdea, isBoardWork, isWorked, isBuilt, inCycle, areaMatches, horizonOf, UNALLOCATED,
   queueOrder, inActiveSprint, bucketRank,
 } = await import(planUrl.href);
 
@@ -767,44 +767,29 @@ test('clearing the verdict returns the card to the lane its state puts it in', (
 });
 
 // --- which screen a row is on ------------------------------------------------
-// `homeOf` is THE ONE LINE between the board, the Roadmap tab and For you's
-// Auto-ideas pane, so what these pin is the two failures it can have: a row on
-// TWO screens is acted on twice, and a row on NONE is work that has silently
-// vanished. The second is the one that actually happened — a session's own
-// `fly` card, claimed and built by that same session, sat in the idea pile
-// through the night that built it.
+// `homeOf` is THE ONE LINE between the board and For you's Auto-ideas pane, so
+// what these pin is the two failures it can have: a row on BOTH screens is
+// acted on twice, and a row on NEITHER is work that has silently vanished.
 
-test("a held row nobody has worked is a session's idea, not the board's and not the Roadmap's", () => {
+test("a held row nobody has worked is a session's idea, not the board's", () => {
   assert.equal(homeOf(item({ source: 'fly', reviewed: false })), 'auto');
   assert.equal(homeOf(item({ source: 'hook', reviewed: false })), 'auto');
+  assert.equal(homeOf(item({ source: 'plan', reviewed: false, parentId: 4 })), 'auto');
   assert.equal(isAutoIdea(item({ source: 'hook', reviewed: false })), true);
-  assert.equal(isIdea(item({ source: 'hook', reviewed: false })), false, 'off the Roadmap too (#496)');
   assert.equal(isBoardWork(item({ source: 'hook', reviewed: false })), false);
 });
 
-test('a child is a Roadmap idea, and so is a row somebody KEPT', () => {
-  assert.equal(homeOf(item({ parentId: 12 })), 'roadmap');
-  // #496 — the Keep write, in full: signed off and deliberately not committed.
-  assert.equal(homeOf(item({ source: 'hook', reviewed: true, committed: false })), 'roadmap');
+test('with the Roadmap tab gone, a child and a kept row are board work, never vanished', () => {
+  assert.equal(homeOf(item({ parentId: 12 })), 'board');
+  assert.equal(homeOf(item({ source: 'hook', reviewed: true, committed: false })), 'board');
+  assert.equal(homeOf(item({ parentId: 12, committed: false })), 'board');
   assert.equal(homeOf(item()), 'board', 'a manual row is committed work by definition');
 });
 
-test('the two promotions differ by exactly one field, and that field is the screen', () => {
+test('Promote moves an auto-idea onto the board', () => {
   const found = item({ source: 'hook', reviewed: false });
   assert.equal(homeOf(found), 'auto');
-  // Keep — { reviewed: true, committed: false }
-  assert.equal(homeOf({ ...found, reviewed: true, committed: false }), 'roadmap');
-  // Promote — { reviewed: true, committed: true, parentId: null }
   assert.equal(homeOf({ ...found, reviewed: true, committed: true, parentId: null }), 'board');
-  // The sign-off alone was the whole write before #496, and it landed on the
-  // board: without `committed` there is no way to say "kept but not committed".
-  assert.equal(homeOf({ ...found, reviewed: true }), 'board');
-});
-
-test("promoting a CHILD has to detach it too, or it bounces back to the Roadmap", () => {
-  const kid = item({ parentId: 12, committed: false });
-  assert.equal(homeOf({ ...kid, committed: true }), 'roadmap', 'the parent still holds it');
-  assert.equal(homeOf({ ...kid, committed: true, parentId: null }), 'board');
 });
 
 test('a held row somebody has WORKED is board work, sign-off or no sign-off', () => {
@@ -825,14 +810,7 @@ test('a held row somebody has WORKED is board work, sign-off or no sign-off', ()
   assert.equal(homeOf(sentBack), 'board');
 });
 
-test('being worked outranks BOTH idea tests — work under a feature is work', () => {
-  assert.equal(homeOf(item({ parentId: 12, claimedBy: 'feat/9-x' })), 'board');
-  assert.equal(homeOf(item({ parentId: 12, done: true })), 'board');
-  assert.equal(homeOf(item({ committed: false, builtNote: 'x' })), 'board');
-  assert.equal(homeOf(item({ parentId: 12 })), 'roadmap', 'a note about work stays a note');
-});
-
-test('every row is on exactly one of the three screens', () => {
+test('every row is on exactly one of the two screens', () => {
   const rows = [
     item(), item({ source: 'hook', reviewed: false }), item({ parentId: 3 }),
     item({ source: 'fly', reviewed: false, claimedBy: 'feat/9-x' }),
@@ -841,18 +819,10 @@ test('every row is on exactly one of the three screens', () => {
     item({ done: true }), item({ skipped: true }),
   ];
   const auto = rows.filter(isAutoIdea);
-  const roadmap = rows.filter(isIdea);
   const board = rows.filter(isBoardWork);
-  assert.equal(auto.length + roadmap.length + board.length, rows.length);
-  for (const set of [auto, roadmap, board]) {
-    for (const other of [auto, roadmap, board]) {
-      if (set === other) continue;
-      assert.equal(set.filter((it) => other.includes(it)).length, 0);
-    }
-  }
-  // And none of the three is empty for this fixture, which is what makes the
-  // sum above a real test rather than everything landing in one bucket.
-  assert.ok(auto.length && roadmap.length && board.length);
+  assert.equal(auto.length + board.length, rows.length);
+  assert.equal(auto.filter((it) => board.includes(it)).length, 0);
+  assert.ok(auto.length && board.length);
 });
 
 test('a row read before the migration is board work, not a vanished one', () => {

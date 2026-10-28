@@ -4,13 +4,13 @@
 //
 // The Areas view groups board work into folded area sections, which is right
 // for steering the lanes and wrong for FINDING something: a freshly filed item
-// sits in a folded section of an area you may not know exists, or on the
-// Roadmap tab because it has a parent. This view answers "where is it" in one
-// place, so it deliberately crosses the screens `homeOf` separates:
+// sits in a folded section of an area you may not know exists, or held in
+// For you → Auto-ideas. This view answers "where is it" in one place, so it
+// deliberately crosses the screens `homeOf` separates:
 //
-//  · IT DRAWS EVERY NON-ARCHIVED ROW, board work, kept ideas and Auto-ideas
-//    alike, and says which screen each one belongs to (the Where column). It
-//    is a finder, not a third home: nothing here acts on a row except opening
+//  · IT DRAWS EVERY NON-ARCHIVED ROW, board work and Auto-ideas alike, and
+//    says which screen each one belongs to (the Where column). It is a
+//    finder, not a third home: nothing here acts on a row except opening
 //    it in the item modal, so a row is still WORKED on exactly one screen.
 //  · THE STATUS IS THE BOARD'S OWN COLUMN NAME for board work (`columnOf`
 //    semantics, read off the live lists), never a hard-coded four.
@@ -38,7 +38,7 @@ export const SORT_LABEL: Record<BoardSort, string> = {
 export const SHOW_LABEL: Record<BoardShow, string> = {
   all: 'Everything',
   board: 'Board work',
-  ideas: 'Ideas only',
+  ideas: 'Auto-ideas only',
 };
 
 const stamp = (iso: string | null) => (iso ? Date.parse(iso) || 0 : 0);
@@ -47,7 +47,6 @@ const stamp = (iso: string | null) => (iso ? Date.parse(iso) || 0 : 0);
 function whereOf(it: RoadmapItem): { label: string; tone: string; title: string } {
   const home = homeOf(it);
   if (home === 'auto') return { label: 'Auto-idea', tone: 'warning', title: 'Held for your sign-off in For you → Auto-ideas' };
-  if (home === 'roadmap') return { label: 'Idea', tone: '', title: 'A kept idea, on the Roadmap tab' };
   return { label: 'Board', tone: 'info', title: 'Committed work, on the board' };
 }
 

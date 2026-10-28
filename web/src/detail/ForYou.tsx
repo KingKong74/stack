@@ -10,14 +10,14 @@
 //
 // ---- Auto-ideas (#496) ----------------------------------------------------
 //
-// IT IS THE THIRD SCREEN A ROADMAP ROW CAN LIVE ON, and `homeOf` in lib/plan.ts
+// IT IS THE OTHER SCREEN A ROADMAP ROW CAN LIVE ON, and `homeOf` in lib/plan.ts
 // is the one function that decides which — read its header before touching this
-// pane or either of the other two. What lands here is a session's own output:
+// pane or the board. What lands here is a session's own output:
 // a `hook` row (the extractor read it off a push) or a `fly` row (a live
 // session opened it for work it was asked to do) that NOBODY HAS SIGNED OFF and
 // NOBODY HAS WORKED. The owner asked for exactly that separation: what a
 // machine thought of overnight is not the plan, so it does not sit on the board
-// among committed work and it does not pad the Roadmap's triage columns either.
+// among committed work.
 //
 // THE MOMENT SOMEBODY WORKS ONE IT IS BOARD WORK, sign-off or no sign-off — a
 // claim, a built note or a tick (`isWorked`). That is the other half of the
@@ -26,19 +26,13 @@
 // should never have left, and the hold it still carries is said and answered
 // there instead (Board.tsx's `held` chip and card menu).
 //
-// PROMOTING GOES TWO WAYS, and that is the whole reason `committed` exists:
-//
-//   → Roadmap   { reviewed: true, committed: false }   "keep this idea"
-//   → Board     { reviewed: true, committed: true, parentId: null }  "do this"
-//
-// Both sign the row off, so both release it to the overnight runner's approval
-// gate (#359). Only the second commits to it. Before the column they were one
-// write, which is why an idea you merely kept turned up on the board.
+// PROMOTE is `{ reviewed: true, committed: true, parentId: null }`: it signs the
+// row off, which releases it to the overnight runner's approval gate (#359),
+// and puts it on the board as work.
 //
 // DISMISS IS DELETE, and on a `hook` row it TOMBSTONES THE FINGERPRINT so the
 // next push cannot re-create it. That is what Dismiss has always meant and why
 // it has no undo; the second press is because the word does not say it alone.
-// Roadmap's Discard is the same write for the same reason.
 //
 // WHAT THIS RESTORES. #444 culled the real Auto-ideas screen and with it the
 // last place in any browser that could clear `reviewed_at` on a held row or
@@ -254,8 +248,8 @@ export function ForYou({ pane, slug, items, activity, onRefresh, onEdit, highlig
   /** The payload's pushes, newest first — the Activity pane's only input. */
   activity: Activity[];
   /** The project payload's own roadmap, flattened and in payload order — the
-   *  SAME list the board, Roadmap and Plans are given, so one list is
-   *  partitioned across four screens rather than four fetches disagreeing. */
+   *  SAME list the board and Plans are given, so one list is
+   *  partitioned across screens rather than fetches disagreeing. */
   items: RoadmapItem[];
   onRefresh: () => void;
   /** Open the item modal — note, title, area, sub-area and plan. */
@@ -657,9 +651,7 @@ function ActivityPane({ activity, highlightId }: { activity: Activity[]; highlig
 /* ---------- Auto-ideas ---------- */
 // The rows keep the `.ai-*` classes the culled queue wore, because the kit's row
 // and Stack's were already the same shape: what it is, what it says, where it
-// came from, and the answers. What changed is that the answers are real, and
-// that there are THREE of them rather than the kit's two — see this file's
-// header for why "keep" and "do" had to stop being one button.
+// came from, and the answers. What changed is that the answers are real.
 
 function AutoPane({ slug, items, onRefresh, onEdit, highlightId }: {
   slug: string; items: RoadmapItem[]; onRefresh: () => void;
@@ -705,18 +697,8 @@ function AutoPane({ slug, items, onRefresh, onEdit, highlightId }: {
     onRefresh();
   };
 
-  // THE TWO PROMOTIONS, and the only difference between them is `committed`
-  // (#496). Both write `reviewed: true`, which is the sign-off the overnight
-  // runner gates on (#359) — keeping an idea releases it too, because a row the
-  // owner has looked at and kept is no longer a machine's unreviewed guess.
-  // What the second one adds is the commitment that makes it board work.
-  const keep = (it: RoadmapItem) =>
-    guard(it.id, async () => {
-      wrote(await patchRoadmapItem(slug, it.id, { reviewed: true, committed: false }));
-    });
-  // `parentId: null` as well, exactly as Roadmap's Promote sends it: a row
-  // arriving on the board must not still hang off something, or it lands back
-  // on the Roadmap by the child leg of the same predicate.
+  // PROMOTE: `reviewed: true` is the sign-off the overnight runner gates on
+  // (#359); `committed: true` and `parentId: null` make it plain board work.
   const promote = (it: RoadmapItem) =>
     guard(it.id, async () => {
       wrote(await patchRoadmapItem(slug, it.id, { reviewed: true, committed: true, parentId: null }));
@@ -733,9 +715,8 @@ function AutoPane({ slug, items, onRefresh, onEdit, highlightId }: {
     <div className="ai">
       <div className="ai-lede">
         What your sessions found and nobody has answered yet — read off a push, or opened by a
-        session for work it was doing. Nothing here is on the board or the Roadmap, and the
-        overnight runner leaves all of it alone until you answer. <b>Keep</b> files it on the
-        Roadmap as an idea; <b>Promote</b> puts it on the board as work.
+        session for work it was doing. Nothing here is on the board, and the overnight runner
+        leaves all of it alone until you answer. <b>Promote</b> puts it on the board as work.
         {' '}Rows marked <b>test</b> are checks a session thought were missing (#500) — one kind for
         a defect that got through, one for a route nothing watches.
       </div>
@@ -790,7 +771,7 @@ function AutoPane({ slug, items, onRefresh, onEdit, highlightId }: {
                 {it.skipped && <span className="k-tag warning">parked</span>}
               </div>
               {/* EDIT AND DISMISS LIVE IN THE BODY, not in the action column.
-                  Stacked with Keep and Promote they made an open row four
+                  Stacked with Promote they made an open row three
                   buttons tall against a two-line body, so opening one opened a
                   hole in the middle of the list. Here they fill the width the
                   body already has and the row barely grows. */}
@@ -813,10 +794,6 @@ function AutoPane({ slug, items, onRefresh, onEdit, highlightId }: {
               )}
             </div>
             <div className="ai-acts" onClick={(e) => e.stopPropagation()}>
-              <button className="k-btn secondary sm" disabled={busy === it.id} onClick={() => keep(it)}
-                title="Sign it off and file it on the Roadmap as an idea — not committed work">
-                <KitIcon name="bookmark" size={13} />Keep
-              </button>
               <button className="k-btn accent sm" disabled={busy === it.id} onClick={() => promote(it)}
                 title="Sign it off and put it on the board as committed work">
                 <KitIcon name="arrow-up-right" size={13} />Promote

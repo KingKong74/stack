@@ -1,5 +1,5 @@
 import type {
-  Project, Resume, Activity, Bug, Roadmap, RoadmapItem, IdeaCanvas, IdeaCanvasPatch, Check, CheckRun, CheckHistory, Overview,
+  Project, Resume, Activity, Bug, Roadmap, RoadmapItem, Check, CheckRun, CheckHistory, Overview,
   ProjectStatus, ProjectCategory, Priority, Severity, BugStatus, SearchResponse, Settings, AutopilotRun, PlanStep,
   AuthDevice, Sprint, SprintPlan, ResumeSince, ProjectDebrief,
   SchedSpan, ProjectPulse, BoardShape, BoardList, BoardArea, ItemKind,
@@ -1433,15 +1433,6 @@ export async function deleteSprint(slug: string, id: number): Promise<void> {
   await request<void>(`${sprintsBase(slug)}/${id}`, { method: 'DELETE' });
 }
 
-/** The Roadmap canvas's layout writes, many rows in one transaction. Each
- *  patch merges over the stored canvas; it never bumps `updatedAt`. */
-export async function putIdeaCanvas(
-  slug: string, items: { id: number; canvas: IdeaCanvasPatch }[],
-): Promise<{ id: number; canvas: IdeaCanvas }[]> {
-  if (!items.length) return [];
-  return (await request<{ items: { id: number; canvas: IdeaCanvas }[] }>(
-    `${roadmapBase(slug)}/canvas`, { method: 'PUT', body: { items } })).items;
-}
 export async function deleteRoadmapItem(slug: string, id: number): Promise<void> {
   await request<void>(`${roadmapBase(slug)}/${id}`, { method: 'DELETE' });
 }
@@ -1628,24 +1619,6 @@ export function getBoardView(slug: string): BoardView {
 export function setBoardView(slug: string, view: BoardView) {
   try { localStorage.setItem(BOARD_VIEW_KEY(slug), JSON.stringify(view)); }
   catch { /* storage unavailable — the view still switches for this visit */ }
-}
-
-// ---- the Roadmap canvas's view (device-local) ----
-//
-// Which layout the canvas opens in and whether its inbox rail is open. How you
-// like to LOOK at the canvas on this device, never a fact about the ideas, so
-// it is not on the server. Positions are facts and are (putIdeaCanvas).
-export interface RoadmapView { layout: 'c' | 'l'; inbox: boolean }
-const ROADMAP_VIEW_KEY = (slug: string) => `stack.roadmapView.${slug}`;
-export function getRoadmapView(slug: string): RoadmapView {
-  return readStoredJSON(ROADMAP_VIEW_KEY(slug), (p) => {
-    const o = (p && typeof p === 'object') ? p as Record<string, unknown> : {};
-    return { layout: o.layout === 'l' ? 'l' : 'c', inbox: o.inbox !== false };
-  });
-}
-export function setRoadmapView(slug: string, view: RoadmapView) {
-  try { localStorage.setItem(ROADMAP_VIEW_KEY(slug), JSON.stringify(view)); }
-  catch { /* storage full or unavailable — a view is a nicety, never a blocker */ }
 }
 
 // ---- the Plans Timeline's column filters (#515) ----

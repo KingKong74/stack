@@ -265,8 +265,6 @@ Open roadmap items can carry a claim (`claimedBy` — the branch name, e.g.
   on POST or PATCH. A build run is held to it. `POST /roadmap/batch` with
   `{"items":[…]}` makes up to 50 at once, all or nothing; each may take
   `parentId`. `source:"plan"` rows are held until the owner approves them.
-- **`canvas`** is the owner's Roadmap whiteboard (`PUT /roadmap/canvas`). It
-  gates nothing; don't write it.
 - **An item may come back as a refinement** — if it carries a `refineNote`, it
   was built before and sent back with a delta. `builtNote` says what already
   landed; change ONLY what the refinement asks for, on top of that — don't

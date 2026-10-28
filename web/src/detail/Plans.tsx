@@ -585,8 +585,8 @@ export function Plans({ slug, items, sprints, weekZero, onBoard }: {
   /** Keys the Timeline's device-local column filters (#515). */
   slug: string;
   /** EVERY roadmap row, in the payload's own order — the same flattened list the
-   *  board and Roadmap take. This screen keeps the committed third (#496 —
-   *  `isBoardWork`, never `!isIdea`, which would draw the Auto-ideas pile). */
+   *  board takes. This screen keeps the committed work (#496 —
+   *  `isBoardWork`, which leaves out the Auto-ideas pile). */
   items: RoadmapItem[];
   /** The project's sprints, in board order, off the same payload (#477). */
   sprints: Sprint[];

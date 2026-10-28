@@ -19,7 +19,6 @@ import { qualityAttention } from '../lib/quality';
 import { ForYou } from '../detail/ForYou';
 import { Plans } from '../detail/Plans';
 import { Board } from '../detail/Board';
-import { Roadmap } from '../detail/Roadmap';
 import { Artifacts } from '../detail/Artifacts';
 import { SkillsAgents } from '../detail/SkillsAgents';
 import { Loops } from '../detail/Loops';
@@ -27,7 +26,7 @@ import { TabStrip } from '../components/TabStrip';
 import { Modal } from '../components/Modal';
 import { RoadmapModal, type RoadmapFields } from '../components/RoadmapModal';
 import { useAutoRefresh } from '../lib/autoRefresh';
-import { newItemSched, flatRoadmap, isIdea, isAutoIdea, isBoardWork } from '../lib/plan';
+import { newItemSched, flatRoadmap, isAutoIdea, isBoardWork } from '../lib/plan';
 import { PRIORITY_DEFAULT, crumbName } from '../lib/ui';
 
 // #278 — Bugs and Audit are one tab now: Quality. They were halves of one loop
@@ -39,7 +38,7 @@ import { PRIORITY_DEFAULT, crumbName } from '../lib/ui';
 // bookmarks and in every older search payload, `hl` on it means a commit hash,
 // and Quality's "open the commit that caught this" link targets it. An inner
 // strip that swallowed the key would have broken all three at once.
-type Tab = 'overview' | 'quality' | 'roadmap' | 'activity' | 'auto' | 'ideas' | 'plans'
+type Tab = 'overview' | 'quality' | 'roadmap' | 'activity' | 'auto' | 'plans'
   | 'artifacts' | 'agents' | 'loops';
 /** The keys that land on the For-you screen, in strip order. */
 const FORYOU_TABS: Tab[] = ['overview', 'activity', 'auto'];
@@ -49,12 +48,12 @@ const isForYou = (t: Tab) => FORYOU_TABS.includes(t);
  *  would stack a second one above them. The board is wired now (#443's mockup
  *  is Board.tsx) and still draws its own head, so it stays on this list: what
  *  the list means is "brings a heading", never "is a mockup". */
-const isMockTab = (t: Tab) => t === 'roadmap' || t === 'ideas'
+const isMockTab = (t: Tab) => t === 'roadmap'
   || t === 'artifacts' || t === 'agents' || t === 'loops';
 // The four readings of a project. `navSections` below is the ONE list of them
 // — #432 moved them from a horizontal strip into the console's left rail, and
 // a second copy anywhere is how the two would drift.
-const TAB_KEYS = new Set<Tab>(['overview', 'quality', 'roadmap', 'activity', 'auto', 'ideas', 'plans', 'artifacts', 'agents', 'loops']);
+const TAB_KEYS = new Set<Tab>(['overview', 'quality', 'roadmap', 'activity', 'auto', 'plans', 'artifacts', 'agents', 'loops']);
 // 'bugs' and 'audit' both land on Quality — old deep links (bookmarks, a search
 // payload from an older server, a ⌘K target) keep working. 'tips' still
 // resolves too: the recipe library was a tab, then the bottom-left dock, and
@@ -170,7 +169,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
   useEffect(() => {
     if (!highlightId) return;
     // #303 — the row is not always in the DOM on this first pass. A tab may
-    // still be mounting, and the Roadmap board unfolds/unfilters itself to
+    // still be mounting, and the board unfolds/unfilters itself to
     // reveal a deep-linked item (see its own effect), which lands a render
     // later. A single synchronous query would miss all of that and silently
     // scroll nowhere, so keep looking briefly and stop at the first hit.
@@ -192,7 +191,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
   const roadModalClosed = { open: false, title: '', note: '', editing: null };
   // The half-typed-item DRAFT went with the board's first cull (#443) and did
   // not come back with the wiring. It was saved on a stray dismiss and offered
-  // back by a strip on the Roadmap tab; with no strip to offer it, keeping one
+  // back by a strip on the old Roadmap board; with no strip to offer it, keeping one
   // would be storing something nobody can ever get back — so the modal no
   // longer saves one at all.
   const [shareOpen, setShareOpen] = useState(false);
@@ -276,12 +275,10 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
     () => [...new Set([...allRoadmap.map((i) => i.area), ...boardAreas])].filter(Boolean).sort(),
     [allRoadmap, boardAreas],
   );
-  // #472, #496 — THE THREE POPULATIONS, off ONE list and by one function, so
-  // the three counts on this screen partition the project rather than
-  // overlapping. `homeOf` in lib/plan.ts is that function; nothing here may
-  // re-derive a screen's rows from `source`, `reviewed` or `parentId` directly.
-  const ideaRows = useMemo(
-    () => allRoadmap.filter((i) => !i.archived && isIdea(i)), [allRoadmap]);
+  // #472, #496 — THE TWO POPULATIONS, off ONE list and by one function, so
+  // the counts on this screen partition the project rather than overlapping.
+  // `homeOf` in lib/plan.ts is that function; nothing here may re-derive a
+  // screen's rows from `source`, `reviewed` or `parentId` directly.
   // A session's own ideas, waiting in For you → Auto-ideas. THE STRIP'S COUNT
   // IS THIS, and it is real now — the pane behind it draws these same rows.
   const autoIdeaRows = useMemo(
@@ -480,33 +477,15 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
           // THE BOARD'S BADGE IS REAL AGAIN. The rule it obeys is the one #444
           // and #450 stated from the other side — a row's number and the screen
           // behind it have to agree — and the board is wired now, so the number
-          // is what it draws: open, un-archived COMMITTED cards — #472 moved
-          // child ideas to Roadmap and #496 moved held rows to Auto-ideas, and
-          // the three counts on this screen partition one list.
+          // is what it draws: open, un-archived COMMITTED cards — #496 moved
+          // held rows to Auto-ideas, and the two counts on this screen
+          // partition one list.
           key: 'roadmap', label: project.name, icon: NavIcons.board,
           // COMMITTED, open and un-archived — the rows the board actually
-          // draws. It counted every open row until #472 moved held items and
-          // child ideas off it, at which point the rail read 15 over a board of
-          // 3: the exact failure the "a row's number and the screen behind it
-          // must agree" rule is about, committed against my own rule.
-          //
-          // `isBoardWork` and NOT `!isIdea` — with a third surface the negation
-          // counts the Auto-ideas pile as board work and the rail lies again.
+          // draws. `isBoardWork`, so the Auto-ideas pile is not counted.
           count: allRoadmap.filter((i) => !i.done && !i.archived && isBoardWork(i)).length,
           menuLabel: `${project.name} board`,
           menu: placeMenu(hrefTo.detail(slug, 'roadmap'), 'board'), onClick: () => setTab('roadmap'),
-        },
-        {
-          // #472 — Roadmap is the KEPT-IDEA surface and is wired, so it
-          // carries a real count: child ideas, and rows promoted to the Roadmap
-          // rather than the board (#496). A session's raw output is NOT in this
-          // number any more — that is For you's Auto-ideas count, and putting a
-          // machine's overnight suggestions in the roadmap's badge made a
-          // triage queue look like a plan. Not in the critical tone either way:
-          // an idea is a queue, not an alarm.
-          key: 'ideas', label: 'Roadmap', icon: NavIcons.map,
-          count: ideaRows.length,
-          menu: placeMenu(hrefTo.detail(slug, 'ideas'), 'ideas'), onClick: () => setTab('ideas'),
         },
         // THE DESIGN'S THREE NEW ROWS ("Roadmap Canvas", 2026-10-12). Skills &
         // agents is wired to the app-wide profile and skill rows, so it carries
@@ -689,12 +668,12 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
 
         {/* FOR YOU — Overview is still the kit's mockup; ACTIVITY draws the
             payload's own pushes, and AUTO-IDEAS IS WIRED (#496) and draws this project's own held rows,
-            which is the third screen a roadmap row can live on. The PANE is the
+            which is the other screen a roadmap row can live on. The PANE is the
             ROUTE KEY and not component state, so every deep link and legacy
             spelling lands where it always did, and `hl` on Auto-ideas opens
-            that row's card. It takes the same flattened payload the board,
-            Roadmap and Plans take — ONE list partitioned four ways by `homeOf`
-            rather than four fetches that can disagree. ForYou.tsx's header
+            that row's card. It takes the same flattened payload the board and
+            Plans take — ONE list partitioned by `homeOf` rather than fetches
+            that can disagree. ForYou.tsx's header
             lists what Overview still costs. */}
         {isForYou(tab) && (
           <ForYou pane={tab as 'overview' | 'activity' | 'auto'} slug={slug} items={allRoadmap}
@@ -711,11 +690,6 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
         {tab === 'quality' && (
           <Quality slug={slug} checks={data.checks || []} bugs={data.bugs} onRefresh={reread} />
         )}
-        {/* #361 — the ✧ surfaces on the Roadmap tab belong to the CURATOR, and
-            an absent callback is how each one goes away when the agent (or that
-            one op) is switched off: the button is not rendered at all, rather
-            than rendered to fail. Quality has no ✧ and no agent of its own —
-            the Auditor was its live session and went when the consoles did. */}
         {/* THE BOARD IS WIRED — the kit's BoardScreen on this project's own
             roadmap. It takes the flattened payload (memoised above, in payload
             order, which `queueOrder` depends on), the project's SPRINTS from
@@ -724,22 +698,11 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
             the only writer of a human `risk_source`. Its Backlog tab is wired
             too, and Development reads the host's branch report. Board.tsx's
             header lists the decisions each wiring made and the one thing no
-            browser can still do — give a verdict. Roadmap is wired (#472) and
-            draws what this does not. */}
+            browser can still do — give a verdict. */}
         {tab === 'roadmap' && (
           <Board slug={slug} projectName={project.name} items={allRoadmap} sprints={data.sprints}
             onRefresh={reread} highlightId={highlightId}
             onAreas={setBoardAreas}
-            onEdit={(it) => setRoadModal({ open: true, title: it.title, note: it.note, editing: it })} />
-        )}
-        {/* ROADMAP IS THE IDEA SURFACE and is wired (#472) — the rows the
-            board deliberately does not draw: held hook/fly items and the child
-            ideas filed under something already on the board. It takes the same
-            flattened payload the board does, so `isIdea` partitions ONE list
-            across the two screens rather than each fetching its own. */}
-        {tab === 'ideas' && (
-          <Roadmap slug={slug} projectName={project.name} items={allRoadmap}
-            onRefresh={reread} highlightId={highlightId} onAreas={setBoardAreas}
             onEdit={(it) => setRoadModal({ open: true, title: it.title, note: it.note, editing: it })} />
         )}
         {/* PLANS IS TWO WIRED SUB-VIEWS AND FOUR MOCKUPS (#482), and the tab
@@ -748,9 +711,8 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
             each sprint on the days it runs; Summary, Progress, Releases and
             Dependencies still draw the kit's rows and each says so on its own
             sub-tab, which is why the rail's Mock chip came off this row. It
-            takes the same flattened payload the board and Roadmap take, so one
-            list is partitioned across three screens rather than three fetches
-            disagreeing, plus `weekZero` — which is what gives the stored
+            takes the same flattened payload the board takes, so one list is
+            partitioned across screens rather than fetches disagreeing, plus `weekZero` — which is what gives the stored
             schedule (#401) a reader again after #451 took its last one. */}
         {tab === 'plans' && (
           <Plans items={allRoadmap} sprints={data.sprints} weekZero={project.weekZero}
