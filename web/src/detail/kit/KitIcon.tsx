@@ -21,10 +21,12 @@ export type KitIconName =
   | 'arrow-up-right' | 'pencil' | 'trash-2'
   | 'git-branch' | 'circle-alert' | 'file-text' | 'code' | 'terminal'
   | 'clock' | 'check' | 'chart-no-axes-column' | 'settings'
-  | 'chevron-down' | 'chevron-right';
+  | 'chevron-down' | 'chevron-right' | 'chevron-left' | 'x';
 
 const PATHS: Record<KitIconName, ReactNode> = {
   plus: <><path d="M5 12h14" /><path d="M12 5v14" /></>,
+  'chevron-left': <path d="m15 18-6-6 6-6" />,
+  x: <><path d="M18 6 6 18" /><path d="m6 6 12 12" /></>,
   users: (
     <>
       <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />

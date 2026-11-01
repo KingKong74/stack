@@ -81,6 +81,8 @@ function readStackEnv() {
 // cursor on it at all.
 // Expand all, pressed only while every area IS folded. A press list entry
 // starting with `?` is optional: pressed when it matches, skipped when not.
+// One starting with `2:` is a DOUBLE press (the board card's focus canvas),
+// given long enough after it for the card's flight and the canvas to settle.
 const OPEN_BOARD = '?.km-collapseall[data-all-folded="true"]';
 
 const SCREENS = [
@@ -146,6 +148,10 @@ const SCREENS = [
   { slug: 'board-open', hash: '#/p/{slug}/roadmap', press: [OPEN_BOARD] },
   { slug: 'board-priority', hash: '#/p/{slug}/roadmap', press: [OPEN_BOARD, '.km-card [aria-label^="Priority"]'] },
   { slug: 'board-cardmenu', hash: '#/p/{slug}/roadmap', press: [OPEN_BOARD, '.km-card [aria-label^="More actions for #"]'] },
+  // The focus canvas: the flown card, its linked nodes and connectors, the
+  // Bring-in tray, and (second screen) the editor's chips over the canvas.
+  { slug: 'board-focus', hash: '#/p/{slug}/roadmap', press: [OPEN_BOARD, '2:.km-card .km-cardmeta .id'] },
+  { slug: 'board-focus-edit', hash: '#/p/{slug}/roadmap', press: [OPEN_BOARD, '2:.km-card .km-cardmeta .id', '.bf-float [aria-label="Edit item"]'] },
   { slug: 'board-colmenu', hash: '#/p/{slug}/roadmap', press: ['[aria-label^="Column actions"]'] },
   // #469 — a filtered board (one area picked, the rest of the row dimmed)
   // and an open inline title editor, which paints its own text over a card in
@@ -503,14 +509,16 @@ async function main() {
       let reached = true;
       for (const raw of screen.press || []) {
         const optional = raw.startsWith('?');
-        const sel = optional ? raw.slice(1) : raw;
+        const double = raw.startsWith('2:');
+        const sel = optional ? raw.slice(1) : double ? raw.slice(2) : raw;
         try {
           // Waited for, not counted: the board paints its groups after its
           // payload lands, and a count taken before that skips a press the
           // screen needed.
           if (optional && !(await page.locator(sel).first().waitFor({ timeout: 4000 }).then(() => true, () => false))) continue;
-          await page.locator(sel).first().click({ timeout: 4000 });
-          await page.waitForTimeout(400);
+          if (double) await page.locator(sel).first().dblclick({ timeout: 4000 });
+          else await page.locator(sel).first().click({ timeout: 4000 });
+          await page.waitForTimeout(double ? 1800 : 400);
         } catch (e) {
           findings.push({ screen: screen.slug, kind: 'unreachable', detail: `\`${sel}\` could not be pressed — ${e.message.split('\n')[0]}` });
           reached = false;

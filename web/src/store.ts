@@ -1165,6 +1165,9 @@ export async function createRoadmapItem(
     // none and unset, which is what every lane-composer card stays.
     dueOn?: string | null;
     kind?: ItemKind;
+    // File it under a top-level item (one level deep; the server refuses a
+    // parent that is itself a child).
+    parentId?: number;
     // NO `sprintId` HERE, and the server refuses one too (#477). Filing work
     // into a sprint is a commitment somebody makes by dragging it into a box;
     // a create that could land straight in the ACTIVE sprint would let the
@@ -1619,6 +1622,34 @@ export function getBoardView(slug: string): BoardView {
 export function setBoardView(slug: string, view: BoardView) {
   try { localStorage.setItem(BOARD_VIEW_KEY(slug), JSON.stringify(view)); }
   catch { /* storage unavailable — the view still switches for this visit */ }
+}
+
+// ---- the board's focus canvas (device-local) ----
+//
+// What the focus canvas remembers about ONE focused card that is not a fact on
+// the row: the items you pulled onto it as RELATED (a child is `parent_id`, on
+// the server — related is only a note about where to look), and where you
+// dragged each node. Neither is a run condition, and both are how you like to
+// look at the work, so they live on this device. Keyed per project and card.
+export interface FocusCanvas { related: number[]; pos: Record<string, { x: number; y: number }> }
+const FOCUS_CANVAS_KEY = (slug: string, id: number) => `stack.focusCanvas.${slug}.${id}`;
+export function getFocusCanvas(slug: string, id: number): FocusCanvas {
+  return readStoredJSON(FOCUS_CANVAS_KEY(slug, id), (p) => {
+    const o = (p && typeof p === 'object') ? p as Record<string, unknown> : {};
+    const related = Array.isArray(o.related) ? o.related.filter((n): n is number => Number.isInteger(n) && n > 0) : [];
+    const pos: FocusCanvas['pos'] = {};
+    if (o.pos && typeof o.pos === 'object') {
+      for (const [k, v] of Object.entries(o.pos as Record<string, unknown>)) {
+        const q = v as { x?: unknown; y?: unknown } | null;
+        if (q && Number.isFinite(q.x) && Number.isFinite(q.y)) pos[k] = { x: Number(q.x), y: Number(q.y) };
+      }
+    }
+    return { related, pos };
+  });
+}
+export function setFocusCanvas(slug: string, id: number, canvas: FocusCanvas) {
+  try { localStorage.setItem(FOCUS_CANVAS_KEY(slug, id), JSON.stringify(canvas)); }
+  catch { /* storage full or unavailable — the canvas still works for this visit */ }
 }
 
 // ---- the Plans Timeline's column filters (#515) ----

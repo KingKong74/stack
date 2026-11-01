@@ -54,10 +54,11 @@
 //     concurrency as a side effect of moving a card to In Progress.
 //  6b. TWO DOUBLE-CLICKS, AND WHICH ONE YOU GET IS DECIDED BY WHAT IS UNDER
 //     THE CURSOR. DOUBLE-CLICK THE TITLE RENAMES IT IN PLACE (#469); DOUBLE-
-//     CLICK ANYWHERE ELSE ON THE CARD OPENS THE ITEM, which is the gesture
-//     every other board in the world has and this one did not — the modal was
-//     reachable only through ⋯ → Edit item…, two presses deep, on the screen
-//     the whole tab is for. The split is the text because the text is what a
+//     CLICK ANYWHERE ELSE ON THE CARD FLIES IT ONTO THE FOCUS CANVAS
+//     (detail/BoardFocus.tsx: its family, a Bring-in tray, an inline editor),
+//     and the card's ✎ does the same with the editor open. The full item
+//     modal — the only writer of a human `risk` — stays at ⋯ → Edit item….
+//     The split is the text because the text is what a
 //     rename edits: a double-click landing on the id, a tag or the card's own
 //     padding was a rename of a word you were not pointing at.
 //     Enter commits, Escape cancels, and BLUR COMMITS rather than discarding —
@@ -144,6 +145,7 @@ import { go } from '../lib/route';
 import { newTermName, termClaim, launchBrief } from '../lib/termLaunch';
 import type { BoardFolds, BoardView, BoardSort, BoardShow } from '../store';
 import { BoardListView, SORT_LABEL, SHOW_LABEL } from './BoardList';
+import { BoardFocus, type FocusOpen, type FocusPhase } from './BoardFocus';
 
 // The five priorities, their glyphs and their tones come from `lib/ui.ts` —
 // ONE list, shared with the ＋ dock. This file carried its own copy of it while
@@ -808,6 +810,54 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
   const [landedId, land] = useLanded();
   const closeAll = () => { setMenu(null); setPriMenu(null); setPtsMenu(null); setCardMenu(null); setAreaMenu(null); };
 
+  // ---- THE FOCUS CANVAS (detail/BoardFocus.tsx) ------------------------------
+  // A double-click on a card (or its ✎) flies it onto the canvas. The phase is
+  // lifted here because the board itself animates with it: it steps back while
+  // the card is out (`fx-out`) and comes back as it lands (`fx-in`).
+  const [focus, setFocus] = useState<FocusOpen | null>(null);
+  const [focusPhase, setFocusPhase] = useState<FocusPhase>('measure');
+  const openFocus = (it: RoadmapItem, el: HTMLElement | null, edit: boolean) => {
+    if (focus || !el) return;
+    closeAll(); setInlineId(null); setDragId(null); setOver(null);
+    const r = el.getBoundingClientRect();
+    const main = el.closest('.con-main') || el.closest('.km');
+    setSelected(it.id);
+    setFocusPhase('measure');
+    setFocus({ id: it.id, from: { l: r.left, t: r.top, w: r.width }, edit,
+      canvasLeft: Math.round(main?.getBoundingClientRect().left ?? 0) });
+  };
+  // How many children each card has, and how many are finished — the card's
+  // "2/3 done" tag. Off every row, not the drawn set: a child filtered out of
+  // view is still a child.
+  const kidCounts = useMemo(() => {
+    const m = new Map<number, { done: number; total: number }>();
+    for (const it of rows) {
+      if (it.archived || it.parentId === null) continue;
+      const c = m.get(it.parentId) || { done: 0, total: 0 };
+      c.total += 1;
+      if (it.done || listKeyOf(it) === 'shipped') c.done += 1;
+      m.set(it.parentId, c);
+    }
+    return m;
+  }, [rows]);
+  // A child task made on the canvas: born under its parent, in its area, as a task.
+  const createChild = async (parent: RoadmapItem, title: string): Promise<RoadmapItem | undefined> => {
+    let made: RoadmapItem | undefined;
+    await guard(async () => {
+      made = await createRoadmapItem(slug, { title, note: '', bucket: PRIORITY_DEFAULT, kind: 'task',
+        parentId: parent.id, ...(parent.area.trim() ? { area: parent.area } : {}) });
+      setRows((r) => [...r, made!]);
+      onRefresh();
+    });
+    return made;
+  };
+  const focusPatch = (it: RoadmapItem, patch: Parameters<typeof patchRoadmapItem>[2]) =>
+    guard(async () => { wrote(await patchRoadmapItem(slug, it.id, patch)); });
+  const colOf = (it: RoadmapItem) => {
+    const k = listKeyOf(it);
+    return (lists || []).some((l) => l.key === k) ? k : CATCH_ALL;
+  };
+
   // A deep link SELECTS its row; the scroll to it is ProjectDetail's, off the
   // `data-hl` each card now carries.
   useEffect(() => {
@@ -817,7 +867,8 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
 
   return (
     <>
-      <div className="km" onClick={closeAll}>
+      <div className={`km${focus ? (focusPhase === 'back' ? ' fx-in' : ' fx-out') : ''}`} onClick={closeAll}
+        style={focus ? { ['--km-d' as string]: `${typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 0 : 620}ms` } : undefined}>
         <div className="km-head">
           <span className="km-crumb">Spaces / {projectName}</span>
           <div className="km-headrow">
@@ -988,6 +1039,10 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
             const isOver = over === col.key && wouldMove;
             const card = (it: RoadmapItem) => (
               <IssueCard key={it.id} item={it}
+                parentItem={it.parentId !== null ? rows.find((x) => x.id === it.parentId) || null : null}
+                kids={kidCounts.get(it.id) || null}
+                away={!!focus && focus.id === it.id && focusPhase !== 'measure'}
+                onOpen={(el, edit) => openFocus(it, el, edit)}
                 sprint={boxes.find((b) => b.id === it.sprintId) || null}
                 selected={selected === it.id}
                 onSelect={() => setSelected(it.id)}
@@ -1030,7 +1085,7 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
             // re-sets `over`, replaying the slot animation on every card
             // boundary. Only a leave off the COLUMN ITSELF counts.
             return (
-              <div key={col.key}
+              <div key={col.key} style={{ ['--ci' as string]: ci }}
                 className={`km-col${colFolded ? ' folded' : ''}${isOver ? ' over' : ''}${col.real ? '' : ' catchall'}${dragged && !isOver && !isSource ? ' dim' : ''}`}
                 onDragOver={(e) => { if (wouldMove) { e.preventDefault(); setOver(col.key); } }}
                 onDragLeave={(e) => { if (e.currentTarget === e.target) setOver((o) => (o === col.key ? null : o)); }}
@@ -1137,6 +1192,19 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
       {dialog && (
         <CreateDialog onClose={() => setDialog(false)}
           onCreate={(title, bucket, extra) => { setDialog(false); add(title, bucket, '', homeArea, extra); }} />
+      )}
+
+      {focus && (
+        <BoardFocus slug={slug} open={focus} rows={rows}
+          columns={(lists || []).map((l) => ({ key: l.key, name: l.name }))}
+          colOf={colOf}
+          areas={areaOrder.filter((k) => k !== UNTAGGED).map((k) => ({ name: k, dot: areaMeta(k).dot }))}
+          sprintOf={(it) => boxes.find((b) => b.id === it.sprintId) || null}
+          phase={focusPhase} onPhase={setFocusPhase}
+          onClosed={() => { setFocus(null); setFocusPhase('measure'); }}
+          onPatch={focusPatch}
+          onMove={(it, key) => moveTo(it, key)}
+          onCreateChild={createChild} />
       )}
     </>
   );
@@ -1404,8 +1472,17 @@ function IssueCard({
   priOpen, onPri, onPick, ptsOpen, onPts, onPoints, menuOpen, onMenu,
   onKind, onDue, onEdit, onSignOff, onPark, onArchive, onDerive, onDelete,
   activeSprint, onBuildNow, onAddToSprint, onRun, onReady, tint, showArea,
+  parentItem, kids, away, onOpen,
 }: {
   item: RoadmapItem;
+  /** The card this one is filed under (`parent_id`), or null. */
+  parentItem: RoadmapItem | null;
+  /** Its own children, counted — null when it has none. */
+  kids: { done: number; total: number } | null;
+  /** This card is out on the focus canvas: its board slot holds its place, empty. */
+  away: boolean;
+  /** Fly the card onto the focus canvas; `edit` opens the editor with it. */
+  onOpen: (el: HTMLElement | null, edit: boolean) => void;
   /** Board v5 — the card's AREA COLOUR (`project_areas.dot`), drawn as its top
    *  edge; '' for untagged or an area with no colour, which draws none. */
   tint: string;
@@ -1480,14 +1557,14 @@ function IssueCard({
   const cardRef = useRef<HTMLDivElement | null>(null);
 
   // TWO DOUBLE-CLICKS WITH TWO MEANINGS (see decision 6b): the TITLE renames in
-  // place, the rest of the card opens the item. A press on a control is that
+  // place, the rest of the card opens it on the focus canvas. A press on a control is that
   // control pressed, never the card behind it — the ⋯ and the priority glyph
   // both toggle on a single click, so a second one reaching this handler would
   // open the modal over a menu the same gesture had just closed.
   const openItem = (e: React.MouseEvent) => {
     if ((e.target as HTMLElement).closest('button, input, textarea, [role="menu"]')) return;
     e.stopPropagation();
-    onEdit();
+    onOpen(cardRef.current, false);
   };
   useEffect(() => { if (!menuOpen) setConfirming(false); }, [menuOpen]);
 
@@ -1497,7 +1574,7 @@ function IssueCard({
     // eats the pointer inside a text input in Chromium — select-by-drag stops
     // working and the card starts flying instead — so the one gesture is
     // switched off for exactly as long as the other one is open.
-    <div ref={cardRef} className={`km-card${selected ? ' selected' : ''}${dragging ? ' dragging' : ''}${landed ? ' landed' : ''}${editing ? ' editing' : ''}${tinted ? ' tinted' : ''}`}
+    <div ref={cardRef} className={`km-card${selected ? ' selected' : ''}${dragging ? ' dragging' : ''}${landed ? ' landed' : ''}${editing ? ' editing' : ''}${tinted ? ' tinted' : ''}${away ? ' away' : ''}`}
       // THE AREA COLOUR IS AN INLINE `border-top-color`, and that is the
       // palette audit's rule, not taste: a data tone is exempt only on the
       // element whose own style names the property it paints. At rest it is
@@ -1556,6 +1633,10 @@ function IssueCard({
               <KitIcon name="terminal" size={14} />
             </button>
           )}
+          <button className="km-colbtn" aria-label={`Edit #${item.id}`} title="Edit item"
+            onClick={(e) => { e.stopPropagation(); onOpen(cardRef.current, true); }}>
+            <KitIcon name="pencil" size={13} />
+          </button>
           <button className={`km-pri${priOpen ? ' on' : ''}`} aria-label={`Priority — ${pri.label}`}
             style={{ color: pri.color }} onClick={onPri}>
             {pri.glyph}
@@ -1566,7 +1647,7 @@ function IssueCard({
         </span>
       </div>
 
-      {(held || item.ready || fly || sprint || kind || due || (showArea && item.area) || item.claimedBy || item.skipped || item.reviewTag) && (
+      {(held || item.ready || fly || sprint || kind || due || parentItem || kids || (showArea && item.area) || item.claimedBy || item.skipped || item.reviewTag) && (
         <div className="km-cardtags">
           {/* HELD IS FIRST, ahead of even the sprint chip, because it OUTRANKS
               it: a held row in the box in progress still does not run, so a
@@ -1644,6 +1725,15 @@ function IssueCard({
             <span className={`k-tag km-due ${due.tone}`} title={due.title}>
               <KitIcon name="calendar" size={11} /><span className="v">{due.label}</span>
             </span>
+          )}
+          {/* WHERE IT IS FILED, both ways: a child names its parent, and a
+              parent says how many of its children are finished. The focus
+              canvas (double-click) draws the whole family. */}
+          {parentItem && (
+            <span className="k-tag mono" title={`Child of #${parentItem.id} — ${parentItem.title}`}>↳ #{parentItem.id}</span>
+          )}
+          {kids && (
+            <span className="k-tag mono" title="Child items finished">{kids.done}/{kids.total} done</span>
           )}
           {showArea && item.area && <span className="k-tag">{item.area}</span>}
           {item.claimedBy && (
