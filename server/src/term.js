@@ -56,8 +56,8 @@ let detachedSessions = []; // [{ name, cwd, created, attached, keep, tail }]
 // name/cwd/created/attached/keep/tail); pruned when a name leaves the list.
 const detachedLabels = new Map(); // name -> label
 export const termDetached = () =>
-  detachedSessions.map(({ name, cwd, created, attached, keep, blocked, waiting, model, resolvedModel }) => ({
-    name, cwd, created, attached, keep, label: detachedLabels.get(name) || '',
+  detachedSessions.map(({ name, cwd, created, attached, keep, blocked, waiting, model, resolvedModel, cmd }) => ({
+    name, cwd, created, attached, keep, cmd, label: detachedLabels.get(name) || '',
     // #503 — what the session is talking to, as the HOST read it off the tmux
     // session a moment ago. null is UNRECORDED and is not the same claim as any
     // model: a session started by hand carries no tag, and a row that quietly
@@ -291,90 +291,9 @@ export function viewAutoPane(name, { lines = 160, timeoutMs = 8_000 } = {}) {
   });
 }
 
-// (#484) Is the OmniRoute gateway up? Asked of the HOST, because this process
-// cannot ask it directly — the server runs in a container and the host firewall
-// drops container->host, so localhost:20128 is not an address it has. The daemon
-// dials out, so the question rides that uplink like every other host fact.
-//
-// FAIL SILENT, per CLAUDE.md: with no daemon on the line this returns
-// `connected: false` and NO reachable claim at all. "Stack cannot see whether
-// the gateway is up" and "the gateway is down" are different sentences, and
-// rendering the first as the second would be the NULL-verdict lie again.
-let gatewaySeq = 0;
-const pendingGateway = new Map(); // id -> resolve
-export function probeGateway({ timeoutMs = 6_000 } = {}) {
-  if (!agentSend) return Promise.resolve({ connected: false });
-  const id = `g${++gatewaySeq}`;
-  return new Promise((resolve) => {
-    const timer = setTimeout(() => {
-      pendingGateway.delete(id);
-      // The daemon was connected when we asked and did not answer. That is not
-      // the same as the gateway being down either, so it stays "cannot see".
-      resolve({ connected: false, error: 'the host did not answer in time' });
-    }, timeoutMs);
-    pendingGateway.set(id, (m) => {
-      clearTimeout(timer);
-      resolve({
-        connected: true,
-        reachable: m.reachable === true,
-        baseUrl: String(m.baseUrl || ''),
-        reason: String(m.reason || ''),
-        model: String(m.model || ''),
-        keyConfigured: m.keyConfigured === true,
-        paidOptIn: m.paidOptIn === true,
-      });
-    });
-    agentSend({ t: 'gateway', id });
-  });
-}
-
-// (#504) THE GATEWAY'S CATALOGUE — what the model picker lists. Rides the
-// uplink for the same reason probeGateway does: this process cannot reach
-// localhost:20128 from inside its container.
-//
-// THREE STATES AGAIN, and the empty list is the one to get right. `ok:false`
-// with a reason means Stack could not READ the catalogue (no daemon, no key, a
-// timeout); `ok:true` with an empty list would mean the gateway genuinely
-// offers nothing. A picker drawing the first as the second would report an
-// empty gateway when the truth is that nobody managed to ask it.
-let modelsSeq = 0;
-const pendingModels = new Map(); // id -> resolve
-export function readGatewayModels({ timeoutMs = 12_000 } = {}) {
-  if (!agentSend) {
-    return Promise.resolve({ ok: false, connected: false, reason: 'the host daemon is not connected', total: 0, models: [] });
-  }
-  const id = `m${++modelsSeq}`;
-  return new Promise((resolve) => {
-    const timer = setTimeout(() => {
-      pendingModels.delete(id);
-      resolve({ ok: false, connected: true, reason: 'the host did not answer in time', total: 0, models: [] });
-    }, timeoutMs);
-    pendingModels.set(id, (m) => {
-      clearTimeout(timer);
-      resolve({
-        ok: m.ok === true,
-        connected: true,
-        reason: String(m.reason || ''),
-        total: Number(m.total) || 0,
-        // Narrowed here, the same job blockedShape and modelShape do: the host
-        // parsed and validated, this decides what may cross into a payload.
-        models: (Array.isArray(m.models) ? m.models : []).slice(0, 600)
-          .filter((x) => x && typeof x.id === 'string' && x.id)
-          .map((x) => ({
-            id: String(x.id).slice(0, 120),
-            owner: String(x.owner || '').slice(0, 60),
-            contextTokens: Number(x.contextTokens) || 0,
-            tools: x.tools === true,
-          })),
-      });
-    });
-    agentSend({ t: 'models', id });
-  });
-}
-
 // CLAUDE.md files, for Mission Control → Context. The host reads them on
 // request (terminal/claude-md.mjs — read its header) and nothing here keeps a
-// copy, so there is nothing to go stale. THREE STATES, as with the models read:
+// copy, so there is nothing to go stale. Three states:
 // `connected:false` means Stack cannot see the host at all, `ok:false` means it
 // asked and the read failed, and only `ok:true` with no files means none.
 let claudeMdSeq = 0;
@@ -561,6 +480,7 @@ export function attachTerm(httpServer) {
             // the truthful answer for a host that cannot say what a session is
             // on, and deliberately NOT a default to the subscription.
             model: modelShape(s.model),
+            cmd: s.cmd === 'codex' ? 'codex' : s.cmd === 'claude' ? 'claude' : undefined,
             resolvedModel: typeof s.resolvedModel === 'string' ? s.resolvedModel.slice(0, 120) : '',
           }));
         stampBlocked(detachedSessions);
@@ -630,20 +550,13 @@ export function attachTerm(httpServer) {
 
       // autoViewed — the host's fresh read of a stack-auto-* pane it was asked
       // to look at (#366). Correlated exactly like `answered`/`claudeAnswer`.
-      if (m.t === 'gatewayed' && m.id) {
-        const waiting = pendingGateway.get(m.id);
-        if (waiting) { pendingGateway.delete(m.id); waiting(m); }
-      }
+
       if ((m.t === 'claudeMdRead' || m.t === 'claudeMdWritten') && m.id) {
         const waiting = pendingClaudeMd.get(m.id);
         if (waiting) { pendingClaudeMd.delete(m.id); waiting(m); }
         return;
       }
-      if (m.t === 'modelsRead' && m.id) {
-        const waiting = pendingModels.get(m.id);
-        if (waiting) { pendingModels.delete(m.id); waiting(m); }
-        return;
-      }
+
       if (m.t === 'autoViewed' && m.id) {
         const waiting = pendingAutoView.get(m.id);
         if (waiting) { pendingAutoView.delete(m.id); waiting(m); }
@@ -682,7 +595,11 @@ export function attachTerm(httpServer) {
         // The daemon confirmed (or assigned) the tab's tmux session — keep the
         // name on the meta row so Mission Control can offer a jump-in attach.
         const meta = termMeta.get(m.sid);
-        if (meta) meta.tmux = m.tmuxSession;
+        if (meta) {
+          meta.tmux = m.tmuxSession;
+          if (m.cmd === 'claude' || m.cmd === 'codex') meta.cmd = m.cmd;
+          broadcastStatus();
+        }
       }
       // #503 — 'model' joins the allow-list: the daemon sends one when a
       // session's provider MOVES under it (a usage-limit switch-over), which is
@@ -731,7 +648,7 @@ export function attachTerm(httpServer) {
       sessions.set(sid, ws);
       termMeta.set(sid, {
         cwd: String(msg.cwd || '~'),
-        cmd: msg.cmd === 'claude' ? 'claude' : 'shell',
+        cmd: msg.cmd === 'codex' ? 'codex' : msg.cmd === 'claude' ? 'claude' : 'shell',
         startedAt: Date.now(),
         tail: '',
         label: '',

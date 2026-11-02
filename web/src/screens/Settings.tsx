@@ -437,16 +437,16 @@ export function Settings() {
                 <div className="set-row-text">
                   <div className="set-row-label">Opens with</div>
                   <div className="set-row-hint">
-                    What the Terminal screen (and a project’s ⌨ button) starts. Claude sessions run
+                    What the Terminal screen (and a project’s ⌨ button) starts. Claude and Codex sessions run
                     inside tmux on the host, so they survive reloads and disconnects — shells don’t.
                   </div>
                 </div>
                 <div className="seg-control" role="tablist" aria-label="Terminal opens with">
-                  {(['claude', 'shell'] as const).map((k) => (
+                  {(['claude', 'codex', 'shell'] as const).map((k) => (
                     <button key={k} role="tab" aria-selected={termPrefs.autoStart === k}
                       className={`seg-opt ${termPrefs.autoStart === k ? 'on' : ''}`}
                       onClick={() => saveTermPrefs({ ...termPrefs, autoStart: k })}>
-                      {k === 'claude' ? 'Claude' : 'Shell'}
+                      {k === 'claude' ? 'Claude' : k === 'codex' ? 'Codex' : 'Shell'}
                     </button>
                   ))}
                 </div>

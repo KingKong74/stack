@@ -334,7 +334,7 @@ export interface AutopilotJob {
 }
 
 export interface TermSession {
-  sid: string; cwd: string; cmd: 'shell' | 'claude';
+  sid: string; cwd: string; cmd: 'shell' | 'claude' | 'codex';
   startedAt: number;       // epoch ms
   label: string;           // ✧ Gemini's take on what it's doing ('' until asked)
   tmux?: string;           // the host tmux session behind a claude tab ('' for
@@ -527,18 +527,8 @@ export async function getProjectPulse(slug: string): Promise<ProjectPulse> {
 // consoles — a server-composed system prompt the daemon appended at spawn —
 // and both went with them, on the daemon's side too.
 export function openTerminal(opts: {
-  cwd: string; cmd: 'shell' | 'claude'; cols: number; rows: number;
+  cwd: string; cmd: 'shell' | 'claude' | 'codex'; cols: number; rows: number;
   tmuxSession?: string; skipPerms?: boolean;
-  // #504 — WHICH model, for this tab only. An id from the gateway's catalogue;
-  // the host validates it again before it goes anywhere near a command line, and
-  // an id it refuses falls back to the host default rather than failing the
-  // spawn. contextTokens is that model's own window, read off the catalogue, so
-  // Claude Code stops assuming 200k for an id it has never heard of.
-  model?: string; contextTokens?: number;
-  // #486 — 'omniroute' routes this session through the local gateway instead of
-  // the account's own subscription. A provider KEY, never a base URL or a
-  // credential: the host owns both, and the browser has no business with either.
-  provider?: 'omniroute';
   // #525 — claude's FIRST PROMPT, for a session this frame creates. The host
   // ignores it on a re-attach, so re-sending it on every reconnect is safe.
   brief?: string;
@@ -731,44 +721,16 @@ export function setTermWorkingItem(cwd: string, id: number | null) {
 // screen opens on arrival and what a Mission Control ⌨ press opens;
 // skipPermissions runs claude sessions with --dangerously-skip-permissions
 // (the daemon allow-lists the flag — the browser only ever sends a boolean).
-// onGateway (#486) routes NEW claude sessions through the local OmniRoute
-// gateway instead of the account's subscription. Device-local like the rest of
-// this card, and it only ever affects sessions started AFTER it is set — a
-// running session's provider is fixed at spawn, so flipping this cannot move
-// one that is already going.
-//
-// (#504) `model` and `pinnedModels` are the per-tab model choice. `model` is
-// what the NEXT claude tab will be started on ('' = whatever the gateway's own
-// default routes to, which is the free combo); `pinnedModels` is the short list
-// the picker offers above the combos, because 480 catalogue entries is not a
-// menu. Both device-local like the rest of this card. `model` means nothing
-// unless `onGateway` is on — the picker sets the two together, so a model is
-// never named for a session that is going to the subscription anyway.
+// Native CLI selection; legacy gateway/model preferences are deliberately ignored.
 export interface TermSessionPrefs {
-  autoStart: 'claude' | 'shell'; skipPermissions: boolean; onGateway: boolean;
-  model: string; modelContext: number; pinnedModels: string[];
+  autoStart: 'claude' | 'codex' | 'shell'; skipPermissions: boolean;
 }
 const TERM_SESSION_KEY = 'stack.termSession';
 export function getTermSessionPrefs(): TermSessionPrefs {
   return readStoredJSON(TERM_SESSION_KEY, (p) => ({
-    autoStart: p?.autoStart === 'shell' ? 'shell' as const : 'claude' as const,
+    autoStart: p?.autoStart === 'shell' ? 'shell' as const
+      : p?.autoStart === 'codex' ? 'codex' as const : 'claude' as const,
     skipPermissions: p?.skipPermissions !== false,
-    // Defaults OFF: routing somebody's session to a different model is not a
-    // thing to do because a checkbox was missing.
-    onGateway: p?.onGateway === true,
-    // A stored id is re-validated on the way OUT as well as in: this row is
-    // localStorage, which anything on the device can write, and the value ends
-    // up on a command line host-side. The host validates again — this is the
-    // near side of the same boundary, not a substitute for it.
-    model: cleanModelId(p?.model),
-    // The window that goes WITH that model, read off the catalogue when it was
-    // picked. Stored beside it so the pane does not have to re-fetch 400 rows
-    // to answer one number at connect time. 0 = not known, which is not a
-    // guess: the host then leaves Claude Code on its own 200k assumption.
-    modelContext: Number.isFinite(Number(p?.modelContext)) && Number(p?.modelContext) > 0
-      ? Math.floor(Number(p.modelContext)) : 0,
-    pinnedModels: (Array.isArray(p?.pinnedModels) ? p.pinnedModels : [])
-      .map((x: unknown) => cleanModelId(x)).filter(Boolean).slice(0, 24),
   }));
 }
 
@@ -788,26 +750,7 @@ export function setTermSessionPrefs(p: TermSessionPrefs) {
   localStorage.setItem(TERM_SESSION_KEY, JSON.stringify(p));
 }
 
-// (#504) The gateway's catalogue — what a tab could be started on. Read
-// through the HOST (the server is containerised and cannot reach the gateway),
-// so it carries the same three states everything on that path does.
-//
-// `ok:false` ALWAYS CARRIES A REASON and never an unexplained empty list:
-// "Stack could not read the catalogue" (no daemon, no key, a timeout) and "the
-// gateway offers nothing" are different sentences, and the picker must say
-// which. `total` is the gateway's own count, `models` what Stack will actually
-// start a session on — separate, so the gap is visible.
-export interface GatewayModel { id: string; owner: string; contextTokens: number; tools: boolean }
-export interface GatewayModels {
-  ok: boolean; connected: boolean; reason: string; total: number; models: GatewayModel[];
-}
-export async function getTerminalModels(): Promise<GatewayModels> {
-  return request<GatewayModels>('/terminal/models');
-}
-
-// ✧ Gemini command help in the terminal rail — describe what you want to do,
-// get one shell command back. Suggestion only: nothing runs until the human
-// types it into the terminal themselves. 503 when the server has no key.
+// ✧ Gemini command help is a suggestion only; it never executes a command.
 export interface TermAssistSuggestion { command: string; label: string; explanation: string }
 export async function termAssist(prompt: string, cwd: string): Promise<TermAssistSuggestion> {
   return request<TermAssistSuggestion>('/terminal/assist', { method: 'POST', body: { prompt, cwd } });
@@ -831,6 +774,7 @@ export async function termAssist(prompt: string, cwd: string): Promise<TermAssis
 export interface SessionModel { key: string; id: string; label: string }
 
 export interface DetachedSession {
+  cmd?: 'claude' | 'codex';
   name: string; cwd: string; created: number;
   attached?: boolean;  // a client holds it elsewhere (another browser / laptop ssh) — attach mirrors it
   label?: string;      // ✧ Gemini's take on what it's doing
@@ -845,24 +789,8 @@ export interface DetachedSession {
   resolvedModel?: string;
 }
 
-// (#486) The OmniRoute gateway, as the HOST sees it — this process cannot ask
-// it directly, since the server is in a container and the firewall drops
-// container->host. THREE STATES, and the type says so: `connected: false` means
-// Stack cannot SEE the host and therefore knows NOTHING about the gateway, which
-// is why `reachable` is optional rather than false. Render "cannot see", never
-// "down" — the same rule as a NULL review_verdict.
-export interface GatewayState {
-  connected: boolean;
-  reachable?: boolean;
-  baseUrl?: string;
-  reason?: string;       // why not reachable — ECONNREFUSED, a timeout, an HTTP status
-  model?: string;        // what a session started on it would run
-  keyConfigured?: boolean;  // whether, never which, and never how long
-  paidOptIn?: boolean;   // OMNIROUTE_MODEL names a specific model rather than the free combo
-  error?: string;        // the host was connected but did not answer
-}
-export async function getTerminalGateway(): Promise<GatewayState> {
-  return request<GatewayState>('/terminal/gateway');
+export async function getTerminalAgent(): Promise<{ connected: boolean }> {
+  return request<{ connected: boolean }>('/terminal/agent');
 }
 
 export async function getDetachedSessions(): Promise<DetachedSession[]> {
@@ -943,7 +871,7 @@ export function clearTermTmuxName(cwd: string, name: string) {
 // did survive); a shell tab restores as a fresh shell in the same directory —
 // its process died with the socket, so the pane comes back and the shell is
 // new. Order is the tab order, so the grid comes back the way it was left.
-export interface TermOpenTab { cwd: string; cmd: 'shell' | 'claude'; tmux?: string }
+export interface TermOpenTab { cwd: string; cmd: 'shell' | 'claude' | 'codex'; tmux?: string }
 // #487/#512 — A SESSION'S NAME ON THIS DEVICE, overriding the labeller's.
 //
 // Two writers: the first line you sent the session (#512, written once and
@@ -982,7 +910,7 @@ export function getTermOpenTabs(): TermOpenTab[] {
     .filter((t: unknown): t is TermOpenTab =>
       !!t && typeof t === 'object'
       && typeof (t as TermOpenTab).cwd === 'string'
-      && ((t as TermOpenTab).cmd === 'shell' || (t as TermOpenTab).cmd === 'claude'))
+      && ((t as TermOpenTab).cmd === 'shell' || (t as TermOpenTab).cmd === 'claude' || (t as TermOpenTab).cmd === 'codex'))
     .slice(0, TERM_TABS_MAX)
     .map((t: TermOpenTab) => ({
       cwd: t.cwd, cmd: t.cmd, tmux: typeof t.tmux === 'string' && t.tmux ? t.tmux : undefined,

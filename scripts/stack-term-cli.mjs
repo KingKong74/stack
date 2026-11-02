@@ -15,23 +15,9 @@
 //   stack term stack      claude in ~/stack (session stack-term-stack)
 //   stack term --safe …   without --dangerously-skip-permissions
 //   stack term --shell …  a plain shell instead of claude
-//   stack term --cli codex …   a DIFFERENT runtime, on the OmniRoute gateway (#481)
-//   stack term --cli claude    claude ON THE GATEWAY, which is NOT the same
-//                              session `stack term` gives you: bare, it runs on
-//                              your own subscription; --cli routes it through
-//                              OmniRoute to a free model. Both are wanted, and
-//                              the flag is the only thing that says which.
-//
-// --cli (#481) does NOT build its own command. It runs `stack omniroute launch`
-// inside the pane, and that is deliberate: tmux does not carry this process's
-// environment into a new session when a server is already running (verified —
-// the pane sees nothing), so the env has to be established INSIDE the pane. The
-// two ways to do that from out here are `new-session -e NAME=value`, which puts
-// every value in argv where `ps` shows it to every user on the box, and a shell
-// prelude that reads ~/.stack/env, which is the same leak wearing a hat.
-// Composing instead keeps the key out of argv entirely and keeps ONE
-// implementation of the env allowlist, the .env shadow and the telemetry banner
-// — all of it in scripts/stack-omniroute.mjs, already tested.
+//   stack term --cli codex …   native Codex using its own account/configuration
+//   stack term --cli claude …  native Claude (same account as the default)
+// No gateway, provider credentials or model overrides are injected.
 //
 // --worktree (#229): a tree of ITS OWN instead of the shared checkout, so a
 // second interactive session in the same repo never fights the first one's
@@ -49,7 +35,7 @@ import { fileURLToPath } from 'node:url';
 import { tmuxAvailable, sessionArgv } from '../terminal/tmux-session.mjs';
 import { git, loadStackEnv } from '../hook/stack-post.mjs';
 import { worktreesRoot, worktreeKey, branchWorktree, worktreeAt, addWorktree } from './lib/worktree.mjs';
-import { RUNTIMES, getRuntime, runtimeArgv } from '../terminal/cli-registry.mjs';
+import { nativeLaunch } from '../terminal/native-launch.mjs';
 
 // POST /api/worktrees — a report, not a gate (CLAUDE.md "Fail-safe
 // direction": this call only RECORDS). An unreachable API or missing token
@@ -82,7 +68,10 @@ export async function main(args = []) {
   const cliIdx = args.indexOf('--cli');
   const cli = cliIdx !== -1 ? String(args[cliIdx + 1] || '') : '';
   const modelIdx = args.indexOf('--model');
-  const model = modelIdx !== -1 ? String(args[modelIdx + 1] || '') : '';
+  if (modelIdx !== -1 || (cliIdx !== -1 && !['claude', 'codex'].includes(cli)) || (shell && cli)) {
+    process.stderr.write('[stack term] Choose --cli claude, --cli codex or --shell; configure models in the CLI.\n');
+    return 1;
+  }
   const wtIdx = args.indexOf('--worktree');
   const worktree = wtIdx !== -1;
   // The label following --worktree, if any ("stack term stack --worktree
@@ -170,34 +159,14 @@ export async function main(args = []) {
     await registerWorktree({ path: wtPath, repo: cwd, branch, sessionName: name });
   }
 
-  // --cli composes rather than building its own command; see the header.
-  // The dispatcher is reached by absolute path because a tmux pane's PATH is
-  // not this process's, and a bare `stack` that resolves to nothing leaves an
-  // empty pane with no explanation.
   let cmd;
-  if (cli) {
-    const r = getRuntime(cli);
-    if (!r) {
-      process.stderr.write(`[stack term] unknown runtime: ${cli}\n`
-        + `             known: ${RUNTIMES.map((x) => x.key).join(', ')}\n`);
-      return 1;
-    }
-    // Refuse HERE rather than inside a pane the caller then has to go and read.
-    const built = runtimeArgv(cli, { model });
-    if (built.error) {
-      process.stderr.write(`[stack term] ${built.error}\n`);
-      return 1;
-    }
-    const dispatcher = resolve(fileURLToPath(import.meta.url), '..', '..', 'stack');
-    const parts = [dispatcher, 'omniroute', 'launch', '--cli', r.key];
-    if (model) parts.push('--model', model);
-    // Single-quoted for sh, with any embedded quote closed and reopened. The
-    // whole string is interpolated into `/bin/bash -lc "…"` below, so a double
-    // quote here would end that string early.
-    cmd = `exec ${parts.map((a) => `'${String(a).replace(/'/g, "'\\''")}'`).join(' ')}`;
-  } else {
-    cmd = shell ? 'exec bash -l'
-      : `exec claude${safe ? '' : ' --dangerously-skip-permissions'}`;
+  let modelTag = '';
+  try {
+    if (!shell) modelTag = nativeLaunch(cli || 'claude').tag;
+    cmd = shell ? 'exec bash -l' : nativeLaunch(cli || 'claude', { skipPerms: !safe }).command;
+  } catch (error) {
+    process.stderr.write(`[stack term] ${error.message}\n`);
+    return 1;
   }
 
   // The stack-term- PREFIX is load-bearing and stays (the running-sessions strip
@@ -205,6 +174,9 @@ export async function main(args = []) {
   // `tmux ls` does not show a codex session that reads as a claude one. Trimmed
   // to the 64 chars listStackSessions' pattern accepts.
   if (cli && cli !== 'claude') name = `${name}-${cli}`.slice(0, 75);
+
+  // The command runs only when tmux creates this session, never on re-attach.
+  if (modelTag) cmd = `tmux set-option -t '=${name}:' @stack-model '${modelTag}'; ${cmd}`;
 
   process.stderr.write(`[stack term] session ${name} in ${sessionCwd} — detach with ctrl-b d, it keeps running\n`);
   const argv = sessionArgv(name, sessionCwd, `/bin/bash -lc "${cmd}"`);

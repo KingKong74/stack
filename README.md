@@ -1,5 +1,12 @@
 # Stack
 
+> **Workspace refresh (2 November 2026):** Start with [project goals and the delivery outline](GOALS.md)
+> and [Codex workspace guidance](docs/codex.md). [AGENTS.md](AGENTS.md) is Codex's repository entry
+> point and reuses the existing shared and package rules. Some screen descriptions below reflect
+> the earlier UI; the current client guidance in `web/CLAUDE.md` records the removal of the Roadmap
+> tab. The Terminal page launches native Claude or Codex (plus a utility Shell), with no gateway
+> picker or provider fallback. Codex context and checkpoints remain explicit operations.
+
 A self-hosted command centre for your side projects. Open it and instantly know where every
 project stands — the signature element is a **"pick up where you left off"** resume card that
 removes the friction of re-loading context when you jump between projects.
@@ -178,24 +185,30 @@ node ~/.stack/stack-checkpoint.mjs --settings
 echo '{"project":{"slug":"stack"},"session":{"summary":"Quick manual checkpoint."}}' | node ~/.stack/stack-checkpoint.mjs
 ```
 
-## Model switching (optional)
+## Terminal agents
 
-When Claude hits a usage limit, the web terminal can offer these Anthropic-API-compatible providers
-as drop-in replacements — same interface, different backend. Configuring one is just a line in
-`~/.stack/env` (see `templates/stack-env.example`) or an existing `~/.ccm_config`, if you already use
-the [claude-code-switch](https://github.com/foreveryh/claude-code-switch) `ccm` tool:
+The Terminal page opens **Claude** or **Codex** directly on the host. Choose the agent beside the
+project directory, then open a session. Both run inside tmux so they can survive a reload or
+disconnect. **Shell** remains available for ordinary commands.
 
-| Provider | Env key | Model |
-| --- | --- | --- |
-| DeepSeek | `DEEPSEEK_API_KEY` | `deepseek-chat` |
-| Kimi | `KIMI_API_KEY` | `kimi-k2.5` |
-| GLM | `GLM_API_KEY` | `glm-5` |
-| Qwen | `QWEN_API_KEY` | `qwen3-max-2026-01-23` |
-| MiniMax | `MINIMAX_API_KEY` | `MiniMax-M2.5` |
+Each CLI uses its own account, model configuration and login. Install and authenticate Claude
+and Codex on the terminal host. Stack does not inject a gateway provider or model. The existing
+Claude skip-permissions setting applies only to Claude; Codex keeps its native permissions.
 
-Run `./stack models` to see which providers are configured and which file the key came from (it
-never prints the key itself). No key configured simply means the switcher offers nothing to switch
-to — nothing breaks.
+The same native agents are available over SSH:
+
+```bash
+./stack term stack --cli claude
+./stack term stack --cli codex
+```
+
+The gateway model picker, model pins and usage-limit provider fallback have been removed from
+the web terminal. Old device routing preferences are ignored. Existing sessions keep the process
+they started with. Legacy gateway CLI tools and the host gateway service are not removed by this
+terminal change.
+
+Claude's hooks still supply automatic context and checkpoints. Codex context and checkpoints are
+manual, and Codex usage/edit tracking is not wired; see [the Codex workflow](docs/codex.md).
 
 ## Set up a new project (and get Claude connected)
 

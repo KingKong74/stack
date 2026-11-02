@@ -10,6 +10,14 @@ Stack is my self-hosted side-project command centre. Each project has a live
 "where you left off" resume card, an activity feed, a bug tracker, a priority
 roadmap and sticky notes. State is **auto-managed** — you don't have to curate it.
 
+## Codex sessions
+
+Stack Terminal launches Claude and Codex natively, with Shell as a utility. Codex has no automatic
+resume injection, branch claims, SessionEnd backstop or usage/edit tracking. Read live state and
+claims before choosing board work. Author checkpoint JSON and pipe it to
+`node ~/.stack/stack-checkpoint.mjs`; `/checkpoint` is a Claude command, not a Codex command.
+Unknown telemetry never means zero usage or no active work.
+
 ## Trust the injected context
 
 Three Claude Code hooks keep Stack in sync with reality:
@@ -215,13 +223,6 @@ Open roadmap items can carry a claim (`claimedBy` — the branch name, e.g.
   **If your work is on a branch and you have not merged it, do NOT tick the
   item.** `done` means shipped, and an unmerged branch has not shipped. Write
   the `built_note`, leave `claimed_by` on the branch, and leave `done` alone:
-- **When you finish an item, tell the reviewer what landed.** Include a
-  `built_note` alongside `done:true` — two or three plain sentences on what was
-  actually built, where it lives and how it was verified. It appears in the
-  board's To verify column, and the human verdicts against it. Anything past
-  2000 characters is kept to 2000 with a line saying how long the note really
-  was — so a long note loses its tail, and everyone reading it can see that:
-
   ```bash
   curl -s -X PATCH "$STACK_API/api/projects/<slug>/roadmap/<id>" \
     -H "authorization: Bearer $STACK_TOKEN" -H 'content-type: application/json' \

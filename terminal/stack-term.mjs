@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Stack web terminal — the host-side PTY daemon (#/terminal in the web app).
 //
-// Spawns a real shell (or a claude session) in a project directory on THIS
+// Spawns a real shell, Claude or Codex in a project directory on THIS
 // machine and streams it to xterm.js in the browser. This host's firewall
 // drops container→host traffic, so the daemon doesn't listen — it dials OUT:
 // one persistent websocket to the Stack server's /term-agent endpoint (bearer
@@ -14,7 +14,7 @@
 //     other than its own.
 //   • The working directory is jailed to STACK_TERM_ROOT (default: $HOME) —
 //     a cwd resolving outside it is refused.
-//   • Only two commands exist: an interactive login shell, or claude. There is
+//   • Only a login shell, Claude and Codex are available. There is
 //     no arbitrary-exec frame.
 //
 // The PTY itself comes from pty-shim.py (python3 stdlib) — no native node
@@ -36,12 +36,8 @@
 // STACK_API and STACK_TOKEN are env-only — passing credentials as CLI flags would expose
 // them in process listings, which is against the project's security conventions.
 //
-// Alternative model switching (#152):
-//   When a Claude session hits a usage limit and exits, the daemon prompts the
-//   user (via in-terminal ANSI text) to switch to an alternative AI provider.
-//   Providers are configured via API keys in ~/.stack/env or ~/.ccm_config:
-//   DEEPSEEK_API_KEY, KIMI_API_KEY, GLM_API_KEY, QWEN_API_KEY, MINIMAX_API_KEY.
-//   The chosen provider is persisted to ~/.stack/term-model.json.
+// Claude and Codex use their native account and model configuration.
+// Usage-limit exits do not change providers or credentials.
 
 import { spawn, spawnSync } from 'node:child_process';
 import { createOutbox, createReplayBuffer } from './out-coalesce.mjs';
@@ -63,16 +59,8 @@ import { writeBrief, briefArg, pruneBriefs } from './launch-brief.mjs';
 import { listClaudeMd, writeClaudeMd } from './claude-md.mjs';
 import { createEditWatch } from './edit-watch.mjs';
 import { resolvedModelFor } from './session-model.mjs';
-import {
-  availableProvidersLive, providerEnv, getProvider,
-  loadPreferredProvider, savePreferredProvider,
-  probeOmniRoute, resolveProviderKey, resolveHostValue,
-  sessionModelTag, describeModelTag, cleanModelId, cleanContextTokens, gatewayModels,
-} from './model-switch.mjs';
-
-// The `stack` dispatcher, resolved from this file rather than PATH — see the
-// #484 note in startSession.
-const STACK_DISPATCHER = join(dirname(fileURLToPath(import.meta.url)), '..', 'stack');
+import { describeModelTag } from './model-switch.mjs';
+import { nativeLaunch, agentForTag } from './native-launch.mjs';
 
 // ---- env (same loader contract as the hooks: ~/.stack/env, never printed) ----
 const envFile = join(homedir(), '.stack', 'env');
@@ -310,6 +298,7 @@ function pushDetached() {
       // — the mirrored-predicate failure this repo keeps paying for. null =
       // unrecorded, and the screen must say so rather than assuming Claude.
       model: describeModelTag(s.model),
+      cmd: agentForTag(s.model),
     };
   });
   sendUplink({ t: 'detached', sessions: sessionsList });
@@ -565,33 +554,12 @@ function makeOutbox(sid, sess) {
   return createOutbox((b64) => shipOut(sid, sess, b64));
 }
 
-// Sends text to the browser as an 'out' frame — the daemon's own prompts,
-// which must queue behind pty output rather than overtake it.
-function sendOutText(sid, sess, text) {
-  sess.outbox.push(Buffer.from(text));
-}
-
-// PTY size bounds (#218: #186): resize requests are clamped to what the shim
-// can sanely handle — the floor stops zero/negative sizes, the caps stop a
-// rogue frame asking for absurd buffers.
+// Bound PTY sizes even when a browser sends invalid dimensions.
 const MIN_COLS = 2;
 const MAX_COLS = 500;
 const MIN_ROWS = 2;
 const MAX_ROWS = 300;
 
-// ANSI styling for the daemon's own in-terminal prompts (#218: #187): one
-// vocabulary instead of escape soup at every call site. Lines start from
-// reset so claude's own colours never bleed into ours.
-const ANSI_RESET = '\x1b[0m';
-const ansi = {
-  warn: (s) => `\x1b[33m${s}${ANSI_RESET}`, // yellow — attention
-  ok: (s) => `\x1b[32m${s}${ANSI_RESET}`,   // green — confirmation
-  bold: (s) => `\x1b[1m${s}${ANSI_RESET}`,
-};
-
-// ---- wireChild — attach I/O handlers to a newly spawned child ----
-// Used by startSession (initial spawn) and respawnWithProvider (model switch).
-// Stores the child + idle timer on sess; each child gets its own plainTail.
 function wireChild(sid, sess, child) {
   sess.child = child;
 
@@ -627,12 +595,8 @@ function wireChild(sid, sess, child) {
   let plainTail = '';
   const out = (d) => {
     sess.lastActivity = Date.now();
-    // Track Claude limit per session. noteLimit() returns false when the limit
-    // is already known globally — use a direct LIMIT_RE match so every session
-    // gets its own hitLimit flag. Skip this entirely for provider sessions to
-    // avoid polluting the account-wide limitResetAt with provider rate-limit
-    // messages that may match the same pattern.
-    if (!sess.provider) {
+    // Codex and shell output must never alter the Claude account limit.
+    if (sess.cmd === 'claude') {
       plainTail = (plainTail + d.toString('utf8').replace(ANSI_RE, ' ')).slice(-600);
       if (!sess.hitLimit && LIMIT_RE.test(plainTail)) sess.hitLimit = true;
       if (noteLimit(plainTail)) pushUsage(null);
@@ -646,19 +610,10 @@ function wireChild(sid, sess, child) {
     clearInterval(sess.idleTimer);
     // The last words before the exit frame — see the outbox's own header.
     sess.outbox.flush();
-    // If a Claude session (not already on a provider) hit a usage limit, offer
-    // the model-switch prompt instead of immediately ending the session.
-    if (sess.cmd === 'claude' && !sess.provider && sess.hitLimit) {
-      log(`session ${sid} claude limit — entering model-switch prompt`);
-      startSwitchMode(sid, sess, code ?? 0);
-    } else {
-      sessions.delete(sid);
-      log(`session ${sid} down (${sessions.size} live), exit ${code}`);
-      sendUplink({ t: 'exit', sid, code: code ?? 0 });
-      // A killed shim leaves its tmux session running detached; a real claude
-      // exit removes it. Either way the detached list just changed.
-      if (sess.tmuxSession) pushDetached();
-    }
+    sessions.delete(sid);
+    log(`session ${sid} down (${sessions.size} live), exit ${code}`);
+    sendUplink({ t: 'exit', sid, code: code ?? 0 });
+    if (sess.tmuxSession) pushDetached();
   });
 
   child.on('error', (e) => {
@@ -667,205 +622,6 @@ function wireChild(sid, sess, child) {
     log(`session ${sid} error: ${e.message}`);
     sendUplink({ t: 'err', sid, msg: e.message });
     sendUplink({ t: 'exit', sid, code: 1 });
-  });
-}
-
-// ---- startSwitchMode — hold the session open and prompt for a model switch ----
-// Called when a Claude session exits after hitting a usage limit. If no
-// providers are configured, falls through to a normal exit immediately.
-//
-// ASYNC since #481, because one candidate is a gateway on this host and the
-// only honest way to ask whether it can take a session is to knock. That opens
-// a window — the child is dead, the prompt is not drawn yet — in which an
-// arriving keystroke would reach `child.feed()` on a closed pipe. So switchMode
-// is claimed SYNCHRONOUSLY with a handler that swallows input, before the first
-// await; the real handler replaces it once there is something to choose.
-async function startSwitchMode(sid, sess, exitCode) {
-  // Claim the session before awaiting anything. See above.
-  sess.switchMode = { probing: true, onInput: () => {} };
-
-  const { providers: available, gateway } = await availableProvidersLive();
-
-  // The session can have gone away while we were knocking.
-  if (!sessions.has(sid)) return;
-
-  if (available.length === 0) {
-    sessions.delete(sid);
-    // Say WHY the gateway was not among them. An unreachable gateway that is
-    // silently missing reads as a broken install; naming the reason reads as
-    // what it is. CLAUDE.md, "Fail-safe direction": fail safe in the action,
-    // loud in the reason.
-    log(`session ${sid} down (${sessions.size} live) — no alt providers configured`
-      + ` (gateway ${gateway.baseUrl}: ${gateway.reason})`);
-    sendOutText(sid, sess,
-      `\r\n${ANSI_RESET}${ansi.warn('⚠  Claude usage limit reached, and there is nowhere to switch to.')}\r\n`
-      + `${ANSI_RESET}   OmniRoute gateway not reachable at ${gateway.baseUrl} — ${gateway.reason}\r\n`
-      + `${ANSI_RESET}   No alternative provider keys are configured either. See ${ansi.bold('stack omniroute')}.\r\n`);
-    sendUplink({ t: 'exit', sid, code: exitCode });
-    return;
-  }
-
-  const preferred = loadPreferredProvider();
-
-  // Build and send the in-terminal prompt (ANSI-coloured, \r\n for raw PTY mode).
-  const lines = [
-    `\r\n${ANSI_RESET}${ansi.warn('⚠  Claude usage limit reached.')}\r\n`,
-    `${ANSI_RESET}   Switch to a free AI model:\r\n\r\n`,
-  ];
-  available.forEach((p, i) => {
-    const pref = p.key === preferred ? `  ${ansi.ok('← preferred')}` : '';
-    lines.push(`${ANSI_RESET}   ${ansi.bold(`[${i + 1}]`)} ${p.label} — ${p.model}${pref}\r\n`);
-  });
-  lines.push(`\r\n${ANSI_RESET}   Press ${ansi.bold('1')}–${ansi.bold(String(available.length))} to switch`);
-  if (preferred && available.some((p) => p.key === preferred)) {
-    lines.push(`, ${ansi.bold('Enter')} for preferred`);
-  }
-  lines.push(`, or ${ansi.bold('q')} to end session.\r\n`);
-  // Keyed providers were found but the gateway was not: say so here too, or the
-  // owner who installed it reads its absence as their own mistake.
-  if (!gateway.reachable) {
-    lines.push(`${ANSI_RESET}   ${ansi.warn('·')} OmniRoute gateway not reachable at ${gateway.baseUrl} — ${gateway.reason}\r\n`);
-  }
-  sendOutText(sid, sess, lines.join(''));
-
-  // 5-minute failsafe — clean up an unanswered prompt rather than leaking forever.
-  const switchTimeout = setTimeout(() => {
-    if (!sessions.has(sid) || !sessions.get(sid).switchMode) return;
-    sessions.delete(sid);
-    log(`session ${sid} switch prompt timed out`);
-    sendUplink({ t: 'exit', sid, code: exitCode });
-  }, 5 * 60_000);
-
-  sess.switchMode = {
-    available,
-    preferred,
-    exitCode,
-    timeout: switchTimeout,
-    onInput: (b64) => {
-      const ch = Buffer.from(b64, 'base64').toString('utf8');
-      const byte0 = ch.charCodeAt(0);
-
-      // Ctrl-C / lone Escape / q / n → decline and end the session.
-      if (byte0 === 3 || (byte0 === 0x1b && ch.length === 1) || 'qQnN'.includes(ch[0])) {
-        clearTimeout(switchTimeout);
-        sessions.delete(sid);
-        log(`session ${sid} model switch declined`);
-        sendUplink({ t: 'exit', sid, code: exitCode });
-        return;
-      }
-
-      // Enter → use the preferred provider if one is saved.
-      if (ch === '\r' || ch === '\n') {
-        if (preferred) {
-          const pref = available.find((p) => p.key === preferred);
-          if (pref) {
-            clearTimeout(switchTimeout);
-            respawnWithProvider(sid, sess, pref.key, exitCode);
-            return;
-          }
-        }
-        return; // no preferred set — ignore bare Enter
-      }
-
-      // Digit key → pick by list position.
-      const digit = parseInt(ch, 10);
-      if (digit >= 1 && digit <= available.length) {
-        clearTimeout(switchTimeout);
-        respawnWithProvider(sid, sess, available[digit - 1].key, exitCode);
-        return;
-      }
-      // Ignore everything else (arrow keys arrive as multi-byte escape sequences).
-    },
-  };
-}
-
-// ---- respawnWithProvider — spawn claude with an alternative model's env ----
-function respawnWithProvider(sid, sess, providerKey, prevExitCode) {
-  const env = providerEnv(providerKey);
-  if (!env) {
-    sessions.delete(sid);
-    sendUplink({ t: 'err', sid, msg: `No API key found for ${providerKey} — configure it in ~/.ccm_config.` });
-    sendUplink({ t: 'exit', sid, code: prevExitCode });
-    return;
-  }
-  const provider = getProvider(providerKey);
-  savePreferredProvider(providerKey);
-
-  sendOutText(
-    sid, sess,
-    `\r\n${ansi.ok(`► Switching to ${provider.label} (${provider.model})…`)}\r\n\r\n`,
-  );
-
-  // claude --continue resumes the most recent conversation so the context from
-  // the limit-hit session is preserved. Keys are injected via spawn's env option
-  // (never in argv, to keep ps output clean).
-  const child = spawn('python3', [SHIM, sess.cwd, '/bin/bash', '-lc', 'exec claude --continue'], {
-    stdio: ['pipe', 'pipe', 'pipe', 'pipe'],
-    env: { ...process.env, ...env },
-  });
-
-  sess.provider = providerKey;
-  // #503 — a switch-over is the one thing that legitimately moves a running
-  // session's model, so the tag moves with it. Fixed-at-spawn is the rule for
-  // what the BROWSER asks for; this is the host answering a usage limit, and a
-  // rail row still reading "Claude" afterwards would be stale, not stable.
-  sess.modelTag = sessionModelTag(providerKey);
-  if (sess.tmuxSession) setSessionModel(sess.tmuxSession, sess.modelTag);
-  sendUplink({ t: 'model', sid, model: describeModelTag(sess.modelTag) });
-  sess.switchMode = null;
-  sess.hitLimit = false;
-  wireChild(sid, sess, child);
-
-  log(`session ${sid} respawned on ${providerKey} (${provider.label} / ${provider.model})`);
-}
-
-// ---- gateway — answer the browser's "is OmniRoute up?" (#484) ----------------
-// The server CANNOT ask the gateway itself: it is in a container and the host
-// firewall drops container->host, so localhost:20128 is not a thing it can
-// reach. The daemon already dials OUT, so the question rides that uplink like
-// every other host fact. Same poll-and-report shape as autoView.
-//
-// The answer never claims more than it knows. `reachable` here means the probe
-// got a 200 just now; when the daemon is not connected at all the SERVER
-// substitutes "unknown" rather than false, because "we cannot see" and "it is
-// down" are different things and only one of them is the browser's problem.
-async function gatewayProbe(m) {
-  const probe = await probeOmniRoute({ timeoutMs: 2500 });
-  const p = getProvider('omniroute');
-  const key = resolveProviderKey(p.envKey);
-  const model = resolveHostValue('OMNIROUTE_MODEL');
-  sendUplink({
-    t: 'gatewayed',
-    id: m.id,
-    reachable: probe.reachable,
-    baseUrl: probe.baseUrl,
-    reason: probe.reason,
-    model: model.key || p.model,
-    // Whether a key exists, never the key, never its length — the browser has
-    // no business with either and `stack omniroute` is where that is reported.
-    keyConfigured: key.key.length > 0,
-    paidOptIn: Boolean(model.key),
-  });
-}
-
-// ---- models — the gateway's catalogue, for the browser's picker (#504) ------
-// Same poll-and-report shape as gatewayProbe above, and for the same reason:
-// the server is in a container and cannot reach the gateway, so every question
-// about it rides the uplink the host dials OUT.
-//
-// A FAILED READ IS REPORTED AS A REASON, NEVER AS AN EMPTY CATALOGUE. The
-// picker has to be able to say "Stack could not read the catalogue" rather than
-// draw an empty list, which reads as "the gateway has no models" — a different
-// and much more alarming claim than "we were not allowed to look".
-async function modelsRead(m) {
-  const r = await gatewayModels({ timeoutMs: 8000 });
-  sendUplink({
-    t: 'modelsRead',
-    id: m.id,
-    ok: r.ok,
-    reason: r.reason,
-    total: r.total || 0,
-    models: r.models,
   });
 }
 
@@ -917,11 +673,12 @@ function startSession(msg) {
     sendUplink({ t: 'err', sid, msg: m });
     sendUplink({ t: 'exit', sid, code: 1 });
   };
+  if (!['shell', 'claude', 'codex'].includes(msg.cmd)) return failUplink('Unknown session type.');
   const cwd = resolveCwd(msg.cwd);
   if (!cwd) return failUplink(`No such directory under ${ROOT}.`);
   if (sessions.size >= MAX_SESSIONS) return failUplink('Too many live sessions.');
 
-  // Two commands only. Shell sessions run the login shell directly.
+  // Shell sessions run the login shell directly; both agents persist in tmux.
   // Claude sessions run inside a named tmux session so the process survives
   // browser disconnects: the pty-shim runs `tmux new-session -A`, which
   // creates the session (or attaches if it already exists). When the shim is
@@ -937,53 +694,10 @@ function startSession(msg) {
   let markNewSession = null; // set to the name when this call CREATES the session
   let modelTag = ''; // #503 — the provider/model this session runs on ('' = unrecorded)
 
-  if (msg.cmd === 'claude') {
-    // The browser may ask for permission prompts to be skipped — a boolean
-    // only, mapped to the one allow-listed flag here. There is no path for
-    // arbitrary arguments to reach the spawn.
-    // #484 — `provider: 'omniroute'` routes this session through the local
-    // gateway instead of the account's own subscription. It runs `stack
-    // omniroute launch` rather than setting the env here, for the reason
-    // scripts/stack-term-cli.mjs's header spells out: tmux does not carry this
-    // process's environment into a new session when a server is already
-    // running, and the two ways to force it from outside both put a credential
-    // in argv, which `ps` shows to every user on the box. Composing keeps ONE
-    // implementation of the env allowlist and the .env shadow.
-    //
-    // Absolute path: a tmux pane's PATH is not this daemon's, and a bare
-    // `stack` that resolves to nothing leaves an empty pane with no reason.
-    const perms = msg.skipPerms === true ? ' --dangerously-skip-permissions' : '';
-    // SINGLE quotes: the whole string goes into `/bin/bash -lc "…"` below, so a
-    // double quote here would end that string early. Same trap, same fix, as
-    // scripts/stack-term-cli.mjs.
-    const dispatcher = `'${STACK_DISPATCHER.replace(/'/g, "'\\''")}'`;
-    // #504 — WHICH MODEL, per tab. Validated by cleanModelId BEFORE it goes
-    // anywhere near this string: what is being built here is a command line for
-    // `/bin/bash -lc`, so an id is untrusted input crossing an injection
-    // boundary, not a label. The validator's allowlist excludes quotes, spaces
-    // and every shell metacharacter, and an id it will not vouch for comes back
-    // '' — which means "the browser said nothing" and falls through to the host
-    // default. There is no sanitise-and-continue path on purpose.
-    const wantModel = cleanModelId(msg.model);
-    const wantCtx = cleanContextTokens(msg.contextTokens);
-    const modelArgs = wantModel
-      ? ` --model '${wantModel}'${wantCtx ? ` --context-tokens ${wantCtx}` : ''}`
-      : '';
-    // #525 — `brief` is claude's first prompt, and it is the one argument that
-    // is not a flag. launch-brief.mjs says why it arrives as `$(cat …)` rather
-    // than as text; the gateway takes it after `--`, like the permissions flag.
-    const claudeCmdWith = (brief = '') => (msg.provider === 'omniroute'
-      ? `exec ${dispatcher} omniroute launch --cli claude${modelArgs}${perms || brief ? ` --${perms}${brief}` : ''}`
-      : `exec claude${perms}${brief}`);
-    const claudeCmd = claudeCmdWith();
-    // THE PRIME IS GONE with the tab consoles. A session spawned for a tab
-    // agent used to carry an appended system prompt — the server composed it,
-    // a launcher script fed it in via `$(cat …)` so the text never travelled
-    // through a command line — and the consoles were its only caller. Nothing
-    // else on this daemon writes a system prompt, and the `prime`/`model`
-    // fields on the start frame are no longer read: a claude session is `exec
-    // claude` in the requested checkout, which is what the Terminal screen
-    // always wanted from it.
+  if (msg.cmd === 'claude' || msg.cmd === 'codex') {
+    const launch = nativeLaunch(msg.cmd, { skipPerms: msg.skipPerms });
+    const agentCmdWith = (brief = '') => `${launch.command}${brief}`;
+    const agentCmd = agentCmdWith();
     if (tmuxAvailable()) {
       // Use a validated name from the browser if provided, otherwise generate one.
       tmuxSession = validName(msg.tmuxSession) ? msg.tmuxSession : generateName('term');
@@ -996,18 +710,17 @@ function startSession(msg) {
       // answer yes.
       reattached = sessionExists(tmuxSession);
       // #503 — what this tab is talking to. A session ALREADY RUNNING is asked
-      // rather than assumed: its provider was fixed when it was spawned and the
-      // gateway pref can have been flipped since, so computing a tag here would
+      // rather than assumed: computing a tag from the selected agent would
       // relabel a running session to something it is not. A new one gets the tag
       // for what it is about to start on.
       modelTag = reattached
         ? (listStackSessions().find((x) => x.name === tmuxSession)?.model || '')
-        : sessionModelTag(msg.provider === 'omniroute' ? 'omniroute' : null, wantModel);
+        : launch.tag;
       // A brief only for a session this call CREATES — a re-attach ignores the
       // command, and the start frame is re-sent on every reconnect.
       const briefFile = !reattached && typeof msg.brief === 'string' ? writeBrief(tmuxSession, msg.brief) : null;
       if (briefFile) log(`session ${sid}: starting ${tmuxSession} on a brief (${msg.brief.length} chars)`);
-      const shellCmd = `/bin/bash -lc "${briefFile ? claudeCmdWith(briefArg(briefFile)) : claudeCmd}"`;
+      const shellCmd = `/bin/bash -lc "${briefFile ? agentCmdWith(briefArg(briefFile)) : agentCmd}"`;
       argv = sessionArgv(tmuxSession, cwd, shellCmd);
       log(`session ${sid}: tmux session ${tmuxSession} (${reattached ? 're-attach' : 'new'})`);
       // A session we are CREATING starts out marked fresh — nobody has been
@@ -1019,9 +732,9 @@ function startSession(msg) {
       // Degrade gracefully when tmux is absent — direct spawn, no persistence.
       // The tag is still computed: there is no session to hang it on, but the
       // browser asked what this tab is on and the answer is known either way.
-      modelTag = sessionModelTag(msg.provider === 'omniroute' ? 'omniroute' : null, wantModel);
-      argv = ['/bin/bash', '-lc', claudeCmd];
-      log(`session ${sid}: tmux not available, running claude directly`);
+      modelTag = launch.tag;
+      argv = ['/bin/bash', '-lc', agentCmd];
+      log(`session ${sid}: tmux not available, running ${msg.cmd} directly`);
     }
   } else {
     argv = [process.env.SHELL || '/bin/bash', '-l'];
@@ -1069,7 +782,7 @@ function startSession(msg) {
     outBuf: createReplayBuffer(),
     cwd,
     tmuxSession, // non-null when the claude session runs inside tmux (#171)
-    cmd: msg.cmd === 'claude' ? 'claude' : 'shell',
+    cmd: agentForTag(modelTag) || (msg.cmd === 'codex' ? 'codex' : msg.cmd === 'claude' ? 'claude' : 'shell'),
     // Terminal dimensions are stored on the session so respawned children get
     // the right size from the start (#152).
     cols: msg.cols || 0,
@@ -1077,9 +790,7 @@ function startSession(msg) {
     lastActivity: Date.now(),
     idleTimer: null,
     hitLimit: false,  // set to true when LIMIT_RE fires on this session's output
-    provider: null,   // non-null after a model switch (prevents re-triggering)
     modelTag,         // #503 — what it is talking to ('' = unrecorded)
-    switchMode: null, // non-null while awaiting user input for model selection
     child: null,      // set by wireChild
     outbox: null,     // set immediately below — it needs `sess` to ship into
   };
@@ -1096,7 +807,7 @@ function startSession(msg) {
   // #503 — the ready frame answers "what am I on" for a LIVE tab, so the rail
   // does not have to wait for the next detached push (a minute away) to label a
   // session somebody just opened. Same parsed shape, same null for unrecorded.
-  const readyFrame = { t: 'ready', sid, cwd: cwdLabel, model: describeModelTag(modelTag) };
+  const readyFrame = { t: 'ready', sid, cwd: cwdLabel, model: describeModelTag(modelTag), cmd: sess.cmd };
   if (tmuxSession) {
     readyFrame.tmuxSession = tmuxSession;
     readyFrame.reattached = reattached;
@@ -1419,10 +1130,7 @@ function connect() {
     const child = sess?.child;
     if (m.t === 'start') startSession(m);
     else if (m.t === 'in' && sess && typeof m.data === 'string') {
-      // During model-switch mode the child has exited — route input to the
-      // switch handler rather than the dead child's stdin (which would EPIPE).
-      if (sess.switchMode) sess.switchMode.onInput(m.data);
-      else if (child) child.feed(m.data);
+      if (child) child.feed(m.data);
     }
     else if (m.t === 'resize' && sess) {
       // Persist dimensions so a respawned child can be sized correctly.
@@ -1462,20 +1170,10 @@ function connect() {
     else if (m.t === 'answerPrompt') answerPrompt(m);
     else if (m.t === 'claudeAsk') claudeAsk(m);
     else if (m.t === 'autoView') autoView(m);
-    else if (m.t === 'gateway') gatewayProbe(m);
-    else if (m.t === 'models') modelsRead(m);
     else if (m.t === 'claudeMd') claudeMdRead(m);
     else if (m.t === 'claudeMdWrite') claudeMdWrite(m);
     else if (m.t === 'kill') {
-      if (sess?.switchMode) {
-        // Browser tab closed during the switch prompt — clean up gracefully.
-        clearTimeout(sess.switchMode.timeout);
-        sessions.delete(m.sid);
-        log(`session ${m.sid} switch prompt killed by browser`);
-      } else if (child) {
-        if (sess) sess.hitLimit = false; // prevent switch prompt on an explicit browser kill
-        child.kill('SIGTERM');
-      }
+      if (child) child.kill('SIGTERM');
     }
   });
   // error and close can both fire (and a failed handshake may emit only

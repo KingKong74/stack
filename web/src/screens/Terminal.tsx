@@ -14,12 +14,10 @@ import {
   getDetachedSessions, killDetachedSession, keepSession, type DetachedSession,
   type SessionModel,
   labelTerminalSessions,
-  getTermTmuxName, setTermTmuxName, clearTermTmuxName,
+  setTermTmuxName, clearTermTmuxName,
   getTermOpenTabs, setTermOpenTabs,
   getTermNames, setTermName,
-  getTermSessionPrefs, setTermSessionPrefs,
-  getTerminalGateway, type GatewayState,
-  getTerminalModels, type GatewayModels,
+  getTerminalAgent, getTermSessionPrefs, setTermSessionPrefs,
   getProjectDetail, type ProjectDetailData,
   getOverview,
   peekTermLaunch, clearTermLaunch,
@@ -44,7 +42,6 @@ import { attachRenderer } from '../lib/termRenderer';
 // `claude · stack` hides the one fact that distinguishes it from the four
 // beside it, so the name is parsed back.
 import { ConfirmModal } from '../components/ConfirmModal';
-import { Modal } from '../components/Modal';
 
 import { flatRoadmap } from '../lib/plan';
 import { TopBar } from '../components/TopBar';
@@ -139,7 +136,7 @@ const parseTok = (s: string): number => {
 // whole), and it is the only id that exists for EVERY session — a shell has no
 // tmux name, so keying names by tmux is why shells used to go unnamed.
 type Sess = {
-  id: number; cwd: string; cmd: 'shell' | 'claude'; status: Status; note: string; tmux?: string; sid?: string;
+  id: number; cwd: string; cmd: 'shell' | 'claude' | 'codex'; status: Status; note: string; tmux?: string; sid?: string;
   // #503 — what this session is talking to, as the HOST reported it. undefined
   // = not answered yet (the ready frame has not landed); null = answered, and
   // the answer is UNRECORDED. The two are different and the row draws them
@@ -153,18 +150,10 @@ type Sess = {
 
 // #487 — the rail groups sessions by TOOL, as the Mission Control design does.
 //
-// A TABLE RATHER THAN A TERNARY, and that is the whole reason it is here. Stack
-// runs two kinds of session today, so a `cmd === 'claude' ? … : …` would be
-// shorter and would also be the thing somebody has to unpick the moment a third
-// arrives — and one is arriving: `stack term --cli` (#481) launches codex,
-// gemini, qwen and aider through the OmniRoute gateway. When a session records
-// which runtime it is, it becomes a row here and nothing else on this screen
-// changes. Until then this honestly lists the two that exist.
-//
-// The order is the order the rail draws: claude first because it is what the
-// screen is mostly for, shells last because they are furniture.
+// Agent groups precede utility shells in the session rail.
 const TOOL_GROUPS: { key: Sess['cmd']; name: string; mark: string }[] = [
   { key: 'claude', name: 'Claude Code', mark: 'C' },
+  { key: 'codex', name: 'Codex', mark: 'X' },
   { key: 'shell', name: 'Shell', mark: '$' },
 ];
 // Inside a tool, the rail splits sessions by PROJECT: the first segment of the
@@ -196,15 +185,6 @@ const subPathOf = (cwd?: string) =>
 //
 // Shells never get one: a shell is not on a model, and an empty chip on every
 // shell row would make the column mean nothing.
-// #504 — a context window, short enough to sit in a menu row. The number is
-// the one thing that separates two otherwise identical-looking models, and it
-// is what Claude Code will actually compact against.
-function ctxLabel(n: number): string {
-  if (!n) return 'window unknown';
-  if (n >= 1_000_000) return `${Math.round(n / 100_000) / 10}M ctx`;
-  return `${Math.round(n / 1000)}k ctx`;
-}
-
 function ModelChip({ model, resolved, show }: {
   model?: SessionModel | null; resolved?: string; show: boolean;
 }) {
@@ -217,7 +197,7 @@ function ModelChip({ model, resolved, show }: {
     return (
       <span className={`mdl ${model?.key === 'anthropic' ? 'own' : 'alt'}`}
         title={`${resolved} — what actually answered${asked ? `, on ${asked}` : ''}${
-          asked && asked !== resolved ? '. A gateway combo picks per request, so this can change mid-session.' : ''}`}>
+          asked && asked !== resolved ? '. The configured route may differ from the model that answered.' : ''}`}>
         {resolved}
       </span>
     );
@@ -231,15 +211,13 @@ function ModelChip({ model, resolved, show }: {
     );
   }
   // THE MODEL IS THE LABEL, not the provider. A column of rows all reading
-  // "OmniRoute" answers the question nobody asked — which gateway — while
+  // The model is more useful than the provider name when known.
   // hiding the one that matters. The provider moves to the title, where it is
   // one hover away and never competes with the thing you are looking for.
   return (
     <span className={`mdl ${model.key === 'anthropic' ? 'own' : 'alt'}`}
-      title={`${model.id || model.label} — ${model.key === 'omniroute'
-        ? 'routed through the local OmniRoute gateway'
-        : model.key === 'anthropic' ? 'your own Anthropic subscription' : model.label}`}>
-      {model.key === 'anthropic' ? 'Claude' : (model.id || model.label)}
+      title={`${model.id || model.label} — ${model.key === 'codex' ? 'native Codex configuration; usage is not tracked' : model.key === 'anthropic' ? 'your own Anthropic subscription' : model.label}`}>
+      {model.key === 'anthropic' ? 'Claude' : model.key === 'codex' ? 'Codex' : (model.id || model.label)}
     </span>
   );
 }
@@ -305,7 +283,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   const [cwd, setCwd] = useState(initialCwd);
   // The seg control starts on the device's preferred session kind (Settings →
   // Terminal; default claude — that's what this screen is for).
-  const [mode, setMode] = useState<'shell' | 'claude'>(() => getTermSessionPrefs().autoStart);
+  const [mode, setMode] = useState<'shell' | 'claude' | 'codex'>(() => getTermSessionPrefs().autoStart);
   const [sessions, setSessions] = useState<Sess[]>([]);
   // A mirror of `sessions` for the async restore (#486) to read. The adoption
   // pass resolves after its own round trip, by which time the `sessions` it
@@ -409,22 +387,14 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   // daemon's resolveCwd() regardless of what the browser sends.
   // Mission Control's per-row ⌨ button and the ProjectDetail ⌨ button both
   // call go.terminal(slug), so project-context opens already land here.
-  const openSession = (dir?: string, kind?: 'shell' | 'claude', tmux?: string) => {
+  const openSession = (dir?: string, kind?: 'shell' | 'claude' | 'codex', tmux?: string) => {
     const id = nextId.current++;
     const cwdKey = (dir ?? cwd).trim();
     const cmd = kind ?? mode;
     setSessions((s) => {
-      // #188 — resume-through-reload: a claude session with no explicit tmux
-      // name reuses this device's remembered session for the cwd, unless a
-      // live tab already holds it (attaching twice would mirror the terminal).
-      let name = tmux;
-      if (!name && cmd === 'claude') {
-        const stored = getTermTmuxName(cwdKey);
-        if (stored
-          && !s.some((x) => x.tmux === stored && (x.status === 'live' || x.status === 'connecting'))) {
-          name = stored;
-        }
-      }
+      // Explicit new sessions never adopt a remembered session by directory:
+      // Claude and Codex can share a cwd. Reload restoration uses the host list.
+      const name = tmux;
       return [...s, { id, cwd: cwdKey, cmd, status: 'connecting', note: '', tmux: name }];
     });
     setActive(id);
@@ -482,7 +452,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
       (t.cmd === 'shell' ? openSession(t.cwd, t.cmd, t.tmux) : null));
     const deferred = saved
       .map((t, i) => ({ t, i }))
-      .filter(({ t }) => t.cmd === 'claude');
+      .filter(({ t }) => t.cmd !== 'shell');
 
     let gone = false;
 
@@ -515,10 +485,10 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
         (a, b) => (a.attached ? 1 : 0) - (b.attached ? 1 : 0) || b.created - a.created);
       for (const { t, i } of deferred) {
         const name = exact.get(i)
-          ?? byPreference.find((h) => h.cwd === t.cwd && !held.has(h.name))?.name;
+          ?? byPreference.find((h) => h.cwd === t.cwd && h.cmd === t.cmd && !held.has(h.name))?.name;
         if (!name) continue;   // nothing on the host for it — the tab is not reopened
         held.add(name);
-        const id = openSession(t.cwd, 'claude', name);
+        const id = openSession(t.cwd, t.cmd, name);
         ids[i] = id;
         opened.push(id);
       }
@@ -794,7 +764,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   const attachDetached = (d: DetachedSession) => {
     setDetached((l) => l.filter((x) => x.name !== d.name));
     setKillPick((p) => p.filter((n) => n !== d.name));
-    openSession(d.cwd, 'claude', d.name);
+    openSession(d.cwd, d.cmd || 'claude', d.name);
   };
 
   // Killing host sessions, one or many. The route only ever kills DETACHED
@@ -1347,7 +1317,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   //    `getTermWorkingItem`/`setTermWorkingItem` stay in store.ts with whatever
   //    each device pinned, for the same reason the runbook's commands do.
   //
-  // What is NOT affected: the usage strip, the resume-job chip, the gateway
+  // What is NOT affected: the usage strip and the resume-job chip
   // pills and the layout switcher all sat above the canvas, never in the rail.
   //
   // ONE READ OF THE PLAN SURVIVES, and it is the head bar's, not the rail's:
@@ -1445,96 +1415,12 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   useEffect(() => { if (visible) loadServerUsage(); }, [visible]); // eslint-disable-line react-hooks/exhaustive-deps
   useAutoRefresh(loadServerUsage, visible);
 
-  // #486 — the OmniRoute gateway, as the HOST sees it. null = not asked yet,
-  // which renders as nothing rather than as a claim; the three states the
-  // answer can carry are handled where it is drawn.
-  const [gateway, setGateway] = useState<GatewayState | null>(null);
-  const [gwPref, setGwPref] = useState<boolean>(() => getTermSessionPrefs().onGateway);
-  // #504 — WHAT THE NEXT CLAUDE TAB RUNS ON. Three things are stored and they
-  // move together: `onGateway` (subscription or gateway), the model id, and
-  // that model's context window. A model without the gateway is meaningless, so
-  // the picker is the only writer of all three — never two of them.
-  const [modelPref, setModelPref] = useState<string>(() => getTermSessionPrefs().model);
-  const [pinned, setPinned] = useState<string[]>(() => getTermSessionPrefs().pinnedModels);
-  const [pickOpen, setPickOpen] = useState(false);
-  const pickRef = useRef<HTMLDivElement | null>(null);
-  const pickBtn = useRef<HTMLButtonElement | null>(null);
-  useCollapseOnClickAway(pickOpen, () => setPickOpen(false), pickRef, pickBtn);
-  const [pinOpen, setPinOpen] = useState(false);
-  const [pinQuery, setPinQuery] = useState('');
-  // The catalogue, fetched ONCE when the picker is first opened rather than on
-  // arrival: it is 400 rows nobody asked for until they open the menu, and it
-  // costs a host round trip through the gateway.
-  const [cat, setCat] = useState<GatewayModels | null>(null);
-  const [catBusy, setCatBusy] = useState(false);
-  const loadCatalogue = () => {
-    if (catBusy || cat?.ok) return;
-    setCatBusy(true);
-    getTerminalModels()
-      .then(setCat)
-      // A failed fetch is one more way of not being able to look, so it lands
-      // as a REASON rather than as an empty catalogue.
-      .catch(() => setCat({ ok: false, connected: false, reason: 'Stack could not reach the API', total: 0, models: [] }))
-      .finally(() => setCatBusy(false));
+  const [hostConnected, setHostConnected] = useState<boolean | null>(null);
+  const loadHost = () => {
+    getTerminalAgent().then((r) => setHostConnected(r.connected)).catch(() => setHostConnected(null));
   };
-  // The one writer. `id === null` means the subscription (the gateway off
-  // entirely); '' means the gateway's own default route; anything else is a
-  // catalogue id, stored with the window it was listed with.
-  const chooseModel = (id: string | null, contextTokens = 0) => {
-    const onGateway = id !== null;
-    setGwPref(onGateway);
-    setModelPref(onGateway ? id : '');
-    setTermSessionPrefs({
-      ...getTermSessionPrefs(),
-      onGateway,
-      model: onGateway ? id : '',
-      modelContext: onGateway ? contextTokens : 0,
-    });
-    setPickOpen(false);
-  };
-  const togglePinned = (id: string) => {
-    setPinned((cur) => {
-      const next = cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id].slice(0, 24);
-      setTermSessionPrefs({ ...getTermSessionPrefs(), pinnedModels: next });
-      return next;
-    });
-  };
-  const loadGateway = () => {
-    getTerminalGateway()
-      .then(setGateway)
-      // A failed FETCH is not a down gateway either — it is one more way of not
-      // being able to see, so it lands in the same state as an absent daemon.
-      .catch(() => setGateway({ connected: false }));
-  };
-  useEffect(() => { if (visible) loadGateway(); }, [visible]); // eslint-disable-line react-hooks/exhaustive-deps
-  useAutoRefresh(loadGateway, visible);
-
-  // THE PROVIDER PILLS. The design shows three (Anthropic 67%, OpenAI 22%,
-  // DeepSeek 4%). Stack has a real percentage for exactly ONE of those — the
-  // Claude plan window the daemon reads off the account — and knows of the
-  // others only whether a key is configured. So the pills are drawn as the
-  // design draws them and say what is TRUE for each: a percentage where there
-  // is one, and the provider's state where there is not. A fabricated "4%"
-  // would look identical to a measured one, which is the whole objection.
-  // (#490) THE STATUS PILLS MOVED TO THE RAIL, and the Anthropic one did not
-  // survive the move. The rail's limits block already draws that session
-  // percentage and its reset time — the pill was the same number a second time
-  // on the same screen, which is the rule this repo keeps breaking and then
-  // fixing. What is left is the two facts nothing else on the rail says: which
-  // session this pane is holding, and whether the gateway can take a new one.
-  const railStatus = useMemo(() => {
-    const out: { key: string; name: string; detail: string; tone: 'ok' | 'warn' | 'off' }[] = [];
-    if (gateway) {
-      out.push({
-        key: 'gateway', name: 'OmniRoute',
-        // Still three sentences, still never collapsing "cannot see" into
-        // "down" — see routes/terminal.js's header on the three states.
-        detail: gateway.connected ? (gateway.reachable ? 'reachable' : 'no gateway') : 'host offline',
-        tone: gateway.connected && gateway.reachable ? 'ok' : 'off',
-      });
-    }
-    return out;
-  }, [gateway]);
+  useEffect(() => { if (visible) loadHost(); }, [visible]); // eslint-disable-line react-hooks/exhaustive-deps
+  useAutoRefresh(loadHost, visible);
 
 
   return (
@@ -1598,106 +1484,17 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
             title="A project slug (e.g. stack) opens ~/slug. A sub-path (e.g. stack/src) opens ~/stack/src. Leave blank for home."
             onChange={(e) => setCwd(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') openSession(); }} />
-          {/* #136 — mode toggle replaces the Shell/Claude seg-control tab bar.
-              The choice is now made at connect-time, not as a standing widget. */}
-          <button
-            className={`btn-repo sm term-mode-btn${mode === 'claude' ? ' on' : ''}`}
-            title={mode === 'shell'
-              ? 'Currently opening shell sessions — click to switch to Claude'
-              : 'Currently opening Claude sessions — click to switch to shell'}
-            onClick={() => setMode((m) => m === 'shell' ? 'claude' : 'shell')}>
-            {mode === 'claude' ? 'Claude' : 'Shell'}
-          </button>
-          {/* ---- #504 · WHAT THE NEXT CLAUDE TAB RUNS ON ----
-              Beside the tool toggle, because it answers the same kind of
-              question — what am I about to open — and a setting that changes
-              what a button does belongs next to that button, not two clicks
-              deep in a popover. (The rail's Settings switch still exists and
-              still writes the same stored field; this is the fast path.)
-
-              SHOWN ONLY FOR CLAUDE. A shell is not on a model, and a control
-              that is inert half the time teaches you to stop reading it.
-
-              480 catalogue entries is not a menu, so the list is: the
-              subscription, the gateway's own default, YOUR pinned few, then
-              OmniRoute's 38 curated combos. Discovery lives in the pin dialog
-              — searching is what you do once, picking is what you do daily. */}
-          {mode === 'claude' && (
-            <div className="term-modelpick" ref={pickRef}>
-              <button
-                ref={pickBtn}
-                className={`btn-repo sm term-model-btn${gwPref ? ' on' : ''}`}
-                aria-expanded={pickOpen}
-                title={gwPref
-                  ? `New Claude tabs run on ${modelPref || 'the gateway\'s default route'} through OmniRoute`
-                  : 'New Claude tabs run on your own Anthropic subscription'}
-                onClick={() => { setPickOpen((v) => !v); loadCatalogue(); }}>
-                {gwPref ? (modelPref || 'auto') : 'Claude'} ▾
-              </button>
-              {pickOpen && (
-                <div className="term-modelmenu" role="dialog" aria-label="Model for new sessions">
-                  <button className={`tmm-row${!gwPref ? ' on' : ''}`} onClick={() => chooseModel(null)}>
-                    <span className="n">Claude — your subscription</span>
-                    <span className="d">full telemetry · what this screen is for</span>
-                  </button>
-                  {/* THE GATEWAY'S STATE IS SAID, NOT IMPLIED. With no daemon
-                      Stack cannot see the gateway at all, and a menu that just
-                      showed nothing would read as "no models exist". */}
-                  {!gateway?.connected ? (
-                    <span className="tmm-note">
-                      Stack cannot see the host, so it cannot say what the gateway offers.
-                    </span>
-                  ) : !gateway?.reachable ? (
-                    <span className="tmm-note">
-                      The gateway is not answering{gateway?.reason ? ` — ${gateway.reason}` : ''}.
-                    </span>
-                  ) : (
-                    <>
-                      <button className={`tmm-row${gwPref && !modelPref ? ' on' : ''}`}
-                        onClick={() => chooseModel('')}>
-                        <span className="n">OmniRoute — auto</span>
-                        <span className="d">the free combo; the gateway picks per request</span>
-                      </button>
-                      {pinned.length > 0 && <span className="tmm-cap">Pinned</span>}
-                      {pinned.map((id) => {
-                        const row = cat?.models.find((m) => m.id === id);
-                        return (
-                          <span key={id} className={`tmm-row pin${gwPref && modelPref === id ? ' on' : ''}`}>
-                            <button className="tmm-main" onClick={() => chooseModel(id, row?.contextTokens || 0)}>
-                              <span className="n">{id}</span>
-                              <span className="d">
-                                {row ? `${row.owner} · ${ctxLabel(row.contextTokens)}` : 'not in the catalogue right now'}
-                              </span>
-                            </button>
-                            <button className="tmm-unpin" title={`Unpin ${id}`}
-                              onClick={() => togglePinned(id)}>×</button>
-                          </span>
-                        );
-                      })}
-                      <span className="tmm-cap">
-                        Combos
-                        {catBusy && <span className="busy"> · reading the catalogue…</span>}
-                      </span>
-                      {cat && !cat.ok && (
-                        <span className="tmm-note">Could not read the catalogue — {cat.reason}</span>
-                      )}
-                      {cat?.models.filter((m) => m.owner === 'combo').map((m) => (
-                        <button key={m.id}
-                          className={`tmm-row${gwPref && modelPref === m.id ? ' on' : ''}`}
-                          onClick={() => chooseModel(m.id, m.contextTokens)}>
-                          <span className="n">{m.id}</span>
-                          <span className="d">{ctxLabel(m.contextTokens)}</span>
-                        </button>
-                      ))}
-                      <button className="tmm-more" onClick={() => { setPinOpen(true); setPickOpen(false); }}>
-                        + pin another…
-                      </button>
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
+          <select className="field-input term-mode-btn" aria-label="Session type" value={mode}
+            onChange={(e) => {
+              const next = e.target.value as Sess['cmd'];
+              setMode(next);
+              setTermSessionPrefs({ ...getTermSessionPrefs(), autoStart: next });
+            }}>
+            <option value="claude">Claude</option>
+            <option value="codex">Codex</option>
+            <option value="shell">Shell</option>
+          </select>
+          {mode === 'codex' && <span className="dim">Context and checkpoints are manual</span>}
           {/* #487 — the design's spawn button SAYS WHAT IT WILL DO: the tool
               and the directory, not "+ New session". Both are already chosen
               in the two controls beside it, so a button that repeats them back
@@ -1705,8 +1502,8 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
               wrong project — which is the mistake this label prevents and a
               generic one cannot. */}
           <button className="btn-submit sm term-spawn" onClick={() => openSession()}
-            title={`Open a ${mode === 'claude' ? 'Claude' : 'shell'} session in ~/${cwd.trim() || ''}`}>
-            + {mode === 'claude' ? 'Claude' : 'Shell'} in ~/{cwd.trim()}
+            title={`Open a ${mode === 'claude' ? 'Claude' : mode === 'codex' ? 'Codex' : 'shell'} session in ~/${cwd.trim() || ''}`}>
+            + {mode === 'claude' ? 'Claude' : mode === 'codex' ? 'Codex' : 'Shell'} in ~/{cwd.trim()}
           </button>
           {/* #489 — the roadmap brief's paste button, moved out of the rail's
               Runbook segment when that segment went. It is drawn ONLY when a
@@ -1760,7 +1557,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
               re-attach each pane's own ↻ does. */}
           {sessions.length > 1 && (
             <button className="btn-repo sm"
-              title="Reload every pane — re-attach each claude session on a fresh screen (none is killed); shells are only repainted"
+              title="Reload every pane — re-attach each agent session on a fresh screen (none is killed); shells are only repainted"
               onClick={() => { for (const h of handles.current.values()) h.reload(); }}>
               ↻ All
             </button>
@@ -1856,13 +1653,6 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
           </div>
         )}
 
-        {/* #487 — THE GATEWAY ROW IS GONE FROM HERE. Its three states are the
-            OmniRoute pill in the header now (reachable / no gateway / host
-            offline — still three sentences, still never collapsing "cannot
-            see" into "down"), and its model and its switch moved into the
-            rail's Settings popover, which is where the design puts a setting.
-            One status, one place; it was being drawn twice. */}
-
         {/* #490 — "PICK UP WHERE IT STOPPED" IS GONE FROM ABOVE THE CANVAS.
             It was a horizontal strip of long chips that grew a row every time
             the host kept a session, pushing the terminals down the page — on a
@@ -1918,7 +1708,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                       than a ternary so a CLI runtime (#481) drops in beside
                       them without touching the pane. */}
                   <span className={`term-mark ${s.cmd}`} aria-hidden="true">
-                    {s.cmd === 'claude' ? 'C' : '$'}
+                    {s.cmd === 'claude' ? 'C' : s.cmd === 'codex' ? 'X' : '$'}
                   </span>
                   {/* THE NAME IS EDITABLE ON BOTH SURFACES, on a double-click.
                       The rail is where you rename a session you are looking
@@ -1941,7 +1731,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                     </span>
                   )}
                   <span className="where">
-                    {`${s.cmd === 'claude' ? 'claude' : 'shell'} · ${s.cwd || '~'}`}
+                    {`${s.cmd} · ${s.cwd || '~'}`}
                   </span>
                   {notice?.id === s.id && <span className="pane-notice">{notice.label}</span>}
                   {/* #292 — pin this session against the idle reaper. On the
@@ -2014,7 +1804,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                   onStatus={(st, note) => setStatus(s.id, st, note)}
                   onUsage={setUsage}
                   onTmux={(name) => noteTmux(s.id, s.cwd, name)}
-                  onModel={(mdl) => setSessions((cur) => cur.map((x) => (x.id === s.id ? { ...x, model: mdl } : x)))}
+                  onModel={(mdl) => setSessions((cur) => cur.map((x) => (x.id === s.id ? { ...x, model: mdl, cmd: mdl?.key === 'codex' ? 'codex' : mdl?.key === 'anthropic' || mdl?.key === 'omniroute' ? 'claude' : x.cmd } : x)))}
                   onSid={(sid) => setSessions((cur) => cur.map((x) => (x.id === s.id ? { ...x, sid } : x)))}
                   onExit={(name) => noteTmuxEnded(s.cwd, name)}
                   onOutput={(bytes) => noteOutput(s.id, bytes)}
@@ -2029,8 +1819,8 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                 <span>No session open.</span>
                 <span className="dim">Resume one from the rail, or start one here.</span>
                 <button type="button" className="term-start" onClick={() => openSession()}
-                  title={`Open a ${mode === 'claude' ? 'Claude' : 'shell'} session in ~/${cwd.trim() || ''}`}>
-                  + {mode === 'claude' ? 'Claude' : 'Shell'} in ~/{cwd.trim()}
+                  title={`Open a ${mode === 'claude' ? 'Claude' : mode === 'codex' ? 'Codex' : 'shell'} session in ~/${cwd.trim() || ''}`}>
+                  + {mode === 'claude' ? 'Claude' : mode === 'codex' ? 'Codex' : 'Shell'} in ~/{cwd.trim()}
                 </button>
               </div>
             )}
@@ -2067,9 +1857,9 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                       cell beside a live one would read as broken. */}
                   <button type="button" className="term-holder gitbash term-empty term-pane-new"
                     onClick={() => openSession()}
-                    title={`Open a ${mode === 'claude' ? 'Claude' : 'shell'} session in ~/${cwd.trim() || ''}`}>
+                    title={`Open a ${mode === 'claude' ? 'Claude' : mode === 'codex' ? 'Codex' : 'shell'} session in ~/${cwd.trim() || ''}`}>
                     <span className="plus" aria-hidden="true">+</span>
-                    <span className="what">New {mode === 'claude' ? 'Claude' : 'shell'} session</span>
+                    <span className="what">New {mode === 'claude' ? 'Claude' : mode === 'codex' ? 'Codex' : 'shell'} session</span>
                     <span className="dim">in ~/{cwd.trim()}</span>
                   </button>
                 </div>
@@ -2279,7 +2069,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                                     similar names. */}
                                 <ModelChip model={x.model}
                                   resolved={x.resolvedModel || (x.tmux ? resolvedByTmux.get(x.tmux) : '')}
-                                  show={x.cmd === 'claude'} />
+                                  show={x.cmd !== 'shell'} />
                                 {subPathOf(x.cwd) && <span className="cw">{subPathOf(x.cwd)}/</span>}
                                 </span>
                                 </span>
@@ -2322,7 +2112,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                               <button className="tci-main"
                                 title={d.attached
                                   ? `Attached on another device (tmux ${d.name}) — open it here too: both screens mirror the same session`
-                                  : `Re-attach to this running claude session (tmux ${d.name}${d.created ? `, since ${new Date(d.created).toLocaleString()}` : ''})`}
+                                  : `Re-attach to this running agent session (tmux ${d.name}${d.created ? `, since ${new Date(d.created).toLocaleString()}` : ''})`}
                                 onClick={(e) => {
                                   // ⌃-click picks rather than re-attaches — on
                                   // a killable row only, the same rule as its ☐.
@@ -2355,9 +2145,8 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                                       <span className="d" />
                                     </span>
                                   )}
-                                  {/* Every idle row is a claude session by
-                                      construction (the host lists stack-term-*
-                                      only), so the chip always applies here. */}
+                                  {/* The host reports the agent tag for persistent
+                                      sessions; absent tags remain unknown. */}
                                   <ModelChip model={d.model ?? null} resolved={d.resolvedModel} show />
                                 </span>
                               </button>
@@ -2422,7 +2211,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
 
                     {/* #490 — THE STATUS PILLS, moved off the header. Two facts
                         and no third: what the focused pane is holding, and
-                        whether the gateway could take a new session. Pinned
+                        the host connection state. Pinned
                         with the footers rather than sitting in the scroller,
                         because a status you have to scroll to is not a status. */}
                     <div className="tc-status">
@@ -2440,13 +2229,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                           </span>
                         </span>
                       )}
-                      {railStatus.map((r) => (
-                        <span key={r.key} className={`tcs-row ${r.tone}`} title={`${r.name} — ${r.detail}`}>
-                          <span className="d" />
-                          <span className="n">{r.name}</span>
-                          <span className="v">{r.detail}</span>
-                        </span>
-                      ))}
+
                     </div>
 
                     {/* The two footers sit OUTSIDE the scroller (#490): the
@@ -2467,8 +2250,8 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                         onClick={() => setSetsOpen((v) => !v)}>
                         <span className="ico">⚙</span>
                         <span className="lbl">Settings</span>
-                        <span className={`chip ${gateway?.reachable ? 'ok' : 'off'}`}>
-                          <span className="d" />OmniRoute
+                        <span className={`chip ${hostConnected ? 'ok' : 'off'}`}>
+                          <span className="d" />{hostConnected === null ? 'Unknown' : hostConnected ? 'Connected' : 'Offline'}
                         </span>
                       </button>
                       {setsOpen && (
@@ -2476,13 +2259,9 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                           <span className="cap">Active integrations</span>
                           {[
                             { n: 'Terminal daemon', d: 'host-side tmux + the uplink',
-                              on: !!gateway?.connected, s: gateway?.connected ? 'Connected' : 'Offline' },
-                            { n: 'OmniRoute', d: gateway?.reachable
-                                ? `${gateway.model || 'auto'}${gateway.paidOptIn ? ' · paid route' : ' · free combo'}`
-                                : (gateway?.baseUrl || 'the local gateway'),
-                              on: !!gateway?.reachable,
-                              s: !gateway?.connected ? 'Cannot see'
-                                : gateway?.reachable ? 'Reachable' : 'Unreachable' },
+                              on: hostConnected === true, s: hostConnected === null ? 'Cannot see' : hostConnected ? 'Connected' : 'Offline' },
+                            { n: 'Claude and Codex', d: 'native CLIs · account and model configured in each CLI',
+                              on: true, s: 'Native' },
                             { n: 'Session labeller', d: 'names sessions from what they are doing',
                               on: Object.keys(labels).length > 0, s: Object.keys(labels).length ? 'In use' : 'Idle' },
                             { n: 'Idle reaper', d: 'pinned sessions are exempt',
@@ -2496,32 +2275,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                               <span className={`st ${i.on ? 'on' : 'off'}`}>{i.s}</span>
                             </div>
                           ))}
-                          {/* The gateway's own switch, moved here with it.
-                              Offered only when a session started NOW would
-                              actually reach the gateway — a switch that
-                              silently starts a session against a refused
-                              connection is worse than no switch. */}
-                          <div className="row">
-                            <span className="b">
-                              <span className="n">New claude tabs on the gateway</span>
-                              <span className="d">
-                                {gateway?.connected && gateway?.reachable
-                                  ? 'a running session’s provider is fixed at spawn'
-                                  : 'nothing to route to while it is unreachable'}
-                              </span>
-                            </span>
-                            <button type="button"
-                              className={`switch sm ${gwPref ? 'on' : ''}`}
-                              disabled={!(gateway?.connected && gateway?.reachable)}
-                              aria-pressed={gwPref} aria-label="New claude tabs on the gateway"
-                              onClick={() => {
-                                const next = !gwPref;
-                                setGwPref(next);
-                                setTermSessionPrefs({ ...getTermSessionPrefs(), onGateway: next });
-                              }}>
-                              <span className="switch-knob" />
-                            </button>
-                          </div>
+
                         </div>
                       )}
                     </div>
@@ -2635,71 +2389,14 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
         </div>
       </div>
     </div>
-    {/* ---- #504 · PIN A MODEL ----
-        Discovery, deliberately separated from picking. The menu is what you
-        use every day and must stay short; this is the once-in-a-while search
-        over everything the gateway routes.
-
-        ONLY TOOL-CAPABLE MODELS ARE OFFERED. Claude Code without tool calling
-        cannot read a file or make an edit, so a session on one fails in a way
-        that looks like Stack is broken. 180 of the catalogue's 480 are in that
-        state; hiding them is not tidying, it is refusing to sell a button that
-        cannot work. The count SAYS so rather than quietly showing fewer. */}
-    {pinOpen && (
-      <Modal onClose={() => { setPinOpen(false); setPinQuery(''); }} wide>
-        <h3>Pin a model</h3>
-        <p className="dim">
-          Pinned models sit at the top of the picker. Everything here runs through the local
-          OmniRoute gateway, on your own machine.
-        </p>
-        <input className="field-input" autoFocus value={pinQuery} placeholder="search the catalogue — opus, coding, gemini…"
-          onChange={(e) => setPinQuery(e.target.value)} />
-        {!cat ? (
-          <p className="dim">Reading the catalogue…</p>
-        ) : !cat.ok ? (
-          <p className="dim">Could not read the catalogue — {cat.reason}</p>
-        ) : (
-          <>
-            <p className="dim tmm-count">
-              {cat.models.filter((m) => m.tools).length} models can run a Claude Code session
-              {cat.models.length > cat.models.filter((m) => m.tools).length && (
-                <> · {cat.models.length - cat.models.filter((m) => m.tools).length} hidden: no tool calling, so a session on one cannot read or edit anything</>
-              )}
-              {cat.total > cat.models.length && <> · {cat.total - cat.models.length} more the gateway lists and Stack will not start</>}
-            </p>
-            <div className="tmm-list">
-              {cat.models
-                .filter((m) => m.tools && (!pinQuery.trim() || m.id.toLowerCase().includes(pinQuery.trim().toLowerCase())))
-                // NAMED MODELS FIRST, combos last. The combos are already one
-                // click away in the picker itself, so a pin dialog that opened
-                // on them is showing you the thing you did not come here for.
-                .slice()
-                .sort((a, b) => Number(a.owner === 'combo') - Number(b.owner === 'combo'))
-                .slice(0, 200)
-                .map((m) => (
-                  <button key={m.id} className={`tmm-hit${pinned.includes(m.id) ? ' on' : ''}`}
-                    onClick={() => togglePinned(m.id)}>
-                    <span className="n">{m.id}</span>
-                    <span className="d">{m.owner} · {ctxLabel(m.contextTokens)}</span>
-                    <span className="p">{pinned.includes(m.id) ? 'pinned' : 'pin'}</span>
-                  </button>
-                ))}
-            </div>
-          </>
-        )}
-        <div className="modal-actions">
-          <button className="btn-submit sm" onClick={() => { setPinOpen(false); setPinQuery(''); }}>Done</button>
-        </div>
-      </Modal>
-    )}
     {killTargets && killTargets.length > 0 && (
       <ConfirmModal
         title={killTargets.length === 1 ? 'Kill detached session?' : `Kill ${killTargets.length} detached sessions?`}
         body={killTargets.length === 1 ? (
-          <>The claude session in <b>{killTargets[0].cwd ? `~/${killTargets[0].cwd}` : '~'}</b> is still running
+          <>The agent session in <b>{killTargets[0].cwd ? `~/${killTargets[0].cwd}` : '~'}</b> is still running
             on the host. Killing it ends the process — anything unfinished in that conversation is lost.</>
         ) : (
-          <>These claude sessions are still running on the host. Killing them ends the processes —
+          <>These agent sessions are still running on the host. Killing them ends the processes —
             anything unfinished in those conversations is lost.
             <ul className="td-killlist">
               {killTargets.map((d) => (
@@ -2726,7 +2423,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
             <ul className="td-killlist">
               {pickedLive.map((s) => (
                 <li key={s.id}>
-                  <b>{s.cmd === 'claude' ? 'claude' : 'shell'}</b> in <b>{s.cwd ? `~/${s.cwd}` : '~'}</b>
+                  <b>{s.cmd}</b> in <b>{s.cwd ? `~/${s.cwd}` : '~'}</b>
                   {labelOf(s) ? ` — ${labelOf(s)}` : s.tmux ? ` — tmux ${s.tmux}` : ''}
                 </li>
               ))}
@@ -2754,7 +2451,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
             <ul className="td-killlist">
               {sessions.map((s) => (
                 <li key={s.id}>
-                  <b>{s.cmd === 'claude' ? 'claude' : 'shell'}</b> in <b>{s.cwd ? `~/${s.cwd}` : '~'}</b>
+                  <b>{s.cmd}</b> in <b>{s.cwd ? `~/${s.cwd}` : '~'}</b>
                   {s.tmux ? ` — tmux ${s.tmux}` : ' — the tab is the whole session, so closing it ends it'}
                 </li>
               ))}
@@ -2774,7 +2471,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
 // One tab: an xterm instance + its websocket, kept mounted (hidden when
 // inactive) so the scrollback survives tab switches.
 function TermSession({ sess, visible, focused, fontSize, onStatus, onUsage, onTmux, onModel, onSid, onExit, onOutput, onTyped, onNotice, register }: {
-  sess: { id: number; cwd: string; cmd: 'shell' | 'claude'; tmux?: string };
+  sess: { id: number; cwd: string; cmd: 'shell' | 'claude' | 'codex'; tmux?: string };
   // Rendered on screen at all (it may be one of several panes)...
   visible: boolean;
   // ...and the one that takes keystrokes. With a grid these stopped being the
@@ -2962,7 +2659,7 @@ function TermSession({ sess, visible, focused, fontSize, onStatus, onUsage, onTm
     let ended = false;          // the process really exited — never re-attach
     let retries = 0;
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
-    const reattachable = () => sess.cmd === 'claude' && !!tmuxRef.current;
+    const reattachable = () => sess.cmd !== 'shell' && !!tmuxRef.current;
 
     const connect = () => {
       clearTimeout(retryTimer);
@@ -2971,25 +2668,12 @@ function TermSession({ sess, visible, focused, fontSize, onStatus, onUsage, onTm
       safeFit();
       const ws = openTerminal({
         cwd: sess.cwd, cmd: sess.cmd, cols: term.cols, rows: term.rows,
-        tmuxSession: sess.cmd === 'claude' && tmuxRef.current ? tmuxRef.current : undefined,
+        tmuxSession: sess.cmd !== 'shell' && tmuxRef.current ? tmuxRef.current : undefined,
         // Device pref (Settings → Terminal): claude without permission prompts.
         // A boolean only — the daemon maps it to its one allow-listed flag.
         skipPerms: sess.cmd === 'claude' && getTermSessionPrefs().skipPermissions ? true : undefined,
-        // #486 — route this session through the local gateway. Read at CONNECT
-        // time, not render time, so the pref governs the session it starts and
-        // never retro-fits one already running: the daemon fixes a provider at
-        // spawn and nothing here can move it afterwards.
-        provider: sess.cmd === 'claude' && getTermSessionPrefs().onGateway ? 'omniroute' as const : undefined,
-        // #504 — and WHICH model, read at the same moment and under the same
-        // rule: the pref governs the session it starts, never one already
-        // running. Only sent alongside the gateway — a model id means nothing
-        // for a session going to the subscription.
-        model: sess.cmd === 'claude' && getTermSessionPrefs().onGateway
-          ? (getTermSessionPrefs().model || undefined) : undefined,
-        contextTokens: sess.cmd === 'claude' && getTermSessionPrefs().onGateway
-          ? (getTermSessionPrefs().modelContext || undefined) : undefined,
         // #525 — a board card's first prompt, when one was queued for this name.
-        brief: sess.cmd === 'claude' && tmuxRef.current ? peekTermLaunch(tmuxRef.current) : undefined,
+        brief: sess.cmd !== 'shell' && tmuxRef.current ? peekTermLaunch(tmuxRef.current) : undefined,
       });
       wsRef.current = ws;
       // #135 — write-batching: coalesce rapid incoming frames into one
