@@ -127,6 +127,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { KitIcon } from './kit/KitIcon';
+import { BacklogTimeline } from './BacklogTimeline';
 import type { BoardArea, BoardList, ItemKind, Priority, RoadmapItem, Sprint, SprintPlan } from '../types';
 import { listKeyOf, queueOrder, isBoardWork } from '../lib/plan';
 import { isHeld } from '../lib/approval';
@@ -134,7 +135,7 @@ import { PRIORITY_META, PRIORITY_DEFAULT, priorityMeta, dueRead, ITEM_KIND_LABEL
 import {
   getBoardShape, createList, patchList, deleteList,
   createArea, patchArea, deleteArea,
-  getBoardFolds, setBoardFolds, getBoardView, setBoardView,
+  getBoardFolds, setBoardFolds, getBoardView, setBoardView, getBacklogView, setBacklogView,
   createRoadmapItem, patchRoadmapItem, deleteRoadmapItem,
   createSprint, patchSprint, putSprintOrder, deleteSprint, putReadyQueue,
   startBuild, planSprint,
@@ -916,6 +917,8 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
           <BacklogView slug={slug} rows={rows} boxes={boxes} activeId={activeId} areas={areas}
             lists={lists || []}
             onCreate={() => setDialog(true)} onEdit={onEdit}
+            onOpen={(it, el) => openFocus(it, el, false)}
+            onBox={(b) => setBoxes((bs) => bs.map((x) => (x.id === b.id ? b : x)))}
             onWrote={setRows} onRefresh={onRefresh} onError={setErr} />
         )}
         {view === 'dev' && <DevelopmentView slug={slug} items={rows} onOpen={onEdit} />}
@@ -2499,7 +2502,7 @@ function PlannerPanel({ plan, busy, onApply, onDismiss }: {
 }
 
 function BacklogView({
-  slug, rows, boxes, activeId, areas, lists, onCreate, onEdit, onWrote, onRefresh, onError,
+  slug, rows, boxes, activeId, areas, lists, onCreate, onEdit, onOpen, onBox, onWrote, onRefresh, onError,
 }: {
   slug: string;
   /** Every roadmap row this screen knows about, in payload order. */
@@ -2513,6 +2516,10 @@ function BacklogView({
   lists: BoardList[];
   onCreate: () => void;
   onEdit: (it: RoadmapItem) => void;
+  /** Fly a row onto the board's focus canvas — the timeline's double-click. */
+  onOpen: (it: RoadmapItem, el: HTMLElement) => void;
+  /** Apply one sprint as the server returned it, ahead of the refresh. */
+  onBox: (b: Sprint) => void;
   /** Apply a whole new row set at once — what a drop's answer produces. */
   onWrote: (next: RoadmapItem[]) => void;
   onRefresh: () => void;
@@ -2520,6 +2527,10 @@ function BacklogView({
 }) {
   const [query, setQuery] = useState('');
   const [scope, setScope] = useState('');
+  // List or Timeline, and the timeline's scale — device-local, per project.
+  const [bv, setBv] = useState(() => getBacklogView(slug));
+  const writeBv = (patch: Partial<typeof bv>) => setBv((v) => { const n = { ...v, ...patch }; setBacklogView(slug, n); return n; });
+  const timeline = bv.layout === 'timeline';
   // The row being dragged, and the box the cursor is over. `overBox` is a
   // separate piece of state from the drag because a drop target has to light
   // up before anything is written — an empty box that gives no sign it will
@@ -2677,6 +2688,13 @@ function BacklogView({
       onRefresh();
     });
 
+  // THE TIMELINE'S ONE WRITE: both ends in one PATCH, so the server's
+  // end-before-start check sees the window the drag actually drew.
+  const setWindowBoth = (b: Sprint, startsOn: string, endsOn: string) => guard(async () => {
+    onBox(await patchSprint(slug, b.id, { startsOn, endsOn }));
+    onRefresh();
+  });
+
   const setStatus = (b: Sprint, status: Sprint['status']) => guard(async () => {
     // Starting one FINISHES the incumbent, in the server's own transaction —
     // one project has at most one sprint in progress and the database says so.
@@ -2757,6 +2775,20 @@ function BacklogView({
           <input placeholder="Search backlog" aria-label="Search backlog" value={query}
             onChange={(e) => setQuery(e.target.value)} />
         </span>
+        <div className="seg-control sm km-bl-layout" role="tablist" aria-label="Backlog layout">
+          <button role="tab" aria-selected={!timeline} className={`seg-opt${timeline ? '' : ' on'}`}
+            onClick={() => writeBv({ layout: 'list' })}>List</button>
+          <button role="tab" aria-selected={timeline} className={`seg-opt${timeline ? ' on' : ''}`}
+            onClick={() => writeBv({ layout: 'timeline' })}>Timeline</button>
+        </div>
+        {timeline && (
+          <div className="seg-control sm" role="tablist" aria-label="Timeline scale">
+            <button role="tab" aria-selected={bv.zoom === 'week'} className={`seg-opt${bv.zoom === 'week' ? ' on' : ''}`}
+              onClick={() => writeBv({ zoom: 'week' })}>Weeks</button>
+            <button role="tab" aria-selected={bv.zoom === 'day'} className={`seg-opt${bv.zoom === 'day' ? ' on' : ''}`}
+              onClick={() => writeBv({ zoom: 'day' })}>Days</button>
+          </div>
+        )}
         <span className="km-bl-count">
           {bags.loose.length} in the backlog · {live.length} sprint{live.length === 1 ? '' : 's'} open
         </span>
@@ -2835,7 +2867,14 @@ function BacklogView({
           onApply={applyPlan} onDismiss={() => setPlan(null)} />
       )}
 
-      {live.map((b) => (
+      {timeline && (
+        <BacklogTimeline boxes={boxes} byBox={bags.byBox} loose={bags.loose} lists={lists}
+          activeId={activeId} zoom={bv.zoom}
+          colOf={(it) => columnOf(it, lists)} runnable={runnable}
+          onOpen={onOpen} onWindow={setWindowBoth} />
+      )}
+
+      {!timeline && live.map((b) => (
         <SprintBox key={b.id} sprint={b} items={bags.byBox.get(b.id) || []} lists={lists}
           planning={planning} onPlan={() => askPlan(b)}
           isActive={b.id === activeId} anyActive={activeId !== null}
@@ -2863,7 +2902,7 @@ function BacklogView({
           one: a backlog row dropped back on the backlog writes nothing, and —
           the kanban's rule for the column a card is already in — the one
           gesture that writes nothing never looks like it did. */}
-      <section className={`km-batch km-backlog${looseOver ? ' over' : ''}${dragged && !looseOver && !looseSource ? ' dim' : ''}`}
+      {!timeline && <section className={`km-batch km-backlog${looseOver ? ' over' : ''}${dragged && !looseOver && !looseSource ? ' dim' : ''}`}
         onDragOver={(e) => { if (looseTakes) { e.preventDefault(); setOverBox('loose'); } }}
         onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) leave('loose'); }}
         onDrop={(e) => { e.preventDefault(); if (looseTakes) drop(null, null); else endDrag(); }}>
@@ -2894,9 +2933,9 @@ function BacklogView({
             onEdit={() => onEdit(it)} />
         ))}
         <button className="km-bl-add" onClick={onCreate}>+ Add to backlog</button>
-      </section>
+      </section>}
 
-      {finished.length > 0 && (
+      {!timeline && finished.length > 0 && (
         <div className="km-batch km-done">
           <div className="km-batchhead">
             <span className="lbl">Finished</span>

@@ -344,6 +344,20 @@ const ROADMAP_PANELS = [
     click: '.km-bl-new .k-btn.ghost',
     expect: '.km-newsprint',
   },
+  // THE TWO BACKLOG LAYOUTS. The choice is device-local, so the harness sets
+  // it both ways rather than trusting whichever one a previous run left.
+  {
+    id: 'board-backlog-list',
+    label: 'Backlog — List layout draws the boxes',
+    click: '.km-bl-layout .seg-opt:nth-child(1)',
+    expect: '.km-bl .km-backlog',
+  },
+  {
+    id: 'board-backlog-timeline',
+    label: 'Backlog — Timeline layout draws the Gantt',
+    click: '.km-bl-layout .seg-opt:nth-child(2)',
+    expect: '.km-bl .km-tl .km-tl-axis',
+  },
   {
     id: 'board-dev-tab',
     label: 'Board — Development tab',

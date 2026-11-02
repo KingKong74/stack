@@ -1624,6 +1624,24 @@ export function setBoardView(slug: string, view: BoardView) {
   catch { /* storage unavailable — the view still switches for this visit */ }
 }
 
+// ---- the Backlog tab's layout (device-local) ----
+//
+// Its own key, not a field on BoardView: the board writes its whole view object
+// from its own state, and a field it didn't know about would be overwritten
+// with a stale value on the board's next write.
+export interface BacklogView { layout: 'list' | 'timeline'; zoom: 'week' | 'day' }
+const BACKLOG_VIEW_KEY = (slug: string) => `stack.backlogView.${slug}`;
+export function getBacklogView(slug: string): BacklogView {
+  return readStoredJSON(BACKLOG_VIEW_KEY(slug), (p) => {
+    const o = (p && typeof p === 'object') ? p as Record<string, unknown> : {};
+    return { layout: o.layout === 'list' ? 'list' : 'timeline', zoom: o.zoom === 'day' ? 'day' : 'week' };
+  });
+}
+export function setBacklogView(slug: string, view: BacklogView) {
+  try { localStorage.setItem(BACKLOG_VIEW_KEY(slug), JSON.stringify(view)); }
+  catch { /* storage unavailable — the view still switches for this visit */ }
+}
+
 // ---- the board's focus canvas (device-local) ----
 //
 // What the focus canvas remembers about ONE focused card that is not a fact on
