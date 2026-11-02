@@ -330,11 +330,11 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
   // LEAVES IT ALONE, so an edit here can no longer blank a tier the queue
   // sorts on or release a claim somebody is working behind. That is the whole
   // of why removing the controls was safe: the write was already a partial one.
-  const submitRoad = ({ title, note, area, subArea, plan }: RoadmapFields) =>
+  const submitRoad = ({ title, note, area, plan }: RoadmapFields) =>
     guard(async () => {
       const editing = roadModal.editing;
       if (editing) {
-        const updated = await patchRoadmapItem(slug, editing.id, { title, note, area, subArea, plan });
+        const updated = await patchRoadmapItem(slug, editing.id, { title, note, area, plan });
         // The bucket cannot change from here any more, but the row still moves
         // between the payload's lists when something else changes it, so the
         // splice stays keyed on the bucket the response came back with.
@@ -348,7 +348,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
       // at the DEFAULT priority; the board's card picker is where that moves.
       const item = await createRoadmapItem(slug, {
         title, note, bucket: PRIORITY_DEFAULT,
-        area: area || undefined, subArea: subArea || undefined,
+        area: area || undefined,
         plan: plan.length ? plan : undefined,
         sched: newItemSched(project.weekZero),
       });
@@ -734,12 +734,8 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
         <RoadmapModal initialTitle={roadModal.title}
           initialNote={roadModal.note}
           initialArea={roadModal.editing?.area ?? roadModal.area ?? ''}
-          initialSubArea={roadModal.editing?.subArea ?? ''}
           initialPlan={roadModal.editing?.plan ?? []}
           areas={areaChoices}
-          subAreas={[...new Set(allRoadmap
-            .filter((i) => i.area === (roadModal.editing?.area ?? roadModal.area ?? ''))
-            .map((i) => i.subArea))].filter(Boolean).sort()}
           mode={roadModal.editing ? 'edit' : 'add'}
           onClose={() => setRoadModal(roadModalClosed)}
           // #520 — ONE QUESTION AGAIN. This read `agentCan(data.agents,
