@@ -125,6 +125,35 @@ const ROADMAP_PANELS = [
     click: '.km-collapseall',
     expect: '.km-cols:not(:has(.km-group.folded))',
   },
+  // THE FOCUS CANVAS (detail/BoardFocus.tsx), FIRST AFTER Expand all: the card
+  // popovers below stay open (nothing here dismisses one), and the card menu
+  // is tall enough to clamp over a tall card's own id (a cluster), which
+  // would swallow this double press. A double press on the card's id
+  // (not its title, which renames) flies it out; the presses after it are all
+  // view state — the editor OPENED and typed nothing into (its flush on close
+  // sends nothing unchanged), and ← Board, which must come last so every
+  // press below finds the board drawn again. No tray press: at the narrow
+  // viewport the tray hides behind its Bring in toggle (the design's), so the
+  // palette audit measures it at desktop width instead.
+  {
+    id: 'board-focus',
+    label: 'Board — a double-clicked card opens on the focus canvas',
+    click: '.km-col:has(.km-card) .km-card .km-cardmeta .id',
+    dblclick: true,
+    expect: '.bf .bf-tray',
+  },
+  {
+    id: 'board-focus-edit',
+    label: 'Board — the focused card’s ✎ opens its editor',
+    click: '.bf-float [aria-label="Edit item"]',
+    expect: '.bf .bf-editor',
+  },
+  {
+    id: 'board-focus-close',
+    label: 'Board — ← Board flies the card home',
+    click: '.bf-back',
+    expect: 'body:not(:has(.bf))',
+  },
   {
     id: 'board-priority',
     label: 'Board — card priority picker',
@@ -153,32 +182,6 @@ const ROADMAP_PANELS = [
     // those two controls can have here — pressing either of them WRITES, and
     // nothing in this harness may write to the owner's real board.
     expect: 'body > .km-menu.card .km-kindrow',
-  },
-  // THE FOCUS CANVAS (detail/BoardFocus.tsx). A double press on the card's id
-  // (not its title, which renames) flies it out; the presses after it are all
-  // view state — the editor OPENED and typed nothing into (its flush on close
-  // sends nothing unchanged), and ← Board, which must come last so every
-  // press below finds the board drawn again. No tray press: at the narrow
-  // viewport the tray hides behind its Bring in toggle (the design's), so the
-  // palette audit measures it at desktop width instead.
-  {
-    id: 'board-focus',
-    label: 'Board — a double-clicked card opens on the focus canvas',
-    click: '.km-col:has(.km-card) .km-card .km-cardmeta .id',
-    dblclick: true,
-    expect: '.bf .bf-tray',
-  },
-  {
-    id: 'board-focus-edit',
-    label: 'Board — the focused card’s ✎ opens its editor',
-    click: '.bf-float [aria-label="Edit item"]',
-    expect: '.bf .bf-editor',
-  },
-  {
-    id: 'board-focus-close',
-    label: 'Board — ← Board flies the card home',
-    click: '.bf-back',
-    expect: 'body:not(:has(.bf))',
   },
   {
     id: 'board-colmenu',

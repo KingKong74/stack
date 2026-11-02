@@ -20,6 +20,11 @@
 //    lib/plan.ts), so it does not drag and its editor shows the column
 //    read-only. Search finds a cluster by any of its parts. A card becomes a
 //    cluster when it gets its first part, from the focus canvas.
+//    Its SIZE is derived the same way (#600): the pill reads Σ of its parts'
+//    points, read-only, and a column's total counts the parts, never the
+//    cluster's own number. Clicking a part opens the canvas with the editor on
+//    that part (#601), and the editor's switcher moves between the cluster and
+//    its parts.
 //
 // DECISIONS THE CODE DEPENDS ON:
 //  1. THE PRIORITY CONTROL IS `bucket` (Highest…Lowest, `PRIORITY_META` in
@@ -460,6 +465,9 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
     if (orphans?.length) cols.push({ key: CATCH_ALL, name: 'No column', items: orphans, real: false });
     return cols.map((col) => ({
       ...col,
+      // #600 — a cluster is sized by its parts, so the column total adds the
+      // parts in place of the cluster's own (unused) number.
+      sized: col.items.flatMap((it) => partsOf.get(it.id) || [it]),
       groups: grouped
         ? areaOrder
           .map((k) => ({ key: k, items: col.items.filter((it) => areaKey(it) === k) }))
@@ -777,14 +785,14 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
   // the card is out (`fx-out`) and comes back as it lands (`fx-in`).
   const [focus, setFocus] = useState<FocusOpen | null>(null);
   const [focusPhase, setFocusPhase] = useState<FocusPhase>('measure');
-  const openFocus = (it: RoadmapItem, el: HTMLElement | null, edit: boolean) => {
+  const openFocus = (it: RoadmapItem, el: HTMLElement | null, edit: boolean, editId?: number) => {
     if (focus || !el) return;
     closeAll(); setInlineId(null); setDragId(null); setOver(null);
     const r = el.getBoundingClientRect();
     const main = el.closest('.con-main') || el.closest('.km');
     setSelected(it.id);
     setFocusPhase('measure');
-    setFocus({ id: it.id, from: { l: r.left, t: r.top, w: r.width }, edit,
+    setFocus({ id: it.id, from: { l: r.left, t: r.top, w: r.width }, edit, editId,
       canvasLeft: Math.round(main?.getBoundingClientRect().left ?? 0) });
   };
   // How many children each card has, and how many are finished — the card's
@@ -1005,9 +1013,8 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
                 parentItem={it.parentId !== null ? rows.find((x) => x.id === it.parentId) || null : null}
                 kids={kidCounts.get(it.id) || null}
                 parts={partsOf.get(it.id) || null}
-                onPart={(p) => { setSelected(p.id); onEdit(p); }}
                 away={!!focus && focus.id === it.id && focusPhase !== 'measure'}
-                onOpen={(el, edit) => openFocus(it, el, edit)}
+                onOpen={(el, edit, editId) => openFocus(it, el, edit, editId)}
                 sprint={boxes.find((b) => b.id === it.sprintId) || null}
                 selected={selected === it.id}
                 onSelect={() => setSelected(it.id)}
@@ -1277,7 +1284,9 @@ export function Popover({ anchor, className, inset = 0, children }: {
 }
 
 function ColumnHead({ col, first, last, open, folded, canFold, onFold, onMenu, onRename, onMove, onDelete }: {
-  col: { key: string; name: string; items: RoadmapItem[]; real: boolean };
+  col: { key: string; name: string; items: RoadmapItem[]; real: boolean;
+    /** What the points total adds up: a cluster counts as its parts (#600). */
+    sized: RoadmapItem[] };
   first: boolean; last: boolean; open: boolean;
   /** #511 — folded to its own head. The COUNT stays visible either way. */
   folded: boolean;
@@ -1300,7 +1309,7 @@ function ColumnHead({ col, first, last, open, folded, canFold, onFold, onMenu, o
   const [draft, setDraft] = useState(col.name);
   const [confirming, setConfirming] = useState(false);
   useEffect(() => { if (!open) setConfirming(false); }, [open]);
-  const pts = pointsOf(col.items);
+  const pts = pointsOf(col.sized);
 
   if (editing) {
     const commit = () => {
@@ -1462,10 +1471,14 @@ function ClusterParts({ parts, onPart, onMore }: {
           const st = PART_STATE[k] || PART_STATE.planned;
           return (
             <li key={p.id}>
-              <button className={`km-part ${st.cls}`} title={`#${p.id} — ${st.word}. Click to edit.`}
+              <button className={`km-part ${st.cls}`} title={`#${p.id} — ${st.word}. Click to edit it on the cluster's canvas.`}
                 onClick={(e) => { e.stopPropagation(); onPart(p); }}>
                 <span className="g" aria-hidden>{st.glyph}</span>
                 <span className="pt">{p.title}</span>
+                <span className={`pp mono${p.points == null ? ' none' : ''}`}
+                  title={p.points == null ? 'Unsized' : `${p.points} ${p.points === 1 ? 'point' : 'points'}`}>
+                  {p.points == null ? '–' : p.points}
+                </span>
               </button>
             </li>
           );
@@ -1487,7 +1500,7 @@ function IssueCard({
   priOpen, onPri, onPick, ptsOpen, onPts, onPoints, menuOpen, onMenu,
   onKind, onDue, onEdit, onSignOff, onPark, onArchive, onDerive, onDelete,
   activeSprint, onBuildNow, onAddToSprint, onRun, onReady, tint, showArea,
-  parentItem, kids, parts, onPart, away, onOpen,
+  parentItem, kids, parts, away, onOpen,
 }: {
   item: RoadmapItem;
   /** The card this one is filed under (`parent_id`), or null. */
@@ -1497,12 +1510,11 @@ function IssueCard({
   /** A CLUSTER's parts, drawn inside this card in run order — null for a plain
    *  card. A cluster does not drag: its column is rolled up from these. */
   parts: RoadmapItem[] | null;
-  /** Open one part's full editor. */
-  onPart: (part: RoadmapItem) => void;
   /** This card is out on the focus canvas: its board slot holds its place, empty. */
   away: boolean;
-  /** Fly the card onto the focus canvas; `edit` opens the editor with it. */
-  onOpen: (el: HTMLElement | null, edit: boolean) => void;
+  /** Fly the card onto the focus canvas; `edit` opens the editor with it, on
+   *  `editId` when that names one of a cluster's parts (#601). */
+  onOpen: (el: HTMLElement | null, edit: boolean, editId?: number) => void;
   /** Board v5 — the card's AREA COLOUR (`project_areas.dot`), drawn as its top
    *  edge; '' for untagged or an area with no colour, which draws none. */
   tint: string;
@@ -1616,7 +1628,7 @@ function IssueCard({
           </span>
         )}
 
-      {parts && <ClusterParts parts={parts} onPart={onPart} onMore={() => onOpen(cardRef.current, false)} />}
+      {parts && <ClusterParts parts={parts} onPart={(p) => onOpen(cardRef.current, true, p.id)} onMore={() => onOpen(cardRef.current, false)} />}
 
       <div className="km-cardmeta">
         {/* THIS SLOT HELD THE APPROVAL ICON until #472 took every held row off
@@ -1637,6 +1649,21 @@ function IssueCard({
             is there with a dash in it, which is also the honest reading: this
             card has no size, rather than this card is small. NOT `estimate`
             beside it: that one is WEEKS and belongs to the timeline. */}
+        {parts ? (
+          // #600 — A CLUSTER IS SIZED BY ITS PARTS, like its column: the pill is
+          // their total, read-only, and says how many parts are unsized.
+          (() => {
+            const t = pointsOf(parts);
+            const sized = parts.length - t.unsized;
+            return (
+              <span className={`km-pts static${sized === 0 ? ' none' : ''}`}
+                title={sized === 0 ? 'No part is sized yet: size parts from the cluster, not the cluster itself'
+                  : `${t.sum} points across ${sized} sized part${sized === 1 ? '' : 's'}${t.unsized ? `; ${t.unsized} unsized and not counted` : ''}`}>
+                {sized === 0 ? '–' : `Σ${t.sum}`}
+              </span>
+            );
+          })()
+        ) : (
         <button className={`km-pts${ptsOpen ? ' on' : ''}${pts === null ? ' none' : ''}`}
           aria-label={pts === null ? 'Story points — unsized' : `Story points — ${pts}`}
           title={pts === null
@@ -1645,6 +1672,7 @@ function IssueCard({
           onClick={onPts}>
           {pts === null ? '–' : pts}
         </button>
+        )}
         {item.estimate !== null && <span className="pts" title="Estimate, in weeks">{item.estimate}w</span>}
 
         <span className="right">

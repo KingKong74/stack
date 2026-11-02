@@ -4756,6 +4756,7 @@ body[data-mc-full] .totop { display: none; }
 }
 .bf-node:hover { background: var(--surface-overlay); }
 .bf-node.dragging { cursor: grabbing; box-shadow: var(--shadow-lg); }
+.bf-node.editing { border-color: var(--border-focus); box-shadow: 0 0 0 3px color-mix(in srgb, var(--border-focus) 24%, transparent); }
 .bf-node .row, .bf-trayrow .row, .bf-trayhead .row { display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
 .bf-node .rel { font: var(--type-eyebrow); letter-spacing: var(--tracking-caps); text-transform: uppercase; color: var(--text-tertiary); }
 .bf-node .rel.strong { color: var(--text-link); }
@@ -4849,6 +4850,18 @@ body[data-mc-full] .totop { display: none; }
 }
 .bf-editor .head { display: flex; align-items: center; gap: var(--space-3); }
 .bf-editor .head .bf-x { margin-left: auto; width: 24px; height: 24px; }
+/* #601 — the cluster and its parts, as a switcher at the top of the editor. */
+.bf-family { display: flex; flex-direction: column; gap: 1px; padding: 3px; border-radius: var(--radius-md); background: var(--surface-sunken); }
+.bf-family button {
+  display: flex; align-items: center; gap: var(--space-3); min-width: 0;
+  background: none; border: 0; border-radius: var(--radius-sm); padding: 4px 6px; cursor: pointer;
+  font: var(--type-caption); color: var(--text-secondary); text-align: left;
+}
+.bf-family button.lead { font-weight: var(--weight-semibold); }
+.bf-family button:hover { color: var(--text-primary); background: var(--surface-raised); }
+.bf-family button.on { background: var(--surface-selected); color: var(--text-primary); box-shadow: inset 2px 0 0 var(--border-focus); }
+.bf-family .ft { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bf-family .fp { flex: none; font: var(--weight-medium) var(--text-2xs)/1 var(--font-mono); color: var(--text-tertiary); }
 .bf-editor .fld { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
 .bf-editor .fld > span { font: var(--type-caption); color: var(--text-tertiary); }
 .bf-editor .pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-4); }
@@ -4933,6 +4946,10 @@ body[data-mc-full] .totop { display: none; }
    a dash rather than a number. */
 .km-pts.none { color: var(--text-tertiary); background: transparent; box-shadow: inset 0 0 0 1px var(--border-subtle); }
 .km-pts.on { background: var(--surface-selected); box-shadow: inset 0 0 0 1px var(--border-focus); }
+/* #600 — a cluster's total: read-only, so no hover lift and no pointer. */
+.km-pts.static { cursor: default; display: inline-flex; align-items: center; }
+.km-pts.static:hover { color: var(--text-secondary); }
+.km-pts.static.none:hover { color: var(--text-tertiary); }
 /* The picker is the priority list's own furniture — same width, same rows, one
    extra class so the glyph column can hold two digits. */
 .km-ptslist .g { width: 18px; }
@@ -5078,7 +5095,9 @@ body[data-mc-full] .totop { display: none; }
 }
 .km-part:hover { background: var(--surface-sunken); color: var(--text-primary); }
 .km-part .g { flex: none; width: 1em; text-align: center; font-family: var(--font-mono); }
-.km-part .pt { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.km-part .pt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.km-part .pp { flex: none; font-size: var(--text-2xs); color: var(--text-secondary); }
+.km-part .pp.none { color: var(--text-tertiary); }
 .km-part.todo .g { color: var(--status-neutral-fg); }
 .km-part.going .g { color: var(--status-info-fg); }
 .km-part.review .g { color: var(--status-warning-fg); }

@@ -39,6 +39,9 @@ export interface FocusOpen {
   from: { l: number; t: number; w: number };
   /** Open with the editor already showing (the card's ✎). */
   edit: boolean;
+  /** #601 — the row the editor starts on, when it is one of the focused
+   *  cluster's parts rather than the cluster itself. */
+  editId?: number;
   /** Where the canvas starts: the console's main column, so the rail stays. */
   canvasLeft: number;
 }
@@ -118,6 +121,14 @@ export function BoardFocus({
   const [canvas, setCanvas] = useState<FocusCanvas>(() => getFocusCanvas(slug, open.id));
   const writeCanvas = (next: FocusCanvas) => { setCanvas(next); setFocusCanvas(slug, open.id, next); };
   const [editOpen, setEditOpen] = useState(open.edit);
+  // #601 — WHICH ROW THE EDITOR IS ON. The focused card by default; a part
+  // (clicked on the board's cluster card, or double-clicked here) takes it
+  // over, so a part gets every field a card has without a card of its own.
+  const [editId, setEditId] = useState(open.editId ?? open.id);
+  const editOn = (id: number) => {
+    if (editOpen && editId === id) { setEditOpen(false); setEditId(open.id); return; }
+    setEditId(id); setEditOpen(true);
+  };
   const [trayOpen, setTrayOpen] = useState(false);
   const [trayScope, setTrayScope] = useState<'area' | 'all'>('area');
   const [composing, setComposing] = useState(false);
@@ -154,7 +165,9 @@ export function BoardFocus({
   const close = () => {
     if (phase === 'back' || phase === 'measure') return;
     // Home is wherever the board card is NOW — the editor may have moved it.
-    const el = document.querySelector(`.km-cols [data-hl="${open.id}"]`);
+    // A part has no card of its own, so it flies home into its cluster.
+    const el = document.querySelector(`.km-cols [data-hl="${open.id}"]`)
+      || (focusItem?.parentId != null ? document.querySelector(`.km-cols [data-hl="${focusItem.parentId}"]`) : null);
     if (el) { const r = el.getBoundingClientRect(); setFrom({ l: r.left, t: r.top, w: r.width }); }
     setComposing(false); setDraft('');
     fresh.current.clear();
@@ -169,7 +182,7 @@ export function BoardFocus({
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
       if (composing) { setComposing(false); setDraft(''); return; }
-      if (editOpen) { setEditOpen(false); return; }
+      if (editOpen) { setEditOpen(false); setEditId(open.id); return; }
       close();
     };
     window.addEventListener('keydown', onKey);
@@ -186,6 +199,7 @@ export function BoardFocus({
 
   if (!focusItem) return null;
   const f = focusItem;
+  const ed = rows.find((x) => x.id === editId) || f;
   const live = phase === 'to';
   const kidsOf = (id: number) => rows.filter((x) => x.parentId === id && !x.archived);
   const kids = kidsOf(f.id);
@@ -367,8 +381,10 @@ export function BoardFocus({
           const kind = (it.kind ?? '') as ItemKind;
           const ck = colOf(it);
           return (
-            <div key={`${n.rel}-${it.id}`} className={`bf-node${dragging ? ' dragging' : ''}`}
+            <div key={`${n.rel}-${it.id}`} className={`bf-node${dragging ? ' dragging' : ''}${editOpen && editId === it.id ? ' editing' : ''}`}
               onPointerDown={(e) => startNodeDrag(e, it.id, n.x, n.y)} onClick={stop}
+              onDoubleClick={(e) => { e.stopPropagation(); if (live && n.rel === 'child') editOn(it.id); }}
+              title={n.rel === 'child' ? 'Double-click to edit this part' : undefined}
               style={{
                 left: n.x, top: n.y, width: n.w, pointerEvents: n.shown ? 'auto' : 'none',
                 ...(tint ? { borderTopColor: `color-mix(in oklch, ${tint} 70%, var(--surface-card))`, borderTopWidth: 2 } : {}),
@@ -397,7 +413,7 @@ export function BoardFocus({
                 <span className="right">
                   {n.rel === 'related' && canParent && kidsOf(it.id).length === 0 && (
                     <button className="bf-mini" title="File this under the focused item as a child"
-                      onClick={(e) => { e.stopPropagation(); bringIn(it, 'child'); }}>Make child</button>
+                      onClick={(e) => { e.stopPropagation(); bringIn(it, 'child'); }}>Make part</button>
                   )}
                   <span className="bf-pri" style={{ color: pri.color }}>{pri.glyph}</span>
                 </span>
@@ -419,10 +435,13 @@ export function BoardFocus({
         )}
 
         {editOpen && (
-          <FocusEditor item={f} x={fxE + fw + 16} y={Math.max(84, fy - 8)} w={PW} on={edOn} ms={ms}
-            columns={columns} colKey={colOf(f)} areas={areas}
-            rolled={rows.some((x) => x.parentId === f.id && !x.archived)}
-            onClose={() => setEditOpen(false)} onPatch={(p) => onPatch(f, p)} onMove={(k) => onMove(f, k)} />
+          <FocusEditor key={ed.id} item={ed} isPart={ed.id !== f.id}
+            family={kids.length ? [f, ...kids] : []} onSwitch={(id) => setEditId(id)}
+            x={fxE + fw + 16} y={Math.max(84, fy - 8)} w={PW} on={edOn} ms={ms}
+            columns={columns} colKey={colOf(ed)} areas={areas}
+            rolled={rows.some((x) => x.parentId === ed.id && !x.archived)}
+            onClose={() => { setEditOpen(false); setEditId(open.id); }}
+            onPatch={(p) => onPatch(ed, p)} onMove={(k) => onMove(ed, k)} />
         )}
 
         {canParent && (
@@ -517,7 +536,7 @@ export function BoardFocus({
       </svg>
 
       <div ref={floatRef} className="km-card bf-float" title="Double-click to edit"
-        onDoubleClick={(e) => { e.stopPropagation(); if (live) setEditOpen(!editOpen); }}
+        onDoubleClick={(e) => { e.stopPropagation(); if (live) editOn(f.id); }}
         style={{
           left: geo.l, top: targetT, width: geo.w,
           visibility: phase === 'measure' ? 'hidden' : 'visible',
@@ -527,7 +546,7 @@ export function BoardFocus({
           ...(dotOf(fArea) ? { borderTopColor: `color-mix(in oklch, ${dotOf(fArea)} 70%, var(--surface-card))`, borderTopWidth: 2 } : {}),
         }}>
         <CardFace item={f} kids={kids} parent={parent} sprint={sprintOf(f)}
-          onEdit={() => { if (live) setEditOpen(!editOpen); }} />
+          onEdit={() => { if (live) editOn(f.id); }} />
       </div>
     </>
   );
@@ -547,7 +566,7 @@ function CardFace({ item, kids, parent, sprint, onEdit }: {
     <>
       <span className="t">{item.title}</span>
       <div className="km-cardmeta">
-        <span className="kind" style={{ color: 'var(--blue-400)' }}><KitIcon name="circle-check" size={13} /></span>
+        <span className="kind" style={{ color: kids.length ? 'var(--accent)' : 'var(--blue-400)' }}><KitIcon name={kids.length ? 'layers' : 'circle-check'} size={13} /></span>
         <span className="id">#{item.id}</span>
         <span className={`bf-pts${pts === null ? ' none' : ''}`}>{pts === null ? '–' : pts}</span>
         <span className="right">
@@ -584,8 +603,13 @@ function CardFace({ item, kids, parent, sprint, onEdit }: {
  * The inline editor. Title and notes save themselves, debounced, and flush
  * when the editor closes; every chip is one write, the same the card sends.
  */
-function FocusEditor({ item, x, y, w, on, ms, columns, colKey, areas, rolled, onClose, onPatch, onMove }: {
-  item: RoadmapItem; x: number; y: number; w: number; on: boolean; ms: (n: number) => number;
+function FocusEditor({ item, isPart, family, onSwitch, x, y, w, on, ms, columns, colKey, areas, rolled, onClose, onPatch, onMove }: {
+  item: RoadmapItem; isPart: boolean;
+  /** #601 — the cluster and its parts, so the editor can move between them at
+   *  any width (a narrow canvas hides the linked nodes while editing). [] for
+   *  a plain card. */
+  family: RoadmapItem[]; onSwitch: (id: number) => void;
+  x: number; y: number; w: number; on: boolean; ms: (n: number) => number;
   columns: { key: string; name: string }[]; colKey: string; areas: { name: string; dot: string }[];
   /** A cluster: its column is rolled up from its parts, so it is shown, not set. */
   rolled: boolean;
@@ -619,12 +643,26 @@ function FocusEditor({ item, x, y, w, on, ms, columns, colKey, areas, rolled, on
           : `opacity ${ms(140)}ms var(--ease-standard), transform ${ms(140)}ms var(--ease-standard)`,
       }}>
       <div className="head">
-        <span className="eyebrow">Edit item</span>
+        <span className="eyebrow">{isPart ? 'Edit part' : 'Edit item'}</span>
         <span className="id">#{item.id}</span>
         <button className="bf-x" onClick={() => { flush(); onClose(); }} aria-label="Close editor" title="Close (Esc)">
           <KitIcon name="x" size={13} />
         </button>
       </div>
+      {family.length > 0 && (
+        <div className="bf-family" role="tablist" aria-label="Cluster and its parts">
+          {family.map((m, i) => (
+            <button key={m.id} role="tab" aria-selected={m.id === item.id}
+              className={`${m.id === item.id ? 'on' : ''}${i === 0 ? ' lead' : ''}`}
+              title={i === 0 ? `Edit the cluster #${m.id}` : `Edit part #${m.id}`}
+              onClick={() => { if (m.id !== item.id) { flush(); onSwitch(m.id); } }}>
+              <KitIcon name={i === 0 ? 'layers' : 'circle-check'} size={12} />
+              <span className="ft">{m.title}</span>
+              {i > 0 && <span className="fp">{m.points == null ? '–' : m.points}</span>}
+            </button>
+          ))}
+        </div>
+      )}
       <label className="fld">
         <span>Title</span>
         <textarea rows={2} value={title} onChange={(e) => { setTitle(e.target.value); queue({ title: e.target.value.trim() }); }}

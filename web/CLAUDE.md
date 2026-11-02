@@ -37,8 +37,9 @@ screens gets acted on twice; a row on neither has silently vanished.
   when changing it; the run gates live in the root file and the server.
 - **Two kinds of card: a task, and a cluster** (a row with parts, `parent_id`, one level deep).
   Parts draw inside their cluster's card, never as cards of their own while it is on the board, and
-  the cluster's column is rolled up from them (`clusterKeyOf`), so it doesn't drag. A part whose
-  cluster is off the board is an ordinary card again. `Board.tsx`'s header has the rest.
+  the cluster's column is rolled up from them (`clusterKeyOf`), so it doesn't drag; its size is Σ
+  its parts' points. A part whose cluster is off the board is an ordinary card again. `Board.tsx`'s
+  header has the rest.
 - **There is no Roadmap tab** (owner's call, 2026-10-28). The `canvas` column is dormant: nothing
   writes or serves it. Don't bring back a third home without changing `homeOf` with it.
 
