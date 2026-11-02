@@ -453,7 +453,12 @@ roadmap.patch('/:id', async (req, res) => {
     // starts its verify round on the main list, and an un-ticked item is back
     // on the board where shelving means nothing. Explicit values in the same
     // PATCH win — the column is already SET above and can't go twice.
-    if (req.body.review_shelved === undefined) sets.push('review_shelved = false');
+    // A verdict in the same PATCH has already cleared the shelf (above), and a
+    // column assigned twice makes Postgres refuse the whole UPDATE — approve
+    // and tick in one request used to hang (server/test/verdict-tick.test.mjs).
+    if (req.body.review_shelved === undefined && !sets.includes('review_shelved = false')) {
+      sets.push('review_shelved = false');
+    }
   }
   if (req.body?.bucket !== undefined) { sets.push(`bucket = $${i++}`); vals.push(oneOf(req.body.bucket, BUCKETS, BUCKET_DEFAULT)); }
   if (req.body?.title !== undefined) {
