@@ -11,7 +11,7 @@ import {
   createAutopilotSchedule,
   getAutopilotJobs, resumeAutopilotJob, hangupAutopilotJob, type AutopilotJob,
   getTerminalUsage, type TerminalUsageData,
-  getDetachedSessions, killDetachedSession, keepSession, type DetachedSession,
+  getDetachedSessions, getDetachedFeed, killDetachedSession, keepSession, type DetachedSession,
   type SessionModel,
   labelTerminalSessions,
   setTermTmuxName, clearTermTmuxName,
@@ -23,6 +23,7 @@ import {
   peekTermLaunch, clearTermLaunch,
 } from '../store';
 import { hrefTo } from '../lib/route';
+import { newTermName } from '../lib/termLaunch';
 import { FLICK_HINT } from '../lib/flick';
 import { askOf } from '../lib/asking';
 
@@ -87,6 +88,7 @@ type TermUsage = {
   sched?: { runDate: string; atTime: string };
   // Real Plan windows (#195) — the same session/week percentages + reset times
   // Claude shows in-app, read by the daemon from the account's usage endpoint.
+  codex?: { models: { id: string; label: string }[]; limits: { key: string; name: string; pct: number; resetAt: number | null }[] | null } | null;
   plan?: {
     session?: { pct: number; resetAt: number | null } | null;
     week?: { pct: number; resetAt: number | null } | null;
@@ -136,6 +138,7 @@ const parseTok = (s: string): number => {
 // whole), and it is the only id that exists for EVERY session — a shell has no
 // tmux name, so keying names by tmux is why shells used to go unnamed.
 type Sess = {
+  codexModel?: string;
   id: number; cwd: string; cmd: 'shell' | 'claude' | 'codex'; status: Status; note: string; tmux?: string; sid?: string;
   // #503 — what this session is talking to, as the HOST reported it. undefined
   // = not answered yet (the ready frame has not landed); null = answered, and
@@ -217,7 +220,7 @@ function ModelChip({ model, resolved, show }: {
   return (
     <span className={`mdl ${model.key === 'anthropic' ? 'own' : 'alt'}`}
       title={`${model.id || model.label} — ${model.key === 'codex' ? 'native Codex configuration; usage is not tracked' : model.key === 'anthropic' ? 'your own Anthropic subscription' : model.label}`}>
-      {model.key === 'anthropic' ? 'Claude' : model.key === 'codex' ? 'Codex' : (model.id || model.label)}
+      {model.key === 'anthropic' ? 'Claude' : model.key === 'codex' ? (model.id === 'native' ? 'Codex' : model.id) : (model.id || model.label)}
     </span>
   );
 }
@@ -283,6 +286,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   const [cwd, setCwd] = useState(initialCwd);
   // The seg control starts on the device's preferred session kind (Settings →
   // Terminal; default claude — that's what this screen is for).
+  const [codexModel, setCodexModel] = useState('');
   const [mode, setMode] = useState<'shell' | 'claude' | 'codex'>(() => getTermSessionPrefs().autoStart);
   const [sessions, setSessions] = useState<Sess[]>([]);
   // A mirror of `sessions` for the async restore (#486) to read. The adoption
@@ -394,8 +398,8 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
     setSessions((s) => {
       // Explicit new sessions never adopt a remembered session by directory:
       // Claude and Codex can share a cwd. Reload restoration uses the host list.
-      const name = tmux;
-      return [...s, { id, cwd: cwdKey, cmd, status: 'connecting', note: '', tmux: name }];
+      const name = tmux ?? (cmd !== 'shell' ? newTermName() : undefined);
+      return [...s, { id, cwd: cwdKey, cmd, codexModel: cmd === 'codex' ? codexModel : undefined, status: 'connecting', note: '', tmux: name }];
     });
     setActive(id);
     // …and it goes into the shape that is already on screen. See
@@ -443,6 +447,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   // cwd, no attach, nothing stored) lands in the most recently touched project
   // rather than $HOME — claude in the home directory helps nobody; overview's
   // resume slug is the "current" project. Falls back to home on any miss.
+  const restoreComplete = useRef(false);
   useEffect(() => {
     const saved = getTermOpenTabs();
     // Shells now; claude tabs wait for the host list. `ids` keeps a slot per
@@ -464,8 +469,16 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
     // claim the same host session and mirror each other.
     const adopt = async () => {
       if (!deferred.length) return [] as number[];
-      const host = await getDetachedSessions().catch(() => [] as DetachedSession[]);
+      // A disconnected host has not reported an empty fleet. Keep the saved
+      // identities until a connected daemon can answer, including on restart.
+      let feed;
+      while (!gone) {
+        feed = await getDetachedFeed().catch(() => null);
+        if (feed?.connected === true) break;
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
       if (gone) return [] as number[];
+      const host = feed!.sessions;
       const held = new Set<string>();
       const opened: number[] = [];
       // Exact matches first, across ALL deferred tabs, before anything is
@@ -497,6 +510,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
 
     void adopt().then((opened) => {
       if (gone) return;
+      restoreComplete.current = true;
       const anyRestored = ids.some((x) => x !== null);
 
       if (initialAttach) {
@@ -547,8 +561,9 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   const persistReady = useRef(false);
   useEffect(() => {
     if (!persistReady.current) { persistReady.current = true; return; }
+    if (!restoreComplete.current) return;
     setTermOpenTabs(sessions
-      .filter((s) => s.status === 'live' || s.status === 'connecting')
+      .filter((s) => s.status === 'live' || s.status === 'connecting' || !!s.tmux)
       .map((s) => ({ cwd: s.cwd, cmd: s.cmd, tmux: s.tmux })));
   }, [sessions]);
 
@@ -995,6 +1010,10 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   // tab's life, and copied into `names` once there is a tmux name to key on.
   // '' is a rename to nothing — it clears, and must shadow nothing.
   const [renamed, setRenamed] = useState<Record<number, string>>({});
+  const [modelsOpen, setModelsOpen] = useState(false);
+  const modelsRef = useRef<HTMLDivElement | null>(null);
+  const modelsBtn = useRef<HTMLButtonElement | null>(null);
+  useCollapseOnClickAway(modelsOpen, () => setModelsOpen(false), modelsRef, modelsBtn);
   const [setsOpen, setSetsOpen] = useState(false);
   const setsRef = useRef<HTMLDivElement | null>(null);
   const setsBtn = useRef<HTMLButtonElement | null>(null);
@@ -1145,21 +1164,22 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   // "plenty left", which is the most expensive possible way to be wrong here.
   const planLimits = useMemo(() => {
     const p = usage?.plan;
-    if (!p) return [] as { key: string; name: string; pct: number; resets: string }[];
+
     const rows: { key: string; name: string; pct: number; resets: string }[] = [];
-    if (p.session) {
-      rows.push({ key: 'session', name: 'Session', pct: Math.round(p.session.pct),
+    if (p?.session) {
+      rows.push({ key: 'session', name: 'Claude · Session', pct: Math.round(p.session.pct),
         resets: p.session.resetAt ? `resets ${fmtReset(p.session.resetAt)}` : 'no reset reported' });
     }
-    if (p.week) {
-      rows.push({ key: 'week', name: 'Week', pct: Math.round(p.week.pct),
+    if (p?.week) {
+      rows.push({ key: 'week', name: 'Claude · Week', pct: Math.round(p.week.pct),
         resets: p.week.resetAt ? `resets ${fmtReset(p.week.resetAt, true)}` : 'no reset reported' });
     }
-    if (p.weekModel) {
+    if (p?.weekModel) {
       rows.push({ key: 'weekModel', name: `Week · ${p.weekModel.model || 'strong model'}`,
         pct: Math.round(p.weekModel.pct),
         resets: p.weekModel.resetAt ? `resets ${fmtReset(p.weekModel.resetAt, true)}` : 'no reset reported' });
     }
+    for (const l of usage?.codex?.limits || []) rows.push({ ...l, resets: l.resetAt ? `resets ${fmtReset(l.resetAt, true)}` : 'no reset reported' });
     return rows;
   }, [usage]);
 
@@ -1494,7 +1514,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
             <option value="codex">Codex</option>
             <option value="shell">Shell</option>
           </select>
-          {mode === 'codex' && <span className="dim">Context and checkpoints are manual</span>}
+          {mode === 'codex' && <span className="dim">YOLO · Context and checkpoints are manual</span>}
           {/* #487 — the design's spawn button SAYS WHAT IT WILL DO: the tool
               and the directory, not "+ New session". Both are already chosen
               in the two controls beside it, so a button that repeats them back
@@ -2245,6 +2265,18 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                         The design lists four fixtures; these are the real ones
                         this screen can answer for, and each says its own state
                         rather than a decorative "Enabled". */}
+                    <div className="tc-foot" ref={modelsRef}>
+                      <button ref={modelsBtn} className="tc-footbtn" aria-expanded={modelsOpen} onClick={() => setModelsOpen((v) => !v)}>Codex models</button>
+                      {modelsOpen && <div className="tc-pop" role="dialog" aria-label="Codex models">
+                          <span className="cap">Codex models · new sessions</span>
+                          <select className="field-input" aria-label="Codex model" value={codexModel} onChange={(e) => { setCodexModel(e.target.value); setMode('codex'); }}>
+                            <option value="">CLI default</option>
+                            {(usage?.codex?.models || []).map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+                          </select>
+                          <span className="dim">For an existing session, use /model.</span>
+                          {!usage?.codex?.models?.length && <span className="dim">Model catalogue unavailable</span>}
+                        </div>}
+                    </div>
                     <div className="tc-foot" ref={setsRef}>
                       <button ref={setsBtn} className="tc-footbtn" aria-expanded={setsOpen}
                         onClick={() => setSetsOpen((v) => !v)}>
@@ -2471,7 +2503,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
 // One tab: an xterm instance + its websocket, kept mounted (hidden when
 // inactive) so the scrollback survives tab switches.
 function TermSession({ sess, visible, focused, fontSize, onStatus, onUsage, onTmux, onModel, onSid, onExit, onOutput, onTyped, onNotice, register }: {
-  sess: { id: number; cwd: string; cmd: 'shell' | 'claude' | 'codex'; tmux?: string };
+  sess: { codexModel?: string; id: number; cwd: string; cmd: 'shell' | 'claude' | 'codex'; tmux?: string };
   // Rendered on screen at all (it may be one of several panes)...
   visible: boolean;
   // ...and the one that takes keystrokes. With a grid these stopped being the
@@ -2667,7 +2699,7 @@ function TermSession({ sess, visible, focused, fontSize, onStatus, onUsage, onTm
       onStatus('connecting', retries ? `connection lost — re-attaching (${retries})` : '');
       safeFit();
       const ws = openTerminal({
-        cwd: sess.cwd, cmd: sess.cmd, cols: term.cols, rows: term.rows,
+        codexModel: sess.codexModel, cwd: sess.cwd, cmd: sess.cmd, cols: term.cols, rows: term.rows,
         tmuxSession: sess.cmd !== 'shell' && tmuxRef.current ? tmuxRef.current : undefined,
         // Device pref (Settings → Terminal): claude without permission prompts.
         // A boolean only — the daemon maps it to its one allow-listed flag.
@@ -2709,7 +2741,7 @@ function TermSession({ sess, visible, focused, fontSize, onStatus, onUsage, onTm
           tmuxSession?: string;
           model?: SessionModel | null;
           tokens?: number; resetAt?: number; resetLabel?: string; sched?: { runDate: string; atTime: string };
-          totalTokens?: number; plan?: TermUsage['plan'];
+          totalTokens?: number; plan?: TermUsage['plan']; codex?: TermUsage['codex'];
           // #513 — the answer to one 'drop': the host's path for the file, or
           // why it has none. `id` is this pane's own counter, echoed back.
           id?: number; ok?: boolean; path?: string; name?: string; error?: string;
@@ -2723,7 +2755,7 @@ function TermSession({ sess, visible, focused, fontSize, onStatus, onUsage, onTm
           onOutput(m.data.length);
         }
         else if (m.t === 'usage' && typeof m.tokens === 'number') {
-          onUsage({ tokens: m.tokens, totalTokens: m.totalTokens, resetAt: m.resetAt, resetLabel: m.resetLabel, sched: m.sched, plan: m.plan });
+          onUsage({ tokens: m.tokens, totalTokens: m.totalTokens, resetAt: m.resetAt, resetLabel: m.resetLabel, sched: m.sched, plan: m.plan, codex: m.codex });
         }
         else if (m.t === 'ready') {
           retries = 0;

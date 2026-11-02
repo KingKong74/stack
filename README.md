@@ -193,7 +193,7 @@ disconnect. **Shell** remains available for ordinary commands.
 
 Each CLI uses its own account, model configuration and login. Install and authenticate Claude
 and Codex on the terminal host. Stack does not inject a gateway provider or model. The existing
-Claude skip-permissions setting applies only to Claude; Codex keeps its native permissions.
+Claude skip-permissions setting applies only to Claude; new Codex sessions use YOLO mode.
 
 The same native agents are available over SSH:
 

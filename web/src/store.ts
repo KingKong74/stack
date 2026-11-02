@@ -525,10 +525,11 @@ export async function getProjectPulse(slug: string): Promise<ProjectPulse> {
 // A session is spawned as a plain `claude` (or a shell) in the requested
 // checkout. It carried a `prime` and a `model` while the tab agents had
 // consoles — a server-composed system prompt the daemon appended at spawn —
-// and both went with them, on the daemon's side too.
+// and both went with them, on the daemon's side too. codexModel selects a native
+// account model for a new Codex session; it never changes an attached process.
 export function openTerminal(opts: {
   cwd: string; cmd: 'shell' | 'claude' | 'codex'; cols: number; rows: number;
-  tmuxSession?: string; skipPerms?: boolean;
+  tmuxSession?: string; skipPerms?: boolean; codexModel?: string;
   // #525 — claude's FIRST PROMPT, for a session this frame creates. The host
   // ignores it on a re-attach, so re-sending it on every reconnect is safe.
   brief?: string;

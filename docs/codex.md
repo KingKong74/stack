@@ -23,9 +23,16 @@ instructions. Existing authenticated Codex access is separate from Stack's API c
 
 The Terminal page offers Claude and Codex, plus a utility Shell. It no longer offers gateway
 models or provider fallback. Old device routing preferences are ignored. Claude's permission
-setting applies only to Claude; Codex uses its own configuration and permissions. A missing CLI
+setting applies only to Claude. New Codex sessions launch in YOLO mode, bypassing approvals and
+the sandbox. The sidepanel lists models from the local Codex account and lets you choose one for
+new sessions; use `/model` inside an existing session. The limits strip includes Codex account
+windows with their reported reset times. Unavailable account data stays unknown. A missing CLI
 or expired login is reported by the native command in its pane. Install/authenticate each CLI on
 the terminal host before using it. Existing sessions retain the process they were started with.
+
+Agent tabs retain their tmux identity across page reloads and connection errors. If the daemon
+is restarting, restoration waits for its session list rather than discarding saved tabs or
+starting replacements. Shell tabs still start a fresh shell after a reload.
 
 The separate legacy OmniRoute CLI tools are outside this terminal change; the host gateway has
 not been uninstalled or stopped.

@@ -15,6 +15,7 @@ const serve = process.argv.includes('--serve');
 const starts = [];
 const requests = [];
 const sessions = new Map();
+let hostConnected = true;
 const out = '/tmp/stack-native-terminal-ui';
 // Reuse the repository's rootless browser dependencies when provisioned.
 const deps = process.env.STACK_UI_SMOKE_DEPS || resolve(homedir(), '.stack/ui-smoke-deps');
@@ -28,7 +29,7 @@ const server = createServer((req, res) => {
   if (path.startsWith('/api/')) {
     requests.push(path);
     const payload = path === '/api/health' ? { version: 'fixture', ok: true }
-      : path === '/api/terminal/detached' ? { connected: true, sessions: [...sessions.values()] }
+      : path === '/api/terminal/detached' ? { connected: hostConnected, sessions: hostConnected ? [...sessions.values()] : [] }
       : path === '/api/terminal/agent' ? { connected: true }
       : path === '/api/settings' ? { termIdleHours: 0 }
       : path === '/api/terminal/usage' ? { tokensToday: 0, tokenBudget: 0 }
@@ -61,6 +62,7 @@ wss.on('connection', (ws, req) => {
       const model = { key: m.cmd === 'codex' ? 'codex' : 'anthropic', id: 'native', label: m.cmd };
       sessions.set(name, { name, cmd: m.cmd, cwd: m.cwd, created: Date.now(), model, label: `${m.cmd} fixture` });
       ws.send(JSON.stringify({ t: 'ready', sid: String(starts.length), tmuxSession: name, model, cwd: m.cwd }));
+      ws.send(JSON.stringify({ t: 'usage', tokens: 0, codex: { models: [{ id: 'gpt-fixture', label: 'GPT fixture' }], limits: [{ key: 'codex:primary', name: 'Codex · Session · 5h', pct: 32, resetAt: Date.now() + 3600000 }] } }));
       ws.send(JSON.stringify({ t: 'out', data: Buffer.from(`Native ${m.cmd} fixture\r\n`).toString('base64') }));
     }
   });
@@ -88,13 +90,30 @@ try {
   await page.goto(`${url}/#/terminal`);
   await page.getByLabel('Session type').waitFor();
   assert.deepEqual(await page.getByLabel('Session type').locator('option').allTextContents(), ['Claude', 'Codex', 'Shell']);
-  await page.waitForFunction(() => !!localStorage.getItem('stack.termTabs')?.includes('stack-term-fixture'));
+  await page.waitForFunction(() => JSON.parse(localStorage.getItem('stack.termTabs') || '[]').some((t) => t.tmux));
+  if (await page.getByTitle('Expand the sessions rail').count()) await page.getByTitle('Expand the sessions rail').click();
+  await page.getByRole('button', { name: 'Codex models', exact: true }).click();
+  await page.getByLabel('Codex model', { exact: true }).selectOption('gpt-fixture');
+  await page.getByRole('button', { name: 'Codex models', exact: true }).click();
+  await page.getByText('Codex · Session · 5h', { exact: true }).waitFor();
   await page.getByLabel('Session type').selectOption('codex');
   await page.getByRole('button', { name: /^\+ Codex in/ }).click();
   await page.waitForFunction(() => JSON.parse(localStorage.getItem('stack.termTabs') || '[]').some((t) => t.cmd === 'codex' && t.tmux));
+  assert.equal(starts.find((m) => m.cmd === 'codex').codexModel, 'gpt-fixture');
   const names = [...sessions.keys()];
+  hostConnected = false;
+  const startsBeforeRestart = starts.length;
   await page.reload();
   await page.getByLabel('Session type').waitFor();
+  await page.waitForTimeout(1400);
+  assert.equal(starts.length, startsBeforeRestart, 'a disconnected host must not spawn replacement sessions');
+  assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('stack.termTabs')).map((t) => t.tmux)), names,
+    'reload while the daemon is down preserves all saved session identities');
+  hostConnected = true;
+  const restoreDeadline = Date.now() + 5000;
+  while (starts.filter((m) => m.cmd === 'codex').length < 2 && Date.now() < restoreDeadline) {
+    await page.waitForTimeout(50);
+  }
   await page.waitForFunction(() => JSON.parse(localStorage.getItem('stack.termTabs') || '[]').filter((t) => t.tmux).length === 2);
   await page.waitForTimeout(400);
   assert.deepEqual([...sessions.keys()], names, 'reload adopts existing sessions without spawning more');
@@ -118,7 +137,7 @@ try {
   await browser.close();
   browser = null;
   console.log('Native selector, legacy preference migration, Codex reload and mobile layout passed.');
-  const smoke = spawn(process.execPath, ['scripts/playwright/smoke.mjs', '--url', url, '--token', 'fixture',
+  const smoke = spawn(process.execPath, ['./stack', 'ui-smoke', '--url', url, '--token', 'fixture',
     '--screens', 'terminal', '--out', `${out}/smoke`], { stdio: 'inherit' });
   const [code] = await once(smoke, 'exit');
   assert.equal(code, 0, 'standard terminal UI smoke must pass');

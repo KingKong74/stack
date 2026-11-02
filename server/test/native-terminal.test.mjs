@@ -29,11 +29,11 @@ test('terminal API exposes host status and retires gateway/catalogue endpoints',
   }
 });
 
-test('only native Claude and Codex launch; Claude permission settings never widen Codex', () => {
+test('only native Claude and Codex launch; Codex always launches in YOLO mode', () => {
   assert.equal(nativeLaunch('claude').command, 'exec claude');
   assert.equal(nativeLaunch('claude', { skipPerms: true }).command, 'exec claude --dangerously-skip-permissions');
   assert.deepEqual(nativeLaunch('codex', { skipPerms: true, provider: 'omniroute', model: 'untrusted' }),
-    { command: 'exec codex', tag: 'codex:native' });
+    { command: 'exec codex --dangerously-bypass-approvals-and-sandbox', tag: 'codex:native' });
   for (const cmd of ['gemini', 'qwen', 'omniroute', 'codex; echo bad', '']) {
     assert.throws(() => nativeLaunch(cmd), /Unknown agent/);
   }
@@ -56,9 +56,9 @@ test('SSH terminal launcher uses native Codex and records its tmux tag', async (
     assert.equal(await main(['--cli', 'codex']), 0);
     const calls = readFileSync(join(dir, 'calls'), 'utf8').trim().split('\n').map(JSON.parse);
     const launch = calls.find((args) => args[0] === 'new-session').join(' ');
-    assert.match(launch, /exec codex/);
+    assert.match(launch, /exec codex --dangerously-bypass-approvals-and-sandbox/);
     assert.match(launch, /@stack-model 'codex:native'/);
-    assert.doesNotMatch(launch, /omniroute|dangerously/);
+    assert.doesNotMatch(launch, /omniroute/);
     assert.equal(await main(['--cli', 'gemini']), 1);
   } finally {
     Object.assign(process.env, previous);
@@ -120,8 +120,8 @@ test('daemon launches, resizes and reattaches Codex without a gateway', { timeou
     const output = await waitFor((f) => f.t === 'out' && f.sid === 'codex'
       && Buffer.from(f.data, 'base64').toString().includes('SPAWN'));
     const text = Buffer.from(output.data, 'base64').toString();
-    assert.match(text, /exec codex/);
-    assert.doesNotMatch(text, /omniroute|old-gateway-model|dangerously/);
+    assert.match(text, /exec codex --dangerously-bypass-approvals-and-sandbox/);
+    assert.doesNotMatch(text, /omniroute|old-gateway-model/);
     ws.send(JSON.stringify({ t: 'resize', sid: 'codex', cols: 0, rows: 9000 }));
     await waitFor((f) => f.t === 'out' && f.sid === 'codex'
       && Buffer.from(f.data, 'base64').toString().includes('RESIZED'));

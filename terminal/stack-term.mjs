@@ -48,6 +48,7 @@ import { fileURLToPath } from 'node:url';
 import meow from 'meow';
 import WebSocket from 'ws';
 import { createUsageMeter } from './usage-meter.mjs';
+import { createCodexAccount } from './codex-account.mjs';
 import { createPlanUsage } from './plan-usage.mjs';
 import { tmuxAvailable, validName, generateName, sessionArgv, sessionExists, killSession, clearFresh, listDetached, listStackSessions, listAutoSessions, markFresh, paneTail, paneTailStyled, reapDeadSessions, reapFreshSessions, reapIdleSessions, sendKeys, setKeep, setSessionModel } from './tmux-session.mjs';
 import { detectPrompt } from './prompt-scan.mjs';
@@ -171,6 +172,7 @@ const meter = createUsageMeter();
 // a ≤10-min cache and refreshes itself in the background; null degrades to
 // the old transcript-count-only frame.
 const planUsage = createPlanUsage();
+const codexAccount = createCodexAccount();
 const USAGE_TICK_MS = 15_000;
 // CSI + OSC escape stripper, so the match runs on what the human actually sees.
 // eslint-disable-next-line no-control-regex
@@ -213,7 +215,8 @@ function usageFrame(sid) {
   // tokens = the fresh count (input + output + cache write — what the budget
   // bar should measure, #130); totalTokens keeps the cache-read-inclusive sum.
   const { total, fresh } = meter.read();
-  const f = { t: 'usage', sid, tokens: fresh, totalTokens: total };
+  const codex = codexAccount.get();
+  const f = { t: 'usage', sid, tokens: fresh, totalTokens: total, codex };
   // Plan windows (#195): session/week percentages + reset times, verbatim what
   // the app's /usage shows. A limit the API marks active gives the REAL reset
   // time — it beats the pty-scrape guess (which stays as the offline fallback).
@@ -695,7 +698,11 @@ function startSession(msg) {
   let modelTag = ''; // #503 — the provider/model this session runs on ('' = unrecorded)
 
   if (msg.cmd === 'claude' || msg.cmd === 'codex') {
-    const launch = nativeLaunch(msg.cmd, { skipPerms: msg.skipPerms });
+    const codexModel = msg.cmd === 'codex' && !(validName(msg.tmuxSession) && sessionExists(msg.tmuxSession)) ? msg.codexModel : undefined;
+    if (codexModel && !codexAccount.get()?.models.some((m) => m.id === codexModel)) return failUplink('Codex model unavailable. Refresh the catalogue and try again.');
+    let launch;
+    try { launch = nativeLaunch(msg.cmd, { skipPerms: msg.skipPerms, codexModel }); }
+    catch { return failUplink('Invalid agent launch options.'); }
     const agentCmdWith = (brief = '') => `${launch.command}${brief}`;
     const agentCmd = agentCmdWith();
     if (tmuxAvailable()) {

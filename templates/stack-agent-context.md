@@ -12,7 +12,8 @@ roadmap and sticky notes. State is **auto-managed** — you don't have to curate
 
 ## Codex sessions
 
-Stack Terminal launches Claude and Codex natively, with Shell as a utility. Codex has no automatic
+Stack Terminal launches Claude and Codex natively, with Shell as a utility. New Codex sessions
+use YOLO mode; its sidepanel lists account models and reported quota windows. Codex has no automatic
 resume injection, branch claims, SessionEnd backstop or usage/edit tracking. Read live state and
 claims before choosing board work. Author checkpoint JSON and pipe it to
 `node ~/.stack/stack-checkpoint.mjs`; `/checkpoint` is a Claude command, not a Codex command.
