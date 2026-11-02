@@ -25,6 +25,7 @@ import {
   peekTermLaunch, clearTermLaunch,
 } from '../store';
 import { hrefTo } from '../lib/route';
+import { FLICK_HINT } from '../lib/flick';
 import { askOf } from '../lib/asking';
 
 import { useAutoRefresh } from '../lib/autoRefresh';
@@ -294,8 +295,12 @@ function useCollapseOnClickAway(
   }, [open]);
 }
 
-export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible = true }: {
+export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible = true, boardHref = '', onProject }: {
   initialCwd?: string; initialAttach?: string; initialBrief?: boolean; visible?: boolean;
+  /** Where ⌃` goes from here (lib/flick.ts), drawn as the topbar's Board button. */
+  boardHref?: string;
+  /** Reports the focused pane's TRACKED project ('' for a plain directory). */
+  onProject?: (slug: string) => void;
 }) {
   const [cwd, setCwd] = useState(initialCwd);
   // The seg control starts on the device's preferred session kind (Settings →
@@ -1365,6 +1370,8 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
     return () => { gone = true; };
   }, [visible, projectSlug]);
   const board = detailSlug === projectSlug ? detail : null;
+  const boardProject = board ? board.project.id : '';
+  useEffect(() => { onProject?.(boardProject); }, [boardProject, onProject]);
   const claimedItems = useMemo(
     () => (board ? flatRoadmap(board.roadmap).filter((it) => !it.done && it.claimedBy) : []),
     [board]);
@@ -1550,7 +1557,15 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
         // directory, not the same pane.
         { label: 'Terminal', href: hrefTo.terminal(cwd) },
       ]}
-        actions={<a className="btn-repo" href={hrefTo.control} title="Mission Control">Mission Control</a>} />
+        actions={<>
+          {boardHref && (
+            <a className="btn-repo" href={boardHref}
+              title={`${board ? `${crumbName(board.project.name)}'s board` : 'Back'} (${FLICK_HINT} flicks back here)`}>
+              {board ? 'Board' : 'Back'} <span className="kbd-hint">{FLICK_HINT}</span>
+            </a>
+          )}
+          <a className="btn-repo" href={hrefTo.control} title="Mission Control">Mission Control</a>
+        </>} />
 
       {/* #489 — THE COCKPIT IS FULL-BLEED, and the page's own frame is gone
           with the width cap that came with it. Every other screen in Stack is

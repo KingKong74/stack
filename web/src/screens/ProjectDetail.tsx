@@ -11,6 +11,7 @@ import {
 import type { Project } from '../types';
 import { go, hrefTo } from '../lib/route';
 import { TopBar } from '../components/TopBar';
+import { FLICK_HINT } from '../lib/flick';
 import { ConsoleNav, NavIcons, SpaceDot, type NavSection } from '../detail/ConsoleNav';
 import { absoluteHref, type MenuOption } from '../components/MoreMenu';
 import { TerminalNavFoot } from '../components/Asking';
@@ -563,7 +564,9 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
               title="Mission Control — the console kit's mockup; it reads and writes nothing">
               Mission Control <span className="con-navsoon mock">Mock</span>
             </button>
-            <a className="btn-repo" href={hrefTo.terminal(slug)} title={`Open a terminal in ~/${slug}`} aria-label="Terminal">⌨</a>
+            <a className="btn-repo" href={hrefTo.terminal(slug)} title={`Open a terminal in ~/${slug} (${FLICK_HINT} flicks back to the one you left)`} aria-label="Terminal">
+              ⌨ <span className="kbd-hint">{FLICK_HINT}</span>
+            </a>
           </>
         } />
 

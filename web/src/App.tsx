@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { useRoute } from './lib/route';
+import { flickTarget, isFlickKey } from './lib/flick';
 import { Dashboard } from './screens/Dashboard';
 import { ProjectDetail } from './screens/ProjectDetail';
 import { Settings } from './screens/Settings';
@@ -36,6 +37,28 @@ export default function App() {
   // session is still alive.
   const [termMounted, setTermMounted] = useState(false);
   useEffect(() => { if (route.name === 'terminal') setTermMounted(true); }, [route]);
+
+  // ⌃` flicks between the terminal and the board (lib/flick.ts). `lastAway` is
+  // the last screen that was not the terminal, so the way back lands on the
+  // same tab; `termProject` is the focused pane's project, reported up.
+  const [termProject, setTermProject] = useState('');
+  const [lastAway, setLastAway] = useState('');
+  useEffect(() => {
+    if (route.name !== 'terminal' && route.name !== 'share') setLastAway(window.location.hash || '#/');
+  }, [route]);
+  const flickHref = flickTarget(route, { termProject, lastAway, termMounted });
+  useEffect(() => {
+    // CAPTURE PHASE, so the key is ours before xterm's textarea sees it.
+    // Otherwise a focused pane eats it and sends ⌃@ to the shell.
+    const onKey = (e: KeyboardEvent) => {
+      if (!isFlickKey(e)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      window.location.hash = flickHref;
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [flickHref]);
 
   // Re-read the token whenever it changes (set on unlock, cleared on any 401).
   useEffect(() => onAuthChange(() => setTokenState(getToken())), []);
@@ -82,7 +105,9 @@ export default function App() {
           <Terminal initialCwd={route.name === 'terminal' ? route.cwd : ''}
             initialAttach={route.name === 'terminal' ? route.attach : undefined}
             initialBrief={route.name === 'terminal' ? route.brief : undefined}
-            visible={route.name === 'terminal'} />
+            visible={route.name === 'terminal'}
+            boardHref={route.name === 'terminal' ? flickHref : ''}
+            onProject={setTermProject} />
         </Suspense>
       )}
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />

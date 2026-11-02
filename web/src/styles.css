@@ -576,6 +576,13 @@ a { color: inherit; }
 a.btn-repo, a.k-btn { text-decoration: none; }
 .btn-repo .blk { width: 12px; height: 12px; border-radius: 50%; background: var(--text-secondary); flex: none; }
 .btn-repo:hover { background: var(--surface-overlay); border-color: var(--border-strong); }
+/* The ⌃` flick hint on the Board / ⌨ buttons (lib/flick.ts): the searchbox's
+   ⌘K chip, so the shortcut is learnt from the button that does it. */
+.btn-repo .kbd-hint {
+  font-family: var(--mono); font-size: var(--text-xs); color: var(--text-tertiary);
+  background: var(--surface-overlay); border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm); padding: 1px 4px; line-height: 1; margin-left: 4px;
+}
 .btn-repo:active { background: var(--surface-press); }
 .btn-visit { height: 38px; padding: 0 17px; }
 
