@@ -33,6 +33,12 @@ screens gets acted on twice; a row on neither has silently vanished.
   worked a row** (a claim, a `built_note` or a tick: `isWorked`), it's board work whatever its
   sign-off says. Its hold then only gates the runner, and the board shows it (the `held` chip,
   answered from the card menu).
+- **The board is designed for the owner's hands** (2026-11-02). Weigh UX, not automation policy,
+  when changing it; the run gates live in the root file and the server.
+- **Two kinds of card: a task, and a cluster** (a row with parts, `parent_id`, one level deep).
+  Parts draw inside their cluster's card, never as cards of their own while it is on the board, and
+  the cluster's column is rolled up from them (`clusterKeyOf`), so it doesn't drag. A part whose
+  cluster is off the board is an ordinary card again. `Board.tsx`'s header has the rest.
 - **There is no Roadmap tab** (owner's call, 2026-10-28). The `canvas` column is dormant: nothing
   writes or serves it. Don't bring back a third home without changing `homeOf` with it.
 

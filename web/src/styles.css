@@ -5038,6 +5038,46 @@ body[data-mc-full] .totop { display: none; }
 .km-card.tinted { border-top-width: 2px; }
 .km-card.tinted:hover { border-top-color: var(--km-tint) !important; }
 .km-card > .t { font: var(--type-body-sm); color: var(--text-primary); text-wrap: pretty; }
+/* A CLUSTER (a card with parts) reads as bulkier than a task at a glance: two
+   plates stacked behind it, a heavier title, and its parts inside. A task stays
+   the plain single card. The plates are box-shadows, so they take no layout
+   and the drag/land/selected rings still draw over them. */
+.km-card.cluster {
+  margin-bottom: 8px;
+  box-shadow: 0 4px 0 -1px var(--surface-raised), 0 4px 0 0 var(--border-subtle),
+              0 8px 0 -2px var(--surface-raised), 0 8px 0 -1px var(--border-subtle),
+              var(--shadow-sm);
+}
+.km-card.cluster:hover {
+  box-shadow: 0 4px 0 -1px var(--surface-raised), 0 4px 0 0 var(--border-default),
+              0 8px 0 -2px var(--surface-raised), 0 8px 0 -1px var(--border-default),
+              var(--shadow-md);
+}
+.km-card.cluster > .t { font-weight: var(--weight-semibold); }
+.km-parts { display: flex; flex-direction: column; gap: var(--space-3); }
+.km-partbar { display: flex; align-items: center; gap: var(--space-3); }
+.km-partbar .track { position: relative; flex: 1; height: 6px; border-radius: 999px; background: var(--surface-sunken); }
+.km-partbar .fill {
+  position: absolute; inset: 0 auto 0 0; border-radius: inherit;
+  background: var(--status-success-fg); transition: width var(--dur-fast) var(--ease-out);
+}
+.km-partbar .n { flex: none; font: var(--weight-medium) var(--text-2xs)/1 var(--font-mono); color: var(--text-tertiary); }
+.km-parts ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.km-part {
+  width: 100%; display: flex; align-items: baseline; gap: var(--space-3);
+  background: none; border: 0; border-radius: var(--radius-sm);
+  padding: 3px var(--space-2); text-align: left; cursor: pointer;
+  font: var(--type-body-sm); font-size: var(--text-xs); color: var(--text-secondary);
+}
+.km-part:hover { background: var(--surface-sunken); color: var(--text-primary); }
+.km-part .g { flex: none; width: 1em; text-align: center; font-family: var(--font-mono); }
+.km-part .pt { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.km-part.todo .g { color: var(--status-neutral-fg); }
+.km-part.going .g { color: var(--status-info-fg); }
+.km-part.review .g { color: var(--status-warning-fg); }
+.km-part.done .g { color: var(--status-success-fg); }
+.km-part.done .pt { text-decoration: line-through; color: var(--text-tertiary); }
+.km-part.more { color: var(--text-tertiary); font-family: var(--font-mono); font-size: var(--text-2xs); }
 .km-cardmeta { display: flex; align-items: center; gap: var(--space-3); }
 .km-cardmeta .kind { display: flex; }
 .km-cardmeta .id { font: var(--weight-medium) var(--text-xs)/1 var(--font-mono); color: var(--text-secondary); }

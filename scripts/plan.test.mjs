@@ -39,7 +39,7 @@ const {
   whatsNext, fmtWhen, calendarDays, calendarMonths, CAL_HOUR_FROM,
   slipOf, layoutLane, scopeTotals, defaultLen, DUR_OPTIONS, rolledSched, isRolled,
   newItemSched,
-  listKeyOf, homeOf, isAutoIdea, isBoardWork, isWorked, isBuilt, inCycle, areaMatches, horizonOf, UNALLOCATED,
+  listKeyOf, clusterKeyOf, homeOf, isAutoIdea, isBoardWork, isWorked, isBuilt, inCycle, areaMatches, horizonOf, UNALLOCATED,
   queueOrder, inActiveSprint, bucketRank,
 } = await import(planUrl.href);
 
@@ -1002,4 +1002,19 @@ test('the bucket rank is the five keys, and an unknown one sorts last', () => {
     ['highest', 'high', 'medium', 'low', 'lowest'].map(bucketRank), [0, 1, 2, 3, 4]);
   assert.equal(bucketRank('must'), 4, 'MoSCoW is gone; its keys must not silently score first');
   assert.equal(bucketRank(''), 4);
+});
+
+test('a cluster rolls its column up from its parts', () => {
+  const todo = item({}); const going = item({ claimedBy: 'feat/1-x' });
+  const built = item({ claimedBy: 'feat/2-x', builtNote: 'landed' }); const done = item({ done: true });
+  const c = item({});
+  assert.equal(clusterKeyOf(c, []), 'planned', 'no parts: an ordinary card');
+  assert.equal(clusterKeyOf(item({ claimedBy: 'b' }), []), 'progress');
+  assert.equal(clusterKeyOf(c, [todo, todo]), 'planned');
+  assert.equal(clusterKeyOf(c, [todo, going]), 'progress', 'one part started moves it');
+  assert.equal(clusterKeyOf(c, [todo, done]), 'progress', 'a finished part is a start too');
+  assert.equal(clusterKeyOf(c, [built, done]), 'review', 'every part at least built');
+  assert.equal(clusterKeyOf(c, [done, done]), 'shipped');
+  assert.equal(clusterKeyOf(item({ reviewTag: 'solid' }), [todo]), 'shipped', 'a verdict on the whole wins');
+  assert.equal(clusterKeyOf(item({ listKey: 'review' }), [todo]), 'planned', 'a dragged override does not pin a cluster');
 });

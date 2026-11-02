@@ -16,7 +16,7 @@
 //     canvas owns no copy of the row; Board.tsx's `rows` is the truth.
 //  3. CHILD IS A FACT, RELATED IS A NOTE. A child is `parent_id`, one level
 //     deep: the server refuses a parent that is itself a child, so a focused
-//     child offers no "Add child task" and no Child button. Related links and
+//     child offers no "Add part" and no Part button. Related links and
 //     node positions are how you like to look at the work, so they live on
 //     this device (store.ts getFocusCanvas), never on the row.
 //  4. UNLINKING NEVER DELETES. Unfiling a child detaches it and it stays on
@@ -380,7 +380,7 @@ export function BoardFocus({
               }}>
               <div className="row">
                 <span className={`rel${n.rel === 'related' ? '' : ' strong'}`}>
-                  {n.rel === 'child' ? 'Child' : n.rel === 'parent' ? 'Parent' : 'Related'}
+                  {n.rel === 'child' ? 'Part' : n.rel === 'parent' ? 'Cluster' : 'Related'}
                 </span>
                 <span className="col" style={{ color: COL_TONE[ck] || 'var(--status-neutral-fg)' }}>{colName(ck)}</span>
                 <button className="bf-x" onClick={(e) => { e.stopPropagation(); unlink(it, n.rel); }}
@@ -421,6 +421,7 @@ export function BoardFocus({
         {editOpen && (
           <FocusEditor item={f} x={fxE + fw + 16} y={Math.max(84, fy - 8)} w={PW} on={edOn} ms={ms}
             columns={columns} colKey={colOf(f)} areas={areas}
+            rolled={rows.some((x) => x.parentId === f.id && !x.archived)}
             onClose={() => setEditOpen(false)} onPatch={(p) => onPatch(f, p)} onMove={(k) => onMove(f, k)} />
         )}
 
@@ -434,15 +435,15 @@ export function BoardFocus({
           }}>
             {composing ? (
               <div className="bf-compose">
-                <span className="eyebrow">New child task</span>
+                <span className="eyebrow">New part</span>
                 <input autoFocus value={draft} onChange={(e) => setDraft(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addChild(draft); } }}
-                  placeholder="What needs doing?" aria-label="New child task title" />
+                  placeholder="What needs doing?" aria-label="New part title" />
                 <span className="hint">Enter to add · Esc to cancel</span>
               </div>
             ) : (
               <button className="bf-addchild" onClick={() => { setComposing(true); setDraft(''); }}>
-                <KitIcon name="plus" size={14} />Add child task
+                <KitIcon name="plus" size={14} />Add part
               </button>
             )}
           </div>
@@ -487,12 +488,12 @@ export function BoardFocus({
                   </div>
                   <span className="t">{x.title}</span>
                   {on ? (
-                    <span className="hint">On the canvas · {on === 'child' ? 'Child' : on === 'parent' ? 'Parent' : 'Related'}</span>
+                    <span className="hint">On the canvas · {on === 'child' ? 'Part' : on === 'parent' ? 'Cluster' : 'Related'}</span>
                   ) : (
                     <div className="acts">
                       {canChild && (
                         <button className="bf-mini" title="File it under the focused item" onClick={() => bringIn(x, 'child')}>
-                          <KitIcon name="plus" size={12} />Child
+                          <KitIcon name="plus" size={12} />Part
                         </button>
                       )}
                       <button className="bf-mini" title="Put it on the canvas as related work, without filing it"
@@ -567,8 +568,8 @@ function CardFace({ item, kids, parent, sprint, onEdit }: {
           )}
           {kind && <span className={`k-tag km-kind ${kind}`}>{ITEM_KIND_LABEL[kind]}</span>}
           {due && <span className={`k-tag km-due ${due.tone}`}><KitIcon name="calendar" size={11} /><span className="v">{due.label}</span></span>}
-          {parent && <span className="k-tag mono" title={`Child of #${parent.id} — ${parent.title}`}>↳ #{parent.id}</span>}
-          {kids.length > 0 && <span className="k-tag mono" title="Child items finished">{kidsDone}/{kids.length} done</span>}
+          {parent && <span className="k-tag mono" title={`Part of #${parent.id} — ${parent.title}`}>↳ #{parent.id}</span>}
+          {kids.length > 0 && <span className="k-tag mono" title="Parts finished">{kidsDone}/{kids.length} done</span>}
           {item.claimedBy && (
             <span className="k-tag mono" title={item.claimedBy}><KitIcon name="git-branch" size={11} /><span className="v">{item.claimedBy}</span></span>
           )}
@@ -583,9 +584,11 @@ function CardFace({ item, kids, parent, sprint, onEdit }: {
  * The inline editor. Title and notes save themselves, debounced, and flush
  * when the editor closes; every chip is one write, the same the card sends.
  */
-function FocusEditor({ item, x, y, w, on, ms, columns, colKey, areas, onClose, onPatch, onMove }: {
+function FocusEditor({ item, x, y, w, on, ms, columns, colKey, areas, rolled, onClose, onPatch, onMove }: {
   item: RoadmapItem; x: number; y: number; w: number; on: boolean; ms: (n: number) => number;
   columns: { key: string; name: string }[]; colKey: string; areas: { name: string; dot: string }[];
+  /** A cluster: its column is rolled up from its parts, so it is shown, not set. */
+  rolled: boolean;
   onClose: () => void; onPatch: (p: Patch) => void; onMove: (key: string) => void;
 }) {
   const [title, setTitle] = useState(item.title);
@@ -628,10 +631,12 @@ function FocusEditor({ item, x, y, w, on, ms, columns, colKey, areas, onClose, o
           onBlur={flush} />
       </label>
       <div className="fld">
-        <span>Column</span>
+        <span>Column{rolled ? ' · moves with its parts' : ''}</span>
         <div className="chips">
           {columns.map((c) => (
-            <button key={c.key} className={colKey === c.key ? 'on' : ''} onClick={() => { if (colKey !== c.key) onMove(c.key); }}>{c.name}</button>
+            <button key={c.key} className={colKey === c.key ? 'on' : ''} disabled={rolled && colKey !== c.key}
+              title={rolled ? 'A cluster sits where its parts have got to' : undefined}
+              onClick={() => { if (!rolled && colKey !== c.key) onMove(c.key); }}>{c.name}</button>
           ))}
         </div>
       </div>

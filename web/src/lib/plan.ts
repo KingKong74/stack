@@ -983,6 +983,25 @@ export function listKeyOf(it: RoadmapItem): string {
 }
 
 /**
+ * A CLUSTER'S COLUMN, rolled up from its parts (owner's call, 2026-11-02). A
+ * cluster is a row with children: one central idea, its parts drawn inside its
+ * card rather than as cards of their own. Sessions move the parts, so the
+ * cluster moves itself: Done when every part is, In Review when every part is
+ * at least built, In Progress once anything has started, else To Do. A verdict
+ * or tick on the cluster itself still wins, since that is a call on the whole.
+ * With no parts it is an ordinary card and `listKeyOf` decides.
+ */
+export function clusterKeyOf(it: RoadmapItem, parts: RoadmapItem[]): string {
+  if (!parts.length) return listKeyOf(it);
+  if (it.done || it.reviewTag.trim()) return 'shipped';
+  const keys = parts.map(listKeyOf);
+  if (keys.every((k) => k === 'shipped')) return 'shipped';
+  if (keys.every((k) => k === 'shipped' || k === 'review')) return 'review';
+  if (keys.some((k) => k !== 'planned') || it.claimedBy.trim() || isBuilt(it)) return 'progress';
+  return 'planned';
+}
+
+/**
  * THE RUN QUEUE'S ORDER, on the client. Twin of the runner's own sort in
  * `scripts/stack-autopilot.mjs` and of the server's fan-out `ORDER BY` in
  * `routes/autopilot.js` — three halves of one ordering that no package can

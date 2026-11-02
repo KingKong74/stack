@@ -1,135 +1,72 @@
-// THE BOARD IS WIRED. Its kanban reads `roadmap_items` and writes them back,
-// and so does the Backlog tab since #477 made it the sprint surface. The
-// Development tab is the audit trail and lives in detail/Development.tsx.
+// THE BOARD — the project's kanban, read from `roadmap_items` and written back.
+// Cards arrive as a prop (the one payload every tab renders from), so a write
+// patches that payload rather than re-reading the project. Only the column
+// list is fetched here (`GET /board`). The Development tab is
+// detail/Development.tsx; double-clicking a card opens detail/BoardFocus.tsx.
 //
-// This is `ui_kits/console/BoardScreen.jsx` ported to TS (#443/#447) and then
-// given the data it was drawn for. The kanban half now reads the project's own
-// roadmap through `store.ts` and its columns through `GET /board`, and every
-// control on it writes: the priority picker, the drag between columns, the
-// column head's rename / move / delete, the lane composer, the create dialog
-// and the card menu. Nothing here fetches for itself except the column list —
-// the CARDS arrive as a prop, from the one payload every tab renders from, so
-// a write patches that payload rather than re-reading the project.
+// The board is designed for the owner working it by hand (owner's call,
+// 2026-11-02). Automation concerns are not this screen's to weigh: they live in
+// the root CLAUDE.md and the server.
 //
-// EIGHT DECISIONS THE WIRING MADE. Each one is a place where the kit's picture
-// and this app's data disagreed, and the data won:
+// TWO KINDS OF CARD (owner's call, 2026-11-02):
+//  - A TASK is a plain card: a check glyph, its title, its controls.
+//  - A CLUSTER is a row with parts (children, `parent_id`, one level deep). It
+//    is one central idea, drawn bulkier: stacked plates behind it, a bold
+//    title, the layers glyph, a progress bar, and its first few parts inside
+//    the card, unfinished first. PARTS ARE NOT CARDS OF THEIR OWN while their
+//    cluster is on the board; a part whose cluster is off it (archived, or
+//    still an auto-idea) is an ordinary card again, so nothing vanishes. A
+//    cluster's column is ROLLED UP from its parts (`clusterKeyOf` in
+//    lib/plan.ts), so it does not drag and its editor shows the column
+//    read-only. Search finds a cluster by any of its parts. A card becomes a
+//    cluster when it gets its first part, from the focus canvas.
 //
-//  1. THE PRIORITY CONTROL IS `bucket`, AND SINCE #469 IT IS THE KIT'S OWN
-//     FIVE. It offered Must/Should/Could/Won't at first, because that was what
-//     `bucket` stored; #469 migrated the column to Highest…Lowest and the
-//     picker, the ＋ dock and the Dashboard rollup all read one list for them
-//     now (`PRIORITY_META` in lib/ui.ts). It is still deliberately NOT `tier`:
-//     the desire tier leads the run queue and this control does not.
-//  2. THE COLUMN ORDER IS THE RUN QUEUE'S ORDER, not the payload's. `queueOrder`
-//     in lib/plan.ts sorts tier-then-bucket over an array that arrived in
-//     position order — read its header before touching either. The top of To Do
-//     is a claim about what the night takes next, so it has to be the same
-//     ordering the runner picks with.
-//  3. DRAGGING TO Done DOES NOT TICK. A drop writes `list_key` and only that:
-//     server/src/lists.js is explicit that a board column is not a verdict, and
-//     `done` is what `computeProgress` weighs and what the merge job writes.
-//     Dropping a card back on the column it would derive into writes '' rather
-//     than the key, so a card only carries an override while it needs one.
-//  4. THERE IS NO WITHIN-COLUMN DRAG. `position` is scoped to the BUCKET, not
-//     to the list — the server orders `bucket, position, created_at` and four
-//     lists cut across all four buckets — so a reorder inside In Progress would
-//     write a number that means something else. Writing `position` is the
-//     BACKLOG's job (it ranks one flat list) and it is still unwired.
-//  5. NO COLUMN LIMIT. The kit's "max 3" chip and its Set column limit menu item
-//     are gone: `project_lists` stores no limit, and inventing one here would be
-//     a second truth about concurrency next to `autopilotWorkers` — which is a
-//     FLEET cap, not a column's.
-//  6a. THE AREAS ARE GROUPED INSIDE THE COLUMNS (Board v5). The columns lead;
-//     inside each one the cards group by area under a small head (dot, name,
-//     count, the area's ⋯), which can be switched off for flat columns
-//     (`bview.flat`). The filter row lists EVERY area on the board as a toggle,
-//     several at once, with a Clear while any is on — the design's legend,
-//     exactly. ＋ New area sits in the toolbar.
-//     Two things the kit's version could not know. An area here is
-//     `roadmap_items.area`, and **(project, area) IS THE OVERNIGHT LANE**
-//     (#267) — so a group head says when its lane is HELD, and by which
-//     branch on hover; and untagged is an area like any other, which can
-//     never be a lane at all. A DROP NEVER RE-FILES AN AREA: it writes
-//     `list_key` alone, because re-filing would re-partition the night's
-//     concurrency as a side effect of moving a card to In Progress.
-//  6b. TWO DOUBLE-CLICKS, AND WHICH ONE YOU GET IS DECIDED BY WHAT IS UNDER
-//     THE CURSOR. DOUBLE-CLICK THE TITLE RENAMES IT IN PLACE (#469); DOUBLE-
-//     CLICK ANYWHERE ELSE ON THE CARD FLIES IT ONTO THE FOCUS CANVAS
-//     (detail/BoardFocus.tsx: its family, a Bring-in tray, an inline editor),
-//     and the card's ✎ does the same with the editor open. The full item
-//     modal — the only writer of a human `risk` — stays at ⋯ → Edit item….
-//     The split is the text because the text is what a
-//     rename edits: a double-click landing on the id, a tag or the card's own
-//     padding was a rename of a word you were not pointing at.
-//     Enter commits, Escape cancels, and BLUR COMMITS rather than discarding —
-//     losing a rename you typed by clicking away is the worst of the three
-//     outcomes. The PATCH names `title` and nothing else, so an inline edit
-//     cannot touch a tier, a claim or a verdict. `draggable` is switched off
-//     for exactly as long as the editor is open, or the drag gesture eats the
-//     text selection inside it. A double press on a CONTROL is that control
-//     pressed twice and never the card behind it (`openItem`), or the second
-//     press would open the modal over the menu the first one had just closed.
-//  6c. A `fly` CARD SAYS IT WAS FILED BY A SESSION (#381). It is the one origin
-//     that reads on this board exactly like hand-written work and is not: a
-//     live terminal session opened it mid-flight for work it was doing. The
-//     chip carries `flySession`, and it OUTLIVES THE HOLD — `held` goes the
-//     moment somebody signs the row off, provenance does not.
-//  6d. EVERY POPOVER ON THIS SCREEN IS PORTALLED TO THE BODY (`Popover`), and
-//     that is a correctness fix, not a tidy-up: `.km-cols` scrolls sideways,
-//     which makes it a clip on BOTH axes, and the card menu was being cut in
-//     half by it. Its header carries the three rules that replaced the
-//     stylesheet's anchoring.
-//  6. NO ASSIGNEE AVATARS. Stack has no assignees, and a button that does
-//     nothing is a lie the mockup could afford and a wired screen cannot. The
-//     kit's check-run banner went for the same reason — the board reads no
-//     checks. THE LAYOUT TOGGLE IS REAL (2026-10-10): Areas is the columns
-//     below, List is detail/BoardList.tsx, the finder across every screen.
-//  7. `hl` NAMES A ROW THIS SCREEN CAN DRAW AGAIN. Every card carries
-//     `data-hl`, so the fourteen links that dead-ended here since #443 —
-//     Overview's Next up and Shipped rows, the Timeline's bars, the Terminal's
-//     working-item strip, the + dock's "filed — go look" — land on their row
-//     and scroll to it. It is the first tab to honour a highlight since #444.
-//  8. A CATCH-ALL COLUMN IS NOT OPTIONAL. Every lane renames and deletes (#428),
-//     and `listKeyOf` still derives into four keys, so a board missing one of
-//     them has cards with nowhere to render — counted everywhere else and
-//     invisible here, the worst kind of loss. `lists.js` allows the delete only
-//     because this lane exists. Do not remove it.
+// DECISIONS THE CODE DEPENDS ON:
+//  1. THE PRIORITY CONTROL IS `bucket` (Highest…Lowest, `PRIORITY_META` in
+//     lib/ui.ts).
+//  2. A COLUMN IS SORTED BY `queueOrder` (lib/plan.ts), a stable sort over an
+//     array that arrived in payload order. Read its header before touching it.
+//  3. DRAGGING TO Done DOES NOT TICK. A drop writes `list_key` only
+//     (server/src/lists.js); `done` is what progress counts. Dropping a card
+//     back on the column it would derive into writes '' rather than the key.
+//  4. NO WITHIN-COLUMN DRAG: `position` is scoped to the bucket, not the
+//     column, so a reorder here would write a number that means something else.
+//  5. NO COLUMN LIMITS and NO ASSIGNEE AVATARS: there is no data behind either,
+//     and a control with nothing behind it is a lie on a wired screen.
+//  6. AREAS GROUP INSIDE THE COLUMNS (Board v5), switchable to flat columns
+//     (`bview.flat`). The filter row lists every area as a toggle, several at
+//     once, with Clear. A drop never re-files an area: it writes `list_key`
+//     alone. The group head says when an area has a claimed card in it.
+//  7. TWO DOUBLE-CLICKS, CHOSEN BY WHAT IS UNDER THE CURSOR. The title renames
+//     in place; anywhere else flies the card onto the focus canvas, and ✎ does
+//     the same with the editor open. Enter commits, Escape cancels, and BLUR
+//     COMMITS, because losing a typed rename to a stray click is the worst
+//     outcome. The rename PATCHes `title` alone. `draggable` is off while the
+//     editor is open, or the drag eats the text selection. A double press on a
+//     control is that control pressed twice, never the card behind it.
+//  8. A `fly` CARD SAYS A SESSION FILED IT, and the chip outlives the `held`
+//     chip, so "did I ask for this?" stays answerable.
+//  9. EVERY POPOVER IS PORTALLED TO THE BODY (`Popover`). `.km-cols` scrolls
+//     sideways, which clips both axes; its header has the anchoring rules.
+// 10. `hl` NAMES A ROW THIS SCREEN CAN DRAW. Every card carries `data-hl`, so
+//     links from Overview, the Timeline and the Terminal land on their card.
+// 11. A CATCH-ALL COLUMN IS NOT OPTIONAL. Columns rename and delete, and
+//     `listKeyOf` still derives into four keys; without the catch-all a card
+//     with a deleted column renders nowhere. `lists.js` allows the delete only
+//     because this lane exists.
 //
-// THE ITEM MODAL LOST FOUR FIELDS AT THE SAME TIME (#469) — priority, tier,
-// risk and the branch claim — so this screen's card picker is now the only
-// writer of `bucket` anywhere in a browser, and tier, risk and `claimed_by`
-// have no writer at all. RoadmapModal's header carries what each of those
-// costs; it is not this file's to restate, but it IS this file's to know,
-// because the picker below is the surviving half of the pair.
-//
-// WHAT THE CARD MENU GIVES BACK, since #443 and #444 took all four: PARK and
-// UNPARK (a parked item stays parked and nothing in a browser could unpark it),
-// ARCHIVE, DELETE (which tombstones a `hook` row's fingerprint, which is what
-// Dismiss means and why it has no undo), and the SIGN-OFF that releases a
-// held `hook`/`fly` row to the overnight runner (#359 — `lib/approval.ts` is
-// the rule). Editing opens the item modal this screen is handed, which is still
-// the only writer of `tier` and of a human `risk_source`.
-//
-// THE SIGN-OFF IS DRAWN ONLY ON A HELD CARD, and a held card is here at all
-// because BEING WORKED IS A COMMITMENT: a `fly` row a session opened for work
-// it was asked to do, then claimed a branch on and built, was landing in the
-// idea pile and had to be Promoted back onto this board by hand. `homeOf` in
-// lib/plan.ts is where that line moved; what this screen owes it is saying the
-// hold out loud (the `held` chip) and being able to answer it (the menu),
-// because Auto-ideas' Promote can no longer see those rows.
-//
-// GIVING A VERDICT happens on the Inbox (screens/Inbox.tsx), not here: that is
-// where a built row is shown with its evidence (spec, run, both second-model
-// reads) and answered with Approve, Approve & merge, Send back or Reject. This
-// screen draws a verdicted card in Done and says when the verdict came from a
-// machine.
+// THE CARD MENU: Park/Unpark, Archive, Delete (a `hook` row's delete tombstones
+// its fingerprint, so it has no undo), and Sign off on a held card. Edit item…
+// opens the full modal, the only writer of a human `risk`. Verdicts are given
+// on the Inbox (screens/Inbox.tsx); this screen draws a verdicted card in Done
+// and says when a machine gave the verdict.
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { KitIcon } from './kit/KitIcon';
 import { BacklogTimeline } from './BacklogTimeline';
 import type { BoardArea, BoardList, ItemKind, Priority, RoadmapItem, Sprint, SprintPlan } from '../types';
-import { listKeyOf, queueOrder, isBoardWork } from '../lib/plan';
+import { listKeyOf, clusterKeyOf, queueOrder, isBoardWork } from '../lib/plan';
 import { isHeld } from '../lib/approval';
 import { PRIORITY_META, PRIORITY_DEFAULT, priorityMeta, dueRead, ITEM_KIND_LABEL } from '../lib/ui';
 import {
@@ -387,6 +324,25 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
   const [listArea, setListArea] = useState('');
   const listMode = bview.layout === 'list';
 
+  // CLUSTERS (owner's call, 2026-11-02). A row with children on the board is a
+  // cluster: one central idea whose PARTS are drawn inside its card, not as
+  // cards of their own, and whose column is rolled up from them
+  // (`clusterKeyOf`). A part whose parent is off the board (archived, or still
+  // an auto-idea) is an ordinary card again, so no row ever vanishes.
+  const partsOf = useMemo(() => {
+    const onBoardIds = new Set(rows.filter((it) => !it.archived && isBoardWork(it)).map((it) => it.id));
+    const m = new Map<number, RoadmapItem[]>();
+    for (const it of rows) {
+      if (it.archived || it.parentId === null || !onBoardIds.has(it.parentId)) continue;
+      const bag = m.get(it.parentId);
+      if (bag) bag.push(it); else m.set(it.parentId, [it]);
+    }
+    for (const bag of m.values()) bag.sort(queueOrder(activeId));
+    return m;
+  }, [rows, activeId]);
+  const isPart = (it: RoadmapItem) => it.parentId !== null && partsOf.has(it.parentId);
+  const placeOf = (it: RoadmapItem) => clusterKeyOf(it, partsOf.get(it.id) || []);
+
   // Search and the parked filter, but NOT the area filter: the chips count off
   // this, so a chip says what pressing it would show under the current search
   // (the counts follow the search box, and a picked chip does not zero the rest).
@@ -400,12 +356,15 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
       // somebody has CLAIMED OR BUILT is committed work whatever its sign-off
       // says, and lands here.
       .filter((it) => isBoardWork(it))
+      .filter((it) => !isPart(it))
       .filter((it) => (hideParked ? !it.skipped : true))
+      // A cluster matches when it or any of its parts does: a part is found
+      // by finding the card it is drawn inside.
       .filter((it) => !needle
-        || it.title.toLowerCase().includes(needle)
-        || it.note.toLowerCase().includes(needle)
-        || String(it.id) === needle.replace(/^#/, ''));
-  }, [rows, query, hideParked]);
+        || [it, ...(partsOf.get(it.id) || [])].some((x) => x.title.toLowerCase().includes(needle)
+          || x.note.toLowerCase().includes(needle)
+          || String(x.id) === needle.replace(/^#/, '')));
+  }, [rows, query, hideParked, partsOf]);
 
   // The List view's rows: the same search and parked filters, but NOT
   // `isBoardWork` — it is a finder across every screen (BoardList.tsx's header).
@@ -486,7 +445,7 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
     const known = new Set((lists || []).map((l) => l.key));
     const byKey = new Map<string, RoadmapItem[]>();
     for (const it of drawn) {
-      const derived = listKeyOf(it);
+      const derived = placeOf(it);
       const key = known.has(derived) ? derived : CATCH_ALL;
       const bag = byKey.get(key);
       if (bag) bag.push(it); else byKey.set(key, [it]);
@@ -507,7 +466,7 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
           .filter((g) => g.items.length > 0)
         : (col.items.length ? [{ key: '', items: col.items }] : []),
     }));
-  }, [drawn, lists, areaOrder, grouped, activeId]);
+  }, [drawn, lists, areaOrder, grouped, activeId, partsOf]);
 
   // The chips: every area with cards on the board right now, plus untagged.
   // THE FILTER ROW, AS THE DESIGN HAS IT: every area on the board, each with
@@ -593,7 +552,8 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
   // a card only carries an override for as long as it is somewhere its own
   // state would not have put it. Decision 3.
   const moveTo = (it: RoadmapItem, key: string) => {
-    if (key === CATCH_ALL || listKeyOf(it) === key) return;
+    // A cluster's column is its parts' (`clusterKeyOf`): it has nothing to drop.
+    if (key === CATCH_ALL || listKeyOf(it) === key || partsOf.has(it.id)) return;
     return guard(async () => {
       wrote(await patchRoadmapItem(slug, it.id, { listKey: derivedKeyOf(it) === key ? '' : key }));
       // THE FLASH IS FIRED BY THE ANSWER, NOT BY THE DROP. `wrote` is what
@@ -855,7 +815,7 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
   const focusPatch = (it: RoadmapItem, patch: Parameters<typeof patchRoadmapItem>[2]) =>
     guard(async () => { wrote(await patchRoadmapItem(slug, it.id, patch)); });
   const colOf = (it: RoadmapItem) => {
-    const k = listKeyOf(it);
+    const k = placeOf(it);
     return (lists || []).some((l) => l.key === k) ? k : CATCH_ALL;
   };
 
@@ -1044,6 +1004,8 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
               <IssueCard key={it.id} item={it}
                 parentItem={it.parentId !== null ? rows.find((x) => x.id === it.parentId) || null : null}
                 kids={kidCounts.get(it.id) || null}
+                parts={partsOf.get(it.id) || null}
+                onPart={(p) => { setSelected(p.id); onEdit(p); }}
                 away={!!focus && focus.id === it.id && focusPhase !== 'measure'}
                 onOpen={(el, edit) => openFocus(it, el, edit)}
                 sprint={boxes.find((b) => b.id === it.sprintId) || null}
@@ -1469,19 +1431,74 @@ function DropSlot({ from, to, shipped = false, say = 'Drop to move it here', not
   );
 }
 
+// A part's state, in the board's own column words. The tones are the focus
+// canvas's status tones for the same four columns.
+const PART_STATE: Record<string, { glyph: string; cls: string; word: string }> = {
+  planned: { glyph: '○', cls: 'todo', word: 'To do' },
+  progress: { glyph: '●', cls: 'going', word: 'In progress' },
+  review: { glyph: '◐', cls: 'review', word: 'In review' },
+  shipped: { glyph: '✓', cls: 'done', word: 'Done' },
+};
+const PARTS_SHOWN = 4;
+
+/** A cluster's body: how far its parts have got, and the first few of them. */
+function ClusterParts({ parts, onPart, onMore }: {
+  parts: RoadmapItem[]; onPart: (p: RoadmapItem) => void; onMore: () => void;
+}) {
+  const keys = parts.map(listKeyOf);
+  const done = keys.filter((k) => k === 'shipped').length;
+  // Unfinished parts first, so the card shows what is left rather than what is over.
+  const order = parts.map((p, i) => ({ p, k: keys[i] }))
+    .sort((a, b) => Number(a.k === 'shipped') - Number(b.k === 'shipped'));
+  const rest = parts.length - PARTS_SHOWN;
+  return (
+    <div className="km-parts" onDoubleClick={(e) => e.stopPropagation()}>
+      <div className="km-partbar" role="img" aria-label={`${done} of ${parts.length} parts done`}>
+        <span className="track"><span className="fill" style={{ width: `${Math.round((done / parts.length) * 100)}%` }} /></span>
+        <span className="n mono">{done}/{parts.length}</span>
+      </div>
+      <ul>
+        {order.slice(0, rest > 0 ? PARTS_SHOWN - 1 : PARTS_SHOWN).map(({ p, k }) => {
+          const st = PART_STATE[k] || PART_STATE.planned;
+          return (
+            <li key={p.id}>
+              <button className={`km-part ${st.cls}`} title={`#${p.id} — ${st.word}. Click to edit.`}
+                onClick={(e) => { e.stopPropagation(); onPart(p); }}>
+                <span className="g" aria-hidden>{st.glyph}</span>
+                <span className="pt">{p.title}</span>
+              </button>
+            </li>
+          );
+        })}
+        {rest > 0 && (
+          <li>
+            <button className="km-part more" onClick={(e) => { e.stopPropagation(); onMore(); }}
+              title="Open the cluster to see every part">+{rest + 1} more</button>
+          </li>
+        )}
+      </ul>
+    </div>
+  );
+}
+
 function IssueCard({
   item, sprint, selected, onSelect, dragging, landed, onDragStart, onDragEnd,
   editing, onOpenInline, onInline, onCancelInline,
   priOpen, onPri, onPick, ptsOpen, onPts, onPoints, menuOpen, onMenu,
   onKind, onDue, onEdit, onSignOff, onPark, onArchive, onDerive, onDelete,
   activeSprint, onBuildNow, onAddToSprint, onRun, onReady, tint, showArea,
-  parentItem, kids, away, onOpen,
+  parentItem, kids, parts, onPart, away, onOpen,
 }: {
   item: RoadmapItem;
   /** The card this one is filed under (`parent_id`), or null. */
   parentItem: RoadmapItem | null;
   /** Its own children, counted — null when it has none. */
   kids: { done: number; total: number } | null;
+  /** A CLUSTER's parts, drawn inside this card in run order — null for a plain
+   *  card. A cluster does not drag: its column is rolled up from these. */
+  parts: RoadmapItem[] | null;
+  /** Open one part's full editor. */
+  onPart: (part: RoadmapItem) => void;
   /** This card is out on the focus canvas: its board slot holds its place, empty. */
   away: boolean;
   /** Fly the card onto the focus canvas; `edit` opens the editor with it. */
@@ -1559,7 +1576,7 @@ function IssueCard({
   // column's clip (see `Popover`).
   const cardRef = useRef<HTMLDivElement | null>(null);
 
-  // TWO DOUBLE-CLICKS WITH TWO MEANINGS (see decision 6b): the TITLE renames in
+  // TWO DOUBLE-CLICKS WITH TWO MEANINGS (see decision 7): the TITLE renames in
   // place, the rest of the card opens it on the focus canvas. A press on a control is that
   // control pressed, never the card behind it — the ⋯ and the priority glyph
   // both toggle on a single click, so a second one reaching this handler would
@@ -1577,7 +1594,7 @@ function IssueCard({
     // eats the pointer inside a text input in Chromium — select-by-drag stops
     // working and the card starts flying instead — so the one gesture is
     // switched off for exactly as long as the other one is open.
-    <div ref={cardRef} className={`km-card${selected ? ' selected' : ''}${dragging ? ' dragging' : ''}${landed ? ' landed' : ''}${editing ? ' editing' : ''}${tinted ? ' tinted' : ''}${away ? ' away' : ''}`}
+    <div ref={cardRef} className={`km-card${selected ? ' selected' : ''}${dragging ? ' dragging' : ''}${landed ? ' landed' : ''}${editing ? ' editing' : ''}${tinted ? ' tinted' : ''}${away ? ' away' : ''}${parts ? ' cluster' : ''}`}
       // THE AREA COLOUR IS AN INLINE `border-top-color`, and that is the
       // palette audit's rule, not taste: a data tone is exempt only on the
       // element whose own style names the property it paints. At rest it is
@@ -1589,7 +1606,7 @@ function IssueCard({
         ['--km-tint' as string]: tint,
       } : undefined}
       data-hl={item.id} onClick={onSelect} onDoubleClick={openItem}
-      draggable={!editing} onDragStart={onDragStart} onDragEnd={onDragEnd}>
+      draggable={!editing && !parts} onDragStart={onDragStart} onDragEnd={onDragEnd}>
       {editing
         ? <InlineTitle initial={item.title} onCommit={onInline} onCancel={onCancelInline} />
         : (
@@ -1599,14 +1616,19 @@ function IssueCard({
           </span>
         )}
 
+      {parts && <ClusterParts parts={parts} onPart={onPart} onMore={() => onOpen(cardRef.current, false)} />}
+
       <div className="km-cardmeta">
         {/* THIS SLOT HELD THE APPROVAL ICON until #472 took every held row off
             the board. Held rows are back — the worked ones — but the hold is
             said in the TAG ROW below and answered in the card menu, not here:
             an icon in a 13px slot is the weakest place to put the one fact that
             decides whether the night touches this card. */}
-        <span className="kind" style={{ color: 'var(--blue-400)' }}>
-          <KitIcon name="circle-check" size={13} />
+        {/* THE GLYPH SAYS WHICH KIND OF CARD THIS IS: a check for a simple
+            task, the stacked plates for a cluster with parts. */}
+        <span className="kind" style={{ color: parts ? 'var(--accent)' : 'var(--blue-400)' }}
+          title={parts ? `Cluster — ${parts.length} part${parts.length === 1 ? '' : 's'}` : 'Task'}>
+          <KitIcon name={parts ? 'layers' : 'circle-check'} size={13} />
         </span>
         <span className="id">#{item.id}</span>
         {/* #507 — THE SIZE, AND IT IS ALWAYS DRAWN, unsized included. A control
@@ -1733,10 +1755,10 @@ function IssueCard({
               parent says how many of its children are finished. The focus
               canvas (double-click) draws the whole family. */}
           {parentItem && (
-            <span className="k-tag mono" title={`Child of #${parentItem.id} — ${parentItem.title}`}>↳ #{parentItem.id}</span>
+            <span className="k-tag mono" title={`Part of #${parentItem.id} — ${parentItem.title}`}>↳ #{parentItem.id}</span>
           )}
-          {kids && (
-            <span className="k-tag mono" title="Child items finished">{kids.done}/{kids.total} done</span>
+          {kids && !parts && (
+            <span className="k-tag mono" title="Parts finished">{kids.done}/{kids.total} done</span>
           )}
           {showArea && item.area && <span className="k-tag">{item.area}</span>}
           {item.claimedBy && (
