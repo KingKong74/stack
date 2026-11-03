@@ -1514,7 +1514,6 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
             <option value="codex">Codex</option>
             <option value="shell">Shell</option>
           </select>
-          {mode === 'codex' && <span className="dim">YOLO · Context and checkpoints are manual</span>}
           {/* #487 — the design's spawn button SAYS WHAT IT WILL DO: the tool
               and the directory, not "+ New session". Both are already chosen
               in the two controls beside it, so a button that repeats them back

@@ -2380,6 +2380,8 @@ a.tab { display: inline-block; }
 .tc-tokens + .tc-limits { border-top: 0; }
 
 .tc-limits { border-top: 1px solid var(--line-2); padding: 8px 9px 10px; display: flex; flex-direction: column; gap: 6px; flex: none; }
+.tc-limits > div { display: flex; flex-direction: column; gap: 4px; }
+.tc-limits > div + div { margin-top: 6px; }
 .tl-head { display: flex; align-items: center; gap: 6px; width: 100%; border: 0; background: transparent; cursor: pointer; padding: 0; }
 .tl-head .c { font-size: 9px; color: var(--fainter); }
 .tl-head .nm { flex: 1; text-align: left; font-size: 10.5px; color: var(--muted); }

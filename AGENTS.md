@@ -30,6 +30,13 @@ existing rule requires a human Save through Mission Control → Context.
 
 ## Verification and handoff
 
+Commit and push this session's changes after every session, once relevant checks pass. Stage only
+your own work; preserve other sessions' changes. If checks or the push fail, report the failure.
+For finicky tasks (delicate behaviour, uncertain requirements or changes needing visual review),
+use a separate branch and push it for review on a mirror preview site before merging. Provide the
+branch and preview URL when available; report if preview hosting is unavailable. Wait for the
+owner's approval before merging that branch.
+
 Run the relevant checks described in the package guidance. UI changes require the strict web
 build and `./stack ui-smoke`; tone changes also require the palette audit. Route or payload changes
 require their checks to change with them. Database checks use a throwaway database, never production.
