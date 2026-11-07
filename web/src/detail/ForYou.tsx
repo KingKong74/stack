@@ -26,9 +26,10 @@
 // should never have left, and the hold it still carries is said and answered
 // there instead (Board.tsx's `held` chip and card menu).
 //
-// PROMOTE is `{ reviewed: true, committed: true, parentId: null }`: it signs the
-// row off, which releases it to the overnight runner's approval gate (#359),
-// and puts it on the board as work.
+// PROMOTE is `{ reviewed: true, parentId: null }` plus the slice picked beside
+// it (#608): it signs the row off, which releases it to the overnight runner's
+// approval gate (#359), and files it into a slice (the board) or, with none,
+// the ICEBOX, which this pane draws below the queue.
 //
 // DISMISS IS DELETE, and on a `hook` row it TOMBSTONES THE FINGERPRINT so the
 // next push cannot re-create it. That is what Dismiss has always meant and why
@@ -70,8 +71,9 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { KitIcon, type KitIconName } from './kit/KitIcon';
-import type { Activity, RoadmapItem } from '../types';
+import type { Activity, Milestone, RoadmapItem, Slice } from '../types';
 import { isAutoIdea } from '../lib/plan';
+import { IceboxList, SlicePicker, liveSlices } from './Spine';
 import { priorityMeta, timeAgo } from '../lib/ui';
 import { patchRoadmapItem, deleteRoadmapItem } from '../store';
 
@@ -242,7 +244,7 @@ const TVR: {
 
 export type ForYouPane = 'overview' | 'activity' | 'auto';
 
-export function ForYou({ pane, slug, items, activity, onRefresh, onEdit, highlightId }: {
+export function ForYou({ pane, slug, items, slices, milestones, activity, onRefresh, onEdit, highlightId }: {
   pane: ForYouPane;
   slug: string;
   /** The payload's pushes, newest first — the Activity pane's only input. */
@@ -251,6 +253,9 @@ export function ForYou({ pane, slug, items, activity, onRefresh, onEdit, highlig
    *  SAME list the board and Plans are given, so one list is
    *  partitioned across screens rather than fetches disagreeing. */
   items: RoadmapItem[];
+  /** #608 — where Promote and the Icebox can file a row. */
+  slices: Slice[];
+  milestones: Milestone[];
   onRefresh: () => void;
   /** Open the item modal — note, title, area, sub-area and plan. */
   onEdit: (it: RoadmapItem) => void;
@@ -259,7 +264,7 @@ export function ForYou({ pane, slug, items, activity, onRefresh, onEdit, highlig
 }) {
   if (pane === 'activity') return <ActivityPane activity={activity} highlightId={highlightId} />;
   if (pane === 'auto') {
-    return <AutoPane slug={slug} items={items} onRefresh={onRefresh} onEdit={onEdit}
+    return <AutoPane slug={slug} items={items} slices={slices} milestones={milestones} onRefresh={onRefresh} onEdit={onEdit}
       highlightId={highlightId} />;
   }
   return <OverviewPane />;
@@ -653,8 +658,8 @@ function ActivityPane({ activity, highlightId }: { activity: Activity[]; highlig
 // and Stack's were already the same shape: what it is, what it says, where it
 // came from, and the answers. What changed is that the answers are real.
 
-function AutoPane({ slug, items, onRefresh, onEdit, highlightId }: {
-  slug: string; items: RoadmapItem[]; onRefresh: () => void;
+function AutoPane({ slug, items, slices, milestones, onRefresh, onEdit, highlightId }: {
+  slug: string; items: RoadmapItem[]; slices: Slice[]; milestones: Milestone[]; onRefresh: () => void;
   onEdit: (it: RoadmapItem) => void; highlightId: string | null;
 }) {
   // The local copy is what makes a promote feel instant: the row leaves this
@@ -698,11 +703,25 @@ function AutoPane({ slug, items, onRefresh, onEdit, highlightId }: {
   };
 
   // PROMOTE: `reviewed: true` is the sign-off the overnight runner gates on
-  // (#359); `committed: true` and `parentId: null` make it plain board work.
+  // (#359), and `parentId: null` detaches it. WHERE IT LANDS is the slice
+  // picked beside the button (#608): a slice puts it on the board, none puts it
+  // in the Icebox below. A plan piece that inherited its parent's slice keeps
+  // it unless another is picked. `committed` is retired and no longer sent.
+  const [target, setTarget] = useState<Record<number, number | null>>({});
+  const targetOf = (it: RoadmapItem) => (it.id in target ? target[it.id] : it.sliceId);
   const promote = (it: RoadmapItem) =>
     guard(it.id, async () => {
-      wrote(await patchRoadmapItem(slug, it.id, { reviewed: true, committed: true, parentId: null }));
+      const sliceId = targetOf(it);
+      wrote(await patchRoadmapItem(slug, it.id, {
+        reviewed: true, parentId: null, ...(sliceId !== it.sliceId ? { sliceId } : {}),
+      }));
     });
+  // THE ICEBOX'S TWO WAYS OUT: into a slice, or archived.
+  const toSlice = (it: RoadmapItem, sliceId: number) =>
+    guard(it.id, async () => { wrote(await patchRoadmapItem(slug, it.id, { sliceId })); });
+  const archive = (it: RoadmapItem) =>
+    guard(it.id, async () => { wrote(await patchRoadmapItem(slug, it.id, { archived: true })); });
+  const hasSlices = liveSlices(slices, milestones).length > 0;
   // DELETE, and on a `hook` row the server tombstones the fingerprint with it.
   const dismiss = (it: RoadmapItem) =>
     guard(it.id, async () => {
@@ -716,7 +735,8 @@ function AutoPane({ slug, items, onRefresh, onEdit, highlightId }: {
       <div className="ai-lede">
         What your sessions found and nobody has answered yet — read off a push, or opened by a
         session for work it was doing. Nothing here is on the board, and the overnight runner
-        leaves all of it alone until you answer. <b>Promote</b> puts it on the board as work.
+        leaves all of it alone until you answer. <b>Promote</b> signs it off into the slice picked beside
+        it, which puts it on the board, or into the Icebox below when there is none.
         {' '}Rows marked <b>test</b> are checks a session thought were missing (#500) — one kind for
         a defect that got through, one for a route nothing watches.
       </div>
@@ -794,8 +814,13 @@ function AutoPane({ slug, items, onRefresh, onEdit, highlightId }: {
               )}
             </div>
             <div className="ai-acts" onClick={(e) => e.stopPropagation()}>
+              {hasSlices && (
+                <SlicePicker value={targetOf(it)} slices={slices} milestones={milestones}
+                  label={`Where #${it.id} lands when promoted`} iceboxLabel="Icebox"
+                  onPick={(sid) => setTarget((t) => ({ ...t, [it.id]: sid }))} />
+              )}
               <button className="k-btn accent sm" disabled={busy === it.id} onClick={() => promote(it)}
-                title="Sign it off and put it on the board as committed work">
+                title={targetOf(it) === null ? 'Sign it off and keep it in the Icebox' : 'Sign it off and put it on the board, in the picked slice'}>
                 <KitIcon name="arrow-up-right" size={13} />Promote
               </button>
             </div>
@@ -809,6 +834,9 @@ function AutoPane({ slug, items, onRefresh, onEdit, highlightId }: {
           for its own work — until somebody works it, at which point it is board work.
         </span>
       )}
+
+      <IceboxList items={rows} slices={slices} milestones={milestones} busy={busy}
+        onSlice={toSlice} onArchive={archive} onEdit={onEdit} />
     </div>
   );
 }

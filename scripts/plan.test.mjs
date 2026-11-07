@@ -39,7 +39,7 @@ const {
   whatsNext, fmtWhen, calendarDays, calendarMonths, CAL_HOUR_FROM,
   slipOf, layoutLane, scopeTotals, defaultLen, DUR_OPTIONS, rolledSched, isRolled,
   newItemSched,
-  listKeyOf, clusterKeyOf, homeOf, isAutoIdea, isBoardWork, isWorked, isBuilt, inCycle, areaMatches, horizonOf, UNALLOCATED,
+  listKeyOf, clusterKeyOf, homeOf, isAutoIdea, isIced, isBoardWork, sliceStateOf, isWorked, isBuilt, inCycle, areaMatches, horizonOf, UNALLOCATED,
   queueOrder, inActiveSprint, bucketRank,
 } = await import(planUrl.href);
 
@@ -57,7 +57,7 @@ function item(over = {}) {
     source: 'manual', reviewed: true, claimedBy: '', area: 'editor', builtNote: '',
     reviewTag: '', reviewTags: [], refineNote: '', reviewShelved: false,
     skipped: false, skippedAt: null, risk: 'normal', riskSource: '', riskReason: '',
-    sprintId: null, sprintRank: 0, plan: [], updatedAt: null, agentProfile: '',
+    sprintId: null, sprintRank: 0, sliceId: 1, sliceRank: 0, plan: [], updatedAt: null, agentProfile: '',
     parentId: null, committed: true, sched: null, baseline: null, labels: [], listKey: '',
     archived: false, estimate: null,
     ...over,
@@ -767,9 +767,9 @@ test('clearing the verdict returns the card to the lane its state puts it in', (
 });
 
 // --- which screen a row is on ------------------------------------------------
-// `homeOf` is THE ONE LINE between the board and For you's Auto-ideas pane, so
-// what these pin is the two failures it can have: a row on BOTH screens is
-// acted on twice, and a row on NEITHER is work that has silently vanished.
+// `homeOf` is THE ONE LINE between the board, the Icebox (#608) and For you's
+// Auto-ideas pane, so what these pin is the two failures it can have: a row on
+// TWO screens is acted on twice, and a row on NONE has silently vanished.
 
 test("a held row nobody has worked is a session's idea, not the board's", () => {
   assert.equal(homeOf(item({ source: 'fly', reviewed: false })), 'auto');
@@ -779,17 +779,42 @@ test("a held row nobody has worked is a session's idea, not the board's", () => 
   assert.equal(isBoardWork(item({ source: 'hook', reviewed: false })), false);
 });
 
-test('with the Roadmap tab gone, a child and a kept row are board work, never vanished', () => {
-  assert.equal(homeOf(item({ parentId: 12 })), 'board');
-  assert.equal(homeOf(item({ source: 'hook', reviewed: true, committed: false })), 'board');
-  assert.equal(homeOf(item({ parentId: 12, committed: false })), 'board');
-  assert.equal(homeOf(item()), 'board', 'a manual row is committed work by definition');
+test('#608 — a sliced row is board work; an unsliced kept row is in the Icebox', () => {
+  assert.equal(homeOf(item({ sliceId: 7 })), 'board');
+  assert.equal(homeOf(item({ sliceId: 7, parentId: 12 })), 'board');
+  assert.equal(homeOf(item({ sliceId: null })), 'icebox', 'a manual row with no slice is kept, not on the board');
+  assert.equal(homeOf(item({ source: 'hook', reviewed: true, sliceId: null })), 'icebox');
+  assert.equal(isIced(item({ sliceId: null })), true);
+  assert.equal(homeOf(item({ sliceId: null, committed: true })), 'icebox', '`committed` is retired: the slice decides');
 });
 
-test('Promote moves an auto-idea onto the board', () => {
-  const found = item({ source: 'hook', reviewed: false });
+test('#608 — a held row waits for a sign-off even when it inherited a slice', () => {
+  assert.equal(homeOf(item({ source: 'plan', reviewed: false, parentId: 4, sliceId: 7 })), 'auto');
+});
+
+test('#608 — WORKED work is never iced: an unsliced claimed or built row stays on the board', () => {
+  assert.equal(homeOf(item({ sliceId: null, claimedBy: 'feat/1-x' })), 'board');
+  assert.equal(homeOf(item({ sliceId: null, builtNote: 'landed' })), 'board');
+  assert.equal(homeOf(item({ sliceId: null, done: true })), 'board');
+});
+
+test('Promote moves an auto-idea to the Icebox, and into a slice puts it on the board', () => {
+  const found = item({ source: 'hook', reviewed: false, sliceId: null });
   assert.equal(homeOf(found), 'auto');
-  assert.equal(homeOf({ ...found, reviewed: true, committed: true, parentId: null }), 'board');
+  assert.equal(homeOf({ ...found, reviewed: true }), 'icebox');
+  assert.equal(homeOf({ ...found, reviewed: true, sliceId: 3 }), 'board');
+});
+
+test('#608 — a slice\'s state is derived from its live rows', () => {
+  const rows = [
+    item({ id: 1, sliceId: 5, done: true }),
+    item({ id: 2, sliceId: 5, claimedBy: 'feat/2', builtNote: 'x' }),
+    item({ id: 3, sliceId: 5, archived: true }),
+    item({ id: 4, sliceId: 6 }),
+  ];
+  assert.deepEqual(sliceStateOf(5, rows), { total: 2, built: 2, done: 1, status: 'built' });
+  assert.equal(sliceStateOf(6, rows).status, 'open');
+  assert.equal(sliceStateOf(9, rows).status, 'empty', 'a slice just made is empty, not finished');
 });
 
 test('a held row somebody has WORKED is board work, sign-off or no sign-off', () => {
@@ -810,19 +835,20 @@ test('a held row somebody has WORKED is board work, sign-off or no sign-off', ()
   assert.equal(homeOf(sentBack), 'board');
 });
 
-test('every row is on exactly one of the two screens', () => {
+test('every row is on exactly one of the three screens', () => {
   const rows = [
-    item(), item({ source: 'hook', reviewed: false }), item({ parentId: 3 }),
+    item(), item({ sliceId: null }), item({ source: 'hook', reviewed: false }), item({ parentId: 3 }),
     item({ source: 'fly', reviewed: false, claimedBy: 'feat/9-x' }),
     item({ source: 'fly', reviewed: false, builtNote: 'x' }),
     item({ source: 'hook', reviewed: true, committed: false }),
     item({ done: true }), item({ skipped: true }),
   ];
   const auto = rows.filter(isAutoIdea);
+  const iced = rows.filter(isIced);
   const board = rows.filter(isBoardWork);
-  assert.equal(auto.length + board.length, rows.length);
-  assert.equal(auto.filter((it) => board.includes(it)).length, 0);
-  assert.ok(auto.length && board.length);
+  assert.equal(auto.length + iced.length + board.length, rows.length);
+  assert.equal(new Set([...auto, ...iced, ...board]).size, rows.length, 'no row on two screens');
+  assert.ok(auto.length && iced.length && board.length);
 });
 
 test('a row read before the migration is board work, not a vanished one', () => {

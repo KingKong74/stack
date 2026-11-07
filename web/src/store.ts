@@ -1,4 +1,5 @@
 import type {
+  Milestone, Slice,
   Project, Resume, Activity, Bug, Roadmap, RoadmapItem, Check, CheckRun, CheckHistory, Overview,
   ProjectStatus, ProjectCategory, Priority, Severity, BugStatus, SearchResponse, Settings, AutopilotRun, PlanStep,
   AuthDevice, Sprint, SprintPlan, ResumeSince, ProjectDebrief,
@@ -459,6 +460,10 @@ export interface ProjectDetailData {
   // already renders from. The board draws its boxes from this and resolves an
   // item's `sprintId` against it; nothing carries a sprint's NAME on the item.
   sprints: Sprint[];
+  // #608 — the spine, in board order. An older server sends neither, which
+  // reads as a board with no slices: everything is in the Icebox.
+  milestones: Milestone[];
+  slices: Slice[];
   keepResumeCard: boolean;
   staleItemDays: number;   // parked-item stale threshold in days (#247) — ages the Parked view
   geminiReady: boolean;    // #278/#520 — a key is configured. The WHOLE answer for every ✧ in the app: the per-agent map that rode beside this went with the registry
@@ -474,7 +479,7 @@ export interface ProjectDetailData {
 export async function getProjectDetail(slug: string): Promise<ProjectDetailData> {
   const d = await request<ProjectPayload & {
     activity: Activity[]; bugs: Bug[]; roadmap: Roadmap;
-    checks?: Check[]; sprints?: Sprint[]; keepResumeCard?: boolean; shareToken?: string; liveBranches?: string[];
+    checks?: Check[]; sprints?: Sprint[]; milestones?: Milestone[]; slices?: Slice[]; keepResumeCard?: boolean; shareToken?: string; liveBranches?: string[];
     staleItemDays?: number; geminiReady?: boolean;
     cadence?: { day: string; n: number }[]; lastPushAt?: string | null;
   }>(`/projects/${encodeURIComponent(slug)}`);
@@ -487,6 +492,8 @@ export async function getProjectDetail(slug: string): Promise<ProjectDetailData>
     // then draws a backlog and an invitation to open one, which is exactly the
     // state a project that has never used them is in.
     sprints: d.sprints || [],
+    milestones: d.milestones || [],
+    slices: d.slices || [],
     keepResumeCard: d.keepResumeCard !== false,
     // An older server that doesn't send it falls back to the same default (#247).
     staleItemDays: Number.isFinite(d.staleItemDays) ? Number(d.staleItemDays) : 21,
@@ -1097,6 +1104,9 @@ export async function createRoadmapItem(
     // File it under a top-level item (one level deep; the server refuses a
     // parent that is itself a child).
     parentId?: number;
+    // #608 — file it into a slice. Omitted, a part takes its parent's slice
+    // and anything else lands in the Icebox.
+    sliceId?: number;
     // NO `sprintId` HERE, and the server refuses one too (#477). Filing work
     // into a sprint is a commitment somebody makes by dragging it into a box;
     // a create that could land straight in the ACTIVE sprint would let the
@@ -1122,6 +1132,9 @@ export async function patchRoadmapItem(
     // top is the one slot it must not guess at. Reordering a whole box is
     // `putSprintOrder` below, which is the only call that writes ranks.
     sprintId: number | null;
+    // #608 — into a slice (at its bottom), or null to the ICEBOX. Icing a row
+    // also takes it out of Ready: Ready ⇒ sliced is a CHECK on the server.
+    sliceId: number | null;
     // ---- the Roadmap tab v2 ----
     // null returns the bar to the tray. The server writes the BASELINE only if
     // there isn't one, so a drag can never erase the slip it is showing.
@@ -1361,6 +1374,44 @@ export async function addToReady(slug: string, items: number[]): Promise<{ added
 // The box goes; the work stays. Its items return to the backlog rather than
 // being deleted with it — deleting a decision about work must never delete the
 // work, so this needs no confirmation about losing anything.
+// ---- the spine (#608): milestones and slices ----
+//
+// Making a milestone 'active' FINISHES the current one in the same write, the
+// same move as starting a sprint. A milestone with slices cannot be deleted
+// (409, out loud). Deleting a slice returns its items to the Icebox and takes
+// them out of Ready first. A first slice in a project with no milestone gets a
+// "Current" one made for it.
+const milestonesBase = (slug: string) => `/projects/${encodeURIComponent(slug)}/milestones`;
+const slicesBase = (slug: string) => `/projects/${encodeURIComponent(slug)}/slices`;
+export async function createMilestone(
+  slug: string, input: { name: string; goal?: string; targetOn?: string | null; status?: 'planned' | 'active' },
+): Promise<Milestone> {
+  return request<Milestone>(milestonesBase(slug), { method: 'POST', body: input });
+}
+export async function patchMilestone(
+  slug: string, id: number,
+  patch: Partial<{ name: string; goal: string; status: Milestone['status']; targetOn: string | null; position: number }>,
+): Promise<Milestone> {
+  return request<Milestone>(`${milestonesBase(slug)}/${id}`, { method: 'PATCH', body: patch });
+}
+export async function deleteMilestone(slug: string, id: number): Promise<void> {
+  await request<void>(`${milestonesBase(slug)}/${id}`, { method: 'DELETE' });
+}
+export async function createSlice(
+  slug: string, input: { title: string; milestoneId?: number; spec?: string; areas?: string[] },
+): Promise<Slice> {
+  return request<Slice>(slicesBase(slug), { method: 'POST', body: input });
+}
+export async function patchSlice(
+  slug: string, id: number,
+  patch: Partial<{ title: string; spec: string; areas: string[]; milestoneId: number; position: number; archived: boolean }>,
+): Promise<Slice> {
+  return request<Slice>(`${slicesBase(slug)}/${id}`, { method: 'PATCH', body: patch });
+}
+export async function deleteSlice(slug: string, id: number): Promise<{ iced: number[] }> {
+  return request<{ iced: number[] }>(`${slicesBase(slug)}/${id}`, { method: 'DELETE' });
+}
+
 export async function deleteSprint(slug: string, id: number): Promise<void> {
   await request<void>(`${sprintsBase(slug)}/${id}`, { method: 'DELETE' });
 }
@@ -1530,10 +1581,13 @@ export function setBoardFolds(slug: string, folds: BoardFolds) {
 export type BoardViewLayout = 'areas' | 'list';
 export type BoardSort = 'newest' | 'oldest' | 'updated' | 'priority' | 'run' | 'area' | 'title';
 export type BoardShow = 'all' | 'board' | 'ideas';
+/** #608 — what each kanban column groups its cards by. Slice is the default:
+ *  the board is the spine's view of the work. A stored pre-#608 `flat: true`
+ *  reads as 'none', and anything else as 'slice'. */
+export type BoardGroup = 'slice' | 'area' | 'none';
 export interface BoardView {
   layout: BoardViewLayout; sort: BoardSort; show: BoardShow;
-  /** Board v5 — true draws each kanban column as one flat list rather than grouped by area. */
-  flat: boolean;
+  group: BoardGroup;
 }
 const BOARD_SORTS: BoardSort[] = ['newest', 'oldest', 'updated', 'priority', 'run', 'area', 'title'];
 const BOARD_VIEW_KEY = (slug: string) => `stack.boardView.${slug}`;
@@ -1544,7 +1598,8 @@ export function getBoardView(slug: string): BoardView {
       layout: o.layout === 'list' ? 'list' : 'areas',
       sort: BOARD_SORTS.includes(o.sort as BoardSort) ? o.sort as BoardSort : 'newest',
       show: o.show === 'board' || o.show === 'ideas' ? o.show : 'all',
-      flat: o.flat === true,
+      group: o.group === 'area' || o.group === 'none' || o.group === 'slice'
+        ? o.group : o.flat === true ? 'none' : 'slice',
     };
   });
 }

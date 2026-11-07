@@ -183,19 +183,19 @@ Open roadmap items can carry a claim (`claimedBy` — the branch name, e.g.
   find one in front of you, leave it and take the next item. An item with
   `source: "manual"` is approved the moment it exists — a human wrote it —
   whatever `reviewed` says.
-- **Never start an item with `skipped: true`** — it's parked on purpose; the
-  owner unparks it from the UI when it's back in play. (The Roadmap tab's Parked
-  view ages every parked item and flags the stale ones, so nothing rots unseen.)
+- **Never start an item with `skipped: true`**: it's parked on purpose; the
+  owner unparks it when it's back in play.
 - **Only the READY queue is yours to build**: items with `ready: true`, in
   `readyRank` order, lowest first. The sprint in progress (`status: "active"`
-  in the payload's `sprints`) is the PLANNING lane: its items are designed and
-  broken down, not built. An empty Ready queue means nothing to build unattended.
-- **Never set `ready` or `readyRank`, or move or reorder an existing item's
-  sprint.** Those are the owner's call. Asked to set up a plan in a sprint, you
-  MAY file NEW items straight into an open sprint with `sprintId` on
-  `POST /roadmap` (or on each item of
-  `POST /roadmap/batch`); they land at the bottom. A finished sprint is
-  refused; without `sprintId` an item is born in the backlog. Filing is not
+  in `sprints`) is the PLANNING lane: designed and broken down, not built.
+  An empty Ready queue means nothing to build unattended.
+- **The spine**: a project's `milestones` hold `slices`; an item's `sliceId`
+  is its slice, and null is the Icebox (kept, off the board, never Ready).
+- **Never set `ready`/`readyRank`, move an existing item's sprint or slice, or
+  write a milestone or slice.** Those are the owner's call. You MAY file NEW
+  items into an open sprint (`sprintId`) or a slice (`sliceId`) on
+  `POST /roadmap` or each item of `POST /roadmap/batch`; they land at the
+  bottom. A part with no `sliceId` takes its parent's. Filing is not
   approval: a `fly`/`plan` item stays held until signed off.
 - **A claim is on the ITEM; the collision is on the FILE.** A claim says who
   owns a roadmap row, not who owns a file — two sessions in one checkout share

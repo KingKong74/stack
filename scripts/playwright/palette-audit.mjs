@@ -153,6 +153,13 @@ const SCREENS = [
   { slug: 'board-focus', hash: '#/p/{slug}/roadmap', press: [OPEN_BOARD, '2:.km-card .km-cardmeta .id'] },
   { slug: 'board-focus-edit', hash: '#/p/{slug}/roadmap', press: [OPEN_BOARD, '2:.km-card .km-cardmeta .id', '.bf-float [aria-label="Edit item"]'] },
   { slug: 'board-colmenu', hash: '#/p/{slug}/roadmap', press: ['[aria-label^="Column actions"]'] },
+  // #608 — the spine's tone: the milestone strip (first paint, on `roadmap`),
+  // a slice head's editor and the milestone dialog (both --surface-overlay
+  // modals over a dimmed board), and the Ideas & Icebox pane, whose Icebox rows
+  // and slice pickers sit on --surface-raised.
+  { slug: 'board-sliceedit', hash: '#/p/{slug}/roadmap', press: ['.km-grouphead [aria-label^="Edit slice"]'] },
+  { slug: 'board-milestone', hash: '#/p/{slug}/roadmap', press: ['.km-spine-ms'] },
+  { slug: 'auto', hash: '#/p/{slug}/auto' },
   // #469 — a filtered board (one area picked, the rest of the row dimmed)
   // and an open inline title editor, which paints its own text over a card in
   // the focus state. Neither exists at first paint.

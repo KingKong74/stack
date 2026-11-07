@@ -51,7 +51,8 @@ discipline keeps them in step. Change one copy, change them all, in the same com
 | **Run order** | a build takes Ready rows by `ready_rank`; a plan takes the active sprint's by `sprint_rank`; then `bucket`, then payload order. Each rank only means something inside its lane | `routes/autopilot.js`, the runner, `lib/plan.ts` `queueOrder` |
 | **Schedule** | minutes from week zero (`sched_*_min`; `plan_*_min` is the write-once baseline a drag never moves). BIGINT arrives from pg as a string | `routes/roadmap.js`, `shape.js`, `lib/plan.ts`, `lib/spine.ts` |
 | **Branch name** | `<kind>/<id>-<summary>`. The legacy `auto/item-N-<slug>` must parse forever, with kind `''`, never `feat` | `scripts/lib/lane.mjs`, `web/src/lib/branch.ts` |
-| **Which screen** | `homeOf` → `auto \| board`. Call `isBoardWork` | `lib/plan.ts` (single copy; keep it that way) |
+| **Sliced to build** | Ready ⇒ `slice_id` NOT NULL, a CHECK (`roadmap_ready_needs_slice`). Every writer that ices a row clears Ready in the same statement | `routes/ready.js` (refuses out loud), `PATCH /roadmap/:id`, `DELETE /slices/:id` |
+| **Which screen** | `homeOf` → `auto \| icebox \| board`. Call `isBoardWork` | `lib/plan.ts` (single copy; keep it that way) |
 | **Brandmark geometry** | the logo's plates | `components/Brandmark.tsx`, `scripts/render-icons.mjs`, `scripts/lib/brandmark.cjs` |
 
 Also:
@@ -59,6 +60,9 @@ Also:
 - **`bucket` is the priority** (highest…lowest). A row is born `medium`. `computeProgress` weights
   all five buckets, and **the default bucket and the weights are one decision**: leave `medium` out
   of the sum and every new board reads 0% forever.
+- **The spine** (#608): project → milestone → slice → item. `slice_id` NULL is the **Icebox**:
+  kept, off the board, out of progress, never Ready. At most one milestone is current. A slice's
+  state is derived, never stored. `committed` (#496) is retired; nothing decides by it.
 - **Deleting a `source='hook'` row tombstones its fingerprint** so the next push can't re-create it.
   That's what Dismiss means, and why it has no undo.
 - `server/CLAUDE.md` has the rest of the column semantics.

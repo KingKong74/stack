@@ -24,7 +24,7 @@ publicShowcase.get('/:slug/:token', async (req, res) => {
         WHERE project_id = $1 ORDER BY created_at DESC LIMIT 20`,
       [p.id]
     ),
-    q('SELECT bucket, done FROM roadmap_items WHERE project_id = $1', [p.id]),
+    q('SELECT bucket, done, slice_id FROM roadmap_items WHERE project_id = $1', [p.id]),
     q('SELECT severity, status FROM bugs WHERE project_id = $1', [p.id]),
   ]);
 

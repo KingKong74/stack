@@ -235,6 +235,10 @@ export function computeProgress(roadmapItems, bugs) {
   let total = 0;
   let done = 0;
   for (const it of roadmapItems) {
+    // #608 — SLICED WORK ONLY. An Icebox row (slice_id null) is not a
+    // commitment, so it must not drag progress down. Every caller selects
+    // `slice_id`; one that forgets reads 0%, which is loud, not quietly wrong.
+    if (it.slice_id == null) continue;
     const w = WEIGHT[it.bucket];
     if (!w) continue; // an unknown bucket is out of the sum, never counted as 1
     total += w;

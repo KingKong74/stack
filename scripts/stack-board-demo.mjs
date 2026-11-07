@@ -38,6 +38,11 @@
 //     (`review_tag`), which is what `listFor` derives on — the same route a
 //     real verdicted-but-unmerged change takes.
 //
+//  5. EVERY ROW IS IN A `Demo` SLICE (#608), made on --seed and deleted on
+//     --remove. The board draws sliced work only; a card in no slice is in the
+//     Icebox, so without it the demo would never reach the board it drives.
+//     The slice carries the marker in its spec, which is how --remove finds it.
+//
 // The three In Review rows carry a `built_note` and a `claimed_by`, which is
 // #374's built-not-ticked predicate — the one a night's work actually lands in.
 // The branches are named the current way (`<kind>/<id>-<summary>`, #363) so the
@@ -150,13 +155,19 @@ export async function main(argv = process.argv.slice(2)) {
 
   const existing = (await readAll()).filter((it) => it.note.includes(MARK));
 
+  const demoSlices = async () => (await api('GET', `/api/projects/${slug}/slices`))
+    .filter((s) => String(s.spec || '').includes(MARK));
+
   if (REMOVE) {
-    if (!existing.length) { process.stdout.write(`No demo cards on ${slug}.\n`); return 0; }
     for (const it of existing) {
       await api('DELETE', `/api/projects/${slug}/roadmap/${it.id}`);
       process.stdout.write(`removed #${it.id} ${it.title}\n`);
     }
-    process.stdout.write(`\n${existing.length} demo card(s) gone from ${slug}.\n`);
+    // After the cards, so a demo slice never ices a card on its way out.
+    const gone = await demoSlices();
+    for (const sl of gone) await api('DELETE', `/api/projects/${slug}/slices/${sl.id}`);
+    if (!existing.length && !gone.length) { process.stdout.write(`No demo cards on ${slug}.\n`); return 0; }
+    process.stdout.write(`\n${existing.length} demo card(s) and ${gone.length} demo slice(s) gone from ${slug}.\n`);
     return 0;
   }
 
@@ -174,6 +185,12 @@ export async function main(argv = process.argv.slice(2)) {
     return 1;
   }
 
+  // Guard 5: one Demo slice, in the current milestone (the route makes one if
+  // the project has none).
+  const slice = (await demoSlices())[0] || await api('POST', `/api/projects/${slug}/slices`, {
+    title: 'Demo', spec: `${MARK} Dummy cards for driving the board. Run stack-board-demo.mjs --remove.`,
+  });
+
   let made = 0;
   for (const c of CARDS) {
     const item = await api('POST', `/api/projects/${slug}/roadmap`, {
@@ -181,6 +198,7 @@ export async function main(argv = process.argv.slice(2)) {
       note: `${MARK} A dummy card for driving the board. Delete it, or run stack-board-demo.mjs --remove.`,
       bucket: c.bucket,
       area: AREA,
+      sliceId: slice.id,
     });
 
     // The state that derives the column. Parked and the estimate go on in the
@@ -196,7 +214,7 @@ export async function main(argv = process.argv.slice(2)) {
     made += 1;
   }
 
-  process.stdout.write(`\n${made} demo card(s) on ${slug} — all parked, all in area "${AREA}".\n`);
+  process.stdout.write(`\n${made} demo card(s) on ${slug} — all parked, all in area "${AREA}", all in slice "Demo".\n`);
   process.stdout.write('Remove them with:  node scripts/stack-board-demo.mjs --remove\n');
   return 0;
 }

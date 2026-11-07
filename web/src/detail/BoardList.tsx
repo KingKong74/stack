@@ -38,7 +38,7 @@ export const SORT_LABEL: Record<BoardSort, string> = {
 export const SHOW_LABEL: Record<BoardShow, string> = {
   all: 'Everything',
   board: 'Board work',
-  ideas: 'Auto-ideas only',
+  ideas: 'Auto-ideas & Icebox',
 };
 
 const stamp = (iso: string | null) => (iso ? Date.parse(iso) || 0 : 0);
@@ -47,6 +47,7 @@ const stamp = (iso: string | null) => (iso ? Date.parse(iso) || 0 : 0);
 function whereOf(it: RoadmapItem): { label: string; tone: string; title: string } {
   const home = homeOf(it);
   if (home === 'auto') return { label: 'Auto-idea', tone: 'warning', title: 'Held for your sign-off in For you → Auto-ideas' };
+  if (home === 'icebox') return { label: 'Icebox', tone: '', title: 'Kept, in no slice yet (For you → Ideas & Icebox)' };
   return { label: 'Board', tone: 'info', title: 'Committed work, on the board' };
 }
 

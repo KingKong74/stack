@@ -8,8 +8,9 @@ import {
 } from '../util.js';
 import {
   bugShape, groupRoadmap, checkShape, activityShape,
-  projectListShape, projectDetailShape, resumeSince, sprintShape,
+  projectListShape, projectDetailShape, resumeSince, sprintShape, milestoneShape, sliceShape,
 } from '../shape.js';
+import { MILESTONE_ORDER, SLICE_SELECT, SLICE_ORDER } from './spine.js';
 import { readUsage, readTests, readRuns, PULSE_DAYS } from '../pulse.js';
 import { readSettings, sessionDefaultLines } from '../settings.js';
 import { geminiEnabled } from '../gemini.js';
@@ -30,7 +31,7 @@ projects.get('/', async (_req, res) => {
 
   const ids = ps.map((p) => p.id);
   const [{ rows: road }, { rows: bugs }, { rows: weekly }] = await Promise.all([
-    q('SELECT project_id, bucket, done FROM roadmap_items WHERE project_id = ANY($1)', [ids]),
+    q('SELECT project_id, bucket, done, slice_id FROM roadmap_items WHERE project_id = ANY($1)', [ids]),
     q('SELECT project_id, severity, status FROM bugs WHERE project_id = ANY($1)', [ids]),
     q(
       `SELECT project_id, count(*)::int AS n FROM sessions
@@ -115,7 +116,7 @@ projects.get('/:slug', async (req, res) => {
   const p = rows[0];
 
   const appSettings = await readSettings();
-  const [sessions, bugs, road, checks, sprintRows, weekly, cadence, live] = await Promise.all([
+  const [sessions, bugs, road, checks, sprintRows, weekly, cadence, live, msRows, sliceRows] = await Promise.all([
     q(
       // `authored` rides along for resumeSince(): which of these pushes actually
       // wrote the resume card, and what has landed since.
@@ -156,6 +157,9 @@ projects.get('/:slug', async (req, res) => {
         WHERE project_id = $1 AND last_seen_at > now() - interval '${PRESENCE_TTL_MINUTES} minutes'`,
       [p.id]
     ),
+    // #608 — the spine: milestones and slices, in routes/spine.js's own order.
+    q(`SELECT * FROM milestones WHERE project_id = $1 ${MILESTONE_ORDER}`, [p.id]),
+    q(`${SLICE_SELECT} WHERE s.project_id = $1 ${SLICE_ORDER}`, [p.id]),
   ]);
 
   res.json(
@@ -169,6 +173,8 @@ projects.get('/:slug', async (req, res) => {
       roadmap: groupRoadmap(road.rows),
       checks: checks.rows.map(checkShape),
       sprints: sprintRows.rows.map(sprintShape),
+      milestones: msRows.rows.map(milestoneShape),
+      slices: sliceRows.rows.map(sliceShape),
       keepResumeCard: appSettings.keep_resume_card,
       sessionDefaults: sessionDefaultLines(appSettings.session_defaults),
       // The parked-item stale threshold (#247) rides the detail payload so the
@@ -406,7 +412,7 @@ projects.patch('/:slug', async (req, res) => {
   // Return the list shape with fresh progress so the dashboard updates in place.
   const p = rows[0];
   const [road, bugs, weekly] = await Promise.all([
-    q('SELECT bucket, done FROM roadmap_items WHERE project_id = $1', [p.id]),
+    q('SELECT bucket, done, slice_id FROM roadmap_items WHERE project_id = $1', [p.id]),
     q('SELECT severity, status FROM bugs WHERE project_id = $1', [p.id]),
     q(
       `SELECT count(*)::int AS n FROM sessions

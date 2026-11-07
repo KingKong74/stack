@@ -49,6 +49,14 @@ only on an empty board. It is deliberately **not** a health score.
 - **`refine_note` surviving to the tick** is what answers "is this refine round still open".
 - **`claimed_by`** is the branch claim. A terminal tab's is `term:<name>`.
 
+## The spine (#608)
+
+`routes/spine.js`: milestones (one `active` per project, partial unique index; making one current
+finishes the incumbent) and slices (`milestone_id` NOT NULL). A milestone with slices can't be
+deleted. Deleting a slice ices its items and clears their Ready first. Item POST takes `sliceId`; a
+part with none takes its parent's. The one-shot migration (clusters → slices, in-flight → "Carried
+over", the rest → Icebox) is guarded on an empty `milestones` table, so a reboot never re-files.
+
 ## Sprints
 
 `sprints` has status `planned | active | done`, with at most one `active` per project enforced by a

@@ -1035,40 +1035,66 @@ export function clusterKeyOf(it: RoadmapItem, parts: RoadmapItem[]): string {
  * every row on 0.
  */
 /**
- * THE ONE LINE BETWEEN THE TWO SURFACES, and it lives here so the board and For
- * you's Auto-ideas pane cannot disagree about where a row belongs. A row on both
- * is a row you act on twice; a row on neither is work that has silently
- * vanished, which is the worse of the two.
+ * THE LINE BETWEEN THE THREE SURFACES, and it lives here so the board, the
+ * Icebox and For you's Auto-ideas pane cannot disagree about where a row
+ * belongs. A row on two is a row you act on twice; a row on none is work that
+ * has silently vanished, which is the worst of the three.
  *
- *  • `'auto'` — NOBODY HAS SAID YES. A HELD row (`hook`, `fly` or `plan`) that
+ *  • `'auto'`: NOBODY HAS SAID YES. A HELD row (`hook`, `fly` or `plan`) that
  *    nobody has signed off and nobody has worked. It is a session's own output,
  *    not the owner's plan, so it sits in FOR YOU → AUTO-IDEAS (#496), and the
- *    runner leaves it alone (#359).
- *  • `'board'` — EVERYTHING ELSE. A hand-typed row is committed the moment
- *    somebody writes it (a manual row is NEVER held), and so is anything
- *    promoted. A child row (`parentId`) and a `committed` false row are board
- *    work too: the Roadmap tab that once drew them is gone, and a screen that
- *    does not draw a row is the "vanished" case above.
+ *    runner leaves it alone (#359). Tested before the slice, so a plan piece
+ *    that inherited its parent's slice still waits for a sign-off.
+ *  • `'icebox'` (#608): SAID YES TO, NOT YET SHAPED. A signed-off or hand-typed
+ *    row with no slice. Capture stays cheap (nothing needs a slice to be
+ *    written) and the board stays clean. It replaces `committed` (#496), which
+ *    nothing reads any more: "keep this idea, not yet" is exactly the Icebox.
+ *  • `'board'`: IN A SLICE, or being worked.
  *
- * BEING WORKED IS ITSELF THE COMMITMENT: `isWorked` is tested FIRST, so a held
- * row a session claimed or built is on the board whatever its sign-off says.
- * The hold still gates the RUNNER, and the board's card menu answers it.
+ * BEING WORKED IS ITSELF THE COMMITMENT: `isWorked` is tested FIRST, so a row a
+ * session claimed or built is on the board whatever its sign-off or slice says.
+ * An unsliced worked row is drawn in the board's "No slice" group rather than
+ * iced, because in-flight work must never vanish. The hold still gates the
+ * RUNNER, and Ready refuses an unsliced row (a CHECK on the server).
  *
- * `archived` is on neither surface — it is off the board and recoverable, and
+ * `archived` is on none of them: it is off the board and recoverable, and
  * `homeOf` deliberately says nothing about it.
  */
-export type Home = 'auto' | 'board';
+export type Home = 'auto' | 'icebox' | 'board';
 
 export const homeOf = (it: RoadmapItem): Home => {
   if (isWorked(it)) return 'board';
   if (isHeld(it)) return 'auto';
+  if (it.sliceId == null) return 'icebox';
   return 'board';
 };
 
 /** A session's own idea, waiting in For you → Auto-ideas. */
 export const isAutoIdea = (it: RoadmapItem): boolean => homeOf(it) === 'auto';
+/** #608 — kept, but in no slice yet: waiting in the Icebox. */
+export const isIced = (it: RoadmapItem): boolean => homeOf(it) === 'icebox';
 /** COMMITTED WORK, drawn on the board. */
 export const isBoardWork = (it: RoadmapItem): boolean => homeOf(it) === 'board';
+
+/**
+ * #608 — A SLICE'S STATE, DERIVED. Never stored: a tick anywhere moves it with
+ * no second write to keep in step. `total`/`built`/`done` count the slice's
+ * live (unarchived) rows; `built` uses `isBuilt`, so a row awaiting its verdict
+ * counts as built, and `done` is ticked. An empty slice is `empty`, which is a
+ * real state (just made) and not "finished".
+ */
+export interface SliceState { total: number; built: number; done: number; status: 'empty' | 'open' | 'built' | 'done' }
+export const sliceStateOf = (sliceId: number, rows: RoadmapItem[]): SliceState => {
+  let total = 0; let built = 0; let done = 0;
+  for (const it of rows) {
+    if (it.sliceId !== sliceId || it.archived) continue;
+    total += 1;
+    if (it.done) done += 1;
+    if (isBuilt(it)) built += 1;
+  }
+  const status = total === 0 ? 'empty' : done === total ? 'done' : built === total ? 'built' : 'open';
+  return { total, built, done, status };
+};
 
 /**
  * HAS ANYBODY ACTUALLY WORKED THIS ROW? A branch claim, a built note or a tick —

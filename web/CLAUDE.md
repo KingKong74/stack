@@ -5,7 +5,8 @@ file holds what applies only here. These file headers carry their own rules; rea
 its file: `lib/branch.ts`, `lib/plan.ts`, `lib/quality.ts`, `lib/termClipboard.ts`, `lib/termLaunch.ts`, `styles.css`,
 `components/Brandmark.tsx`, `components/RoadmapModal.tsx`, `components/Asking.tsx`,
 `detail/Board.tsx`, `detail/BoardFocus.tsx`, `detail/BacklogTimeline.tsx`, `detail/ForYou.tsx`, `detail/Plans.tsx`,
-`detail/Development.tsx`, `detail/SkillsAgents.tsx`, `detail/Loops.tsx`, `detail/Artifacts.tsx`, `components/Markdown.tsx`.
+`detail/Development.tsx`, `detail/SkillsAgents.tsx`, `detail/Loops.tsx`, `detail/Artifacts.tsx`, `detail/Spine.tsx`,
+`components/Markdown.tsx`.
 
 ## Structure
 
@@ -24,15 +25,16 @@ its file: `lib/branch.ts`, `lib/plan.ts`, `lib/quality.ts`, `lib/termClipboard.t
 
 ## Which screen a row is on
 
-`homeOf` (`lib/plan.ts`) is the one function that decides, returning `auto | board`. A row on both
-screens gets acted on twice; a row on neither has silently vanished.
+`homeOf` (`lib/plan.ts`) is the one function that decides, returning `auto | icebox | board`. A row
+on two screens gets acted on twice; a row on none has silently vanished.
 
-- **Auto-ideas** (For you): a held row (`hook`/`fly`/`plan`, not signed off) that nobody has worked.
-  Promote sends `{reviewed:true, committed:true, parentId:null}`.
-- **Board**: everything else, child rows and `committed` false rows included. **Once anybody has
-  worked a row** (a claim, a `built_note` or a tick: `isWorked`), it's board work whatever its
-  sign-off says. Its hold then only gates the runner, and the board shows it (the `held` chip,
-  answered from the card menu).
+- **Auto-ideas** (For you → Ideas & Icebox): a held row (`hook`/`fly`/`plan`, not signed off) that
+  nobody has worked. Promote sends `{reviewed:true, parentId:null}` plus the picked `sliceId`.
+- **Icebox** (#608, same pane): signed off or manual, in no slice.
+- **Board**: sliced rows, grouped by slice by default. **Once anybody has worked a row** (a claim, a
+  `built_note` or a tick: `isWorked`), it's board work whatever its sign-off or slice says (an
+  unsliced one sits in a "No slice" group). Its hold then only gates the runner, and the board shows
+  it (the `held` chip, answered from the card menu).
 - **The board is designed for the owner's hands** (2026-11-02). Weigh UX, not automation policy,
   when changing it; the run gates live in the root file and the server.
 - **Two kinds of card: a task, and a cluster** (a row with parts, `parent_id`, one level deep).

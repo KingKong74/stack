@@ -213,6 +213,22 @@ async function createItem(db, projectId, body) {
     if (!par.length) return { status: 400, body: { error: `parentId ${body.parentId} is not a top-level item in this project.` } };
     parentId = pid;
   }
+  // #608 — THE SLICE. Named, it must be one in this project (refused, not
+  // dropped: work told it was filed must be where it was told). Omitted, a part
+  // takes its PARENT's slice, so a planning run's breakdown lands beside the
+  // item it broke down rather than in the Icebox. Otherwise NULL: the Icebox,
+  // where capture is cheap. Filing into a slice is not approval.
+  let sliceId = null;
+  if (body?.sliceId !== undefined && body?.sliceId !== null) {
+    const sl = Number(body.sliceId);
+    const { rows: found } = Number.isInteger(sl) && sl > 0 ? await db(
+      'SELECT id FROM slices WHERE id = $1 AND project_id = $2', [sl, projectId]) : { rows: [] };
+    if (!found.length) return { status: 400, body: { error: `sliceId ${body.sliceId} is not a slice in this project.` } };
+    sliceId = sl;
+  } else if (parentId) {
+    const { rows: par } = await db('SELECT slice_id FROM roadmap_items WHERE id = $1', [parentId]);
+    sliceId = par[0]?.slice_id ?? null;
+  }
   // FILING STRAIGHT INTO A SPRINT (owner's decision, 2026-10-10). A plan is
   // set up and pushed into a sprint in one go, by a human or by a session
   // acting on one, rather than filed to the backlog and dragged in card by
@@ -298,12 +314,14 @@ async function createItem(db, projectId, body) {
     // about what gets built first, and a create has no opinion about that.
     `INSERT INTO roadmap_items (project_id, bucket, title, note, position, source, fingerprint, claimed_by, area, plan, risk, risk_source, agent_profile, fly_session,
                                 sched_start_min, sched_len_min, plan_start_min, plan_len_min, sub_area, points, due_on, item_kind, spec, parent_id,
-                                sprint_id, sprint_rank)
+                                sprint_id, sprint_rank, slice_id, slice_rank)
      VALUES ($1,$2,$3,$4,$5,$13,$6,$7,$8,$9::jsonb,$10,$11,$12,$14,$15,$16,$15,$16,$17,$18,$19,$20,$21::jsonb,$22,
              $23::bigint, CASE WHEN $23::bigint IS NULL THEN 0
-                          ELSE (SELECT COALESCE(MAX(sprint_rank), -1) + 1 FROM roadmap_items WHERE sprint_id = $23::bigint) END) RETURNING *`,
+                          ELSE (SELECT COALESCE(MAX(sprint_rank), -1) + 1 FROM roadmap_items WHERE sprint_id = $23::bigint) END,
+             $24::int, CASE WHEN $24::int IS NULL THEN 0
+                       ELSE (SELECT COALESCE(MAX(slice_rank), -1) + 1 FROM roadmap_items WHERE slice_id = $24::int) END) RETURNING *`,
     [projectId, bucket, title, note, pos[0].p, fp, claimedBy, area, JSON.stringify(plan), risk, riskSource, agentProfile, source, flySession,
-      schedStart, schedLen, subArea, points, dueOn, kind, JSON.stringify(spec), parentId, sprintId]
+      schedStart, schedLen, subArea, points, dueOn, kind, JSON.stringify(spec), parentId, sprintId, sliceId]
   );
   return { status: 201, body: roadmapItemShape(rows[0]) };
 }
@@ -529,6 +547,25 @@ roadmap.patch('/:id', async (req, res) => {
       vals.push(sid);
     }
   }
+  if (req.body?.sliceId !== undefined) {
+    // #608 — move ONE item into a slice (bottom of it) or, with null, to the
+    // ICEBOX. Icing a row also takes it OUT OF READY in the same statement:
+    // Ready ⇒ sliced is a CHECK (schema.sql), and an iced row in the build
+    // lane is exactly what it forbids. A slice from another project is refused
+    // out loud rather than resolved to NULL, which would silently ice the row.
+    if (req.body.sliceId === null) {
+      sets.push('slice_id = NULL', 'slice_rank = 0', 'ready_at = NULL', 'ready_rank = 0');
+    } else {
+      const sl = Math.trunc(Number(req.body.sliceId));
+      const { rows: found } = Number.isFinite(sl) && sl > 0
+        ? await q('SELECT id FROM slices WHERE id = $1 AND project_id = $2', [sl, req.project.id]) : { rows: [] };
+      if (!found.length) return res.status(400).json({ error: `sliceId ${req.body.sliceId} is not a slice in this project.` });
+      sets.push(`slice_rank = CASE WHEN slice_id = $${i} THEN slice_rank
+                  ELSE (SELECT COALESCE(MAX(slice_rank), -1) + 1 FROM roadmap_items WHERE slice_id = $${i}) END`);
+      sets.push(`slice_id = $${i++}`);
+      vals.push(sl);
+    }
+  }
   if (req.body?.sprintRank !== undefined && Number.isFinite(Number(req.body.sprintRank))) {
     sets.push(`sprint_rank = $${i++}`); vals.push(Math.max(0, Math.trunc(Number(req.body.sprintRank))));
   }
@@ -580,6 +617,10 @@ roadmap.patch('/:id', async (req, res) => {
     sets.push('plan_start_min = sched_start_min', 'plan_len_min = sched_len_min');
   }
   if (req.body?.committed !== undefined) {
+    // RETIRED BY #608: the Icebox (slice_id NULL) answers "kept, not yet", and
+    // nothing decides by this column any more. Still accepted so an old client's
+    // write does not 400; read the history below as why it existed.
+    //
     // #496 — the third leg of WHICH SCREEN this row is on. `false` files a
     // signed-off row on the Roadmap as an idea somebody is keeping; `true` is
     // the commitment that puts it on the board.

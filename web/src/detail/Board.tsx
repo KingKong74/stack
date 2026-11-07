@@ -38,10 +38,11 @@
 //     column, so a reorder here would write a number that means something else.
 //  5. NO COLUMN LIMITS and NO ASSIGNEE AVATARS: there is no data behind either,
 //     and a control with nothing behind it is a lie on a wired screen.
-//  6. AREAS GROUP INSIDE THE COLUMNS (Board v5), switchable to flat columns
-//     (`bview.flat`). The filter row lists every area as a toggle, several at
-//     once, with Clear. A drop never re-files an area: it writes `list_key`
-//     alone. The group head says when an area has a claimed card in it.
+//  6. CARDS GROUP INSIDE THE COLUMNS, by SLICE (#608, the default), by AREA
+//     (Board v5) or not at all (`bview.group`). The filter row lists every
+//     group as a toggle, several at once, with Clear. A drop never re-files a
+//     slice or an area: it writes `list_key` alone. An area head says when its
+//     lane is held; a slice head says how much of it is built.
 //  7. TWO DOUBLE-CLICKS, CHOSEN BY WHAT IS UNDER THE CURSOR. The title renames
 //     in place; anywhere else flies the card onto the focus canvas, and ✎ does
 //     the same with the editor open. Enter commits, Escape cancels, and BLUR
@@ -60,6 +61,14 @@
 //     with a deleted column renders nowhere. `lists.js` allows the delete only
 //     because this lane exists.
 //
+// 12. THE BOARD DRAWS SLICED WORK (#608). A kept row in no slice is in the
+//     ICEBOX (For you, beside Auto-ideas), not here; `homeOf` decides. Worked
+//     rows are the exception and stay, in a "No slice" group, because in-flight
+//     work must never vanish. A new card is born in the one picked slice, or
+//     the current milestone's only slice; with neither it goes to the Icebox,
+//     and the note line says so rather than letting the card vanish silently.
+//     The strip above the toolbar is the milestone (detail/Spine.tsx).
+//
 // THE CARD MENU: Park/Unpark, Archive, Delete (a `hook` row's delete tombstones
 // its fingerprint, so it has no undo), and Sign off on a held card. Edit item…
 // opens the full modal, the only writer of a human `risk`. Verdicts are given
@@ -70,8 +79,9 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { createPortal } from 'react-dom';
 import { KitIcon } from './kit/KitIcon';
 import { BacklogTimeline } from './BacklogTimeline';
-import type { BoardArea, BoardList, ItemKind, Priority, RoadmapItem, Sprint, SprintPlan } from '../types';
-import { listKeyOf, clusterKeyOf, queueOrder, isBoardWork } from '../lib/plan';
+import type { BoardArea, BoardList, ItemKind, Milestone, Priority, RoadmapItem, Slice, Sprint, SprintPlan } from '../types';
+import { listKeyOf, clusterKeyOf, queueOrder, isBoardWork, isIced, sliceStateOf } from '../lib/plan';
+import { SpineStrip, SliceDialog, MilestoneDialog, SlicePicker, liveSlices, currentMilestone, sliceLabel } from './Spine';
 import { isHeld } from '../lib/approval';
 import { PRIORITY_META, PRIORITY_DEFAULT, priorityMeta, dueRead, ITEM_KIND_LABEL } from '../lib/ui';
 import {
@@ -80,13 +90,14 @@ import {
   getBoardFolds, setBoardFolds, getBoardView, setBoardView, getBacklogView, setBacklogView,
   createRoadmapItem, patchRoadmapItem, deleteRoadmapItem,
   createSprint, patchSprint, putSprintOrder, deleteSprint, putReadyQueue,
+  createSlice, patchSlice, deleteSlice, createMilestone, patchMilestone,
   startBuild, planSprint,
   queueTermLaunch,
 } from '../store';
 import { DevelopmentView } from './Development';
 import { go } from '../lib/route';
 import { newTermName, termClaim, launchBrief } from '../lib/termLaunch';
-import type { BoardFolds, BoardView, BoardSort, BoardShow } from '../store';
+import type { BoardFolds, BoardView, BoardSort, BoardShow, BoardGroup } from '../store';
 import { BoardListView, SORT_LABEL, SHOW_LABEL } from './BoardList';
 import { BoardFocus, type FocusOpen, type FocusPhase } from './BoardFocus';
 
@@ -105,6 +116,12 @@ const CATCH_ALL = ' unlisted';
 // that stops every untagged item collapsing into a single giant lane. The
 // leading space keeps it off any area an owner could actually type.
 const UNTAGGED = ' untagged';
+
+// #608 — the group key for a worked row in NO slice (or a slice this payload
+// does not know). Leading space for the same reason as UNTAGGED: no slice key
+// (`slice:<id>`) can collide with it.
+const NO_SLICE = ' noslice';
+const sliceKeyOf = (id: number) => `slice:${id}`;
 
 /**
  * #507 — THE STORY-POINT SCALE the picker offers. Fibonacci-ish, which is the
@@ -169,7 +186,7 @@ function useLanded(): [number | null, (id: number) => void] {
   return [landedId, land];
 }
 
-export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, onAreas, highlightId }: {
+export function Board({ slug, projectName, items, sprints, milestones, slices, onRefresh, onEdit, onAreas, highlightId }: {
   slug: string;
   projectName: string;
   /** The project payload's own roadmap, flattened and IN PAYLOAD ORDER — see
@@ -179,6 +196,10 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
    *  'active' and the database guarantees it, so this screen `find`s the one in
    *  progress rather than reducing over candidates. */
   sprints: Sprint[];
+  /** #608 — the spine, from the same payload. A slice's state is derived from
+   *  `items` (`sliceStateOf`), never carried on the slice. */
+  milestones: Milestone[];
+  slices: Slice[];
   /** Re-read the project payload. Called after every write that landed. */
   onRefresh: () => void;
   /** Open the item modal — still the only writer of a human `risk`. */
@@ -203,6 +224,11 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
   // whenever the payload comes back.
   const [boxes, setBoxes] = useState<Sprint[]>(sprints);
   useEffect(() => { setBoxes(sprints); }, [sprints]);
+  // #608 — the spine, seeded the same way and written through by its dialogs.
+  const [sl, setSl] = useState<Slice[]>(slices);
+  useEffect(() => { setSl(slices); }, [slices]);
+  const [ms, setMs] = useState<Milestone[]>(milestones);
+  useEffect(() => { setMs(milestones); }, [milestones]);
 
   // THE SPRINT IN PROGRESS, or null. Null is a real and common state — a
   // project between cycles — and it means the automation has nothing to take,
@@ -313,7 +339,6 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
   // it — the filter already said which area you are looking at, and a card that
   // vanished on creation because it landed untagged would read as a lost write.
   // Anything else files it untagged, which is never a lane and so never blocks.
-  const homeArea = picked.length === 1 && picked[0] !== UNTAGGED ? picked[0] : '';
   // Parked cards SHOW by default. Hiding them by default is how a parked item
   // becomes invisible work, which is the state #247 existed to end.
   const [hideParked, setHideParked] = useState(false);
@@ -328,6 +353,8 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
   };
   const [listArea, setListArea] = useState('');
   const listMode = bview.layout === 'list';
+  // (#608: only while grouped by area; a slice pick names no area.)
+  const homeArea = bview.group === 'area' && picked.length === 1 && picked[0] !== UNTAGGED ? picked[0] : '';
 
   // CLUSTERS (owner's call, 2026-11-02). A row with children on the board is a
   // cluster: one central idea whose PARTS are drawn inside its card, not as
@@ -395,10 +422,27 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
   // group says whether its lane is HELD and by which branch, which is the one
   // fact about an area that changes what the night can do.
   const areaKey = (it: RoadmapItem) => it.area.trim() || UNTAGGED;
+  // #608 — the group a card is drawn in, by the board's grouping.
+  const bySlice = bview.group === 'slice';
+  const sliceGroup = (it: RoadmapItem) =>
+    (it.sliceId !== null && sl.some((s) => s.id === it.sliceId) ? sliceKeyOf(it.sliceId) : NO_SLICE);
+  const groupKey = (it: RoadmapItem) => (bySlice ? sliceGroup(it) : areaKey(it));
   const drawn = useMemo(
-    () => (picked.length ? visible.filter((it) => picked.includes(areaKey(it))) : visible),
-    [visible, picked],
+    () => (picked.length ? visible.filter((it) => picked.includes(groupKey(it))) : visible),
+    [visible, picked, bySlice, sl],
   );
+  // WHERE A NEW CARD IS BORN (#608): the one picked slice, else the current
+  // milestone's only live slice, else nowhere, which is the Icebox. Guessing
+  // between two slices would file work under a piece nobody chose.
+  const cur = currentMilestone(ms);
+  const homeSlice: Slice | null = (() => {
+    if (bySlice && picked.length === 1 && picked[0] !== NO_SLICE) {
+      return sl.find((s) => sliceKeyOf(s.id) === picked[0]) || null;
+    }
+    const inCur = liveSlices(sl, ms).filter((s) => s.milestoneId === cur?.id);
+    return inCur.length === 1 ? inCur[0] : null;
+  })();
+  const icedCount = rows.filter((it) => !it.archived && isIced(it)).length;
 
   // Registered areas first, in the board's own order, then any area that
   // exists only because some row mentions it — `area` is a free string and a
@@ -418,6 +462,23 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
     if (untagged) order.push(UNTAGGED);
     return order;
   }, [rows, areas]);
+
+  // #608 — the slice groups: every live slice (current milestone first, so an
+  // empty one still has a chip to pick and create into), then any other slice
+  // a board row is in, then "No slice" for worked rows that have none.
+  const groupOrder = useMemo(() => {
+    if (!bySlice) return areaOrder;
+    const order = liveSlices(sl, ms).map((s) => sliceKeyOf(s.id));
+    let loose = false;
+    for (const it of rows) {
+      if (it.archived || !isBoardWork(it)) continue;
+      const k = sliceGroup(it);
+      if (k === NO_SLICE) loose = true;
+      else if (!order.includes(k)) order.push(k);
+    }
+    if (loose) order.push(NO_SLICE);
+    return order;
+  }, [bySlice, areaOrder, rows, sl, ms]);
 
   // The lane holder per area: an OPEN item with a branch on it. Same predicate
   // as the server's holders query — not done, claim non-empty — and read off
@@ -439,13 +500,22 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
     untagged: k === UNTAGGED,
     holder: holders.get(k) || null,
   });
+  const sliceOfKey = (k: string) => sl.find((s) => sliceKeyOf(s.id) === k) || null;
+  const groupMeta = (k: string) => {
+    if (!bySlice) return { ...areaMeta(k), slice: null as Slice | null };
+    const slice = sliceOfKey(k);
+    return {
+      key: k, name: slice ? sliceLabel(slice, ms) : 'No slice', dot: '',
+      untagged: !slice, holder: null as string | null, slice,
+    };
+  };
 
   // ---- the columns, with the AREAS GROUPED INSIDE THEM (Board v5) -----------
   //
   // The columns lead and each one groups its cards by area, so a glance across
   // the top reads the board's state and a glance down a column reads which
   // lanes it is spread over. `grouped` off draws each column as one flat list.
-  const grouped = !bview.flat;
+  const grouped = bview.group !== 'none';
   const columns = useMemo(() => {
     const known = new Set((lists || []).map((l) => l.key));
     const byKey = new Map<string, RoadmapItem[]>();
@@ -469,12 +539,12 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
       // parts in place of the cluster's own (unused) number.
       sized: col.items.flatMap((it) => partsOf.get(it.id) || [it]),
       groups: grouped
-        ? areaOrder
-          .map((k) => ({ key: k, items: col.items.filter((it) => areaKey(it) === k) }))
+        ? groupOrder
+          .map((k) => ({ key: k, items: col.items.filter((it) => groupKey(it) === k) }))
           .filter((g) => g.items.length > 0)
         : (col.items.length ? [{ key: '', items: col.items }] : []),
     }));
-  }, [drawn, lists, areaOrder, grouped, activeId, partsOf]);
+  }, [drawn, lists, groupOrder, grouped, activeId, partsOf]);
 
   // The chips: every area with cards on the board right now, plus untagged.
   // THE FILTER ROW, AS THE DESIGN HAS IT: every area on the board, each with
@@ -482,9 +552,9 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
   // a chip says what pressing it would show rather than disappearing.
   const chips = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const it of visible) counts.set(areaKey(it), (counts.get(areaKey(it)) || 0) + 1);
-    return areaOrder.map((k) => ({ ...areaMeta(k), n: counts.get(k) || 0 }));
-  }, [visible, areas, areaOrder, holders]);
+    for (const it of visible) counts.set(groupKey(it), (counts.get(groupKey(it)) || 0) + 1);
+    return groupOrder.map((k) => ({ ...groupMeta(k), n: counts.get(k) || 0 }));
+  }, [visible, areas, groupOrder, holders, sl, ms]);
   // What an area's ⋯ says it would untag on delete: every card in it, not the
   // searched few.
   const areaTotal = (k: string) => rows.filter((it) => !it.archived && isBoardWork(it) && areaKey(it) === k).length;
@@ -516,7 +586,8 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
       open: allFolded ? [...new Set([...folds.open, ...groupKeys])] : folds.open.filter((k) => !groupKeys.includes(k)),
     });
   };
-  const setGrouped = (on: boolean) => { closeAll(); writeView({ flat: !on }); };
+  // A switch clears the picks: an area name means nothing as a slice filter.
+  const setGroup = (group: BoardGroup) => { closeAll(); setPicked([]); writeView({ group }); };
   const parked = onBoard.filter((it) => it.skipped).length;
   // What the night would actually take out of the sprint in progress — the
   // Backlog tab's badge. `runnable` is the client twin of the runner's own
@@ -674,6 +745,60 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
       onRefresh();
     });
 
+  // ---- the spine (#608) -----------------------------------------------------
+  // Into a slice, or null to the Icebox. Icing a Ready row takes it out of the
+  // build queue on the server in the same write, and the note says so.
+  const moveSlice = (it: RoadmapItem, sliceId: number | null) =>
+    guard(async () => {
+      if (sliceId === it.sliceId) return;
+      wrote(await patchRoadmapItem(slug, it.id, { sliceId }));
+      if (sliceId === null) setNote(`#${it.id} went to the Icebox${it.ready ? ' and left the build queue' : ''}.`);
+    });
+  const [sliceEdit, setSliceEdit] = useState<{ slice: Slice | null } | null>(null);
+  const [msEdit, setMsEdit] = useState(false);
+  const saveSlice = (v: { title: string; spec: string; areas: string[]; milestoneId: number | null }) =>
+    guard(async () => {
+      const editing = sliceEdit?.slice ?? null;
+      setSliceEdit(null);
+      if (editing) {
+        const next = await patchSlice(slug, editing.id, {
+          title: v.title, spec: v.spec, areas: v.areas, ...(v.milestoneId !== null ? { milestoneId: v.milestoneId } : {}),
+        });
+        setSl((xs) => xs.map((x) => (x.id === next.id ? next : x)));
+      } else {
+        const made = await createSlice(slug, { title: v.title, spec: v.spec, areas: v.areas, ...(v.milestoneId !== null ? { milestoneId: v.milestoneId } : {}) });
+        setSl((xs) => [...xs, made]);
+        // Pick it, so the next card is born in it: a slice is made empty, and
+        // without this the board would look exactly as it did.
+        if (bySlice) setPicked([sliceKeyOf(made.id)]);
+      }
+      onRefresh();
+    });
+  const dropSlice = (slice: Slice) =>
+    guard(async () => {
+      setSliceEdit(null);
+      const { iced } = await deleteSlice(slug, slice.id);
+      setSl((xs) => xs.filter((x) => x.id !== slice.id));
+      setPicked((ps) => ps.filter((k) => k !== sliceKeyOf(slice.id)));
+      setNote(iced.length ? `Deleted “${slice.title}”. Its ${iced.length} item${iced.length === 1 ? '' : 's'} went to the Icebox.` : `Deleted “${slice.title}”.`);
+      onRefresh();
+    });
+  const msWrote = (m: Milestone) => {
+    // Making one current finishes the incumbent on the server; mirror that here
+    // so the strip is right before the re-read lands.
+    setMs((xs) => {
+      const rest = xs.filter((x) => x.id !== m.id).map((x) => (m.status === 'active' && x.status === 'active' ? { ...x, status: 'done' as const } : x));
+      return [...rest, m].sort((a, b) => Number(a.status === 'done') - Number(b.status === 'done') || a.position - b.position || a.id - b.id);
+    });
+    onRefresh();
+  };
+  const saveMilestone = (id: number, v: { name: string; goal: string; targetOn: string | null }) =>
+    guard(async () => { setMsEdit(false); msWrote(await patchMilestone(slug, id, v)); });
+  const startMilestone = (v: { name: string; goal: string; targetOn: string | null }) =>
+    guard(async () => { setMsEdit(false); msWrote(await createMilestone(slug, { ...v, status: 'active' })); });
+  const makeCurrent = (id: number) =>
+    guard(async () => { setMsEdit(false); msWrote(await patchMilestone(slug, id, { status: 'active' })); });
+
   // A card born in a column that is not its derived one carries the override
   // from the start; one born in To Do does not, because it would derive there
   // anyway. Two calls rather than one because POST has no `listKey`.
@@ -691,11 +816,18 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
       // one place this screen writes `area` at all, and it is safe precisely
       // because the section header already said what the area means: it is a
       // lane, and adding a card to one cannot take it off another.
-      const made = await createRoadmapItem(slug, { title, note: '', bucket, ...(area ? { area } : {}), ...extra });
+      const made = await createRoadmapItem(slug, {
+        title, note: '', bucket, ...(area ? { area } : {}), ...(homeSlice ? { sliceId: homeSlice.id } : {}), ...extra,
+      });
       const final = key && key !== CATCH_ALL && derivedKeyOf(made) !== key
         ? await patchRoadmapItem(slug, made.id, { listKey: key })
         : made;
       setRows((r) => [...r, final]);
+      // #608 — a card with no slice is born in the Icebox, which is not this
+      // screen. Say where it went, or it reads as a lost write.
+      if (final.sliceId === null) {
+        setNote(`#${final.id} went to the Icebox: there is no single slice to create it in. Pick one slice to create cards on the board.`);
+      }
       onRefresh();
     });
 
@@ -892,6 +1024,10 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
         {view === 'dev' && <DevelopmentView slug={slug} items={rows} onOpen={onEdit} />}
 
         {view === 'board' && <>
+        <SpineStrip milestones={ms} slices={sl} iced={icedCount}
+          onMilestone={() => { closeAll(); setMsEdit(true); }}
+          onNewSlice={() => { closeAll(); setSliceEdit({ slice: null }); }}
+          onIcebox={() => go.detail(slug, 'auto')} />
         <div className="km-toolbar">
           <span className="searchbox sm km-search">
             <KitIcon name="search" size={14} />
@@ -901,7 +1037,7 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
 
           <div className="seg-control sm km-layout" role="tablist" aria-label="Board layout">
             <button role="tab" aria-selected={!listMode} className={`seg-opt${listMode ? '' : ' on'}`}
-              onClick={() => writeView({ layout: 'areas' })}>Areas</button>
+              onClick={() => writeView({ layout: 'areas' })}>Board</button>
             <button role="tab" aria-selected={listMode} className={`seg-opt${listMode ? ' on' : ''}`}
               onClick={() => writeView({ layout: 'list' })}>List</button>
           </div>
@@ -933,11 +1069,15 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
           {/* GROUP BY AREA is stored with the layout (device-local, per
               project): it is how you like to read this board, not a fact
               about the work. Off draws each column as one flat list. */}
-          {!listMode && <button className={`k-btn sm secondary km-grouped${grouped ? ' on' : ''}`}
-            aria-pressed={grouped} onClick={() => setGrouped(!grouped)}
-            title="Group each column's cards by area">
-            <KitIcon name={grouped ? 'layout-grid' : 'list'} size={14} />{grouped ? 'Grouped by area' : 'Not grouped'}
-          </button>}
+          {!listMode && (
+            <select className="k-select sm km-grouped" aria-label="Group cards by" value={bview.group}
+              title="What each column groups its cards by"
+              onChange={(e) => setGroup(e.target.value as BoardGroup)}>
+              <option value="slice">Grouped by slice</option>
+              <option value="area">Grouped by area</option>
+              <option value="none">Not grouped</option>
+            </select>
+          )}
 
           {/* Collapse all folds every AREA in every column, and opens them all
               once they are folded; the columns keep their own folds. Gone while
@@ -946,7 +1086,7 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
             <button className="k-btn sm secondary km-collapseall" onClick={collapseAll}
               data-all-folded={allFolded}
               disabled={groupKeys.length === 0}
-              title={allFolded ? 'Open every area' : 'Fold every area to its header, in every column'}>
+              title={allFolded ? 'Open every group' : 'Fold every group to its header, in every column'}>
               <KitIcon name={allFolded ? 'chevron-down' : 'chevron-right'} size={14} />{allFolded ? 'Expand all' : 'Collapse all'}
             </button>
           )}
@@ -1044,6 +1184,8 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
                   ? () => { closeAll(); setCardMenu(null); runInTerminal(it); } : undefined}
                 onAddToSprint={(sid) => { setCardMenu(null); addToSprint(it, sid); }}
                 onReady={(on) => { setCardMenu(null); setReady(it, on); }}
+                slices={sl} milestones={ms}
+                onSlice={(sid) => { setCardMenu(null); moveSlice(it, sid); }}
                 tint={areaMeta(areaKey(it)).dot}
                 showArea={!grouped}
                 onPark={() => { setCardMenu(null); park(it); }}
@@ -1100,16 +1242,17 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
                     FOLD (#511). The head stays, and keeps its count. */}
                 {!colFolded && col.groups.map((g) => {
                   if (!grouped) return g.items.map(card);
-                  const meta = areaMeta(g.key);
+                  const meta = groupMeta(g.key);
                   const gFolded = !areaOpen(g.key);
+                  const st = meta.slice ? sliceStateOf(meta.slice.id, rows) : null;
                   return (
                     <div className={`km-group${gFolded ? ' folded' : ''}`} key={g.key} data-area={g.key}>
                       <div className="km-grouphead">
                         {!searching && (
                           <button className="km-foldbtn"
                             aria-expanded={!gFolded}
-                            aria-label={`${gFolded ? 'Expand' : 'Collapse'} area — ${meta.name}`}
-                            title={gFolded ? 'Expand this area, in every column' : 'Collapse this area, in every column'}
+                            aria-label={`${gFolded ? 'Expand' : 'Collapse'} ${bySlice ? 'slice' : 'area'} — ${meta.name}`}
+                            title={gFolded ? `Expand this ${bySlice ? 'slice' : 'area'}, in every column` : `Collapse this ${bySlice ? 'slice' : 'area'}, in every column`}
                             onClick={(e) => { e.stopPropagation(); closeAll(); foldSection(g.key); }}>
                             <KitIcon name={gFolded ? 'chevron-right' : 'chevron-down'} size={13} />
                           </button>
@@ -1120,12 +1263,28 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
                           <span className="k-tag warning"
                             title={`Lane held by ${meta.holder} — no second worker until it lands`}>held</span>
                         )}
+                        {bySlice && !meta.slice && (
+                          <span className="k-tag warning" title="Worked rows in no slice. Move each into a slice from its card menu.">
+                            no slice
+                          </span>
+                        )}
                         <span className="rule" />
-                        <span className="n">{g.items.length}</span>
+                        {st && (
+                          <span className="n" title={`${st.built} of ${st.total} built, ${st.done} ticked, across every column`}>
+                            {st.built}/{st.total} built
+                          </span>
+                        )}
+                        {!st && <span className="n">{g.items.length}</span>}
+                        {meta.slice && (
+                          <button className="km-colbtn" aria-label={`Edit slice ${meta.name}`} title="Edit this slice"
+                            onClick={(e) => { e.stopPropagation(); closeAll(); setSliceEdit({ slice: meta.slice }); }}>
+                            <KitIcon name="pencil" size={12} />
+                          </button>
+                        )}
                         {/* The area's ⋯ (rename, colour, delete), on every group
                             head it has. Not on untagged: it is not a row in
                             `project_areas`, so there is nothing to change. */}
-                        {!meta.untagged && (
+                        {!bySlice && !meta.untagged && (
                           <AreaMenu name={g.key} count={areaTotal(g.key)} holder={meta.holder}
                             dot={meta.dot} palette={palette}
                             open={areaMenu === `${col.key}::${g.key}`}
@@ -1147,7 +1306,9 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
                     onAdd={(text, bucket) => { setComposer(null); add(text, bucket, col.key, homeArea); }} />
                 ) : (
                   <button className="km-add" onClick={(e) => { e.stopPropagation(); closeAll(); setComposer(col.key); }}
-                    title={homeArea ? `Create in ${homeArea}` : 'Create an untagged card — pick one area to create in it'}>
+                    title={homeSlice
+                      ? `Create in ${homeSlice.title}${homeArea ? `, area ${homeArea}` : ''}`
+                      : 'No single slice to create in, so this files to the Icebox. Pick one slice to create on the board.'}>
                     <KitIcon name="plus" size={14} />Create
                   </button>
                 ))}
@@ -1160,6 +1321,18 @@ export function Board({ slug, projectName, items, sprints, onRefresh, onEdit, on
         </>}
         </>}
       </div>
+
+      {sliceEdit && (
+        <SliceDialog slice={sliceEdit.slice} milestones={ms}
+          areaNames={areaOrder.filter((k) => k !== UNTAGGED)}
+          count={sliceEdit.slice ? rows.filter((it) => it.sliceId === sliceEdit.slice!.id && !it.archived).length : 0}
+          onClose={() => setSliceEdit(null)} onSave={saveSlice}
+          onDelete={sliceEdit.slice ? () => dropSlice(sliceEdit.slice!) : undefined} />
+      )}
+      {msEdit && (
+        <MilestoneDialog milestones={ms} onClose={() => setMsEdit(false)}
+          onSave={saveMilestone} onCreate={startMilestone} onMakeCurrent={makeCurrent} />
+      )}
 
       {dialog && (
         <CreateDialog onClose={() => setDialog(false)}
@@ -1500,8 +1673,11 @@ function IssueCard({
   priOpen, onPri, onPick, ptsOpen, onPts, onPoints, menuOpen, onMenu,
   onKind, onDue, onEdit, onSignOff, onPark, onArchive, onDerive, onDelete,
   activeSprint, onBuildNow, onAddToSprint, onRun, onReady, tint, showArea,
-  parentItem, kids, parts, away, onOpen,
+  parentItem, kids, parts, away, onOpen, slices, milestones, onSlice,
 }: {
+  /** #608 — the slices a card can move into, and the move (null = Icebox). */
+  slices: Slice[]; milestones: Milestone[];
+  onSlice: (sliceId: number | null) => void;
   item: RoadmapItem;
   /** The card this one is filed under (`parent_id`), or null. */
   parentItem: RoadmapItem | null;
@@ -1901,7 +2077,12 @@ function IssueCard({
               ⌨ Run in terminal
             </button>
           )}
-          {!item.done && (
+          {/* #608 — Ready ⇒ sliced. An unsliced card says why it cannot be
+              queued instead of offering a press the server refuses. */}
+          {!item.done && item.sliceId === null && (
+            <span className="km-menunote">In no slice, so it cannot be queued to build. Pick a slice below.</span>
+          )}
+          {!item.done && item.sliceId !== null && (
             <button className="km-menuitem" onClick={() => onReady(!item.ready)}
               title={item.ready
                 ? 'Takes this item out of the Ready queue. The automation stops considering it for a build.'
@@ -1923,6 +2104,11 @@ function IssueCard({
           )}
           <button className="km-menuitem" onClick={onPark}>{item.skipped ? 'Unpark' : 'Park'}</button>
           <span className="km-menusep" />
+          <span className="km-menulbl">Slice</span>
+          <span className="km-duerow">
+            <SlicePicker value={item.sliceId} slices={slices} milestones={milestones}
+              label={`Slice for #${item.id}`} iceboxLabel="Icebox (off the board)" onPick={onSlice} />
+          </span>
           {/* #508 — BOTH ARE CHANGEABLE AFTER CREATION, and that is not a
               nicety. The dialog is where they are set and the dialog is not
               where most cards come from — the lane composer makes one in two

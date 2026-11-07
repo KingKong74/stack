@@ -46,7 +46,7 @@ function item(over = {}) {
     source: 'manual', reviewed: true, claimedBy: '', area: '', builtNote: '',
     reviewTag: '', reviewTags: [], refineNote: '', reviewShelved: false,
     skipped: false, skippedAt: null, risk: 'normal', riskSource: '', riskReason: '',
-    sprintId: null, sprintRank: 0, plan: [], updatedAt: ago(1), agentProfile: '',
+    sprintId: null, sprintRank: 0, sliceId: 1, sliceRank: 0, plan: [], updatedAt: ago(1), agentProfile: '',
     // the Roadmap v2 columns the schedule panels read
     parentId: null, sched: null, baseline: null, labels: [], listKey: '',
     archived: false, estimate: null,

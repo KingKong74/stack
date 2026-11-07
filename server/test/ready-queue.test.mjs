@@ -32,8 +32,11 @@ async function call(method, path, body) {
   const text = await res.text();
   return { status: res.status, body: text ? JSON.parse(text) : null, text };
 }
+// #608 — Ready ⇒ sliced, so every row this file makes is filed into one slice.
+// The Icebox refusal is pinned in spine.test.mjs.
+let sliceId = null;
 const item = async (title, extra = {}) =>
-  (await call('POST', `/projects/${SLUG}/roadmap`, { title, ...extra })).body;
+  (await call('POST', `/projects/${SLUG}/roadmap`, { title, sliceId, ...extra })).body;
 const rows = async () => Object.values((await call('GET', `/projects/${SLUG}`)).body.roadmap).flat();
 
 let a; let b; let c; let sprinted;
@@ -41,6 +44,7 @@ let a; let b; let c; let sprinted;
 test('setup', async () => {
   const r = await call('POST', '/ingest', { project: { slug: SLUG, name: SLUG }, session: { summary: 'seed' } });
   assert.ok(r.status < 300, r.text);
+  sliceId = (await call('POST', `/projects/${SLUG}/slices`, { title: 'ready slice' })).body.id;
   a = await item('a'); b = await item('b'); c = await item('c'); sprinted = await item('in the sprint only');
 });
 

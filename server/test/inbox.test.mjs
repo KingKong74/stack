@@ -34,14 +34,17 @@ async function call(method, path, body) {
 const post = async (b) => (await call('POST', `/projects/${SLUG}/roadmap`, b)).body;
 const mine = (list) => list.filter((it) => it.projectSlug === SLUG).map((it) => it.id);
 
-let built; let claimedOnly; let parent; let piece; let fly;
+// #608 — Ready ⇒ sliced, so the rows this file queues live in a slice; the
+// plan piece takes it from its parent, which is the path a planning run uses.
+let built; let claimedOnly; let parent; let piece; let fly; let slice;
 test('setup', async () => {
   await call('POST', '/ingest', { project: { slug: SLUG, name: SLUG }, session: { summary: 'seed' } });
+  slice = (await call('POST', `/projects/${SLUG}/slices`, { title: 'inbox slice' })).body;
   built = await post({ title: 'built' });
   await call('PATCH', `/projects/${SLUG}/roadmap/${built.id}`, { claimed_by: 'feat/x', built_note: 'did it' });
   await call('POST', `/projects/${SLUG}/autopilot/runs`, { item_id: built.id, item_title: 'built', branch: 'feat/x', outcome: 'landed', commits: 2 });
   claimedOnly = await post({ title: 'in progress', claimed_by: 'feat/y' });
-  parent = await post({ title: 'feature' });
+  parent = await post({ title: 'feature', sliceId: slice.id });
   piece = await post({ title: 'piece', source: 'plan', parentId: parent.id });
   fly = await post({ title: 'a session idea', source: 'fly' });
 });
@@ -65,7 +68,8 @@ test('a verdict takes a built row out', async () => {
 });
 
 test('/ready/add appends in order, keeps the queue, and refuses a held row', async () => {
-  const a = await post({ title: 'a' }); const b = await post({ title: 'b' });
+  const a = await post({ title: 'a', sliceId: slice.id }); const b = await post({ title: 'b', sliceId: slice.id });
+  assert.equal(piece.sliceId, slice.id, 'a plan piece inherits its parent\'s slice, so it can be queued');
   await call('PUT', `/projects/${SLUG}/ready`, { items: [a.id] });
   const held = await call('POST', `/projects/${SLUG}/ready/add`, { items: [b.id, piece.id] });
   assert.equal(held.status, 409, held.text);

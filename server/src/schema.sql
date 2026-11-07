@@ -1651,3 +1651,138 @@ BEGIN
     DROP TABLE session_plans;
   END IF;
 END $$;
+
+-- #608 — THE SPINE: milestone → slice → item, and the ICEBOX (owner's call,
+-- 2026-11-07; the design is the project's "Stack spine" doc artifact).
+--
+--  1. A MILESTONE belongs to a project, and at most one is `active` (the
+--     current one), the same partial-unique pattern as sprints. `target_on`
+--     is a DAY somebody named and gates nothing, like `due_on`.
+--  2. A SLICE belongs to a milestone, and `milestone_id` is NOT NULL: a slice
+--     outside a milestone is the flat structure this exists to end. NO ACTION,
+--     not RESTRICT, so a project purge's cascade can take both in one
+--     statement; a lone milestone delete with slices in it is refused by the
+--     route out loud. A slice's STATUS IS DERIVED from its items and never
+--     stored (the rule lib/spine.ts states). `areas` holds area names, free
+--     strings like artifacts.tags: the components it touches.
+--  3. `roadmap_items.slice_id` NULL IS THE ICEBOX. Deleting a slice returns
+--     its items there (SET NULL), the same rule as sprint rule 3. `slice_rank`
+--     is the row's place in its slice and means nothing while slice_id is NULL.
+--  4. READY ⇒ SLICED, enforced by a CHECK rather than copied into the claim
+--     SQL and the runner: an unsliced row cannot be in the build lane at all,
+--     so nothing downstream of Ready has to ask. Every writer that clears a
+--     slice clears Ready in the same statement (PATCH /roadmap/:id, DELETE
+--     /slices/:id); one that forgets fails loud, never silently builds.
+--  5. `committed` (#496) RETIRES: "keep this idea, don't do it yet" is the
+--     Icebox. The column stays so old rows read, and nothing decides by it.
+CREATE TABLE IF NOT EXISTS milestones (
+  id         SERIAL PRIMARY KEY,
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  name       TEXT NOT NULL,
+  goal       TEXT NOT NULL DEFAULT '',
+  status     TEXT NOT NULL DEFAULT 'planned',   -- planned | active | done
+  position   INTEGER NOT NULL DEFAULT 0,
+  target_on  DATE,
+  started_at TIMESTAMPTZ,
+  ended_at   TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS milestones_one_active_idx ON milestones (project_id) WHERE status = 'active';
+CREATE INDEX IF NOT EXISTS milestones_project_idx ON milestones (project_id, position, id);
+
+CREATE TABLE IF NOT EXISTS slices (
+  id           SERIAL PRIMARY KEY,
+  project_id   INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  milestone_id INTEGER NOT NULL REFERENCES milestones(id),
+  title        TEXT NOT NULL,
+  spec         TEXT NOT NULL DEFAULT '',
+  areas        JSONB NOT NULL DEFAULT '[]'::jsonb,
+  position     INTEGER NOT NULL DEFAULT 0,
+  archived     BOOLEAN NOT NULL DEFAULT false,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS slices_project_idx ON slices (project_id, milestone_id, position, id);
+
+ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS slice_id INTEGER REFERENCES slices(id) ON DELETE SET NULL;
+ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS slice_rank INTEGER NOT NULL DEFAULT 0;
+CREATE INDEX IF NOT EXISTS roadmap_slice_idx ON roadmap_items (slice_id, slice_rank, id);
+
+-- THE ONE-SHOT MIGRATION, guarded on the milestones table being empty: it runs
+-- on the first boot after #608 and never again, so a reboot months later never
+-- re-files a board the owner has since shaped by hand. Per project with rows:
+--  a. one milestone, "Current", active;
+--  b. each CLUSTER (a live top-level row with parts) becomes a slice and its
+--     parts go in it. An UNWORKED parent is archived (the slice carries its
+--     meaning now); a worked, Ready or sprinted one stays as an item in it;
+--  c. every other row that is WORKED (done, claimed or built), Ready or in a
+--     sprint goes into "Carried over", so nothing in flight leaves the board
+--     and the build lane does not stall;
+--  d. everything else stays slice_id NULL: the Icebox, for the owner's triage.
+DO $$
+DECLARE
+  pr RECORD; c RECORD; mid INT; sid INT; n INT;
+BEGIN
+  IF EXISTS (SELECT 1 FROM milestones) THEN RETURN; END IF;
+  FOR pr IN SELECT DISTINCT project_id AS id FROM roadmap_items LOOP
+    INSERT INTO milestones (project_id, name, status, started_at)
+    VALUES (pr.id, 'Current', 'active', now()) RETURNING id INTO mid;
+    n := 0;
+    FOR c IN
+      SELECT x.* FROM roadmap_items x
+       WHERE x.project_id = pr.id AND x.parent_id IS NULL AND NOT x.archived
+         AND EXISTS (SELECT 1 FROM roadmap_items k WHERE k.parent_id = x.id)
+       ORDER BY x.created_at, x.id
+    LOOP
+      INSERT INTO slices (project_id, milestone_id, title, spec, areas, position)
+      VALUES (pr.id, mid, c.title, COALESCE(c.note, ''),
+              CASE WHEN COALESCE(c.area, '') <> '' THEN jsonb_build_array(c.area) ELSE '[]'::jsonb END, n)
+      RETURNING id INTO sid;
+      n := n + 1;
+      UPDATE roadmap_items k SET slice_id = sid, slice_rank = o.rk
+        FROM (SELECT id, row_number() OVER (ORDER BY created_at, id) - 1 AS rk
+                FROM roadmap_items WHERE parent_id = c.id) o
+       WHERE k.id = o.id;
+      IF c.done OR COALESCE(c.claimed_by, '') <> '' OR COALESCE(c.built_note, '') <> ''
+         OR c.ready_at IS NOT NULL OR c.sprint_id IS NOT NULL THEN
+        UPDATE roadmap_items SET slice_id = sid,
+               slice_rank = (SELECT count(*) FROM roadmap_items WHERE parent_id = c.id)
+         WHERE id = c.id;
+      ELSE
+        UPDATE roadmap_items SET archived = true WHERE id = c.id;
+      END IF;
+    END LOOP;
+    IF EXISTS (
+      SELECT 1 FROM roadmap_items r
+       WHERE r.project_id = pr.id AND r.slice_id IS NULL AND NOT r.archived
+         AND (r.done OR COALESCE(r.claimed_by, '') <> '' OR COALESCE(r.built_note, '') <> ''
+              OR r.ready_at IS NOT NULL OR r.sprint_id IS NOT NULL)
+    ) THEN
+      INSERT INTO slices (project_id, milestone_id, title, spec, position)
+      VALUES (pr.id, mid, 'Carried over',
+              'Work already in flight, built or queued when the spine landed (#608). Re-file it into real slices as you go.', n)
+      RETURNING id INTO sid;
+      UPDATE roadmap_items r SET slice_id = sid, slice_rank = o.rk
+        FROM (SELECT id, row_number() OVER (ORDER BY created_at, id) - 1 AS rk
+                FROM roadmap_items
+               WHERE project_id = pr.id AND slice_id IS NULL AND NOT archived
+                 AND (done OR COALESCE(claimed_by, '') <> '' OR COALESCE(built_note, '') <> ''
+                      OR ready_at IS NOT NULL OR sprint_id IS NOT NULL)) o
+       WHERE r.id = o.id;
+    END IF;
+  END LOOP;
+END $$;
+
+-- Rule 4, added only after the migration has sliced every Ready row. An
+-- archived Ready row with no slice would block it, so those leave Ready first:
+-- an archived row is off the board and was never going to build.
+UPDATE roadmap_items SET ready_at = NULL, ready_rank = 0
+ WHERE ready_at IS NOT NULL AND slice_id IS NULL;
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'roadmap_ready_needs_slice') THEN
+    ALTER TABLE roadmap_items ADD CONSTRAINT roadmap_ready_needs_slice
+      CHECK (ready_at IS NULL OR slice_id IS NOT NULL);
+  END IF;
+END $$;

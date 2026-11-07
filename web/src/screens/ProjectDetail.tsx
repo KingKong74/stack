@@ -27,7 +27,7 @@ import { TabStrip } from '../components/TabStrip';
 import { Modal } from '../components/Modal';
 import { RoadmapModal, type RoadmapFields } from '../components/RoadmapModal';
 import { useAutoRefresh } from '../lib/autoRefresh';
-import { newItemSched, flatRoadmap, isAutoIdea, isBoardWork } from '../lib/plan';
+import { newItemSched, flatRoadmap, isAutoIdea, isIced, isBoardWork } from '../lib/plan';
 import { PRIORITY_DEFAULT, crumbName } from '../lib/ui';
 
 // #278 — Bugs and Audit are one tab now: Quality. They were halves of one loop
@@ -284,6 +284,10 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
   // IS THIS, and it is real now — the pane behind it draws these same rows.
   const autoIdeaRows = useMemo(
     () => allRoadmap.filter((i) => !i.archived && isAutoIdea(i)), [allRoadmap]);
+  // #608 — the third population: kept rows in no slice, drawn in the Icebox
+  // section of the same pane, so the pane's count is both.
+  const icedRows = useMemo(
+    () => allRoadmap.filter((i) => !i.archived && isIced(i)), [allRoadmap]);
   // THE REVIEW QUEUE IS BACK, and `autoIdeaRows` above is it (#496). It is
   // every 'hook' and 'fly' row no human has signed off and no session has
   // worked — held from the overnight runner by `lib/approval.ts` until
@@ -664,7 +668,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
             tabs={[
               { key: 'overview', label: 'Overview', mock: true },
               { key: 'activity', label: 'Activity' },
-              { key: 'auto', label: 'Auto-ideas', count: autoIdeaRows.length },
+              { key: 'auto', label: 'Ideas & Icebox', count: autoIdeaRows.length + icedRows.length },
             ]}
             active={tab} onPick={setTab} />
         )}
@@ -680,6 +684,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
             lists what Overview still costs. */}
         {isForYou(tab) && (
           <ForYou pane={tab as 'overview' | 'activity' | 'auto'} slug={slug} items={allRoadmap}
+            slices={data.slices} milestones={data.milestones}
             activity={data.activity} onRefresh={reread} highlightId={highlightId}
             onEdit={(it) => setRoadModal({ open: true, title: it.title, note: it.note, editing: it })} />
         )}
@@ -704,6 +709,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
             browser can still do — give a verdict. */}
         {tab === 'roadmap' && (
           <Board slug={slug} projectName={project.name} items={allRoadmap} sprints={data.sprints}
+            milestones={data.milestones} slices={data.slices}
             onRefresh={reread} highlightId={highlightId}
             onAreas={setBoardAreas}
             onEdit={(it) => setRoadModal({ open: true, title: it.title, note: it.note, editing: it })} />

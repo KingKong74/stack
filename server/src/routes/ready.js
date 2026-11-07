@@ -15,6 +15,9 @@
 // A HELD item is refused out loud, naming it: an unapproved row in the build
 // queue would sit there never running, which reads as a queue that is stuck.
 //
+// #608 — so is an UNSLICED one (the Icebox). Ready ⇒ sliced is also a CHECK
+// in schema.sql; this is the sentence a caller reads instead of the 500.
+//
 // PUT / takes the WHOLE queue, like PUT /sprints/:id/order: listed ids get
 // their rank from their index, anything Ready that the body leaves out leaves
 // the queue. The copies of "what builds" are here, routes/autopilot.js's
@@ -35,6 +38,26 @@ ready.use(async (req, res, next) => {
   next();
 });
 
+// Held first, then unsliced: approval is the older and outer gate, and a row
+// that is both should be told the thing it has to fix first.
+function refuse(real) {
+  const held = real.filter((r) => !isApproved(r));
+  if (held.length) {
+    return {
+      error: `Not approved yet, so it can't be queued to build: ${held.map((r) => `#${r.id} "${r.title}" (${approvalHold(r)})`).join('; ')}.`,
+      held: held.map((r) => r.id),
+    };
+  }
+  const iced = real.filter((r) => r.slice_id == null);
+  if (iced.length) {
+    return {
+      error: `Not in a slice, so it can't be queued to build: ${iced.map((r) => `#${r.id} "${r.title}"`).join('; ')}. Move it out of the Icebox into a slice first.`,
+      unsliced: iced.map((r) => r.id),
+    };
+  }
+  return null;
+}
+
 ready.put('/', async (req, res) => {
   const wanted = Array.isArray(req.body?.items) ? req.body.items : null;
   if (!wanted) return res.status(400).json({ error: 'items must be an array of item ids.' });
@@ -45,17 +68,11 @@ ready.put('/', async (req, res) => {
     await client.query('BEGIN');
     // Scoped to this project; an id from elsewhere is dropped, as a sprint drop is.
     const { rows: real } = await client.query(
-      'SELECT id, title, source, reviewed_at FROM roadmap_items WHERE project_id = $1 AND id = ANY($2::int[])',
+      'SELECT id, title, source, reviewed_at, slice_id FROM roadmap_items WHERE project_id = $1 AND id = ANY($2::int[])',
       [req.project.id, ids]
     );
-    const held = real.filter((r) => !isApproved(r));
-    if (held.length) {
-      await client.query('ROLLBACK');
-      return res.status(409).json({
-        error: `Not approved yet, so it can't be queued to build: ${held.map((r) => `#${r.id} "${r.title}" (${approvalHold(r)})`).join('; ')}.`,
-        held: held.map((r) => r.id),
-      });
-    }
+    const refusal = refuse(real);
+    if (refusal) { await client.query('ROLLBACK'); return res.status(409).json(refusal); }
     const ok = new Set(real.map((r) => r.id));
     const ordered = ids.filter((n) => ok.has(n));
     if (ordered.length) {
@@ -97,18 +114,12 @@ ready.post('/add', async (req, res) => {
   try {
     await client.query('BEGIN');
     const { rows: real } = await client.query(
-      `SELECT id, title, source, reviewed_at, ready_at FROM roadmap_items
+      `SELECT id, title, source, reviewed_at, ready_at, slice_id FROM roadmap_items
         WHERE project_id = $1 AND id = ANY($2::int[]) FOR UPDATE`,
       [req.project.id, ids]
     );
-    const held = real.filter((r) => !isApproved(r));
-    if (held.length) {
-      await client.query('ROLLBACK');
-      return res.status(409).json({
-        error: `Not approved yet, so it can't be queued to build: ${held.map((r) => `#${r.id} "${r.title}" (${approvalHold(r)})`).join('; ')}.`,
-        held: held.map((r) => r.id),
-      });
-    }
+    const refusal = refuse(real);
+    if (refusal) { await client.query('ROLLBACK'); return res.status(409).json(refusal); }
     const fresh = new Set(real.filter((r) => r.ready_at == null).map((r) => r.id));
     const added = ids.filter((n) => fresh.has(n));
     if (added.length) {

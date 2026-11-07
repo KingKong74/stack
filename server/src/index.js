@@ -14,6 +14,7 @@ import { roadmap } from './routes/roadmap.js';
 import { board } from './routes/board.js';
 import { sprints } from './routes/sprints.js';
 import { ready } from './routes/ready.js';
+import { milestones, slices } from './routes/spine.js';
 import { inbox } from './routes/inbox.js';
 import { presence } from './routes/presence.js';
 import { checks } from './routes/checks.js';
@@ -88,6 +89,8 @@ app.use('/api/projects/:slug/board', requireToken, board);
 app.use('/api/projects/:slug/sprints', requireToken, sprints);
 // The build queue — see routes/ready.js.
 app.use('/api/projects/:slug/ready', requireToken, ready);
+app.use('/api/projects/:slug/milestones', requireToken, milestones);
+app.use('/api/projects/:slug/slices', requireToken, slices);
 app.use('/api/projects/:slug/checks', requireToken, checks);
 // The project's kept docs, plans, designs, links and files — see routes/artifacts.js.
 app.use('/api/projects/:slug/artifacts', requireToken, artifacts);

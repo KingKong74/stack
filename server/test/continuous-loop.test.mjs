@@ -52,8 +52,10 @@ test('quiet hours, including a window that wraps midnight', () => {
 let a; let b;
 test('setup', async () => {
   await call('POST', '/ingest', { project: { slug: SLUG, name: SLUG }, session: { summary: 'seed' } });
-  a = (await call('POST', `/projects/${SLUG}/roadmap`, { title: 'first' })).body;
-  b = (await call('POST', `/projects/${SLUG}/roadmap`, { title: 'second' })).body;
+  // #608 — Ready ⇒ sliced.
+  const slice = (await call('POST', `/projects/${SLUG}/slices`, { title: 'loop slice' })).body;
+  a = (await call('POST', `/projects/${SLUG}/roadmap`, { title: 'first', sliceId: slice.id })).body;
+  b = (await call('POST', `/projects/${SLUG}/roadmap`, { title: 'second', sliceId: slice.id })).body;
   await call('PUT', `/projects/${SLUG}/ready`, { items: [a.id, b.id] });
   await call('PATCH', `/projects/${SLUG}`, { automode: true });
 });

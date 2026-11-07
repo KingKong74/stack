@@ -110,6 +110,10 @@ export function roadmapItemShape(row) {
     // moment somebody renames a sprint, on the very screen that renamed it.
     sprintId: row.sprint_id ?? null,
     sprintRank: Number(row.sprint_rank) || 0,
+    // #608 — the SLICE this row belongs to; null is the ICEBOX. `sliceRank` is
+    // its place in the slice and means nothing while sliceId is null.
+    sliceId: row.slice_id ?? null,
+    sliceRank: Number(row.slice_rank) || 0,
     plan: cleanPlan(row.plan),         // implementation steps [{text, done}] (#75)
     // In the build queue (routes/ready.js), and where: read the pair.
     ready: row.ready_at != null,
@@ -337,7 +341,7 @@ export function projectListShape(p, { progress, metaLine, pushesThisWeek }) {
   };
 }
 
-export function projectDetailShape(p, { progress, metaLine, pushesThisWeek, cadence, activity, bugs, roadmap, checks, sprints, keepResumeCard, sessionDefaults, staleItemDays, liveBranches, geminiReady, since }) {
+export function projectDetailShape(p, { progress, metaLine, pushesThisWeek, cadence, activity, bugs, roadmap, checks, sprints, milestones, slices, keepResumeCard, sessionDefaults, staleItemDays, liveBranches, geminiReady, since }) {
   const latest = activity[0];
   return {
     ...projectListShape(p, { progress, metaLine, pushesThisWeek }),
@@ -360,6 +364,9 @@ export function projectDetailShape(p, { progress, metaLine, pushesThisWeek, cade
     // with the items in this very response. At most one carries status
     // 'active', which the database guarantees and no reader should re-check.
     sprints: sprints || [],
+    // #608 — the spine. A slice with no milestone cannot exist (schema.sql).
+    milestones: milestones || [],
+    slices: slices || [],
     // The Monday the Roadmap timeline counts weeks from. null = no start date,
     // which the calendar view states rather than inventing one.
     weekZero: p.week_zero ? new Date(p.week_zero).toISOString().slice(0, 10) : null,
@@ -525,3 +532,35 @@ export function sprintShape(row) {
   };
 }
 
+
+// #608 — THE SPINE's two shapes. A slice carries NO status and NO progress:
+// both are derived from its items on the client (lib/plan.ts), never stored,
+// so a tick anywhere moves them without a second write to keep in step.
+export function milestoneShape(row) {
+  return {
+    id: row.id,
+    name: row.name || '',
+    goal: row.goal || '',
+    status: row.status || 'planned',    // planned | active | done
+    position: Number(row.position) || 0,
+    targetOn: dayOf(row.target_on),     // a DAY; read through dayOf, never toISOString
+    startedAt: row.started_at || null,
+    endedAt: row.ended_at || null,
+    createdAt: row.created_at || null,
+    updatedAt: row.updated_at || null,
+  };
+}
+
+export function sliceShape(row) {
+  return {
+    id: row.id,
+    milestoneId: row.milestone_id,
+    title: row.title || '',
+    spec: row.spec || '',
+    areas: Array.isArray(row.areas) ? row.areas.filter((a) => typeof a === 'string') : [],
+    position: Number(row.position) || 0,
+    archived: !!row.archived,
+    createdAt: row.created_at || null,
+    updatedAt: row.updated_at || null,
+  };
+}

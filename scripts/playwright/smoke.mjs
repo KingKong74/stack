@@ -218,21 +218,32 @@ const ROADMAP_PANELS = [
     click: '.km-addarea',
     expect: '.km-addarea.open input',
   },
+  // #608 — THE BOARD LANDS GROUPED BY SLICE, so a group head is a SLICE head
+  // and its control is ✎ Edit slice, not the area's ⋯ (which draws only while
+  // grouped by area, and is not pressed here: switching the grouping persists
+  // to localStorage and would reach the narrow pass). Both presses below open a
+  // modal and `dismiss` closes it on the backdrop, which saves nothing. They
+  // need a slice on the board; after the #608 migration every board with work
+  // in flight has one ("Carried over" at least).
   {
-    // The area's ⋯ lives on its group heads, so it is pressed BEFORE the
-    // filter below, while every open area still has a group on screen.
-    // `.km-dots` is what tells this menu from the COLUMN menu: both are
-    // `body > .km-menu`, and only the area's carries a colour row.
-    id: 'board-areamenu',
-    label: 'Board — area actions menu',
-    click: '[aria-label^="Area actions"]',
-    expect: 'body > .km-menu .km-dots',
+    id: 'board-sliceedit',
+    label: 'Board — a slice head opens its editor',
+    click: '.km-grouphead [aria-label^="Edit slice"]',
+    expect: '.km-dialog .km-textarea',
+    dismiss: '.km-scrim',
+  },
+  {
+    id: 'board-milestone',
+    label: 'Board — the milestone strip opens the milestone',
+    click: '.km-spine-ms',
+    expect: '.km-dialog .km-textarea',
+    dismiss: '.km-scrim',
   },
   {
     // Board v5 — the filter row lists every area, each a toggle. The press
     // lands on the first one and proves it turns on.
     id: 'board-scope',
-    label: 'Board — area chip filters to its area',
+    label: 'Board — a group chip filters to its group',
     click: '.km-scope .im-chip[data-area]',
     expect: '.km-scope .im-chip.on',
   },
@@ -240,7 +251,7 @@ const ROADMAP_PANELS = [
     // …and Clear, which exists only while a filter is on, takes it off again —
     // which every press after this one needs.
     id: 'board-clear',
-    label: 'Board — Clear removes the area filter',
+    label: 'Board — Clear removes the group filter',
     click: '.km-clearpick',
     expect: '.km-scope:not(:has(.im-chip.on))',
   },
@@ -1314,6 +1325,21 @@ async function runInteraction(page, { screenId, viewportName, interaction, sink 
       return fail('control-inert',
         `${interaction.label}: pressed \`${interaction.click}\`, but \`${interaction.expect}\` never appeared — `
         + 'the press did not take effect.');
+    }
+  }
+
+  // #608 — `dismiss` closes what the press opened, for a MODAL that would
+  // otherwise cover every press after it. It clicks the given backdrop at its
+  // own top-left corner (never the dialog in the middle of it), which every
+  // `.km-scrim` treats as Cancel: nothing is saved, so the harness stays
+  // read-only. The modal must then be gone, or the press is reported.
+  if (interaction.dismiss) {
+    try {
+      await page.locator(interaction.dismiss).first().click({ position: { x: 4, y: 4 }, timeout: CONTROL_TIMEOUT_MS });
+      await page.locator(interaction.dismiss).first().waitFor({ state: 'detached', timeout: CONTROL_TIMEOUT_MS });
+    } catch {
+      return fail('control-inert',
+        `${interaction.label}: \`${interaction.dismiss}\` did not close on a backdrop click, so every press after it is covered.`);
     }
   }
 

@@ -53,7 +53,10 @@ const check = (name, got, want) => {
   console.log(`${ok ? 'ok  ' : 'FAIL'}  ${name}${ok ? '' : `\n        got  ${JSON.stringify(got)}\n        want ${JSON.stringify(want)}`}`);
 };
 
-const item = (bucket, done = false) => ({ bucket, done });
+// #608 — every row here is SLICED (slice_id 1): progress counts sliced work
+// only, and an Icebox row is out of the sum. The Icebox cases are below.
+const item = (bucket, done = false) => ({ bucket, done, slice_id: 1 });
+const iced = (bucket, done = false) => ({ bucket, done, slice_id: null });
 const bug = (severity, status = 'open') => ({ severity, status });
 
 // ---- the weighting ---------------------------------------------------------
@@ -105,6 +108,17 @@ check('a board of nothing but medium/low is NOT 0% any more — all of it counts
   computeProgress([item('medium', true), item('low', true), item('lowest', true)], []), 100);
 check('…and a board of nothing but unknown buckets is still 0%, no division by zero',
   computeProgress([item('must', true), item(null, true)], [bug('critical')]), 0);
+
+// ---- #608: THE ICEBOX IS OUT OF THE SUM -------------------------------------
+
+check('an Icebox row does not drag progress down',
+  computeProgress([item('high', true), iced('highest'), iced('high')], []), 100);
+check('nor does a done one push it up',
+  computeProgress([item('high', false), iced('highest', true)], []), 0);
+check('a board that is ALL Icebox reads 0%, like an empty one',
+  computeProgress([iced('high', true), iced('medium')], []), 0);
+check('a row with no slice_id key at all counts as iced (a caller that forgot the column reads 0, loudly)',
+  computeProgress([{ bucket: 'high', done: true }], []), 0);
 
 // ---- THE 90% CAP -----------------------------------------------------------
 

@@ -127,6 +127,35 @@ export interface Sprint {
   updatedAt: string | null;
 }
 /** The one in progress, or null — which means the automation has nothing to do. */
+// #608 — THE SPINE: project → milestone → slice → item. An item with no slice
+// (`sliceId` null) is in the ICEBOX. At most one milestone is 'active' (the
+// current one), and the database enforces it. A slice carries no status and no
+// progress: both are derived from its items (lib/plan.ts), never stored.
+export type MilestoneStatus = 'planned' | 'active' | 'done';
+export interface Milestone {
+  id: number;
+  name: string;
+  goal: string;               // markdown
+  status: MilestoneStatus;
+  position: number;
+  targetOn: string | null;    // a bare YYYY-MM-DD day; gates nothing
+  startedAt: string | null;
+  endedAt: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+export interface Slice {
+  id: number;
+  milestoneId: number;        // never null: a slice outside a milestone cannot exist
+  title: string;
+  spec: string;               // markdown slice spec
+  areas: string[];            // the components (areas) it touches
+  position: number;
+  archived: boolean;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
 export const activeSprint = (list: Sprint[]): Sprint | null =>
   list.find((s) => s.status === 'active') || null;
 
@@ -178,6 +207,10 @@ export interface RoadmapItem {
   // thing the night takes, and it means NOTHING while sprintId is null.
   sprintId: number | null;
   sprintRank: number;
+  // #608 — the slice this row belongs to; null is the ICEBOX (`homeOf`).
+  // `sliceRank` is its place in the slice, meaningless while sliceId is null.
+  sliceId: number | null;
+  sliceRank: number;
   plan: PlanStep[];    // the implementation plan ([] = none)
   spec: ItemSpec;      // what a build run is held to ({} = none)
   ready: boolean;      // in the build queue (routes/ready.js); readyRank is its place
