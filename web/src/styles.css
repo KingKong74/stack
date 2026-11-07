@@ -5738,137 +5738,6 @@ body[data-mc-full] .totop { display: none; }
    wants finding — a card counted everywhere else and drawn in no column. */
 .km-squares .sq.orphan { color: var(--status-warning-fg); box-shadow: inset 0 0 0 1px var(--status-warning-fg); }
 
-/* THE BACKLOG'S TIMELINE (detail/BacklogTimeline.tsx) — the design's Gantt.
-   The label column is sticky so a row keeps its name while the axis scrolls;
-   bar positions are inline because they are the data. */
-.km-tl {
-  --km-tl-weekend: color-mix(in srgb, var(--surface-sunken) 70%, transparent);
-  overflow-x: auto; overflow-y: hidden;
-  background: var(--surface-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg);
-}
-.km-tl-inner { position: relative; min-width: 100%; padding-bottom: 26px; }
-.km-tl-axis, .km-tl-head, .km-tl-row { display: flex; border-bottom: 1px solid var(--border-subtle); }
-.km-tl-axis { height: 34px; }
-.km-tl-axis.days { height: 52px; }
-.km-tl-head { height: 42px; background: var(--surface-raised); }
-.km-tl-row { height: 34px; }
-.km-tl-row:hover { background: var(--surface-hover); }
-.km-tl-lab {
-  position: sticky; left: 0; z-index: 2; flex: none;
-  display: flex; align-items: center; gap: var(--space-4);
-  padding: 0 var(--space-4) 0 var(--space-6);
-  background: var(--surface-card); border-right: 1px solid var(--border-subtle);
-}
-.km-tl-lab.corner {
-  z-index: 3; padding: 0 var(--space-5);
-  font: var(--type-eyebrow); letter-spacing: var(--tracking-caps); text-transform: uppercase; color: var(--text-tertiary);
-}
-.km-tl-lab.runs { box-shadow: inset 2px 0 0 var(--lime-500); }
-.km-tl-lab.empty { font: var(--type-caption); color: var(--text-tertiary); }
-.km-tl-lab .rank { flex: none; width: 16px; text-align: right; font: var(--weight-regular) var(--text-xs)/1 var(--font-mono); color: var(--text-tertiary); }
-.km-tl-lab .id { flex: none; font: var(--weight-medium) var(--text-xs)/1 var(--font-mono); color: var(--text-link); }
-.km-tl-lab .t { flex: 1; min-width: 0; font: var(--type-body-sm); color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.km-tl-lab .est { flex: none; font: var(--weight-regular) var(--text-xs)/1 var(--font-mono); color: var(--text-tertiary); }
-.km-tl-lab .pri { flex: none; width: 20px; text-align: center; font: var(--weight-medium) var(--text-xs)/1 var(--font-mono); }
-.km-tl-head .km-tl-lab { background: var(--surface-raised); gap: var(--space-3); padding: 0 var(--space-4) 0 var(--space-3); }
-.km-tl-head .fold {
-  width: 22px; height: 22px; flex: none; border: 0; padding: 0; background: transparent; cursor: pointer;
-  border-radius: var(--radius-sm); display: inline-flex; align-items: center; justify-content: center; color: var(--text-tertiary);
-}
-.km-tl-head .fold:hover { color: var(--text-primary); background: var(--surface-overlay); }
-.km-tl-head .nm {
-  flex: none; font: var(--type-eyebrow); letter-spacing: var(--tracking-caps); text-transform: uppercase;
-  color: var(--text-tertiary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 45%;
-}
-.km-tl-head.on .nm { color: var(--text-accent); }
-.km-tl-head .n { flex: none; font: var(--weight-regular) var(--text-xs)/1 var(--font-mono); color: var(--text-tertiary); white-space: nowrap; }
-.km-tl-head .km-squares { margin-left: auto; }
-.km-tl-track { position: relative; flex: none; }
-.km-tl-axis .wk {
-  position: absolute; top: 0; height: 34px; display: flex; align-items: center; padding-left: 6px;
-  border-left: 1px solid var(--border-subtle); font: var(--weight-medium) var(--text-2xs)/1 var(--font-mono);
-  color: var(--text-secondary); white-space: nowrap;
-}
-.km-tl-axis .dy {
-  position: absolute; top: 32px; height: 18px; display: flex; align-items: center; justify-content: center;
-  font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-secondary);
-}
-.km-tl-axis .dy.we { color: var(--text-tertiary); }
-.km-tl-axis .dy.today { color: var(--text-accent); }
-
-/* A sprint's window: drag the body to move it, an edge to resize. */
-.km-tl-win {
-  position: absolute; top: 8px; height: 26px; touch-action: none; user-select: none; cursor: grab;
-  display: flex; align-items: center; padding: 0 12px; overflow: hidden; white-space: nowrap;
-  background: var(--surface-overlay); border: 1px solid var(--border-default); border-radius: var(--radius-md);
-  font: var(--type-label); color: var(--text-secondary);
-  transition: box-shadow var(--dur-fast) var(--ease-out);
-}
-.km-tl-win.on { background: var(--lime-tint); border-color: var(--lime-700); color: var(--text-accent); }
-.km-tl-win.done { background: transparent; border-color: var(--border-subtle); color: var(--text-tertiary); }
-.km-tl-win.drag { cursor: grabbing; box-shadow: var(--shadow-md), 0 0 0 2px var(--border-focus); }
-.km-tl-win .edge { position: absolute; top: 0; bottom: 0; width: 8px; cursor: ew-resize; }
-.km-tl-win .edge.l { left: 0; border-radius: var(--radius-md) 0 0 var(--radius-md); }
-.km-tl-win .edge.r { right: 0; border-radius: 0 var(--radius-md) var(--radius-md) 0; }
-.km-tl-win .edge:hover { background: color-mix(in srgb, var(--border-focus) 45%, transparent); }
-.km-tl-over {
-  position: absolute; top: 11px; display: inline-flex; align-items: center; height: 20px; padding: 0 7px;
-  border-radius: var(--radius-pill); background: var(--status-danger-bg); color: var(--status-danger-fg);
-  font: var(--type-label); white-space: nowrap;
-}
-.km-tl-create { position: absolute; inset: 0; cursor: crosshair; touch-action: none; user-select: none; }
-.km-tl-create .hint {
-  position: absolute; top: 8px; height: 26px; display: inline-flex; align-items: center; gap: 6px; padding: 0 12px;
-  border: 1px dashed var(--border-default); border-radius: var(--radius-md); background: var(--surface-raised);
-  font: var(--type-label); color: var(--text-tertiary); white-space: nowrap; pointer-events: none;
-}
-.km-tl-proj {
-  position: absolute; top: 11px; display: inline-flex; align-items: center; height: 20px; padding: 0 8px;
-  border-left: 1px dashed var(--border-strong); font: var(--type-caption); color: var(--text-tertiary); white-space: nowrap;
-}
-
-/* An item's bar, toned by the board column it sits in. */
-.km-tl-bar {
-  position: absolute; top: 7px; height: 20px; display: flex; align-items: center; padding: 0 6px; overflow: hidden;
-  border-radius: var(--radius-sm); white-space: nowrap; cursor: default;
-  font: var(--weight-medium) var(--text-2xs)/1 var(--font-mono);
-  background: var(--surface-raised); color: var(--text-secondary);
-  border: 1px solid color-mix(in oklch, var(--border-strong) 55%, transparent);
-  transition: left var(--dur-normal) var(--ease-out), width var(--dur-normal) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
-}
-.km-tl-bar:hover { box-shadow: var(--shadow-md); }
-.km-tl-bar.t-progress { background: var(--status-info-bg); color: var(--status-info-fg); border-color: color-mix(in oklch, var(--status-info-fg) 55%, transparent); }
-.km-tl-bar.t-review { background: var(--status-warning-bg); color: var(--status-warning-fg); border-color: color-mix(in oklch, var(--status-warning-fg) 55%, transparent); }
-.km-tl-bar.t-shipped { background: var(--status-success-bg); color: var(--status-success-fg); border-color: color-mix(in oklch, var(--status-success-fg) 55%, transparent); }
-.km-tl-bar.guess { background: transparent; border-style: dashed; }
-.km-tl-bar.t-planned.guess { border-color: var(--border-strong); }
-.km-tl-bar.proj { border-style: dashed; opacity: 0.8; }
-.km-tl-overrun {
-  position: absolute; top: 7px; height: 20px; pointer-events: none;
-  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
-  background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--status-danger-fg) 55%, transparent) 0 2px, transparent 2px 6px);
-  box-shadow: inset -2px 0 0 var(--status-danger-fg);
-}
-.km-tl-nobar { position: absolute; top: 10px; left: 12px; font: var(--type-caption); color: var(--text-tertiary); white-space: nowrap; }
-.km-tl-today {
-  position: absolute; top: 0; bottom: 0; width: 0; z-index: 1; pointer-events: none;
-  border-left: 1px solid var(--action-accent);
-}
-.km-tl-today span {
-  position: absolute; bottom: 4px; left: 4px; padding: 2px 6px; border-radius: var(--radius-sm);
-  background: var(--action-accent); color: var(--grey-1000);
-  font: var(--weight-medium) var(--text-2xs)/1 var(--font-mono); white-space: nowrap;
-}
-.km-tl-legend { display: flex; align-items: center; gap: var(--space-5); flex-wrap: wrap; font: var(--type-caption); color: var(--text-tertiary); }
-.km-tl-legend > span { display: inline-flex; align-items: center; gap: 6px; }
-.km-tl-legend .right { margin-left: auto; }
-.km-tl-legend i { width: 18px; height: 10px; border-radius: 2px; }
-.km-tl-legend i.t-progress { background: var(--status-info-bg); border: 1px solid color-mix(in oklch, var(--status-info-fg) 55%, transparent); }
-.km-tl-legend i.t-review { background: var(--status-warning-bg); border: 1px solid color-mix(in oklch, var(--status-warning-fg) 55%, transparent); }
-.km-tl-legend i.t-shipped { background: var(--status-success-bg); border: 1px solid color-mix(in oklch, var(--status-success-fg) 55%, transparent); }
-.km-tl-legend i.guess { border: 1px dashed var(--border-strong); }
-.km-tl-legend i.hatch { background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--status-danger-fg) 55%, transparent) 0 2px, transparent 2px 6px); }
-
 /* THE PLANNED WINDOW. `undated` is a state with a control, not a gap. */
 .km-when {
   flex: none; display: inline-flex; align-items: center; gap: 5px;
@@ -9044,3 +8913,18 @@ button.ar-open:hover { background: var(--surface-hover); }
 .km-sprintbox .km-batchhead { flex-wrap: wrap; row-gap: var(--space-2); }
 .km-sprintbox .km-batchhead .km-batchsay { flex: 1 1 200px; min-width: 0; }
 .km-sprintbox .km-batchhead .right { margin-left: auto; }
+
+/* #621 — GROUPED BY SLICE, A SLICE IS A CLUSTER. Its group in each column is
+   drawn the way a cluster card is (the same two stacked plates, a heavier
+   title, the layers glyph, the parts bar), with its cards inside it rather
+   than squeezed into a list, so every card keeps its own column and controls. */
+.km-group.km-slicegroup {
+  background: var(--surface-raised); border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg); padding: var(--space-3);
+  margin-bottom: 8px;
+  box-shadow: 0 4px 0 -1px var(--surface-raised), 0 4px 0 0 var(--border-subtle),
+              0 8px 0 -2px var(--surface-raised), 0 8px 0 -1px var(--border-subtle);
+}
+.km-slicegroup > .km-grouphead .nm { font: var(--type-label); font-weight: var(--weight-semibold); color: var(--text-primary); }
+.km-slicegroup > .km-grouphead .kind { display: inline-flex; color: var(--accent); }
+.km-slicegroup .km-slicebar { padding: 0 2px; }

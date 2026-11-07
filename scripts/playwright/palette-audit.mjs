@@ -175,14 +175,13 @@ const SCREENS = [
   { slug: 'board-drag', hash: '#/p/{slug}/roadmap', press: [OPEN_BOARD], drag: true },
   // The Backlog tab has two layouts, a device-local choice, so each is pressed
   // explicitly: List (the boxes) and Timeline (the Gantt).
-  { slug: 'board-backlog', hash: '#/p/{slug}/roadmap', press: ['.km-tabs .k-tab:nth-child(2)', '.km-bl-layout .seg-opt:nth-child(1)'] },
-  { slug: 'board-backlog-timeline', hash: '#/p/{slug}/roadmap', press: ['.km-tabs .k-tab:nth-child(2)', '.km-bl-layout .seg-opt:nth-child(2)'] },
+  { slug: 'board-backlog', hash: '#/p/{slug}/roadmap', press: ['.km-tabs .k-tab:nth-child(2)'] },
   // #498 — THE BACKLOG TAB WEARS THE SAME FOUR DRAG STATES, over grounds the
   // kanban's row never measured: a row in flight at the page's full width, a
   // sprint box lit as a target and the drop preview inside it. A backlog row
   // aimed at a sprint box, or — on a board whose backlog is empty — a sprint's
   // row aimed at the backlog. Needs a sprint to exist; none is `unreachable`.
-  { slug: 'board-backlog-drag', hash: '#/p/{slug}/roadmap', press: ['.km-tabs .k-tab:nth-child(2)', '.km-bl-layout .seg-opt:nth-child(1)'], drag: 'backlog' },
+  { slug: 'board-backlog-drag', hash: '#/p/{slug}/roadmap', press: ['.km-tabs .k-tab:nth-child(2)'], drag: 'backlog' },
   // #522 — THE PLANNER'S PANEL IS DELIBERATELY NOT A SCREEN HERE, and the
   // reason is this file's own honesty rule rather than laziness. It only exists
   // after a Gemini call: a screen that pressed ✧ Plan would spend one on every

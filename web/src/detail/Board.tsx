@@ -78,7 +78,6 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { KitIcon } from './kit/KitIcon';
-import { BacklogTimeline } from './BacklogTimeline';
 import type { BoardArea, BoardList, ItemKind, Milestone, Priority, RoadmapItem, Slice, Sprint, SprintPlan } from '../types';
 import { listKeyOf, clusterKeyOf, queueOrder, isBoardWork, isIced, sliceStateOf, isBuilt } from '../lib/plan';
 import { SpineStrip, SliceDialog, MilestoneDialog, SlicePicker, liveSlices, currentMilestone, sliceLabel } from './Spine';
@@ -87,7 +86,7 @@ import { PRIORITY_META, PRIORITY_DEFAULT, priorityMeta, dueRead, ITEM_KIND_LABEL
 import {
   getBoardShape, createList, patchList, deleteList,
   createArea, patchArea, deleteArea,
-  getBoardFolds, setBoardFolds, getBoardView, setBoardView, getBacklogView, setBacklogView,
+  getBoardFolds, setBoardFolds, getBoardView, setBoardView,
   createRoadmapItem, patchRoadmapItem, deleteRoadmapItem,
   createSprint, patchSprint, putSprintSlices, deleteSprint, putReadyQueue,
   createSlice, patchSlice, deleteSlice, createMilestone, patchMilestone,
@@ -361,7 +360,14 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
   // cards of their own, and whose column is rolled up from them
   // (`clusterKeyOf`). A part whose parent is off the board (archived, or still
   // an auto-idea) is an ordinary card again, so no row ever vanishes.
+  // #621 — GROUPED BY SLICE, THE SLICE IS THE CLUSTER: its group is drawn as
+  // one (plates, bold title, a built bar), so `parent_id` clusters do not nest
+  // inside it as well. Without this, a slice whose old parent card survived
+  // (it had been worked) drew as a cluster card while every other slice drew
+  // its parts loose, which read as two kinds of slice. Grouped by area or not
+  // grouped, parent clusters draw as before.
   const partsOf = useMemo(() => {
+    if (bview.group === 'slice') return new Map<number, RoadmapItem[]>();
     const onBoardIds = new Set(rows.filter((it) => !it.archived && isBoardWork(it)).map((it) => it.id));
     const m = new Map<number, RoadmapItem[]>();
     for (const it of rows) {
@@ -371,7 +377,7 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
     }
     for (const bag of m.values()) bag.sort(queueOrder(activeId));
     return m;
-  }, [rows, activeId]);
+  }, [rows, activeId, bview.group]);
   const isPart = (it: RoadmapItem) => it.parentId !== null && partsOf.has(it.parentId);
   const placeOf = (it: RoadmapItem) => clusterKeyOf(it, partsOf.get(it.id) || []);
 
@@ -1026,7 +1032,6 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
           <BacklogView slug={slug} rows={rows} boxes={boxes} slices={sl} activeId={activeId} areas={areas}
             lists={lists || []}
             onCreate={() => setDialog(true)} onEdit={onEdit}
-            onOpen={(it, el) => openFocus(it, el, false)}
             onBox={(b) => setBoxes((bs) => bs.map((x) => (x.id === b.id ? b : x)))}
             onWrote={setRows} onRefresh={onRefresh} onError={setErr} />
         )}
@@ -1255,7 +1260,7 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
                   const gFolded = !areaOpen(g.key);
                   const st = meta.slice ? sliceStateOf(meta.slice.id, rows) : null;
                   return (
-                    <div className={`km-group${gFolded ? ' folded' : ''}`} key={g.key} data-area={g.key}>
+                    <div className={`km-group${gFolded ? ' folded' : ''}${meta.slice ? ' km-slicegroup' : ''}`} key={g.key} data-area={g.key}>
                       <div className="km-grouphead">
                         {!searching && (
                           <button className="km-foldbtn"
@@ -1267,6 +1272,11 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
                           </button>
                         )}
                         {meta.dot && <span className="km-dot" style={{ background: meta.dot }} />}
+                        {meta.slice && (
+                          <span className="kind" title="A slice: one shippable piece, drawn as a cluster of its cards">
+                            <KitIcon name="layers" size={13} />
+                          </span>
+                        )}
                         <span className="nm">{meta.name}</span>
                         {meta.holder && (
                           <span className="k-tag warning"
@@ -1278,11 +1288,6 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
                           </span>
                         )}
                         <span className="rule" />
-                        {st && (
-                          <span className="n" title={`${st.built} of ${st.total} built, ${st.done} ticked, across every column`}>
-                            {st.built}/{st.total} built
-                          </span>
-                        )}
                         {!st && <span className="n">{g.items.length}</span>}
                         {meta.slice && (
                           <button className="km-colbtn" aria-label={`Edit slice ${meta.name}`} title="Edit this slice"
@@ -1303,6 +1308,16 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
                             onDelete={() => { setAreaMenu(null); dropArea(g.key); }} />
                         )}
                       </div>
+                      {/* ONE BAR, ONE COUNT: the slice's built share across every
+                          column, the same number Course and the Backlog show. */}
+                      {st && st.total > 0 && (
+                        <div className="km-partbar km-slicebar" role="img"
+                          aria-label={`${st.built} of ${st.total} built across every column`}
+                          title={`${st.built} of ${st.total} built, ${st.done} ticked, across every column`}>
+                          <span className="track"><span className="fill" style={{ width: `${Math.round((st.built / st.total) * 100)}%` }} /></span>
+                          <span className="n mono">{st.built}/{st.total} built</span>
+                        </div>
+                      )}
                       {!gFolded && g.items.map(card)}
                     </div>
                   );
@@ -2751,7 +2766,7 @@ function PlannerPanel({ plan, busy, onApply, onDismiss }: {
 }
 
 function BacklogView({
-  slug, rows, boxes, slices, activeId, areas, lists, onCreate, onEdit, onOpen, onBox, onWrote, onRefresh, onError,
+  slug, rows, boxes, slices, activeId, areas, lists, onCreate, onEdit, onBox, onWrote, onRefresh, onError,
 }: {
   slug: string;
   /** #621 — the project's slices: what a sprint commits to, and what a drag
@@ -2768,8 +2783,6 @@ function BacklogView({
   lists: BoardList[];
   onCreate: () => void;
   onEdit: (it: RoadmapItem) => void;
-  /** Fly a row onto the board's focus canvas — the timeline's double-click. */
-  onOpen: (it: RoadmapItem, el: HTMLElement) => void;
   /** Apply one sprint as the server returned it, ahead of the refresh. */
   onBox: (b: Sprint) => void;
   /** Apply a whole new row set at once — what a drop's answer produces. */
@@ -2779,10 +2792,6 @@ function BacklogView({
 }) {
   const [query, setQuery] = useState('');
   const [scope, setScope] = useState('');
-  // List or Timeline, and the timeline's scale — device-local, per project.
-  const [bv, setBv] = useState(() => getBacklogView(slug));
-  const writeBv = (patch: Partial<typeof bv>) => setBv((v) => { const n = { ...v, ...patch }; setBacklogView(slug, n); return n; });
-  const timeline = bv.layout === 'timeline';
   // The row being dragged, and the box the cursor is over. `overBox` is a
   // separate piece of state from the drag because a drop target has to light
   // up before anything is written — an empty box that gives no sign it will
@@ -2933,13 +2942,6 @@ function BacklogView({
       onRefresh();
     });
 
-  // THE TIMELINE'S ONE WRITE: both ends in one PATCH, so the server's
-  // end-before-start check sees the window the drag actually drew.
-  const setWindowBoth = (b: Sprint, startsOn: string, endsOn: string) => guard(async () => {
-    onBox(await patchSprint(slug, b.id, { startsOn, endsOn }));
-    onRefresh();
-  });
-
   const setStatus = (b: Sprint, status: Sprint['status']) => guard(async () => {
     // Starting one FINISHES the incumbent, in the server's own transaction —
     // one project has at most one sprint in progress and the database says so.
@@ -3020,20 +3022,6 @@ function BacklogView({
           <input placeholder="Search backlog" aria-label="Search backlog" value={query}
             onChange={(e) => setQuery(e.target.value)} />
         </span>
-        <div className="seg-control sm km-bl-layout" role="tablist" aria-label="Backlog layout">
-          <button role="tab" aria-selected={!timeline} className={`seg-opt${timeline ? '' : ' on'}`}
-            onClick={() => writeBv({ layout: 'list' })}>List</button>
-          <button role="tab" aria-selected={timeline} className={`seg-opt${timeline ? ' on' : ''}`}
-            onClick={() => writeBv({ layout: 'timeline' })}>Timeline</button>
-        </div>
-        {timeline && (
-          <div className="seg-control sm" role="tablist" aria-label="Timeline scale">
-            <button role="tab" aria-selected={bv.zoom === 'week'} className={`seg-opt${bv.zoom === 'week' ? ' on' : ''}`}
-              onClick={() => writeBv({ zoom: 'week' })}>Weeks</button>
-            <button role="tab" aria-selected={bv.zoom === 'day'} className={`seg-opt${bv.zoom === 'day' ? ' on' : ''}`}
-              onClick={() => writeBv({ zoom: 'day' })}>Days</button>
-          </div>
-        )}
         <span className="km-bl-count">
           {bags.loose.length} in the backlog · {live.length} sprint{live.length === 1 ? '' : 's'} open
         </span>
@@ -3112,14 +3100,8 @@ function BacklogView({
           onApply={applyPlan} onDismiss={() => setPlan(null)} />
       )}
 
-      {timeline && (
-        <BacklogTimeline boxes={boxes} byBox={bags.byBox} loose={bags.loose} lists={lists}
-          activeId={activeId} zoom={bv.zoom}
-          colOf={(it) => columnOf(it, lists)} runnable={runnable}
-          onOpen={onOpen} onWindow={setWindowBoth} />
-      )}
 
-      {!timeline && live.map((b) => (
+      {live.map((b) => (
         <SprintBox key={b.id} sprint={b} items={bags.byBox.get(b.id) || []} lists={lists}
           planning={planning} onPlan={() => askPlan(b)}
           isActive={b.id === activeId} anyActive={activeId !== null}
@@ -3147,7 +3129,7 @@ function BacklogView({
           one: a backlog row dropped back on the backlog writes nothing, and —
           the kanban's rule for the column a card is already in — the one
           gesture that writes nothing never looks like it did. */}
-      {!timeline && <section className={`km-batch km-backlog${looseOver ? ' over' : ''}${dragged && !looseOver && !looseSource ? ' dim' : ''}`}
+      {<section className={`km-batch km-backlog${looseOver ? ' over' : ''}${dragged && !looseOver && !looseSource ? ' dim' : ''}`}
         onDragOver={(e) => { if (looseTakes) { e.preventDefault(); setOverBox('loose'); } }}
         onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) leave('loose'); }}
         onDrop={(e) => { e.preventDefault(); if (looseTakes) drop(null, null); else endDrag(); }}>
@@ -3186,7 +3168,7 @@ function BacklogView({
         <button className="km-bl-add" onClick={onCreate}>+ Add to backlog</button>
       </section>}
 
-      {!timeline && finished.length > 0 && (
+      {finished.length > 0 && (
         <div className="km-batch km-done">
           <div className="km-batchhead">
             <span className="lbl">Finished</span>
@@ -3355,7 +3337,7 @@ function SprintBox({
           )}
           {confirming === `del:${sprint.id}` ? (
             <button className="k-btn sm danger" onClick={onDelete}>
-              Delete? Its {items.length} item{items.length === 1 ? '' : 's'} return to the backlog
+              Delete? Its {sprint.sliceIds.length} slice{sprint.sliceIds.length === 1 ? '' : 's'} return to the backlog
             </button>
           ) : (
             <button className="k-btn sm ghost" onClick={() => onConfirm(`del:${sprint.id}`)}>Delete</button>
