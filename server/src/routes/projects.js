@@ -11,6 +11,7 @@ import {
   projectListShape, projectDetailShape, resumeSince, sprintShape, milestoneShape, sliceShape,
 } from '../shape.js';
 import { MILESTONE_ORDER, SLICE_SELECT, SLICE_ORDER } from './spine.js';
+import { SPRINT_SLICES_SQL } from './sprints.js';
 import { charterSummary, CHARTER_SUMMARY_CAP } from '../shape.js';
 import { readUsage, readTests, readRuns, PULSE_DAYS } from '../pulse.js';
 import { readSettings, sessionDefaultLines } from '../settings.js';
@@ -133,8 +134,8 @@ projects.get('/:slug', async (req, res) => {
     // live boxes by position, finished ones after and newest first. Two
     // spellings of one order, because this payload cannot import a route's
     // handler; `server/test/sprints.test.mjs` holds them in step.
-    q(`SELECT * FROM sprints WHERE project_id = $1
-        ORDER BY (status = 'done') ASC, position ASC, id ASC`, [p.id]),
+    q(`SELECT s.*, ${SPRINT_SLICES_SQL} FROM sprints s WHERE s.project_id = $1
+        ORDER BY (s.status = 'done') ASC, s.position ASC, s.id ASC`, [p.id]),
     q(
       `SELECT count(*)::int AS n FROM sessions
         WHERE project_id = $1 AND created_at > now() - interval '7 days'`,

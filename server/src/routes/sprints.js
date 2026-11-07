@@ -26,8 +26,12 @@
 //     about work must never delete the work — same rule as an area's delete in
 //     `routes/board.js`, and for the same reason.
 //
+//  (#621: A SPRINT COMMITS TO SLICES. `sprint_slices` holds them in order and
+//   the database derives every item's sprint_id/sprint_rank from it; read
+//   schema.sql's #621 header. Invariant 3 now describes PUT /:id/slices.)
+//
 //  3. RANKS ARE DENSIFIED ON EVERY WRITE, never patched in place. `PUT
-//     /:id/order` takes the whole ordered list of item ids and rewrites every
+//     /:id/slices` takes the whole ordered list of slice ids and rewrites every
 //     rank from 0, because the alternative — "insert at rank 4, shuffle the
 //     rest" — is a read-modify-write over rows two browsers may both be
 //     dragging. A full list is idempotent and a partial one is a race.
@@ -94,6 +98,21 @@ sprints.use(async (req, res, next) => {
 
 export const SPRINT_STATUSES = ['planned', 'active', 'done'];
 
+// #621 — A SPRINT'S SLICES, in their order, as one column on every sprint read.
+// Shared with the project payload (routes/projects.js), so both serve the same
+// list. `s` is the sprints alias.
+export const SPRINT_SLICES_SQL = `(SELECT COALESCE(json_agg(ss.slice_id ORDER BY ss.rank, ss.slice_id), '[]'::json)
+   FROM sprint_slices ss WHERE ss.sprint_id = s.id) AS slice_ids`;
+// One sprint, with its slices. Every write answers with this, so a screen that
+// applies the answer never sees a sprint whose slice list went blank.
+async function readSprint(db, id) {
+  const { rows } = await db(`SELECT s.*, ${SPRINT_SLICES_SQL} FROM sprints s WHERE s.id = $1`, [id]);
+  return rows[0] ? sprintShape(rows[0]) : null;
+}
+// The one sentence every retired item-level sprint write answers with (#621).
+export const SPRINT_SLICE_ONLY = 'Sprints commit to slices now (#621): an item is in a sprint exactly when its slice is. '
+  + 'Commit the slice with PUT /sprints/:id/slices, or file the item into a committed slice with sliceId.';
+
 const cleanName = (v) => String(v ?? '').trim().slice(0, 80);
 
 /**
@@ -132,8 +151,8 @@ export async function activeSprint(projectId) {
 // quarter's the moment somebody reordered.
 sprints.get('/', async (req, res) => {
   const { rows } = await q(
-    `SELECT * FROM sprints WHERE project_id = $1
-      ORDER BY (status = 'done') ASC, position ASC, id ASC`,
+    `SELECT s.*, ${SPRINT_SLICES_SQL} FROM sprints s WHERE s.project_id = $1
+      ORDER BY (s.status = 'done') ASC, s.position ASC, s.id ASC`,
     [req.project.id]
   );
   const live = rows.filter((r) => r.status !== 'done');
@@ -165,7 +184,7 @@ sprints.post('/', async (req, res) => {
      VALUES ($1, $2, $3, $4, $5) RETURNING *`,
     [req.project.id, name, pos[0].p, startsOn, endsOn]
   );
-  res.status(201).json(sprintShape(rows[0]));
+  res.status(201).json(sprintShape({ ...rows[0], slice_ids: [] }));
 });
 
 // PATCH /:id — rename, reposition, or change the status.
@@ -255,7 +274,7 @@ sprints.patch('/:id', async (req, res) => {
       vals
     );
     await client.query('COMMIT');
-    res.json(sprintShape(rows[0]));
+    res.json(await readSprint(q, rows[0].id));
   } catch (e) {
     await client.query('ROLLBACK').catch(() => {});
     throw e;
@@ -264,60 +283,54 @@ sprints.patch('/:id', async (req, res) => {
   }
 });
 
-// PUT /:id/order — the drop handler. The body is `{ items: [id, id, …] }`, the
-// WHOLE box top to bottom, and every rank is rewritten from 0 (invariant 3).
-//
-// It also ADOPTS: an id in the list that was in another sprint or in the
-// backlog is moved into this one. That is what makes a drag from the backlog
-// into a sprint, and a drag between two sprints, the same single request as a
-// reorder within one — three gestures the screen cannot always tell apart at
-// the moment of the drop, and three round trips where one will do.
-sprints.put('/:id/order', async (req, res) => {
+// PUT /:id/order — RETIRED by #621. An item is in a sprint exactly when its
+// slice is, so there is no item-level box to reorder. Refused out loud, never
+// silently accepted: a caller told 200 would believe it had moved work.
+sprints.put('/:id/order', (req, res) => {
+  res.status(410).json({ error: SPRINT_SLICE_ONLY });
+});
+
+// PUT /:id/slices — THE COMMITMENT (#621). The body is `{ slices: [id, …] }`,
+// the WHOLE sprint top to bottom; ranks are rewritten from 0. Like the item
+// order before it, it ADOPTS: a listed slice that sat in another OPEN sprint
+// moves here (a slice is in at most one open sprint), so a drag between boxes
+// and a reorder within one are the same single request. A slice left out
+// leaves this sprint. A FINISHED sprint is refused: it is the record of what
+// was committed to. The items follow by themselves (spine_sprint_sync).
+sprints.put('/:id/slices', async (req, res) => {
   const id = Number(req.params.id);
-  const { rows: mine } = await q('SELECT id FROM sprints WHERE project_id = $1 AND id = $2', [req.project.id, id]);
-  if (!mine.length) return res.status(404).json({ error: 'No such sprint.' });
-
-  const wanted = Array.isArray(req.body?.items) ? req.body.items : null;
-  if (!wanted) return res.status(400).json({ error: 'items must be an array of item ids.' });
-  const ids = wanted.map((n) => Math.trunc(Number(n))).filter((n) => Number.isFinite(n) && n > 0);
-
+  const wanted = Array.isArray(req.body?.slices) ? req.body.slices : null;
+  if (!wanted) return res.status(400).json({ error: 'slices must be an array of slice ids.' });
+  const ids = [...new Set(wanted.map((n) => Math.trunc(Number(n))).filter((n) => Number.isFinite(n) && n > 0))];
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    // Invariant 4 — scope the ids to this project before writing any of them.
-    // An id from another project is dropped silently, which is the same
-    // handling a row somebody else moved gets, and the response below tells
-    // the screen what actually happened.
+    const { rows: mine } = await client.query(
+      'SELECT id, status FROM sprints WHERE project_id = $1 AND id = $2 FOR UPDATE', [req.project.id, id]);
+    if (!mine.length) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'No such sprint.' }); }
+    if (mine[0].status === 'done') {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'That sprint is finished: it is the record of what was committed to. Reopen it, or commit the slice to an open one.' });
+    }
     const { rows: real } = await client.query(
-      'SELECT id FROM roadmap_items WHERE project_id = $1 AND id = ANY($2::int[])',
-      [req.project.id, ids]
-    );
+      'SELECT id FROM slices WHERE project_id = $1 AND id = ANY($2::int[])', [req.project.id, ids]);
     const ok = new Set(real.map((r) => r.id));
     const ordered = ids.filter((n) => ok.has(n));
-
-    if (ordered.length) {
-      // One statement, ranks from the array's own index. `unnest … WITH
-      // ORDINALITY` is what keeps this a single write rather than a loop of
-      // N updates inside a transaction the drag is waiting on.
-      await client.query(
-        `UPDATE roadmap_items r
-            SET sprint_id = $2, sprint_rank = o.ord - 1, updated_at = now()
-           FROM unnest($3::int[]) WITH ORDINALITY AS o(item_id, ord)
-          WHERE r.project_id = $1 AND r.id = o.item_id`,
-        [req.project.id, id, ordered]
-      );
-    }
-    // Anything still pointing at this sprint that the body did not list has
-    // been dragged OUT of it — back to the backlog. This is the other half of
-    // "the body is the whole box": without it, a row removed from the box on
-    // screen stays in it in the database and reappears on the next refresh.
+    // Out of every OTHER open sprint first: one open sprint per slice.
     await client.query(
-      `UPDATE roadmap_items SET sprint_id = NULL, sprint_rank = 0, updated_at = now()
-        WHERE project_id = $1 AND sprint_id = $2 AND NOT (id = ANY($3::int[]))`,
-      [req.project.id, id, ordered]
-    );
+      `DELETE FROM sprint_slices ss USING sprints sp
+        WHERE ss.sprint_id = sp.id AND sp.project_id = $1 AND sp.id <> $2 AND sp.status <> 'done'
+          AND ss.slice_id = ANY($3::int[])`, [req.project.id, id, ordered]);
+    await client.query('DELETE FROM sprint_slices WHERE sprint_id = $1 AND NOT (slice_id = ANY($2::int[]))', [id, ordered]);
+    if (ordered.length) {
+      await client.query(
+        `INSERT INTO sprint_slices (sprint_id, slice_id, project_id, rank)
+         SELECT $1, o.slice_id, $2, (o.ord - 1)::int FROM unnest($3::int[]) WITH ORDINALITY AS o(slice_id, ord)
+         ON CONFLICT (sprint_id, slice_id) DO UPDATE SET rank = EXCLUDED.rank`,
+        [id, req.project.id, ordered]);
+    }
     await client.query('COMMIT');
-    res.json({ sprintId: id, items: ordered });
+    res.json(await readSprint(q, id));
   } catch (e) {
     await client.query('ROLLBACK').catch(() => {});
     throw e;
@@ -336,7 +349,8 @@ sprints.delete('/:id', async (req, res) => {
   const id = Number(req.params.id);
   const { rows } = await q('SELECT id FROM sprints WHERE project_id = $1 AND id = $2', [req.project.id, id]);
   if (!rows.length) return res.status(404).json({ error: 'No such sprint.' });
-  await q('UPDATE roadmap_items SET sprint_rank = 0 WHERE project_id = $1 AND sprint_id = $2', [req.project.id, id]);
+  // Its commitments cascade away and the items' derived sprint follows
+  // (spine_sprint_sync): the work stays, in its slices, out of this box.
   await q('DELETE FROM sprints WHERE project_id = $1 AND id = $2', [req.project.id, id]);
   res.json({ ok: true, released: true });
 });
@@ -349,8 +363,9 @@ sprints.delete('/:id', async (req, res) => {
 // that order. It WRITES NOTHING. That is the standing rule: an agent may FILE a
 // new item into an open sprint (POST /roadmap's `sprintId`, owner's decision
 // 2026-10-10), but ORDERING a box and moving existing rows between boxes is the
-// human's. The human presses Apply, and Apply is `PUT /:id/order`, which is the
-// same call a drag makes.
+// human's. The human presses Apply, and Apply is `PUT /:id/slices`, which is the
+// same call a drag makes. Since #621 the unit is the SLICE: a sprint commits to
+// slices, so the planner proposes an order of them.
 //
 // WHAT MAKES THIS WORTH ASKING A MODEL, and it is not "rank by priority" —
 // bucket already does that, and a sort needs no model. It is the AREA LANE, and
@@ -394,59 +409,54 @@ sprints.post('/:id/plan', async (req, res) => {
     'SELECT id, name, status FROM sprints WHERE project_id = $1 AND id = $2', [req.project.id, id]);
   if (!box.length) return res.status(404).json({ error: 'No such sprint.' });
 
-  // EVERY open row, and the filtering happens below in two different ways —
-  // because "may this be planned" and "does this hold a lane" are different
-  // questions over the same table and one query answers both.
-  const { rows: all } = await q(
-    `SELECT id, title, area, points, bucket, due_on, sprint_id, sprint_rank, claimed_by,
-            skipped, parent_id, ${APPROVED_SQL('r')} AS approved
-       FROM roadmap_items r
-      WHERE project_id = $1 AND NOT done AND NOT archived
-      ORDER BY ${BUCKET_ORDER_SQL}, due_on NULLS LAST, created_at`,
-    [req.project.id]);
+  // #621 — THE PLANNER ORDERS SLICES. A sprint commits to slices, so the unit
+  // it proposes is the slice; a slice's lane footprint is its own `areas` plus
+  // the areas of its open, approved items.
+  const [{ rows: sl }, { rows: its }, { rows: commits }] = await Promise.all([
+    q('SELECT id, title, areas FROM slices WHERE project_id = $1 AND NOT archived', [req.project.id]),
+    q(`SELECT id, slice_id, area, points, bucket, due_on, claimed_by, done, ${APPROVED_SQL('r')} AS approved
+         FROM roadmap_items r WHERE project_id = $1 AND NOT archived`, [req.project.id]),
+    q(`SELECT ss.slice_id, ss.sprint_id, ss.rank, sp.status FROM sprint_slices ss
+         JOIN sprints sp ON sp.id = ss.sprint_id WHERE ss.project_id = $1`, [req.project.id]),
+  ]);
 
-  // A CANDIDATE must be approved, parentless board work. A row a session found
-  // and nobody signed off (#359) cannot run, so proposing it would make the
-  // plan look fuller than the night it describes; a child is a Roadmap idea and
-  // belongs to its parent.
-  const rows = all.filter((r) => r.approved && r.parent_id === null);
-
-  const inSprint = rows.filter((r) => Number(r.sprint_id) === id)
-    .sort((a, b) => (a.sprint_rank - b.sprint_rank));
-  // PARKED ROWS ARE NOT CANDIDATES. `skipped` means planned-but-not-yet, and
-  // the agents already leave them alone; offering one here would be the planner
-  // arguing with a decision the owner has already made. A parked row ALREADY in
-  // the sprint stays in the list it is shown, because taking it out would be a
-  // drop nobody asked for.
-  const backlog = rows.filter((r) => r.sprint_id === null && !r.skipped);
-
-  // The lanes that are locked right now — a FACT, handed to the model as one.
-  //
-  // OVER `all`, NEVER OVER THE CANDIDATES, and this is the trap: lanes.js says
-  // an OPEN row with a non-empty `claimed_by` occupies its area, and says
-  // nothing about approval or parentage. A held row somebody is already
-  // building holds its lane exactly as hard as an approved one — it is a branch
-  // in that area either way, and that is the whole reason the lane exists. Read
-  // off the candidates instead and the planner reports a locked area as free,
-  // then fills the sprint with work that cannot run.
   const held = new Map();
-  for (const r of all) {
+  for (const r of its) {
     const area = normArea(r.area);
-    if (area && String(r.claimed_by || '').trim() && !held.has(area)) {
+    if (!r.done && area && String(r.claimed_by || '').trim() && !held.has(area)) {
       held.set(area, String(r.claimed_by).trim());
     }
   }
+  const bucketRank = (b) => { const k = BUCKETS.indexOf(b); return k < 0 ? BUCKETS.length : k; };
+  const stat = new Map(sl.map((s) => {
+    const open = its.filter((r) => r.slice_id === s.id && !r.done && r.approved);
+    const areas = [...new Set([...(Array.isArray(s.areas) ? s.areas : []), ...open.map((r) => r.area)]
+      .map(normArea).filter(Boolean))].sort();
+    const sized = open.filter((r) => r.points !== null && r.points !== undefined);
+    const dues = open.map((r) => (r.due_on ? dayOf(r.due_on) : null)).filter(Boolean).sort();
+    const best = open.reduce((m, r) => Math.min(m, bucketRank(r.bucket)), BUCKETS.length);
+    return [s.id, {
+      id: s.id, title: s.title || '', areas, open: open.length,
+      points: sized.length ? sized.reduce((n, r) => n + Number(r.points), 0) : null,
+      bucket: BUCKETS[best] || 'medium', due: dues[0] || null, best,
+    }];
+  }));
+  const inSprint = commits.filter((c) => c.sprint_id === id).sort((a, b) => a.rank - b.rank)
+    .map((c) => stat.get(c.slice_id)).filter(Boolean);
+  const elsewhere = new Set(commits.filter((c) => c.sprint_id !== id && c.status !== 'done').map((c) => c.slice_id));
+  const backlog = [...stat.values()]
+    .filter((s) => s.open > 0 && !elsewhere.has(s.id) && !inSprint.some((x) => x.id === s.id))
+    .sort((a, b) => a.best - b.best || String(a.due || '9').localeCompare(String(b.due || '9')) || a.id - b.id);
 
-  const line = (r) => [
-    `#${r.id}`, normArea(r.area) || '(untagged)',
-    r.points === null || r.points === undefined ? '-' : String(r.points),
-    r.bucket, r.due_on ? dayOf(r.due_on) : '-',
-    String(r.title || '').slice(0, 120),
+  const line = (s) => [
+    String(s.id), s.areas.length ? s.areas.join(',') : '(untagged)',
+    s.points === null ? '-' : String(s.points), s.bucket, s.due || '-', `${s.open} open`,
+    s.title.slice(0, 120),
   ].join(' | ');
 
   const SHOW = 30;
   const shown = backlog.slice(0, SHOW);
-  const inPoints = inSprint.reduce((n, r) => n + (Number(r.points) || 0), 0);
+  const inPoints = inSprint.reduce((n, s) => n + (s.points || 0), 0);
 
   const prompt = buildPrompt('sprintplan', {
     NORTH_STAR_LINE: req.project.north_star
@@ -460,7 +470,7 @@ sprints.post('/:id/plan', async (req, res) => {
     IN_ROWS: inSprint.length ? inSprint.map(line).join('\n') : '  (the sprint is empty)',
     OUT_TOTAL: String(backlog.length),
     OUT_SHOWN: String(shown.length),
-    OUT_ROWS: shown.length ? shown.map(line).join('\n') : '  (the backlog is empty)',
+    OUT_ROWS: shown.length ? shown.map(line).join('\n') : '  (no uncommitted slices)',
   });
 
   let answer;
@@ -470,52 +480,38 @@ sprints.post('/:id/plan', async (req, res) => {
     return res.status(err.httpStatus || 502).json({ error: err.message || 'The planner call failed.' });
   }
 
-  // Filter, never trust. Only ids this project actually has, de-duplicated,
-  // and only rows that were candidates in the first place.
-  const byId = new Map(rows.map((r) => [r.id, r]));
-  const allowed = new Set([...inSprint, ...backlog].map((r) => r.id));
+  const allowed = new Set([...inSprint, ...backlog].map((s) => s.id));
   const seen = new Set();
   const order = [];
   for (const entry of Array.isArray(answer?.order) ? answer.order : []) {
-    const rid = Math.trunc(Number(entry?.id));
-    if (!Number.isFinite(rid) || !allowed.has(rid) || seen.has(rid)) continue;
-    seen.add(rid);
-    const r = byId.get(rid);
+    const sid = Math.trunc(Number(entry?.id));
+    if (!Number.isFinite(sid) || !allowed.has(sid) || seen.has(sid)) continue;
+    seen.add(sid);
+    const s = stat.get(sid);
     order.push({
-      id: rid,
-      title: r.title || '',
-      area: normArea(r.area),
-      points: r.points === null || r.points === undefined ? null : Number(r.points),
-      bucket: r.bucket,
-      dueOn: r.due_on ? dayOf(r.due_on) : null,
-      // Whether this row is coming FROM the backlog, so the screen can mark the
-      // three moves apart: an add, a stay, and (below) a drop.
-      adding: r.sprint_id === null,
-      laneHeld: !!(normArea(r.area) && held.has(normArea(r.area))),
+      id: sid,
+      title: s.title,
+      area: s.areas.join(', '),
+      points: s.points,
+      bucket: s.bucket,
+      dueOn: s.due,
+      adding: !inSprint.some((x) => x.id === sid),
+      laneHeld: s.areas.some((a) => held.has(a)),
       why: String(entry?.why || '').trim().slice(0, 160),
     });
   }
-  // WHAT APPLYING WOULD REMOVE. `PUT /:id/order` treats the body as the WHOLE
-  // box, so a row the plan leaves out goes back to the backlog — that is the
-  // drag's own semantics and it must never be a surprise. Computed here rather
-  // than left to the client to diff, because the client would have to re-derive
-  // which rows were candidates.
-  const drops = inSprint.filter((r) => !seen.has(r.id))
-    .map((r) => ({ id: r.id, title: r.title || '', area: normArea(r.area) }));
+  const drops = inSprint.filter((s) => !seen.has(s.id)).map((s) => ({ id: s.id, title: s.title, area: s.areas.join(', ') }));
 
   res.json({
     sprintId: id,
     sprintName: box[0].name,
-    // An EMPTY order is a real answer and the prompt invites one: a sprint
-    // already in a sensible shape needs no change. The client draws it as
-    // "nothing to change", never as a failure.
     order,
     drops,
     heldLanes: [...held].map(([area, by]) => ({ area, by })),
     capacity: {
       target: SPRINT_CAPACITY,
-      points: order.reduce((n, r) => n + (r.points || 0), 0),
-      unsized: order.filter((r) => r.points === null).length,
+      points: order.reduce((n, s) => n + (s.points || 0), 0),
+      unsized: order.filter((s) => s.points === null).length,
     },
     backlogShown: shown.length,
     backlogTotal: backlog.length,

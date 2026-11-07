@@ -525,6 +525,9 @@ export function sprintShape(row) {
     // its header before touching either. The first cut of this line was
     // `new Date(v).toISOString().slice(0, 10)` and it moved every date back a
     // day on this very host.
+    // #621 — the slices this sprint commits to, top first. Its items are the
+    // items of these slices (derived by the database, not carried here).
+    sliceIds: Array.isArray(row.slice_ids) ? row.slice_ids.map(Number) : [],
     startsOn: dayOf(row.starts_on),
     endsOn: dayOf(row.ends_on),
     startedAt: row.started_at || null,   // stamped on start, KEPT past the finish

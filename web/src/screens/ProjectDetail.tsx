@@ -28,6 +28,7 @@ import { Modal } from '../components/Modal';
 import { RoadmapModal, type RoadmapFields } from '../components/RoadmapModal';
 import { useAutoRefresh } from '../lib/autoRefresh';
 import { Charter, Architecture } from '../detail/Architecture';
+import { Course } from '../detail/Course';
 import { newItemSched, flatRoadmap, isAutoIdea, isIced, isBoardWork } from '../lib/plan';
 import { PRIORITY_DEFAULT, crumbName } from '../lib/ui';
 
@@ -678,7 +679,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
             // draws: a row's number and the screen behind it must agree, and
             // this is now the third count on this screen read off `homeOf`.
             tabs={[
-              { key: 'overview', label: 'Overview', mock: true },
+              { key: 'overview', label: 'Course' },
               { key: 'activity', label: 'Activity' },
               { key: 'auto', label: 'Ideas & Icebox', count: autoIdeaRows.length + icedRows.length },
             ]}
@@ -694,8 +695,14 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
             Plans take — ONE list partitioned by `homeOf` rather than fetches
             that can disagree. ForYou.tsx's header
             lists what Overview still costs. */}
-        {isForYou(tab) && (
-          <ForYou pane={tab as 'overview' | 'activity' | 'auto'} slug={slug} items={allRoadmap}
+        {/* #622 — COURSE IS THE PROJECT HOME, on the `overview` key the mockup
+            used to hold, so every link to a project's home lands on it. */}
+        {tab === 'overview' && (
+          <Course slug={slug} items={allRoadmap} milestones={data.milestones} slices={data.slices}
+            sprints={data.sprints} charter={data.charter} resume={project.resume} />
+        )}
+        {(tab === 'activity' || tab === 'auto') && (
+          <ForYou pane={tab} slug={slug} items={allRoadmap}
             slices={data.slices} milestones={data.milestones}
             activity={data.activity} onRefresh={reread} highlightId={highlightId}
             onEdit={(it) => setRoadModal({ open: true, title: it.title, note: it.note, editing: it })} />

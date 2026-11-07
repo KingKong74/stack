@@ -64,6 +64,11 @@ payload carries only the charter's capped opening. Areas are the components (`de
 
 ## Sprints
 
+**Since #621 a sprint commits to SLICES** (`sprint_slices`, ordered; `PUT /sprints/:id/slices`), and
+an item's `sprint_id`/`sprint_rank` are derived by triggers (`spine_sprint_sync`). The item-level
+writes (`sprintId` on POST/PATCH, `PUT /:id/order`) are refused out loud. What follows predates that
+and still holds for the sprint row itself.
+
 `sprints` has status `planned | active | done`, with at most one `active` per project enforced by a
 partial unique index. `sprint_rank` is dense, 0 = top, and rewritten whole on every drop
 (`PUT /sprints/:id/order`). `sprint_id` NULL is the backlog. Deleting a sprint releases its items

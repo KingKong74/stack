@@ -91,37 +91,27 @@ test('a new roadmap item is born in the BACKLOG unless it names an open sprint',
   assert.equal(loose.sprintRank, 0);
 });
 
-test('a POST may file straight into an OPEN sprint, at the bottom of the box', async () => {
-  const { body: boxes } = await call('GET', sprintsPath);
-  const one = boxes[0];
-  assert.equal(one.status, 'planned');
-  const a = await makeItem('filed one', { sprintId: one.id });
-  const b = await makeItem('filed two', { sprintId: one.id });
-  assert.equal(a.sprintId, one.id);
-  assert.equal(b.sprintId, one.id);
-  assert.ok(b.sprintRank > a.sprintRank, 'each create lands below the last');
-  // Batch: appended in batch order, in one transaction.
-  const r = await call('POST', `${roadPath}/batch`, {
-    items: [{ title: 'batch one', sprintId: one.id }, { title: 'batch two', sprintId: one.id }],
-  });
-  assert.equal(r.status, 201, r.text);
-  assert.ok(r.body.items[1].sprintRank > r.body.items[0].sprintRank);
-  assert.ok(r.body.items[0].sprintRank > b.sprintRank);
-  // A held source stays held in the sprint: filing is not approval.
-  const held = await makeItem('filed held', { sprintId: one.id, source: 'fly' });
-  assert.equal(held.sprintId, one.id);
-  assert.equal(held.reviewed, false);
-});
+// #621 — SPRINTS COMMIT TO SLICES. An item is in a sprint exactly when its
+// slice is; the database derives sprintId/sprintRank. Every item-level sprint
+// write is refused out loud.
+let sliceA; let sliceB; let sliceC;
+const flatRoad = async () => {
+  const road = (await call('GET', roadPath)).body;
+  return [...road.highest, ...road.high, ...road.medium, ...road.low, ...road.lowest];
+};
+const slicesPath = () => sprintsPath.replace(/\/sprints$/, '/slices');
 
-test('a POST naming another project\'s sprint, or no real sprint, is REFUSED, not downgraded', async () => {
-  const theirs = (await call('POST', `/projects/${otherSlug}/sprints`, { name: 'Theirs' })).body;
-  const r = await call('POST', roadPath, { title: 'stray', sprintId: theirs.id });
+test('a POST naming a sprint is REFUSED: work joins a sprint through its slice', async () => {
+  const { body: boxes } = await call('GET', sprintsPath);
+  const r = await call('POST', roadPath, { title: 'stray', sprintId: boxes[0].id });
   assert.equal(r.status, 400, r.text);
-  const r2 = await call('POST', roadPath, { title: 'stray', sprintId: 999999 });
-  assert.equal(r2.status, 400, r2.text);
-  // And a batch with one bad sprint files nothing.
-  const b = await call('POST', `${roadPath}/batch`, { items: [{ title: 'ok' }, { title: 'bad', sprintId: theirs.id }] });
-  assert.equal(b.status, 400, b.text);
+  assert.match(r.body.error, /commit to slices/);
+  const b = await call('POST', `${roadPath}/batch`, { items: [{ title: 'ok' }, { title: 'bad', sprintId: boxes[0].id }] });
+  assert.equal(b.status, 400, 'a batch with one sprintId files nothing');
+  sliceA = (await call('POST', slicesPath(), { title: 'Slice A' })).body;
+  sliceB = (await call('POST', slicesPath(), { title: 'Slice B' })).body;
+  sliceC = (await call('POST', slicesPath(), { title: 'Slice C' })).body;
+  assert.ok(sliceA.id && sliceB.id && sliceC.id);
 });
 
 test('starting a sprint stamps it, and starting a SECOND finishes the first', async () => {
@@ -149,107 +139,87 @@ test('starting a sprint stamps it, and starting a SECOND finishes the first', as
   assert.ok(wasFirst.endedAt, 'the sprint that was running is finished, not merely deactivated');
   assert.ok(wasFirst.startedAt, 'and it keeps the start stamp, so it can say how long it ran');
 
-  // A finished sprint is the record of what was committed to: nothing files into it.
-  const late = await call('POST', roadPath, { title: 'too late', sprintId: wasFirst.id });
+  // A finished sprint is the record of what was committed to: no slice joins it.
+  const late = await call('PUT', `${sprintsPath}/${wasFirst.id}/slices`, { slices: [sliceA.id] });
   assert.equal(late.status, 400, late.text);
-  // The ACTIVE one takes a create like a planned one does.
-  const now = await makeItem('into the running sprint', { sprintId: two.id });
-  assert.equal(now.sprintId, two.id);
 });
 
-test('the order PUT writes ranks from 0, adopts loose rows, and is idempotent', async () => {
+test('PUT /slices orders the sprint; its items follow, slice by slice, and it is idempotent', async () => {
   const active = (await call('GET', sprintsPath)).body.find((s) => s.status === 'active');
-  const a = await makeItem('first');
-  const b = await makeItem('second');
-  const c = await makeItem('third');
+  const a1 = await makeItem('a one', { sliceId: sliceA.id });
+  const a2 = await makeItem('a two', { sliceId: sliceA.id });
+  const b1 = await makeItem('b one', { sliceId: sliceB.id });
 
-  const put = await call('PUT', `${sprintsPath}/${active.id}/order`, { items: [c.id, a.id, b.id] });
+  const put = await call('PUT', `${sprintsPath}/${active.id}/slices`, { slices: [sliceB.id, sliceA.id] });
   assert.equal(put.status, 200, put.text);
-  assert.deepEqual(put.body.items, [c.id, a.id, b.id]);
+  assert.deepEqual(put.body.sliceIds, [sliceB.id, sliceA.id]);
 
-  const road = (await call('GET', roadPath)).body;
-  const flat = [...road.highest, ...road.high, ...road.medium, ...road.low, ...road.lowest];
-  const byId = new Map(flat.map((r) => [r.id, r]));
-  assert.equal(byId.get(c.id).sprintRank, 0, 'the top of the box is rank 0');
-  assert.equal(byId.get(a.id).sprintRank, 1);
-  assert.equal(byId.get(b.id).sprintRank, 2);
-  for (const id of [a.id, b.id, c.id]) assert.equal(byId.get(id).sprintId, active.id);
+  const byId = new Map((await flatRoad()).map((r) => [r.id, r]));
+  for (const it of [a1, a2, b1]) assert.equal(byId.get(it.id).sprintId, active.id, 'an item is in the sprint its slice is in');
+  assert.deepEqual([byId.get(b1.id).sprintRank, byId.get(a1.id).sprintRank, byId.get(a2.id).sprintRank], [0, 1, 2],
+    'the run order: the slice\'s place, then the item\'s place in its slice');
 
-  // Sending it again changes nothing — which is the property that makes a drop
-  // safe to retry and safe to race.
-  const again = await call('PUT', `${sprintsPath}/${active.id}/order`, { items: [c.id, a.id, b.id] });
-  assert.deepEqual(again.body.items, [c.id, a.id, b.id]);
+  const again = await call('PUT', `${sprintsPath}/${active.id}/slices`, { slices: [sliceB.id, sliceA.id] });
+  assert.deepEqual(again.body.sliceIds, [sliceB.id, sliceA.id]);
+  assert.equal((await flatRoad()).find((r) => r.id === b1.id).sprintRank, 0);
 });
 
-test('a row the order PUT leaves out is released to the backlog', async () => {
+test('a new item in a committed slice joins the sprint, at the bottom of its slice', async () => {
   const active = (await call('GET', sprintsPath)).body.find((s) => s.status === 'active');
-  const road = (await call('GET', roadPath)).body;
-  const inBox = [...road.highest, ...road.high].filter((r) => r.sprintId === active.id);
-  assert.ok(inBox.length >= 3);
-  const keep = inBox.slice(0, 2).map((r) => r.id);
-  const dropped = inBox[2].id;
-
-  await call('PUT', `${sprintsPath}/${active.id}/order`, { items: keep });
-  const after = (await call('GET', roadPath)).body;
-  const row = [...after.highest, ...after.high].find((r) => r.id === dropped);
-  assert.equal(row.sprintId, null, 'a row off the list is back in the backlog');
-  assert.equal(row.sprintRank, 0, 'and its rank goes with it');
+  const late = await makeItem('a three', { sliceId: sliceA.id });
+  assert.equal(late.sprintId, active.id, 'the create answers with the derived sprint, not a stale one');
+  const row = (await flatRoad()).find((r) => r.id === late.id);
+  assert.equal(row.sprintId, active.id);
+  assert.equal(row.sprintRank, 3, 'below a one and a two, below all of slice B');
 });
 
-test('an id from another project is IGNORED, not obeyed and not fatal', async () => {
+test('moving an item to another slice moves its sprint with it', async () => {
+  const it = await makeItem('wanders', { sliceId: sliceA.id });
+  const moved = await call('PATCH', `${roadPath}/${it.id}`, { sliceId: sliceC.id });
+  assert.equal(moved.body.sprintId, null, 'the PATCH answers with the derived sprint');
+  assert.equal((await flatRoad()).find((r) => r.id === it.id).sprintId, null, 'slice C is in no sprint');
+});
+
+test('item-level sprint writes are refused out loud', async () => {
   const active = (await call('GET', sprintsPath)).body.find((s) => s.status === 'active');
-  const stranger = await call('POST', `/projects/${otherSlug}/roadmap`, { title: 'not yours', bucket: 'high' });
-  assert.equal(stranger.status, 201, stranger.text);
-  const mine = await makeItem('mine');
-
-  const put = await call('PUT', `${sprintsPath}/${active.id}/order`, { items: [stranger.body.id, mine.id] });
-  assert.equal(put.status, 200, 'a stale id must not take the whole reorder down');
-  assert.deepEqual(put.body.items, [mine.id], 'the response is the REAL membership, so the screen can correct itself');
-
-  const other = (await call('GET', `/projects/${otherSlug}/roadmap`)).body;
-  const untouched = [...other.highest, ...other.high].find((r) => r.id === stranger.body.id);
-  assert.equal(untouched.sprintId, null, "another project's work is never filed into this sprint");
+  const it = await makeItem('direct', { sliceId: sliceC.id });
+  let r = await call('PATCH', `${roadPath}/${it.id}`, { sprintId: active.id });
+  assert.equal(r.status, 400, r.text);
+  r = await call('PATCH', `${roadPath}/${it.id}`, { sprintRank: 0 });
+  assert.equal(r.status, 400, r.text);
+  r = await call('PUT', `${sprintsPath}/${active.id}/order`, { items: [it.id] });
+  assert.equal(r.status, 410, r.text);
 });
 
-test('a single-item PATCH files at the BOTTOM, and null sends it back', async () => {
+test('a slice left out leaves the sprint; a stranger\'s slice is ignored', async () => {
   const active = (await call('GET', sprintsPath)).body.find((s) => s.status === 'active');
-  const road = (await call('GET', roadPath)).body;
-  const inBox = [...road.highest, ...road.high].filter((r) => r.sprintId === active.id);
-  const loner = await makeItem('dragged in on its own');
-
-  const moved = await call('PATCH', `${roadPath}/${loner.id}`, { sprintId: active.id });
-  assert.equal(moved.status, 200, moved.text);
-  assert.equal(moved.body.sprintId, active.id);
-  // The BOTTOM, never the top: a single-item move has no opinion about order,
-  // and the top slot is a claim about what the night takes first.
-  assert.equal(moved.body.sprintRank, inBox.length);
-
-  const back = await call('PATCH', `${roadPath}/${loner.id}`, { sprintId: null });
-  assert.equal(back.body.sprintId, null);
-  assert.equal(back.body.sprintRank, 0);
+  const theirs = (await call('POST', `/projects/${otherSlug}/slices`, { title: 'not yours' })).body;
+  const put = await call('PUT', `${sprintsPath}/${active.id}/slices`, { slices: [theirs.id, sliceA.id] });
+  assert.equal(put.status, 200, put.text);
+  assert.deepEqual(put.body.sliceIds, [sliceA.id], 'the answer is the REAL commitment');
+  const rows = await flatRoad();
+  assert.ok(rows.filter((r) => r.sliceId === sliceB.id).every((r) => r.sprintId === null), 'slice B left, and its items with it');
+  assert.ok(rows.filter((r) => r.sliceId === sliceA.id).every((r) => r.sprintId === active.id));
 });
 
-test("a sprint id from another project resolves to the BACKLOG, never to that sprint", async () => {
-  const theirs = await call('POST', `/projects/${otherSlug}/sprints`, { name: 'theirs' });
-  assert.equal(theirs.status, 201, theirs.text);
-  const it = await makeItem('cross-project attempt');
-  const r = await call('PATCH', `${roadPath}/${it.id}`, { sprintId: theirs.body.id });
-  assert.equal(r.status, 200);
-  assert.equal(r.body.sprintId, null, 'the safe end of the two — never a stranger’s sprint');
+test('a slice is in at most ONE open sprint: committing it elsewhere moves it', async () => {
+  const active = (await call('GET', sprintsPath)).body.find((s) => s.status === 'active');
+  const next = (await call('POST', sprintsPath, { name: 'next up' })).body;
+  const r = await call('PUT', `${sprintsPath}/${next.id}/slices`, { slices: [sliceA.id] });
+  assert.deepEqual(r.body.sliceIds, [sliceA.id]);
+  const boxes = (await call('GET', sprintsPath)).body;
+  assert.deepEqual(boxes.find((b) => b.id === active.id).sliceIds, [], 'it left the sprint in progress');
+  assert.ok((await flatRoad()).filter((x) => x.sliceId === sliceA.id).every((x) => x.sprintId === next.id));
+  await call('DELETE', `${sprintsPath}/${next.id}`);
 });
 
-test('deleting a sprint releases its work rather than taking it', async () => {
+test('deleting a sprint releases its slices rather than taking them', async () => {
   const box = (await call('POST', sprintsPath, { name: 'doomed' })).body;
-  const a = await makeItem('survives the box');
-  const b = await makeItem('survives too');
-  await call('PUT', `${sprintsPath}/${box.id}/order`, { items: [a.id, b.id] });
-
+  await call('PUT', `${sprintsPath}/${box.id}/slices`, { slices: [sliceB.id] });
   const del = await call('DELETE', `${sprintsPath}/${box.id}`);
   assert.equal(del.status, 200, del.text);
-
-  const road = (await call('GET', roadPath)).body;
-  const rows = [...road.highest, ...road.high].filter((r) => r.id === a.id || r.id === b.id);
-  assert.equal(rows.length, 2, 'deleting a decision about work never deletes the work');
+  const rows = (await flatRoad()).filter((r) => r.sliceId === sliceB.id);
+  assert.ok(rows.length >= 1, 'deleting a decision about work never deletes the work');
   for (const r of rows) {
     assert.equal(r.sprintId, null);
     assert.equal(r.sprintRank, 0, 'a rank in a box that no longer exists is not a rank');

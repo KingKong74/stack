@@ -1808,3 +1808,97 @@ CREATE UNIQUE INDEX IF NOT EXISTS artifacts_one_spine_doc_idx
   ON artifacts (project_id, type) WHERE type IN ('charter', 'architecture');
 ALTER TABLE project_areas ADD COLUMN IF NOT EXISTS description TEXT  NOT NULL DEFAULT '';
 ALTER TABLE project_areas ADD COLUMN IF NOT EXISTS paths       JSONB NOT NULL DEFAULT '[]'::jsonb;
+
+-- #621 — SPRINTS COMMIT TO SLICES (spine phase 3).
+--
+--  1. `sprint_slices` is the commitment: which slices a sprint holds, and in
+--     what order (`rank`, dense, 0 = top). `project_id` rides along, fixed at
+--     insert, so a row trigger can name the project even when the sprint is
+--     already gone (a cascade).
+--  2. AN ITEM IS IN A SPRINT IFF ITS SLICE IS. `roadmap_items.sprint_id` and
+--     `sprint_rank` are now DERIVED, and the DATABASE derives them (the
+--     triggers below call spine_sprint_sync), so no route can write a value
+--     that disagrees with the commitment. Every reader of the run order (the
+--     claim SQL, the runner, queueOrder) is unchanged and now orders by the
+--     slice's place in the sprint, then the item's place in its slice
+--     (`slice_rank`), then its id. The routes REFUSE a direct sprint write.
+--  3. A slice is in AT MOST ONE OPEN sprint (the route moves it). A FINISHED
+--     sprint keeps its slices: it is the record of what was committed to. An
+--     item's derived sprint is the active one, else the planned one, else the
+--     most recently finished.
+CREATE TABLE IF NOT EXISTS sprint_slices (
+  sprint_id  INTEGER NOT NULL REFERENCES sprints(id) ON DELETE CASCADE,
+  slice_id   INTEGER NOT NULL REFERENCES slices(id)  ON DELETE CASCADE,
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  rank       INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (sprint_id, slice_id)
+);
+CREATE INDEX IF NOT EXISTS sprint_slices_slice_idx ON sprint_slices (slice_id);
+
+CREATE OR REPLACE FUNCTION spine_sprint_sync(p_project integer) RETURNS void
+LANGUAGE sql AS $fn$
+  WITH pick AS (
+    SELECT DISTINCT ON (ss.slice_id) ss.slice_id, ss.sprint_id, ss.rank
+      FROM sprint_slices ss JOIN sprints sp ON sp.id = ss.sprint_id
+     WHERE ss.project_id = p_project
+     ORDER BY ss.slice_id, (sp.status = 'active') DESC, (sp.status = 'planned') DESC,
+              sp.ended_at DESC NULLS LAST, sp.id DESC
+  ), want AS (
+    SELECT r.id, pk.sprint_id,
+           CASE WHEN pk.sprint_id IS NULL THEN 0
+                ELSE (row_number() OVER (PARTITION BY pk.sprint_id ORDER BY pk.rank, r.slice_rank, r.id) - 1)::int
+           END AS rk
+      FROM roadmap_items r LEFT JOIN pick pk ON pk.slice_id = r.slice_id
+     WHERE r.project_id = p_project
+  )
+  UPDATE roadmap_items r SET sprint_id = w.sprint_id, sprint_rank = w.rk
+    FROM want w
+   WHERE r.id = w.id AND (r.sprint_id IS DISTINCT FROM w.sprint_id OR r.sprint_rank IS DISTINCT FROM w.rk);
+$fn$;
+
+-- Item side: a row joining, leaving or moving within a slice. The sync only
+-- writes sprint_id/sprint_rank, which this trigger does not watch, so it
+-- cannot recurse.
+CREATE OR REPLACE FUNCTION spine_item_trg() RETURNS trigger LANGUAGE plpgsql AS $fn$
+BEGIN PERFORM spine_sprint_sync(NEW.project_id); RETURN NULL; END $fn$;
+DROP TRIGGER IF EXISTS roadmap_spine_ins ON roadmap_items;
+CREATE TRIGGER roadmap_spine_ins AFTER INSERT ON roadmap_items
+  FOR EACH ROW WHEN (NEW.slice_id IS NOT NULL OR NEW.sprint_id IS NOT NULL) EXECUTE FUNCTION spine_item_trg();
+DROP TRIGGER IF EXISTS roadmap_spine_upd ON roadmap_items;
+CREATE TRIGGER roadmap_spine_upd AFTER UPDATE OF slice_id, slice_rank, sprint_id, sprint_rank ON roadmap_items
+  FOR EACH ROW WHEN (OLD.slice_id IS DISTINCT FROM NEW.slice_id OR OLD.slice_rank IS DISTINCT FROM NEW.slice_rank
+                     OR (pg_trigger_depth() = 0 AND (OLD.sprint_id IS DISTINCT FROM NEW.sprint_id
+                                                     OR OLD.sprint_rank IS DISTINCT FROM NEW.sprint_rank)))
+  EXECUTE FUNCTION spine_item_trg();
+
+-- Commitment side, and a sprint changing status (which changes which sprint
+-- an item derives to).
+CREATE OR REPLACE FUNCTION spine_commit_trg() RETURNS trigger LANGUAGE plpgsql AS $fn$
+BEGIN
+  PERFORM spine_sprint_sync(CASE WHEN TG_OP = 'DELETE' THEN OLD.project_id ELSE NEW.project_id END);
+  RETURN NULL;
+END $fn$;
+DROP TRIGGER IF EXISTS sprint_slices_sync ON sprint_slices;
+CREATE TRIGGER sprint_slices_sync AFTER INSERT OR UPDATE OR DELETE ON sprint_slices
+  FOR EACH ROW EXECUTE FUNCTION spine_commit_trg();
+DROP TRIGGER IF EXISTS sprints_status_sync ON sprints;
+CREATE TRIGGER sprints_status_sync AFTER UPDATE OF status ON sprints
+  FOR EACH ROW WHEN (OLD.status IS DISTINCT FROM NEW.status) EXECUTE FUNCTION spine_commit_trg();
+
+-- ONE-SHOT: an item-level sprint becomes a slice-level one. Each sprint
+-- commits the slices of the rows it held, in the order their first row sat.
+-- Guarded on an empty table, so it runs once; a row in a sprint with no slice
+-- (none should exist: #608 carried sprinted rows over) leaves the sprint.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM sprint_slices) THEN
+    INSERT INTO sprint_slices (sprint_id, slice_id, project_id, rank)
+    SELECT sprint_id, slice_id, project_id,
+           (row_number() OVER (PARTITION BY sprint_id ORDER BY min(sprint_rank), min(id)) - 1)::int
+      FROM roadmap_items
+     WHERE sprint_id IS NOT NULL AND slice_id IS NOT NULL
+     GROUP BY sprint_id, slice_id, project_id
+    ON CONFLICT DO NOTHING;
+    PERFORM spine_sprint_sync(id) FROM projects;
+  END IF;
+END $$;

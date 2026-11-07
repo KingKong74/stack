@@ -75,12 +75,12 @@
 // on the Inbox (screens/Inbox.tsx); this screen draws a verdicted card in Done
 // and says when a machine gave the verdict.
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { KitIcon } from './kit/KitIcon';
 import { BacklogTimeline } from './BacklogTimeline';
 import type { BoardArea, BoardList, ItemKind, Milestone, Priority, RoadmapItem, Slice, Sprint, SprintPlan } from '../types';
-import { listKeyOf, clusterKeyOf, queueOrder, isBoardWork, isIced, sliceStateOf } from '../lib/plan';
+import { listKeyOf, clusterKeyOf, queueOrder, isBoardWork, isIced, sliceStateOf, isBuilt } from '../lib/plan';
 import { SpineStrip, SliceDialog, MilestoneDialog, SlicePicker, liveSlices, currentMilestone, sliceLabel } from './Spine';
 import { isHeld } from '../lib/approval';
 import { PRIORITY_META, PRIORITY_DEFAULT, priorityMeta, dueRead, ITEM_KIND_LABEL } from '../lib/ui';
@@ -89,7 +89,7 @@ import {
   createArea, patchArea, deleteArea,
   getBoardFolds, setBoardFolds, getBoardView, setBoardView, getBacklogView, setBacklogView,
   createRoadmapItem, patchRoadmapItem, deleteRoadmapItem,
-  createSprint, patchSprint, putSprintOrder, deleteSprint, putReadyQueue,
+  createSprint, patchSprint, putSprintSlices, deleteSprint, putReadyQueue,
   createSlice, patchSlice, deleteSlice, createMilestone, patchMilestone,
   startBuild, planSprint,
   queueTermLaunch,
@@ -725,13 +725,22 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
         : `#${it.id} left the build queue.`);
       onRefresh();
     });
+  // #621 — A SPRINT COMMITS TO SLICES, so "plan this in the sprint" commits the
+  // card's SLICE, at the bottom: every card in it comes along, and the note
+  // says so. A card in no slice cannot join a sprint and is told why.
   const addToSprint = (it: RoadmapItem, sprintId: number) =>
     guard(async () => {
-      wrote(await patchRoadmapItem(slug, it.id, { sprintId }));
-      // The BOTTOM of the box, which is the route's own choice (`sprint_rank =
-      // MAX + 1`) and the right one: a card added from here has been committed
-      // to, not promoted over everything somebody already ordered.
-      setNote(`#${it.id} joined the sprint, at the bottom of its queue.`);
+      if (it.sliceId === null) {
+        setErr(`#${it.id} is in no slice, and a sprint commits to slices. Give it a slice from its menu first.`);
+        return;
+      }
+      const box = boxes.find((b) => b.id === sprintId);
+      const next = await putSprintSlices(slug, sprintId, [...(box?.sliceIds || []).filter((x) => x !== it.sliceId), it.sliceId]);
+      setBoxes((bs) => bs.map((b) => (b.id === next.id ? next : b)));
+      const name = sl.find((x) => x.id === it.sliceId)?.title || 'its slice';
+      const n = rows.filter((x) => x.sliceId === it.sliceId && !x.archived).length;
+      setNote(`“${name}” joined ${next.name} at the bottom, with its ${n} card${n === 1 ? '' : 's'}.`);
+      onRefresh();
     });
 
   const archive = (it: RoadmapItem) =>
@@ -1014,7 +1023,7 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
         {note && <div className="km-note" role="status">{note}</div>}
 
         {view === 'backlog' && (
-          <BacklogView slug={slug} rows={rows} boxes={boxes} activeId={activeId} areas={areas}
+          <BacklogView slug={slug} rows={rows} boxes={boxes} slices={sl} activeId={activeId} areas={areas}
             lists={lists || []}
             onCreate={() => setDialog(true)} onEdit={onEdit}
             onOpen={(it, el) => openFocus(it, el, false)}
@@ -2090,11 +2099,13 @@ function IssueCard({
               {item.ready ? '⇤ Take out of Ready' : '⇥ Queue to build'}
             </button>
           )}
-          {activeSprint && item.sprintId !== activeSprint.id ? (
+          {activeSprint && item.sprintId !== activeSprint.id && item.sliceId !== null ? (
             <button className="km-menuitem" onClick={() => onAddToSprint(activeSprint.id)}
-              title={`Adds this item to ${activeSprint.name}, the planning lane: the automation designs and breaks it down, but never builds from a sprint.`}>
-              ＋ Plan in {activeSprint.name}
+              title={`Commits this card's whole slice to ${activeSprint.name}, the planning lane: the automation designs and breaks it down, but never builds from a sprint.`}>
+              ＋ Plan its slice in {activeSprint.name}
             </button>
+          ) : activeSprint && item.sliceId === null ? (
+            <span className="km-menunote">In no slice, so it cannot join a sprint: a sprint commits to slices.</span>
           ) : (
             <span className="km-menunote">
               {!activeSprint
@@ -2494,10 +2505,12 @@ function CreateDialog({ onClose, onCreate }: {
       project is `active` (the database enforces it), and the nightly fan-out,
       the plan sweep and the host runner all read only that one. Everything
       else on this screen — a planned box, the backlog — is inert to the night.
-    • DRAGGING IS THE ONLY WRITER OF A RANK. Every drop sends the WHOLE
-      destination box, top to bottom, through `putSprintOrder`; nothing here
-      ever PATCHes one row's index. A full list is idempotent, a partial one
-      races the other browser doing the same drag.
+    • A SPRINT COMMITS TO SLICES (#621). A card's sprint is DERIVED from its
+      slice by the database, so a drag moves the card's WHOLE SLICE: every
+      drop sends the destination sprint's whole slice list through
+      `putSprintSlices`, and nothing here writes an item's sprint or rank. A
+      full list is idempotent, a partial one races the other browser doing
+      the same drag. Inside a box, cards group under their slice's head.
 
    FIVE THINGS THE WIRING HAD TO DECIDE:
 
@@ -2662,7 +2675,7 @@ function PlannerPanel({ plan, busy, onApply, onDismiss }: {
       <div className="km-planhead">
         <span className="lbl">✧ Proposed order for {plan.sprintName}</span>
         <span className="n">
-          {plan.order.length} item{plan.order.length === 1 ? '' : 's'}
+          {plan.order.length} slice{plan.order.length === 1 ? '' : 's'}
           {adds > 0 ? ` · ${adds} from the backlog` : ''}
           {' · '}{plan.capacity.points} of ~{plan.capacity.target} points
           {plan.capacity.unsized > 0 ? ` · ${plan.capacity.unsized} unsized` : ''}
@@ -2704,7 +2717,7 @@ function PlannerPanel({ plan, busy, onApply, onDismiss }: {
               <span className="body">
                 <span className="line">
                   <span className="t">{r.title}</span>
-                  <span className="k-tag mono">#{r.id}</span>
+                  <span className="k-tag mono">slice {r.id}</span>
                   {r.area && <span className="k-tag">{r.area}</span>}
                   {r.points !== null && <span className="k-tag mono">{r.points}p</span>}
                   {r.adding && <span className="k-tag success">from backlog</span>}
@@ -2727,7 +2740,7 @@ function PlannerPanel({ plan, busy, onApply, onDismiss }: {
           <span className="lbl">Applying also returns {plan.drops.length} to the backlog</span>
           {plan.drops.map((d) => (
             <span className="row" key={d.id}>
-              <span className="k-tag mono">#{d.id}</span>{d.title}
+              <span className="k-tag mono">slice {d.id}</span>{d.title}
               {d.area && <span className="k-tag">{d.area}</span>}
             </span>
           ))}
@@ -2738,9 +2751,12 @@ function PlannerPanel({ plan, busy, onApply, onDismiss }: {
 }
 
 function BacklogView({
-  slug, rows, boxes, activeId, areas, lists, onCreate, onEdit, onOpen, onBox, onWrote, onRefresh, onError,
+  slug, rows, boxes, slices, activeId, areas, lists, onCreate, onEdit, onOpen, onBox, onWrote, onRefresh, onError,
 }: {
   slug: string;
+  /** #621 — the project's slices: what a sprint commits to, and what a drag
+   *  moves. Each row's sprint is derived from its slice. */
+  slices: Slice[];
   /** Every roadmap row this screen knows about, in payload order. */
   rows: RoadmapItem[];
   boxes: Sprint[];
@@ -2837,8 +2853,15 @@ function BacklogView({
       if (bag) bag.push(it); else byBox.set(it.sprintId, [it]);
     }
     for (const bag of byBox.values()) bag.sort((a, b) => a.sprintRank - b.sprintRank || a.id - b.id);
+    // #621 — the backlog groups by SLICE too (the unit a drag moves), in the
+    // slices' own order, keeping payload order inside each; unsliced last.
+    const at = new Map(slices.map((x, i) => [x.id, i]));
+    const pos = (it: RoadmapItem) => (it.sliceId === null ? Number.MAX_SAFE_INTEGER : at.get(it.sliceId) ?? Number.MAX_SAFE_INTEGER - 1);
+    const order = new Map(loose.map((it, i) => [it.id, i]));
+    loose.sort((a, b) => pos(a) - pos(b) || (order.get(a.id) as number) - (order.get(b.id) as number));
     return { byBox, loose };
-  }, [pool]);
+  }, [pool, slices]);
+  const sliceName = (id: number | null) => (id === null ? 'No slice' : slices.find((x) => x.id === id)?.title || `Slice ${id}`);
 
   // A finished box is history: drawn, collapsed, and not a drop target. Live
   // boxes come first in their own order, which is the order the API serves.
@@ -2847,57 +2870,43 @@ function BacklogView({
 
   // ---- the writes ----------------------------------------------------------
 
-  /** Apply one box's new membership locally. The single place a drop's result
-   *  becomes rows, so optimistic and corrected states cannot diverge in shape:
-   *  every id in `ordered` gets this sprint and its index as the rank, and any
-   *  row that WAS in this box and is not in the list goes back to the backlog. */
-  const applyOrder = useCallback((sprintId: number, ordered: number[]) => {
-    const rank = new Map(ordered.map((id, i) => [id, i]));
-    onWrote(rows.map((it) => {
-      if (rank.has(it.id)) return { ...it, sprintId, sprintRank: rank.get(it.id) as number };
-      if (it.sprintId === sprintId) return { ...it, sprintId: null, sprintRank: 0 };
-      return it;
-    }));
-  }, [rows, onWrote]);
-
-  /** A drop. `destId` null is the backlog, which is a release rather than a
-   *  reorder — the backlog has no order of its own to write. */
+  /** A DROP MOVES A WHOLE SLICE (#621). A sprint commits to slices, so the
+   *  card in the hand stands for its slice: dropped on a box, the slice goes
+   *  in above the slice of the card it landed on (or at the bottom); dropped
+   *  on the backlog, the slice leaves its sprint. A card in no slice cannot
+   *  join a sprint and the error line says why. Optimistic, then the server's
+   *  answer (`putSprintSlices` returns the real commitment) is applied. */
   const drop = (destId: number | null, beforeId: number | null) => {
     const id = drag;
     setDrag(null); setOverBox(null);
-    // A row dropped on ITSELF is no move at all. Before #498 it fell through to
-    // the splice below, found no row to go above (its own id was filtered out)
-    // and wrote it to the TOP of the box — a reorder nobody asked for.
-    if (id == null || id === beforeId) return;
+    if (id == null) return;
     const moving = rows.find((r) => r.id === id);
     if (!moving) return;
-
-    if (destId === null) {
-      if (moving.sprintId == null) return;
-      // Optimistic, then the PATCH. A single-item move out of a box is the one
-      // write here that is not a whole-list reorder, because there is no list
-      // on this side to be whole.
-      onWrote(rows.map((r) => (r.id === id ? { ...r, sprintId: null, sprintRank: 0 } : r)));
-      guard(async () => { await patchRoadmapItem(slug, id, { sprintId: null }); land(id); onRefresh(); });
+    const sid = moving.sliceId;
+    if (sid === null) {
+      onError(`#${id} is in no slice, so it cannot join a sprint: a sprint commits to slices. Give it a slice on the board first.`);
       return;
     }
-
-    // The destination box as it will be: its current rows minus the one being
-    // moved (a reorder inside one box is the same gesture as a move into it),
-    // with the mover spliced in ahead of whatever it was dropped on. Dropped on
-    // nothing = the bottom, which is where an unranked arrival belongs — the
-    // top is a claim about what the night takes first and must be deliberate.
-    const current = (bags.byBox.get(destId) || []).map((r) => r.id).filter((n) => n !== id);
-    const at = beforeId == null ? current.length : Math.max(0, current.indexOf(beforeId));
-    const ordered = [...current.slice(0, at), id, ...current.slice(at)];
-
-    applyOrder(destId, ordered);
+    if (destId === null) {
+      const src = boxes.find((b) => b.id === moving.sprintId);
+      if (!src || src.status === 'done') return;
+      onWrote(rows.map((r) => (r.sliceId === sid ? { ...r, sprintId: null, sprintRank: 0 } : r)));
+      guard(async () => { onBox(await putSprintSlices(slug, src.id, src.sliceIds.filter((x) => x !== sid))); land(id); onRefresh(); });
+      return;
+    }
+    const dest = boxes.find((b) => b.id === destId);
+    if (!dest) return;
+    const before = beforeId == null ? null : rows.find((r) => r.id === beforeId)?.sliceId ?? null;
+    // Dropped inside its own slice: the slice's place is unchanged, and the
+    // order WITHIN a slice is not a sprint write.
+    if (before === sid && moving.sprintId === destId) return;
+    const current = dest.sliceIds.filter((x) => x !== sid);
+    const k = before === null ? -1 : current.indexOf(before);
+    const ordered = k < 0 ? [...current, sid] : [...current.slice(0, k), sid, ...current.slice(k)];
+    onWrote(rows.map((r) => (r.sliceId === sid ? { ...r, sprintId: destId } : r)));
     guard(async () => {
-      // Render the ANSWER, not the request: the server drops any id that has
-      // moved out from under this drag, so its list is the real membership.
-      const res = await putSprintOrder(slug, destId, ordered);
-      applyOrder(destId, res.items);
-      if (res.items.includes(id)) land(id);
+      onBox(await putSprintSlices(slug, destId, ordered));
+      land(id);
       onRefresh();
     });
   };
@@ -2957,15 +2966,15 @@ function BacklogView({
     try { setPlan(await planSprint(slug, b.id)); }
     finally { setPlanning(false); }
   });
-  // APPLY, and it is ONE call: `PUT /:id/order` takes the whole box, so it
-  // pulls in the rows the plan added and returns the ones it left out, in a
-  // single transaction. Exactly what a drag does, which is the point — there is
+  // APPLY, and it is ONE call: `PUT /:id/slices` takes the whole sprint, so it
+  // pulls in the slices the plan added and releases the ones it left out, in a
+  // single transaction (#621: the planner orders slices). Exactly what a drag does, which is the point — there is
   // no second write path for a machine's suggestion to travel down.
   const applyPlan = () => guard(async () => {
     if (!plan) return;
     setApplying(true);
     try {
-      await putSprintOrder(slug, plan.sprintId, plan.order.map((r) => r.id));
+      onBox(await putSprintSlices(slug, plan.sprintId, plan.order.map((r) => r.id)));
       setPlan(null);
       onRefresh();
     } finally { setApplying(false); }
@@ -3127,7 +3136,7 @@ function BacklogView({
           onDelete={() => remove(b)}
           onOver={(on) => (on ? setOverBox(String(b.id)) : leave(String(b.id)))}
           onDrop={(beforeId) => drop(b.id, beforeId)}
-          onGrab={setDrag} onEdit={onEdit} />
+          onGrab={setDrag} onEdit={onEdit} sliceName={sliceName} />
       ))}
 
       {/* THE BACKLOG. Everything not committed to a box, in priority order —
@@ -3146,7 +3155,7 @@ function BacklogView({
           <span className="lbl">Backlog</span>
           <span className="items">{bags.loose.length} item{bags.loose.length === 1 ? '' : 's'}</span>
           <span className="rule" />
-          <span className="km-batchsay">Not in any sprint — the runner never touches these</span>
+          <span className="km-batchsay">Slices in no sprint — the runner never touches these. A drag moves a whole slice</span>
           {/* The same census the sprint boxes carry. It is worth drawing over
               the backlog too: a backlog with rows sitting in In Progress is a
               board where somebody is building work nobody committed to, which
@@ -3155,7 +3164,7 @@ function BacklogView({
         </div>
         {looseOver && dragged && (
           <DropSlot from={boxes.find((x) => x.id === dragged.sprintId)?.name || 'Sprint'} to="Backlog"
-            say="Drop to take it out of the sprint"
+            say={`Drop to take “${sliceName(dragged.sliceId)}” out of the sprint`}
             note="The runner never touches the backlog" />
         )}
         {bags.loose.length === 0 ? (
@@ -3163,10 +3172,16 @@ function BacklogView({
             {pool.length === 0 ? 'No committed work on this board yet.' : 'Everything is in a sprint or done.'}
           </div>
         ) : bags.loose.map((it, i) => (
-          <BacklogRow key={it.id} row={it} rank={i + 1} inSprint={false} runs={false} lists={lists}
-            dragging={drag === it.id} landed={landedId === it.id}
-            onGrab={() => setDrag(it.id)} onDragEnd={endDrag}
-            onEdit={() => onEdit(it)} />
+          <Fragment key={it.id}>
+            {(i === 0 || bags.loose[i - 1].sliceId !== it.sliceId) && (
+              <SliceHead name={sliceName(it.sliceId)} rows={bags.loose.filter((x) => x.sliceId === it.sliceId)}
+                loose={it.sliceId === null} />
+            )}
+            <BacklogRow row={it} rank={i + 1} inSprint={false} runs={false} lists={lists}
+              dragging={drag === it.id} landed={landedId === it.id}
+              onGrab={() => setDrag(it.id)} onDragEnd={endDrag}
+              onEdit={() => onEdit(it)} />
+          </Fragment>
         ))}
         <button className="km-bl-add" onClick={onCreate}>+ Add to backlog</button>
       </section>}
@@ -3214,9 +3229,11 @@ function SprintBox({
   renaming, onRename, onStartRename,
   dating, onDates, onWindow,
   confirming, onConfirm, onStart, onFinish, onReopen, onDelete, onOver, onDrop, onGrab, onEdit,
-  planning, onPlan,
+  planning, onPlan, sliceName,
 }: {
   sprint: Sprint; items: RoadmapItem[];
+  /** #621 — a slice's title, for the group heads inside the box. */
+  sliceName: (id: number | null) => string;
   /** The board's own columns — what the header squares count into. */
   lists: BoardList[];
   isActive: boolean;
@@ -3376,8 +3393,8 @@ function SprintBox({
 
       {over && dragged && !isSource && (
         <DropSlot from={from} to={sprint.name}
-          say="Drop to commit it to this sprint"
-          note={items.length ? 'It goes in at the bottom — or above the row you drop it on' : undefined} />
+          say={dragged.sliceId === null ? 'In no slice, so it cannot join a sprint' : `Drop to commit “${sliceName(dragged.sliceId)}” to this sprint`}
+          note={dragged.sliceId === null ? undefined : 'The whole slice comes along. It goes in at the bottom, or above the slice you drop it on'} />
       )}
 
       {items.length === 0 ? (
@@ -3387,13 +3404,31 @@ function SprintBox({
           </div>
         )
       ) : items.map((it, i) => (
-        <BacklogRow key={it.id} row={it} rank={i + 1} inSprint runs={isActive && runnable(it)} lists={lists}
-          dragging={dragging === it.id} landed={landedId === it.id}
-          onGrab={() => onGrab(it.id)} onDragEnd={onDragEnd}
-          onDrop={() => onDrop(it.id)}
-          onEdit={() => onEdit(it)} />
+        <Fragment key={it.id}>
+          {(i === 0 || items[i - 1].sliceId !== it.sliceId) && (
+            <SliceHead name={sliceName(it.sliceId)} rows={items.filter((x) => x.sliceId === it.sliceId)} />
+          )}
+          <BacklogRow row={it} rank={i + 1} inSprint runs={isActive && runnable(it)} lists={lists}
+            dragging={dragging === it.id} landed={landedId === it.id}
+            onGrab={() => onGrab(it.id)} onDragEnd={onDragEnd}
+            onDrop={() => onDrop(it.id)}
+            onEdit={() => onEdit(it)} />
+        </Fragment>
       ))}
     </section>
+  );
+}
+
+/** #621 — a slice's head inside a sprint box or the backlog: the unit a drag
+ *  moves, with how much of it is built. Unsliced rows say they cannot move. */
+function SliceHead({ name, rows, loose = false }: { name: string; rows: RoadmapItem[]; loose?: boolean }) {
+  const built = rows.filter(isBuilt).length;
+  return (
+    <div className={`km-blslice${loose ? ' loose' : ''}`}>
+      <KitIcon name="layers" size={12} />
+      <span className="nm">{name}</span>
+      <span className="n">{loose ? 'cannot join a sprint until it has a slice' : `${built}/${rows.length} built`}</span>
+    </div>
   );
 }
 

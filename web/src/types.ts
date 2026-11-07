@@ -111,6 +111,10 @@ export interface Sprint {
   name: string;
   status: SprintStatus;
   position: number;          // order of the boxes themselves, top to bottom
+  /** #621 — the slices it commits to, top first. Its items are those slices'
+   *  items: each row's `sprintId`/`sprintRank` is DERIVED from this by the
+   *  database, and no write sets them directly. */
+  sliceIds: number[];
   // THE PLANNED WINDOW the owner set, as bare YYYY-MM-DD days (never instants —
   // a sprint boundary is a day somebody named, and a zone would slide the end
   // by one for half the world). Both null is the common case: a sprint is a box

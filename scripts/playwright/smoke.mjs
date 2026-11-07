@@ -719,7 +719,7 @@ export const SCREENS = [
   { id: 'timeline', label: 'Timeline', path: '#/timeline' },
   { id: 'inbox', label: 'Inbox', path: '#/inbox' },
   { id: 'settings', label: 'Settings', path: '#/settings' },
-  { id: 'project-overview', label: 'Project — Overview', path: '#/p/<slug>' },
+  { id: 'project-overview', label: 'Project — Course (the home)', path: '#/p/<slug>' },
   {
     id: 'project-quality',
     label: 'Project — Quality',

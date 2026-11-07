@@ -6,7 +6,7 @@ its file: `lib/branch.ts`, `lib/plan.ts`, `lib/quality.ts`, `lib/termClipboard.t
 `components/Brandmark.tsx`, `components/RoadmapModal.tsx`, `components/Asking.tsx`,
 `detail/Board.tsx`, `detail/BoardFocus.tsx`, `detail/BacklogTimeline.tsx`, `detail/ForYou.tsx`, `detail/Plans.tsx`,
 `detail/Development.tsx`, `detail/SkillsAgents.tsx`, `detail/Loops.tsx`, `detail/Artifacts.tsx`, `detail/Spine.tsx`,
-`detail/Architecture.tsx`,
+`detail/Architecture.tsx`, `detail/Course.tsx`,
 `components/Markdown.tsx`.
 
 ## Structure
@@ -16,8 +16,8 @@ its file: `lib/branch.ts`, `lib/plan.ts`, `lib/quality.ts`, `lib/termClipboard.t
   401, which clears the token and returns to the gate.
 - **`lib/route.ts` is a hash router, and the tab decides what `hl` means.** A tab that doesn't use a
   highlight ignores it rather than 404ing. Legacy route spellings fall through to Overview.
-- **For you is three route keys on one screen** (`overview`, `activity`, `auto`), switched by a strip
-  that writes the key. Don't collapse them into component state.
+- **For you is three route keys on one screen** (`overview` = Course, the project home since #622;
+  `activity`; `auto`), switched by a strip that writes the key. Don't collapse them into component state.
 - **A recurring re-fetch goes through `lib/autoRefresh.ts`.** One device-local setting governs every
   screen that polls the host, and it also stops a hidden tab polling — except `whileHidden`, whose
   one caller is the #519 notifier while desktop notifications are on (its job is the unwatched tab).

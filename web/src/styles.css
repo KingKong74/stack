@@ -8977,3 +8977,70 @@ button.ar-open:hover { background: var(--surface-hover); }
   .sp-adrtitle { flex-basis: 100%; }
 }
 .sp-adrcontrols .k-select { width: auto; flex: 0 1 auto; max-width: 260px; min-width: 0; }
+
+/* #621 — a slice's head inside a sprint box or the backlog: the unit a drag
+   moves. Quiet, like an area group head, so the rows stay the subject. */
+.km-blslice {
+  display: flex; align-items: center; gap: var(--space-3); min-width: 0;
+  padding: var(--space-3) var(--space-2) var(--space-1); color: var(--text-tertiary);
+}
+.km-blslice .nm { font: var(--type-caption); color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.km-blslice .n { margin-left: auto; font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-tertiary); white-space: nowrap; }
+.km-blslice.loose .nm { color: var(--text-tertiary); }
+
+/* ==========================================================================
+   COURSE (#622) — detail/Course.tsx, the project home. Reading surfaces on
+   --surface-raised; the one bar is the milestone's built share. Tokens only.
+   ========================================================================== */
+.co { display: flex; flex-direction: column; gap: var(--space-6); max-width: 960px; min-width: 0; }
+.co-sec {
+  display: flex; flex-direction: column; gap: var(--space-3); min-width: 0;
+  background: var(--surface-raised); border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg); padding: var(--space-5) var(--space-6);
+}
+.co-where { background: transparent; border: 0; padding: 0; }
+.co-head { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; min-width: 0; }
+.co-eyebrow {
+  font: var(--type-eyebrow); letter-spacing: var(--tracking-caps);
+  text-transform: uppercase; color: var(--text-tertiary);
+}
+.co-title { font: var(--type-heading); color: var(--text-primary); }
+.co-title.sm { font: var(--type-label); }
+.co-rule { flex: 1; min-width: var(--space-4); }
+.co-num { font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-tertiary); white-space: nowrap; }
+.co-charter { margin: 0; font: var(--type-body); color: var(--text-primary); text-wrap: pretty; max-width: 78ch; }
+.co-goal { margin: 0; font: var(--type-body-sm); color: var(--text-secondary); text-wrap: pretty; max-width: 78ch; }
+.co-dim { margin: 0; font: var(--type-body-sm); color: var(--text-tertiary); }
+.co-link {
+  border: 0; background: transparent; padding: 0; cursor: pointer;
+  font: inherit; color: var(--text-link); text-decoration: underline; text-underline-offset: 2px;
+}
+.co-bar { height: 6px; border-radius: 3px; background: var(--surface-card); overflow: hidden; }
+.co-bar > span { display: block; height: 100%; background: var(--text-accent); border-radius: 3px; }
+.co-slices, .co-list, .co-bullets { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+.co-bullets { list-style: disc; padding-left: var(--space-6); font: var(--type-body-sm); color: var(--text-secondary); }
+.co-slice, .co-list li { display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
+.co-slicename {
+  border: 0; background: transparent; padding: 0; cursor: pointer; text-align: left;
+  font: var(--type-label); color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+}
+.co-slicename:hover { text-decoration: underline; }
+.co-now {
+  font: var(--type-eyebrow); letter-spacing: var(--tracking-caps); text-transform: uppercase;
+  color: var(--text-accent);
+}
+.co-item { font: var(--type-body-sm); color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1; }
+.co-list .k-tag.mono { max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.co-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: var(--space-6); }
+.co-wait, .co-ice { align-self: flex-start; }
+@media (max-width: 640px) {
+  .co-sec { padding: var(--space-4); }
+  .co-grid { grid-template-columns: 1fr; }
+}
+/* #621 — a sprint box head WRAPS once it has a sprint's worth of controls: at
+   the narrow width the planned box's "nothing is picked up" line, its squares
+   and three buttons ran past the viewport. The sentence may shrink and wrap;
+   the buttons keep their line. */
+.km-sprintbox .km-batchhead { flex-wrap: wrap; row-gap: var(--space-2); }
+.km-sprintbox .km-batchhead .km-batchsay { flex: 1 1 200px; min-width: 0; }
+.km-sprintbox .km-batchhead .right { margin-left: auto; }

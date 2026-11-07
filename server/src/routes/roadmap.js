@@ -35,6 +35,7 @@ import { buildPrompt } from '../prompts.js';
 import { askGemini, geminiEnabled } from '../gemini.js';
 import { readSettings } from '../settings.js';
 import { numericId } from '../params.js';
+import { SPRINT_SLICE_ONLY } from './sprints.js';
 
 // Mounted at /api/projects/:slug/roadmap.
 export const roadmap = Router({ mergeParams: true });
@@ -239,15 +240,13 @@ async function createItem(db, projectId, body) {
   // and 'hook' never comes through here at all (only ingest writes it).
   // Refused rather than downgraded to the backlog: a caller that asked for a
   // sprint must not be told 201 and find its work somewhere else.
-  let sprintId = null;
+  // #621 — NO ITEM-LEVEL SPRINT. An item is in a sprint exactly when its
+  // slice is, so `sprintId` is refused out loud: a caller told 201 would
+  // believe the work was committed. File it with `sliceId` instead.
   if (body?.sprintId !== undefined && body?.sprintId !== null) {
-    const sid = Number(body.sprintId);
-    const { rows: sp } = Number.isInteger(sid) && sid > 0 ? await db(
-      'SELECT id, status FROM sprints WHERE id = $1 AND project_id = $2', [sid, projectId]) : { rows: [] };
-    if (!sp.length) return { status: 400, body: { error: `sprintId ${body.sprintId} is not a sprint in this project.` } };
-    if (sp[0].status === 'done') return { status: 400, body: { error: `Sprint ${sid} is finished; file into an open sprint or the backlog.` } };
-    sprintId = sid;
+    return { status: 400, body: { error: SPRINT_SLICE_ONLY } };
   }
+  const sprintId = null;
 
   // A planning run that runs twice over the same parent must not file its
   // children twice: an open child with the same title is returned, not copied.
@@ -323,6 +322,13 @@ async function createItem(db, projectId, body) {
     [projectId, bucket, title, note, pos[0].p, fp, claimedBy, area, JSON.stringify(plan), risk, riskSource, agentProfile, source, flySession,
       schedStart, schedLen, subArea, points, dueOn, kind, JSON.stringify(spec), parentId, sprintId, sliceId]
   );
+  // #621 — a row filed into a committed slice gets its sprint from the
+  // database's AFTER trigger, which RETURNING cannot see. Re-read so the
+  // answer says where the row really is.
+  if (rows[0].slice_id !== null) {
+    const { rows: fresh } = await db('SELECT * FROM roadmap_items WHERE id = $1', [rows[0].id]);
+    return { status: 201, body: roadmapItemShape(fresh[0]) };
+  }
   return { status: 201, body: roadmapItemShape(rows[0]) };
 }
 
@@ -522,30 +528,9 @@ roadmap.patch('/:id', async (req, res) => {
       vals.push(risk, reason);
     }
   }
-  if (req.body?.sprintId !== undefined) {
-    // #477 — move ONE item between the backlog and a sprint. `null` sends it
-    // back to the backlog and zeroes the rank with it, because a rank left
-    // behind is a position in a box the row is no longer in and the next drop
-    // would read it as a real one.
-    //
-    // The sprint is checked against THIS PROJECT in the same statement rather
-    // than in a lookup first: an id belonging to somebody else's project would
-    // otherwise pass a check and then be written by a second query. A row that
-    // fails the sub-select lands NULL — the backlog — which is the safe end of
-    // the two, since the alternative is silently filing work into a stranger's
-    // sprint.
-    const sid = req.body.sprintId === null ? null : Math.trunc(Number(req.body.sprintId));
-    if (sid === null || !Number.isFinite(sid)) {
-      sets.push('sprint_id = NULL'); sets.push('sprint_rank = 0');
-    } else {
-      sets.push(`sprint_id = (SELECT id FROM sprints WHERE id = $${i++} AND project_id = $${i++})`);
-      vals.push(sid, req.project.id);
-      // The bottom of the box. A single-item move has no opinion about where
-      // in the order it lands, and the top is the one place it must not
-      // default to — that slot is a claim about what the night takes first.
-      sets.push(`sprint_rank = (SELECT COALESCE(MAX(sprint_rank), -1) + 1 FROM roadmap_items WHERE sprint_id = $${i++})`);
-      vals.push(sid);
-    }
+  // #621 — a sprint is DERIVED from the slice; a direct write is refused.
+  if (req.body?.sprintId !== undefined || req.body?.sprintRank !== undefined) {
+    return res.status(400).json({ error: SPRINT_SLICE_ONLY });
   }
   if (req.body?.sliceId !== undefined) {
     // #608 — move ONE item into a slice (bottom of it) or, with null, to the
@@ -565,9 +550,6 @@ roadmap.patch('/:id', async (req, res) => {
       sets.push(`slice_id = $${i++}`);
       vals.push(sl);
     }
-  }
-  if (req.body?.sprintRank !== undefined && Number.isFinite(Number(req.body.sprintRank))) {
-    sets.push(`sprint_rank = $${i++}`); vals.push(Math.max(0, Math.trunc(Number(req.body.sprintRank))));
   }
   if (req.body?.built_note !== undefined) {
     // Capped out loud — see capNote. This is the ONLY writer of the column, so
@@ -721,6 +703,11 @@ roadmap.patch('/:id', async (req, res) => {
     vals
   );
   if (!rows.length) return res.status(404).json({ error: 'No such roadmap item.' });
+  // #621 — a slice move changes the derived sprint after RETURNING; re-read.
+  if (req.body?.sliceId !== undefined) {
+    const { rows: fresh } = await q('SELECT * FROM roadmap_items WHERE id = $1', [rows[0].id]);
+    return res.json(roadmapItemShape(fresh[0]));
+  }
   res.json(roadmapItemShape(rows[0]));
 });
 

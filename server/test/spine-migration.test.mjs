@@ -65,6 +65,10 @@ try {
   const readyRow = await row('ready loose', { ready_at: new Date(), ready_rank: 0 });
   const archReady = await row('archived ready', { archived: true, ready_at: new Date() });
   const quietRow = await row('quiet idea', { project_id: other.id });
+  // #621 — an item-level sprint, as boards had before slices.
+  const { rows: [sp] } = await q(`INSERT INTO sprints (project_id, name, status) VALUES ($1, 'Cycle 1', 'active') RETURNING id`, [p.id]);
+  const inSprintA = await row('in the sprint, second', { sprint_id: sp.id, sprint_rank: 1 });
+  const inSprintB = await row('in the sprint, first', { sprint_id: sp.id, sprint_rank: 0 });
 
   // ---- migrate ------------------------------------------------------------
   await q(full);
@@ -73,6 +77,13 @@ try {
   check('every project WITH rows gets one active "Current" milestone, and an empty project none',
     ms.map((m) => [m.project_id, m.name, m.status]), [[p.id, 'Current', 'active'], [other.id, 'Current', 'active']]);
   const { rows: sl } = await q(`SELECT id, title, spec, areas FROM slices WHERE project_id = $1 ORDER BY position`, [p.id]);
+  // #621 — the sprint now commits to the slice its rows were carried into,
+  // and they are still in it (derived by the database, not copied).
+  const { rows: commits } = await q('SELECT sprint_id, slice_id FROM sprint_slices');
+  const sprintOf = async (id) => (await q('SELECT sprint_id FROM roadmap_items WHERE id = $1', [id])).rows[0].sprint_id;
+  check('the sprint commits to exactly one slice: the one its rows went to', commits.length, 1);
+  check('…and its rows are still in the sprint', [await sprintOf(inSprintA), await sprintOf(inSprintB)], [sp.id, sp.id]);
+  check('a row whose slice is in no sprint is in no sprint', await sprintOf(idleA), null);
   check('the two clusters became slices, then "Carried over" last', sl.map((s) => s.title),
     ['idle cluster', 'claimed cluster', 'Carried over']);
   check('a cluster slice takes the parent note as its spec and its area', [sl[0].spec, sl[0].areas], ['the spec', ['board']]);

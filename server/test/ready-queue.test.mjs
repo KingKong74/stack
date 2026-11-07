@@ -39,13 +39,16 @@ const item = async (title, extra = {}) =>
   (await call('POST', `/projects/${SLUG}/roadmap`, { title, sliceId, ...extra })).body;
 const rows = async () => Object.values((await call('GET', `/projects/${SLUG}`)).body.roadmap).flat();
 
-let a; let b; let c; let sprinted;
+let a; let b; let c; let sprinted; let sprintedSlice;
 
 test('setup', async () => {
   const r = await call('POST', '/ingest', { project: { slug: SLUG, name: SLUG }, session: { summary: 'seed' } });
   assert.ok(r.status < 300, r.text);
   sliceId = (await call('POST', `/projects/${SLUG}/slices`, { title: 'ready slice' })).body.id;
-  a = await item('a'); b = await item('b'); c = await item('c'); sprinted = await item('in the sprint only');
+  a = await item('a'); b = await item('b'); c = await item('c');
+  // #621 — a sprint holds slices, so the sprint-only row has a slice of its own.
+  sprintedSlice = (await call('POST', `/projects/${SLUG}/slices`, { title: 'sprint only' })).body.id;
+  sprinted = await item('in the sprint only', { sliceId: sprintedSlice });
 });
 
 test('PUT /ready ranks the listed ids and drops the rest', async () => {
@@ -79,7 +82,7 @@ test('a held item is refused out loud and nothing is written', async () => {
 
 test('the loop builds Ready rows only, never the sprint', async () => {
   const sp = (await call('POST', `/projects/${SLUG}/sprints`, { name: 'planning' })).body;
-  await call('PUT', `/projects/${SLUG}/sprints/${sp.id}/order`, { items: [sprinted.id] });
+  await call('PUT', `/projects/${SLUG}/sprints/${sp.id}/slices`, { slices: [sprintedSlice] });
   await call('PATCH', `/projects/${SLUG}/sprints/${sp.id}`, { status: 'active' });
   await call('PATCH', `/projects/${SLUG}`, { automode: true });
   await call('PATCH', '/settings', { autopilotEnabled: true, autopilotQuiet: '', autopilotRollingTokens: 0 });

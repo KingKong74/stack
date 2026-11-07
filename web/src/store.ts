@@ -1132,12 +1132,8 @@ export async function patchRoadmapItem(
     // #262 — omitting risk_source means the server records the write as human,
     // which is exactly what an edit from the modal is.
     risk_source: 'human' | 'auto'; risk_reason: string;
-    // #477 — move ONE item between the backlog and a sprint. `null` sends it
-    // back to the backlog; an id files it at the BOTTOM of that box, because a
-    // single-item move has no opinion about where in the order it lands and the
-    // top is the one slot it must not guess at. Reordering a whole box is
-    // `putSprintOrder` below, which is the only call that writes ranks.
-    sprintId: number | null;
+    // NO `sprintId` (#621): an item is in a sprint exactly when its slice is,
+    // and the server refuses a direct write. Commit the slice (putSprintSlices).
     // #608 — into a slice (at its bottom), or null to the ICEBOX. Icing a row
     // also takes it out of Ready: Ready ⇒ sliced is a CHECK on the server.
     sliceId: number | null;
@@ -1316,8 +1312,10 @@ export async function deleteList(slug: string, key: string): Promise<void> {
 // renders from, so a screen never fetches a list that has to agree with the
 // items in the same response. These are the writes.
 //
-// `putSprintOrder` IS THE ONLY CALL THAT WRITES A RANK, and it sends the WHOLE
-// box top to bottom rather than one row's new index. That is not verbosity: the
+// #621 — A SPRINT COMMITS TO SLICES. `putSprintSlices` IS THE ONLY CALL THAT
+// WRITES ITS ORDER, and it sends the WHOLE sprint top to bottom rather than one
+// slice's new index; the items' sprintId/sprintRank are derived from it by the
+// database. That is not verbosity: the
 // alternative is a read-modify-write over rows another browser may be dragging
 // at the same moment, and a full list is idempotent where a partial one is a
 // race. It also ADOPTS — an id that was in the backlog or in another sprint
@@ -1360,11 +1358,8 @@ export async function planSprint(slug: string, sprintId: number): Promise<Sprint
   return request<SprintPlan>(`${sprintsBase(slug)}/${sprintId}/plan`, { method: 'POST', body: {} });
 }
 
-export async function putSprintOrder(
-  slug: string, id: number, items: number[],
-): Promise<{ sprintId: number; items: number[] }> {
-  return request<{ sprintId: number; items: number[] }>(
-    `${sprintsBase(slug)}/${id}/order`, { method: 'PUT', body: { items } });
+export async function putSprintSlices(slug: string, id: number, slices: number[]): Promise<Sprint> {
+  return request<Sprint>(`${sprintsBase(slug)}/${id}/slices`, { method: 'PUT', body: { slices } });
 }
 // THE READY QUEUE (server/src/routes/ready.js) — what the automation builds.
 // Like a sprint box, the WHOLE queue top to bottom: listed ids are ranked by
