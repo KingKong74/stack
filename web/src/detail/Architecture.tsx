@@ -294,6 +294,10 @@ function Adr({ n, adr, slices, milestones, onPatch, onDelete }: {
         <span className="sp-adrn">ADR-{n}</span>
         <span className="sp-adrtitle">{adr.title}</span>
         <span className={`k-tag ${st.tone}`.trim()} title={st.hint}>{st.label}</span>
+        {/* #626 — a session's proposal says so: only the owner accepts one. */}
+        {adr.origin.kind === 'checkpoint' && (
+          <span className="k-tag" title={`Proposed by a session${adr.origin.branch ? ` on ${adr.origin.branch}` : ''}. Deleting it dismisses it for good.`}>from a session</span>
+        )}
         {slice && <span className="k-tag" title="The slice this was decided for">{sliceLabel(slice, milestones)}</span>}
         <span className="sp-when">{timeAgo(adr.updatedAt)}</span>
       </div>

@@ -124,7 +124,11 @@ async function main() {
     });
     if (res.status === 404) die0(`stack-plan: Stack has no project "${project.slug}" yet; plan not recorded`);
     if (!res.ok) die0(`stack-plan: post failed (${res.status})`);
-    if (DEMO) logStderr(`stack-plan: recorded ${plan.file ? basename(plan.file) : 'inline plan'} on ${project.slug}`);
+    // #628 — say where it went: a slice it was tied to, and whether it became
+    // that slice's spec (only ever an empty one).
+    const out = await res.json().catch(() => ({}));
+    const where = out.sliceId ? ` for slice ${out.sliceId}${out.specFilled ? ', now its spec' : ''}` : '';
+    logStderr(`stack-plan: recorded ${plan.file ? basename(plan.file) : 'inline plan'} on ${project.slug}${where}`);
   } catch (e) {
     die0(`stack-plan: post failed (${e.message})`);
   } finally {

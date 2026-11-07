@@ -1902,3 +1902,14 @@ BEGIN
     PERFORM spine_sprint_sync(id) FROM projects;
   END IF;
 END $$;
+
+-- #626 — AGENTS READ AND WRITE THE SPINE (phase 4).
+--  • `sessions.slice_id`: the slice a /checkpoint says it worked. SET NULL, so
+--    deleting a slice never deletes the record of a session.
+--  • A /checkpoint may PROPOSE decisions: `adr` artifacts with status
+--    'proposed', `origin.kind = 'checkpoint'`, fingerprint 'adr:<title fp>'
+--    (deduped by the artifacts_fp_idx). Only a human moves one past proposed.
+--    Deleting a proposed one TOMBSTONES it (dismissed_items kind 'adr'), the
+--    same contract a dismissed hook row has, so the next checkpoint cannot
+--    propose it again.
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS slice_id INTEGER REFERENCES slices(id) ON DELETE SET NULL;

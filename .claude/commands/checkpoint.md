@@ -57,12 +57,14 @@ Do the following:
        "next_up": ["<the suggested next moves, imperative>"],
        "working_well": ["<things paying off / worth keeping>"],
        "blockers": ["<anything unresolved or blocking>"],
-       "tags": ["<up to 4 short lowercase labels>"]
+       "tags": ["<up to 4 short lowercase labels>"],
+       "slice": 12
      },
      "extract": {
        "bugs": [{ "title": "<bug found/introduced>", "severity": "critical|high|medium|low" }],
        "tests": [{ "title": "<the test that is missing>", "kind": "bug|function", "target": "<BUG-12, or GET /api/health>" }],
-       "built": [{ "item": 381, "note": "<what actually landed, where it lives, how it was verified>" }]
+       "built": [{ "item": 381, "note": "<what actually landed, where it lives, how it was verified>" }],
+       "decisions": [{ "title": "<the call, as a statement>", "context": "<why it came up>", "decision": "<what was decided>", "consequences": "<what it costs or commits to>" }]
      }
    }
    ```
@@ -151,6 +153,20 @@ Do the following:
    The poster prints a `built:` line to stderr saying what happened. If it
    reports **ids NOT on this board**, say so to the user: you cited a number
    that doesn't exist and that note was not written anywhere.
+
+   **`session.slice` — the slice this session worked (#626).** If the
+   SessionStart block showed **Your slice (slice N; …)**, send that `N`. Only
+   send an id you were shown; a wrong one is reported back and not recorded.
+   Omit it when the block showed no slice.
+
+   **`decisions` — a design call this session MADE (#626).** Each one is filed
+   on Architecture → Decisions as an ADR with status **proposed**; only the
+   owner accepts it. Send one when you chose between real alternatives in a
+   way a later session would need to know (a storage shape, a contract, a
+   rule), not for every edit. **At most three, and usually none**: a session
+   that followed an existing design decided nothing. Re-sending a title that
+   is already on the log changes nothing, and one the owner deleted is never
+   re-proposed. Omit `slice` on an entry to tie it to `session.slice`.
 
    If the session's SessionStart block showed a **North star**, align `next_up`
    with it — that list is now the only place a suggestion for later lands, so it

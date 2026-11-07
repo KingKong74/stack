@@ -74,7 +74,8 @@ export function spineLines(p, branch) {
     const slice = claimed ? slices.find((s) => s.id === claimed.sliceId) : null;
     if (slice) {
       const spec = capped(slice.spec, SPEC_CAP);
-      out.push('', `**Your slice** (branch \`${branch}\` holds #${claimed.id}): ${slice.title}`);
+      // The id is printed so /checkpoint can name it (`session.slice`, #626).
+      out.push('', `**Your slice** (slice ${slice.id}; branch \`${branch}\` holds #${claimed.id}): ${slice.title}`);
       if (spec.text) out.push(`${spec.text}${spec.cut ? ` (spec cut at ${SPEC_CAP} characters; the whole spec is on the slice)` : ''}`);
     }
   }

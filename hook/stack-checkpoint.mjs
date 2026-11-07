@@ -126,5 +126,18 @@ function tmuxSession() {
     logStderr(`tests: ${made} of ${sentTests} suggestion(s) filed into For you → Auto-ideas`
       + (made < sentTests ? ' — the rest were already tracked, dismissed before, or already covered' : ''));
   }
+
+  // #626 — the spine: decisions proposed as ADRs, and the slice it named.
+  // Both said out loud for the same reason as `built`: a slice id the server
+  // did not recognise was NOT recorded, and the session should say so.
+  const dec = result.body?.decisions;
+  if (dec?.sent) {
+    logStderr(`decisions: ${dec.proposed} of ${dec.sent} proposed on Architecture → Decisions`
+      + (dec.proposed < dec.sent ? ' — the rest were already on the log or dismissed before' : '')
+      + '. Only the owner accepts one.');
+  }
+  const sl = result.body?.slice;
+  if (sl?.sent && !sl.recorded) logStderr(`slice: ${sl.sent} is NOT a slice on this board — nothing was recorded for it`);
+  else if (sl?.recorded) logStderr(`slice: recorded as slice ${sl.recorded}`);
   process.exit(0);
 })();

@@ -197,9 +197,16 @@ artifacts.patch('/:id', async (req, res) => {
 });
 
 artifacts.delete('/:id', async (req, res) => {
-  const { rowCount } = await q('DELETE FROM artifacts WHERE id = $1 AND project_id = $2',
+  const { rows } = await q('DELETE FROM artifacts WHERE id = $1 AND project_id = $2 RETURNING type, fingerprint, origin',
     [Number(req.params.id), req.project.id]);
-  if (!rowCount) return res.status(404).json({ error: 'No such artifact.' });
+  if (!rows.length) return res.status(404).json({ error: 'No such artifact.' });
+  // #626 — deleting a decision a SESSION proposed is a dismissal, and it
+  // sticks: the tombstone stops the next /checkpoint proposing it again.
+  const r = rows[0];
+  if (r.type === 'adr' && r.origin?.kind === 'checkpoint' && String(r.fingerprint).startsWith('adr:')) {
+    await q(`INSERT INTO dismissed_items (project_id, kind, fingerprint) VALUES ($1, 'adr', $2) ON CONFLICT DO NOTHING`,
+      [req.project.id, String(r.fingerprint).slice(4)]);
+  }
   res.status(204).end();
 });
 

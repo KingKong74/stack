@@ -63,6 +63,9 @@ Also:
 - **The spine** (#608): project → milestone → slice → item. `slice_id` NULL is the **Icebox**:
   kept, off the board, out of progress, never Ready. At most one milestone is current. A slice's
   state is derived, never stored. `committed` (#496) is retired; nothing decides by it.
+  **Agents propose the spine, the human shapes it** (#626): a `/checkpoint` files decisions only as
+  `proposed` ADRs (a deleted one is tombstoned), an approved plan fills only an EMPTY slice spec, and
+  no agent creates a milestone or slice, or moves an item between slices.
 - **Deleting a `source='hook'` row tombstones its fingerprint** so the next push can't re-create it.
   That's what Dismiss means, and why it has no undo.
 - `server/CLAUDE.md` has the rest of the column semantics.

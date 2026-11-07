@@ -98,6 +98,26 @@ function asTestCandidates(v) {
     .slice(0, 6);
 }
 
+// #626 — DECISIONS a session made, proposed as ADRs: [{ title, context,
+// decision, consequences, slice? }]. At most three: a design call is rare, and
+// a checkpoint that files ten is narrating, not deciding. A title is required;
+// the rest is capped and may be empty. `slice` is checked against the project
+// below and falls back to the session's own slice.
+export const DECISIONS_MAX = 3;
+function asDecisionCandidates(v) {
+  if (!Array.isArray(v)) return [];
+  return v
+    .map((d) => ({
+      title: str(d?.title, 200),
+      context: str(d?.context, 4000),
+      decision: str(d?.decision, 4000),
+      consequences: str(d?.consequences, 4000),
+      slice: Number.isInteger(Number(d?.slice)) && Number(d?.slice) > 0 ? Number(d.slice) : null,
+    }))
+    .filter((d) => d.title && d.decision)
+    .slice(0, DECISIONS_MAX);
+}
+
 function asStepCandidates(v) {
   if (!Array.isArray(v)) return [];
   return v
@@ -274,6 +294,9 @@ ingest.post('/', async (req, res) => {
   const stepCandidates = asStepCandidates(extract.next_steps);
   const testCandidates = asTestCandidates(extract.tests);
   const builtCandidates = asBuiltCandidates(extract.built);
+  const decisionCandidates = asDecisionCandidates(extract.decisions);
+  // #626 — the slice the session says it worked (an id). Checked below.
+  const wantSlice = Number.isInteger(Number(s.slice)) && Number(s.slice) > 0 ? Number(s.slice) : null;
 
   const client = await pool.connect();
   try {
@@ -745,6 +768,45 @@ ingest.post('/', async (req, res) => {
       }
     }
 
+    // --- #626: the session's slice, and the decisions it proposes ---------
+    // A slice id from another project, or one that does not exist, is
+    // ignored, never stored: a session's word is not a foreign key.
+    const sliceOk = async (id) => {
+      if (!id) return null;
+      const r = await client.query('SELECT id FROM slices WHERE id = $1 AND project_id = $2', [id, projectId]);
+      return r.rows.length ? id : null;
+    };
+    const sessionSlice = await sliceOk(wantSlice);
+    if (sessionSlice && sessionRowId) {
+      await client.query('UPDATE sessions SET slice_id = $2 WHERE id = $1', [sessionRowId, sessionSlice]);
+    }
+    let proposedDecisions = 0;
+    {
+      const seen = new Set();
+      for (const d of decisionCandidates) {
+        const fp = fingerprint(d.title);
+        if (!fp || seen.has(fp)) continue;
+        seen.add(fp);
+        if (await dismissed('adr', fp)) continue;
+        const body = [
+          d.context && `## Context\n\n${d.context}`,
+          `## Decision\n\n${d.decision}`,
+          d.consequences && `## Consequences\n\n${d.consequences}`,
+        ].filter(Boolean).join('\n\n');
+        // Proposed, ALWAYS: only a human accepts a decision. A re-proposal
+        // of a title already on the log changes nothing (ON CONFLICT), so a
+        // decision the owner has since accepted or superseded keeps its word.
+        const ins = await client.query(
+          `INSERT INTO artifacts (project_id, type, title, body, status, slice_id, origin, fingerprint)
+           VALUES ($1, 'adr', $2, $3, 'proposed', $4, $5, $6)
+           ON CONFLICT (project_id, fingerprint) WHERE fingerprint <> '' DO NOTHING RETURNING id`,
+          [projectId, d.title, body, (await sliceOk(d.slice)) ?? sessionSlice,
+           JSON.stringify({ kind: 'checkpoint', sessionId: session.session_id || '', branch: session.branch || '', commit: session.commit_hash || '' }),
+           `adr:${fp}`]);
+        proposedDecisions += ins.rows.length;
+      }
+    }
+
     await client.query('COMMIT');
 
     // Post-commit, fire-and-forget: stamp the second model's one-line take on
@@ -768,6 +830,10 @@ ingest.post('/', async (req, res) => {
       // /checkpoint command tells the session to relay that rather than let a
       // built_note vanish into a wrong id.
       built: { linked: builtLinked, created: builtCreated, missed: builtMissed },
+      // #626 — decisions filed as PROPOSED ADRs (re-proposals and dismissed
+      // ones are skipped), and whether the named slice was recognised.
+      decisions: { proposed: proposedDecisions, sent: decisionCandidates.length },
+      slice: { sent: wantSlice, recorded: sessionSlice },
     });
   } catch (err) {
     await client.query('ROLLBACK');

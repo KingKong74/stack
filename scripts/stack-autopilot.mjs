@@ -854,7 +854,13 @@ Work through, in order:
 // any branch) and answers with a design doc as JSON. The RUNNER does the
 // write — plan steps + a design section appended to the note — so the
 // "saved as plan steps + note" contract holds even when the model waffles.
-async function runPlanItem(item, northStar, capMin) {
+// #629 — `slice` is the item's slice from the project payload, or null. A
+// plan run breaks work down INSIDE its slice: the planner is told the slice's
+// title and the opening of its spec (capped, and the prompt says so), and
+// every piece is filed into that slice. `parentId` stays on a piece only as
+// provenance ("broken down from #N"); the slice is what groups it on the board.
+export const PLAN_SLICE_SPEC_CAP = 1500;
+async function runPlanItem(item, northStar, capMin, slice = null) {
   const startedAt = new Date().toISOString();
   log(`planning #${item.id} [${item.bucket}] ${item.title} (cap ${Math.round(capMin)}m)`);
 
@@ -867,7 +873,7 @@ async function runPlanItem(item, northStar, capMin) {
   const prompt = `You are Stack's overnight PLANNER on a design-doc night. Do NOT write or change any code, do NOT commit, do NOT touch the tracker — you read the codebase and author a short design doc for ONE roadmap item, so a later build session executes against an agreed design instead of a title.
 
 Roadmap item #${item.id} (bucket: ${item.bucket}): ${item.title}
-${item.note ? `The author's note: ${item.note.slice(0, 1500)}\n` : ''}${northStar ? `The project's north star: "${northStar.slice(0, 400)}"\n` : ''}
+${item.note ? `The author's note: ${item.note.slice(0, 1500)}\n` : ''}${northStar ? `The project's north star: "${northStar.slice(0, 400)}"\n` : ''}${slice ? `It belongs to the slice "${slice.title}" — one shippable piece of the current milestone; any pieces you list are filed into that slice.\n${String(slice.spec || '').trim() ? `The slice's spec${String(slice.spec).length > PLAN_SLICE_SPEC_CAP ? ` (its first ${PLAN_SLICE_SPEC_CAP} characters)` : ''}:\n${String(slice.spec).slice(0, PLAN_SLICE_SPEC_CAP)}\n` : ''}` : ''}
 Read the relevant code first — real file paths, real tables, real routes.
 
 Judge the RISK of building this unattended, and be conservative — "low" means an
@@ -999,6 +1005,9 @@ Then answer with ONLY this JSON as your final output (no prose around it):
           title: String(pc.title).trim(),
           source: 'plan',
           parentId: item.id,
+          // #629 — into the item's slice, explicitly (the server would also
+          // inherit it from the parent); none = the parent's, i.e. the Icebox.
+          ...(item.sliceId != null ? { sliceId: item.sliceId } : {}),
           bucket: item.bucket,
           area: item.area || '',
           spec: { goal: pc.goal, acceptance: pc.acceptance, files: pc.files, outOfScope: pc.outOfScope },
@@ -1683,7 +1692,8 @@ try {
       // Designs are quick — cap each plan session well under the night so one
       // rambler can't eat the batch.
       const r = PLAN_ONLY
-        ? await runPlanItem(item, detail.northStar || '', Math.min(remainingMin(), 20))
+        ? await runPlanItem(item, detail.northStar || '', Math.min(remainingMin(), 20),
+          (detail.slices || []).find((sl) => item.sliceId != null && sl.id === item.sliceId) || null)
         : await runItem(item, detail.northStar || '', remainingMin());
       if (r.landed) landed++;
       // Best-effort re-read (same reason as postRun): the item's plan after

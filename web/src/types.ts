@@ -452,6 +452,7 @@ export interface Activity {
   tags: string[];
   geminiNote: string; // the second model's one-line take on the push ('' until stamped)
   tokens?: number;    // real session usage from the transcript (#178); 0/absent = unknown
+  sliceId?: number | null; // #626 — the slice a /checkpoint said it worked
 }
 
 // ---- terminal "Jump back in" debrief (GET /api/projects/:slug/debrief) ----
@@ -951,7 +952,7 @@ export interface Artifact {
   tags: string[];
   links: number[];
   /** {} by hand; a captured plan-mode plan says where it came from. */
-  origin: { kind?: 'plan-mode'; sessionId?: string; branch?: string; commit?: string; planFile?: string };
+  origin: { kind?: 'plan-mode' | 'checkpoint'; sessionId?: string; branch?: string; commit?: string; planFile?: string };
   file: { name: string; size: number; mime: string; image: boolean } | null;
   /** #616 — an ADR's status; '' on every other type. */
   status: AdrStatus | '';

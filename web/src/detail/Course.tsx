@@ -30,9 +30,11 @@ const NOW_SHOWN = 6;
 const STATE_LABEL = { empty: 'Empty', open: 'Open', built: 'Built', done: 'Done' } as const;
 const STATE_TONE = { empty: '', open: 'info', built: 'warning', done: 'success' } as const;
 
-export function Course({ slug, items, milestones, slices, sprints, charter, resume }: {
+export function Course({ slug, items, milestones, slices, sprints, charter, resume, lastSlice = null }: {
   slug: string; items: RoadmapItem[]; milestones: Milestone[]; slices: Slice[]; sprints: Sprint[];
   charter: CharterSummary | null; resume: Resume | null;
+  /** #626 — the slice the latest checkpoint said it worked, or null. */
+  lastSlice?: number | null;
 }) {
   const live = useMemo(() => items.filter((it) => !it.archived), [items]);
   const ms = currentMilestone(milestones);
@@ -160,6 +162,11 @@ export function Course({ slug, items, milestones, slices, sprints, charter, resu
         <section className="co-sec">
           <div className="co-head">
             <span className="co-eyebrow">Where you left off</span>
+            {lastSlice != null && slices.some((s) => s.id === lastSlice) && (
+              <span className="k-tag" title="The slice the last checkpoint said it worked">
+                {slices.find((s) => s.id === lastSlice)!.title}
+              </span>
+            )}
             <span className="co-rule" />
             {resume.when && <span className="co-num">{resume.when}</span>}
           </div>

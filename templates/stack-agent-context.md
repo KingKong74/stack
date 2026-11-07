@@ -46,18 +46,19 @@ as of the last push. Only dig deeper when the task needs detail the block omits.
 Rich resume content is **authored by you**, not by an external model — it's free
 and uses no API. When you wrap up meaningful work, run **`/checkpoint`**. It:
 
-- reads the current settings (the `checkpoint_detail` level shapes how much your
-  summary explains; `include_chores` decides whether chore-only sessions count),
-- derives the project slug from the git remote,
+- reads the settings (`checkpoint_detail`, `include_chores`), derives the slug,
 - has you compose the full checkpoint schema — summary, current phase, in-progress,
   next-up, working-well, blockers, tags, plus candidate bugs and next-steps for
   auto-extraction — and
 - pipes that JSON to `~/.stack/stack-checkpoint.mjs`, which posts it (reading the
   token from `~/.stack/env`, never printing it).
 
-Make `/checkpoint` routine when finishing a unit of work. The hook silently
-guarantees the feed is never empty; `/checkpoint` is what makes the resume card
-and trackers rich.
+Make `/checkpoint` routine when finishing a unit of work; it is what makes the
+resume card and trackers rich. On the spine (#626): send `session.slice` (the id
+from SessionStart's "Your slice") and, only for a real design call, up to three
+`extract.decisions` (`title`, `context`, `decision`, `consequences`). They file
+as **proposed** ADRs; only the owner accepts one. An approved plan-mode plan is
+linked to your branch's slice and fills its spec only if that spec is empty.
 
 ## Reading a project's live state on demand
 
@@ -106,11 +107,9 @@ shell profile or settings file — `~/.stack/env` is the only source.
 Bugs and roadmap items **auto-extract from sessions** and dedupe by a
 fingerprint of their title. So:
 
-- Don't manually re-add a bug or next-step the hook will extract anyway — you'll
-  just create a near-duplicate.
+- Don't re-add by hand what the hook extracts: it makes a near-duplicate.
 - Deleting an auto item tombstones it, so the next push won't resurrect it.
-- Manual items are never touched by the extractor. Reach for a manual bug/roadmap
-  item/note when you want something the session summary wouldn't capture.
+- The extractor never touches manual items: use one for what a summary won't capture.
 
 ## Suggest the tests this session showed were missing (#500)
 
@@ -134,8 +133,7 @@ promotes or dismisses it — never straight onto the board.
 - **At most six**, fewer is better, `[]` when nothing was missing. A `bug`
   entry naming a bug a check already covers is dropped server-side.
 
-Narrower than `next_steps` (switched off) on purpose: a next-step is a matter of
-taste and became a card nobody agreed to; a missing test is bounded by what
+Narrower than `next_steps` (switched off): a missing test is bounded by what
 actually broke.
 
 ## FLY CARDS ARE SWITCHED OFF (#381, paused #477)

@@ -42,7 +42,7 @@ test('a long goal and a long spec state their caps', () => {
 
 test('your slice is the slice of the open item THIS branch claimed', () => {
   const out = spineLines(base(), 'feat/2-x').join('\n');
-  assert.match(out, /\*\*Your slice\*\* \(branch `feat\/2-x` holds #2\): Sign-up/);
+  assert.match(out, /\*\*Your slice\*\* \(slice 10; branch `feat\/2-x` holds #2\): Sign-up/, 'the id is printed, for /checkpoint');
   assert.match(out, /Magic links\./);
   assert.doesNotMatch(spineLines(base(), 'feat/other').join('\n'), /Your slice/);
   assert.doesNotMatch(spineLines(base(), 'HEAD').join('\n'), /Your slice/, 'a detached HEAD claims nothing');

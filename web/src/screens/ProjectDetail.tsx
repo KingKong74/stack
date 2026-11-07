@@ -699,7 +699,8 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
             used to hold, so every link to a project's home lands on it. */}
         {tab === 'overview' && (
           <Course slug={slug} items={allRoadmap} milestones={data.milestones} slices={data.slices}
-            sprints={data.sprints} charter={data.charter} resume={project.resume} />
+            sprints={data.sprints} charter={data.charter} resume={project.resume}
+            lastSlice={data.activity.find((a) => a.sliceId != null)?.sliceId ?? null} />
         )}
         {(tab === 'activity' || tab === 'auto') && (
           <ForYou pane={tab} slug={slug} items={allRoadmap}
