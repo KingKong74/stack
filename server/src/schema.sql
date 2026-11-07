@@ -1786,3 +1786,25 @@ BEGIN
       CHECK (ready_at IS NULL OR slice_id IS NOT NULL);
   END IF;
 END $$;
+
+-- #616 — CHARTER AND ARCHITECTURE (spine phase 2).
+--
+--  • The CHARTER and the ARCHITECTURE DOC are artifacts of their own types,
+--    at most ONE of each per project (partial unique index): "the" charter
+--    must name one row, or the SessionStart summary would be picking one.
+--  • An ADR is an artifact of type 'adr' with a `status`: proposed | accepted
+--    | superseded. '' on every other type. Only a human accepts one (phase 4
+--    lets /checkpoint PROPOSE; the route does not tell a human from an agent,
+--    so that rule lives in the agent manual and the hook, not here).
+--  • `slice_id` ties an ADR (or any doc) to the slice it was decided for.
+--    SET NULL: deleting a slice must never delete a decision.
+--  • AREAS ARE THE COMPONENTS (owner's call, #608). `description` says what
+--    the component is; `paths` are globs naming the code it owns. Both are
+--    the owner's words and gate nothing yet: the area LANE is still keyed by
+--    the name alone (lanes.js), and paths do not widen or narrow it.
+ALTER TABLE artifacts ADD COLUMN IF NOT EXISTS status   TEXT NOT NULL DEFAULT '';
+ALTER TABLE artifacts ADD COLUMN IF NOT EXISTS slice_id INTEGER REFERENCES slices(id) ON DELETE SET NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS artifacts_one_spine_doc_idx
+  ON artifacts (project_id, type) WHERE type IN ('charter', 'architecture');
+ALTER TABLE project_areas ADD COLUMN IF NOT EXISTS description TEXT  NOT NULL DEFAULT '';
+ALTER TABLE project_areas ADD COLUMN IF NOT EXISTS paths       JSONB NOT NULL DEFAULT '[]'::jsonb;

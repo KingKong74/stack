@@ -280,6 +280,9 @@ export interface BoardArea {
   name: string;
   dot: string;
   registered: boolean;
+  /** #616 — an area is a COMPONENT: what it is, and globs naming its code. */
+  description: string;
+  paths: string[];
 }
 // EVERY LANE RENAMES AND DELETES (#428) — there is no `locked`, because there
 // is no locked lane. The four keys `listKeyOf` derives into are still wiring,
@@ -930,7 +933,11 @@ export interface Spaces { areas: SpaceArea[]; workflows: Workflow[]; ideas: Wish
 // project keeps beside its work. `tags` are area names; `links` are this
 // project's roadmap_items ids. The bytes are never in this shape: `file` is
 // only their description, fetched on demand by getArtifactFileUrl.
-export type ArtifactType = 'doc' | 'plan' | 'design' | 'link' | 'file';
+// #616 — the spine's three: one charter and one architecture doc per project,
+// and any number of ADRs. They have their own tabs (Charter, Architecture);
+// the Artifacts list does not draw them.
+export type ArtifactType = 'doc' | 'plan' | 'design' | 'link' | 'file' | 'charter' | 'architecture' | 'adr';
+export type AdrStatus = 'proposed' | 'accepted' | 'superseded';
 export interface Artifact {
   id: number;
   type: ArtifactType;
@@ -942,6 +949,10 @@ export interface Artifact {
   /** {} by hand; a captured plan-mode plan says where it came from. */
   origin: { kind?: 'plan-mode'; sessionId?: string; branch?: string; commit?: string; planFile?: string };
   file: { name: string; size: number; mime: string; image: boolean } | null;
+  /** #616 — an ADR's status; '' on every other type. */
+  status: AdrStatus | '';
+  /** #616 — the slice it was written for, or null. */
+  sliceId: number | null;
   createdAt: string;
   updatedAt: string;
 }

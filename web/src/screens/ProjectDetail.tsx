@@ -27,6 +27,7 @@ import { TabStrip } from '../components/TabStrip';
 import { Modal } from '../components/Modal';
 import { RoadmapModal, type RoadmapFields } from '../components/RoadmapModal';
 import { useAutoRefresh } from '../lib/autoRefresh';
+import { Charter, Architecture } from '../detail/Architecture';
 import { newItemSched, flatRoadmap, isAutoIdea, isIced, isBoardWork } from '../lib/plan';
 import { PRIORITY_DEFAULT, crumbName } from '../lib/ui';
 
@@ -40,7 +41,7 @@ import { PRIORITY_DEFAULT, crumbName } from '../lib/ui';
 // and Quality's "open the commit that caught this" link targets it. An inner
 // strip that swallowed the key would have broken all three at once.
 type Tab = 'overview' | 'quality' | 'roadmap' | 'activity' | 'auto' | 'plans'
-  | 'artifacts' | 'agents' | 'loops';
+  | 'artifacts' | 'agents' | 'loops' | 'charter' | 'architecture';
 /** The keys that land on the For-you screen, in strip order. */
 const FORYOU_TABS: Tab[] = ['overview', 'activity', 'auto'];
 const isForYou = (t: Tab) => FORYOU_TABS.includes(t);
@@ -54,7 +55,7 @@ const isMockTab = (t: Tab) => t === 'roadmap'
 // The four readings of a project. `navSections` below is the ONE list of them
 // — #432 moved them from a horizontal strip into the console's left rail, and
 // a second copy anywhere is how the two would drift.
-const TAB_KEYS = new Set<Tab>(['overview', 'quality', 'roadmap', 'activity', 'auto', 'plans', 'artifacts', 'agents', 'loops']);
+const TAB_KEYS = new Set<Tab>(['overview', 'quality', 'roadmap', 'activity', 'auto', 'plans', 'artifacts', 'agents', 'loops', 'charter', 'architecture']);
 // 'bugs' and 'audit' both land on Quality — old deep links (bookmarks, a search
 // payload from an older server, a ⌘K target) keep working. 'tips' still
 // resolves too: the recipe library was a tab, then the bottom-left dock, and
@@ -492,6 +493,17 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
           menuLabel: `${project.name} board`,
           menu: placeMenu(hrefTo.detail(slug, 'roadmap'), 'board'), onClick: () => setTab('roadmap'),
         },
+        // #616 — THE SPINE'S TWO DOCS, right under the board they explain:
+        // what the project is for, and how it is built. No counts: neither is a
+        // queue, and the docs are not in the payload.
+        {
+          key: 'charter', label: 'Charter', icon: NavIcons.map,
+          menu: placeMenu(hrefTo.detail(slug, 'charter'), 'charter'), onClick: () => setTab('charter'),
+        },
+        {
+          key: 'architecture', label: 'Architecture', icon: NavIcons.layers,
+          menu: placeMenu(hrefTo.detail(slug, 'architecture'), 'architecture'), onClick: () => setTab('architecture'),
+        },
         // THE DESIGN'S THREE NEW ROWS ("Roadmap Canvas", 2026-10-12). Skills &
         // agents is wired to the app-wide profile and skill rows, so it carries
         // no chip and no count (a count would be the app's, not this
@@ -730,6 +742,10 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
 
         {/* The design's three tabs: each file's header says what is real. */}
         {tab === 'artifacts' && <Artifacts slug={slug} items={allRoadmap} />}
+        {tab === 'charter' && <Charter slug={slug} cap={data.charter?.cap ?? 600} />}
+        {tab === 'architecture' && (
+          <Architecture slug={slug} items={allRoadmap} slices={data.slices} milestones={data.milestones} />
+        )}
         {tab === 'agents' && <SkillsAgents />}
         {tab === 'loops' && <Loops />}
 

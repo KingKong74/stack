@@ -81,23 +81,35 @@ const readLabels = async (projectId) => (await q(
 
 async function readAreas(projectId) {
   const [stored, mentioned] = await Promise.all([
-    q('SELECT id, name, dot, position FROM project_areas WHERE project_id = $1 ORDER BY position, id', [projectId]),
-    // The union half: an area is real if any row says so, registered or not.
+    q('SELECT id, name, dot, position, description, paths FROM project_areas WHERE project_id = $1 ORDER BY position, id', [projectId]),
+    // The union half: an area is real if any row says so, registered or not —
+    // a roadmap row, or (#616) a slice naming the components it touches.
     q(`SELECT DISTINCT area AS name FROM roadmap_items
-        WHERE project_id = $1 AND COALESCE(area, '') <> ''`, [projectId]),
+        WHERE project_id = $1 AND COALESCE(area, '') <> ''
+       UNION
+       SELECT DISTINCT a AS name FROM slices, jsonb_array_elements_text(areas) a
+        WHERE project_id = $1 AND a <> ''`, [projectId]),
   ]);
   const seen = new Set(stored.rows.map((r) => r.name));
   const out = stored.rows.map((r, idx) => ({
     id: r.id, name: r.name, dot: r.dot || PALETTE[idx % PALETTE.length], registered: true,
+    // #616 — an area is a COMPONENT: what it is and which code it owns.
+    description: r.description || '',
+    paths: Array.isArray(r.paths) ? r.paths : [],
   }));
   mentioned.rows
     .filter((r) => !seen.has(r.name))
     .sort((a, b) => a.name.localeCompare(b.name))
     .forEach((r, k) => {
-      out.push({ id: null, name: r.name, dot: PALETTE[(out.length + k) % PALETTE.length], registered: false });
+      out.push({ id: null, name: r.name, dot: PALETTE[(out.length + k) % PALETTE.length], registered: false, description: '', paths: [] });
     });
   return out;
 }
+
+// #616 — a component's code paths: globs, trimmed, deduped, capped. Free
+// strings; nothing matches them against a tree yet.
+const cleanPaths = (v) => [...new Set((Array.isArray(v) ? v : String(v ?? '').split('\n'))
+  .map((x) => String(x ?? '').trim().slice(0, 200)).filter(Boolean))].slice(0, 40);
 
 // No lane is locked any more (#428) — every column renames and deletes like
 // Trello, and `RoadmapPlan`'s catch-all lane is what keeps a deleted derived
@@ -134,8 +146,9 @@ board.post('/areas', async (req, res) => {
   res.status(201).json({ areas: await readAreas(req.project.id) });
 });
 
-// PATCH /areas/:name  { name?, dot? }  — rename rewrites every row that carries
-// the old string, in the SAME transaction as the registry row.
+// PATCH /areas/:name  { name?, dot?, description?, paths? }  — rename rewrites
+// every row that carries the old string, in the SAME transaction as the
+// registry row: roadmap items AND (#616) every slice naming it.
 board.patch('/areas/:name', async (req, res) => {
   const from = clean(req.params.name);
   const to = req.body?.name === undefined ? from : clean(req.body.name);
@@ -145,6 +158,8 @@ board.patch('/areas/:name', async (req, res) => {
   // parentId to NULL: a rejected write must leave the row as it was.
   const raw = req.body?.dot === undefined ? null : String(req.body.dot || '').trim();
   const dot = raw !== null && PALETTE.includes(raw) ? raw : null;
+  const description = req.body?.description === undefined ? null : String(req.body.description ?? '').trim().slice(0, 4000);
+  const paths = req.body?.paths === undefined ? null : JSON.stringify(cleanPaths(req.body.paths));
 
   const client = await pool.connect();
   try {
@@ -153,19 +168,36 @@ board.patch('/areas/:name', async (req, res) => {
       // The registry row may not exist (an area that arrived from a push), so
       // this is an upsert rather than an update — and the item rewrite runs
       // either way, because the string is the real state.
+      // The component's words travel with the rename (#616): a renamed area
+      // is the same component, so its description and paths come along.
       await client.query(
-        `INSERT INTO project_areas (project_id, name, dot, position)
-         SELECT $1, $2, COALESCE($3, ''), COALESCE((SELECT position FROM project_areas WHERE project_id = $1 AND name = $4), 0)
+        `INSERT INTO project_areas (project_id, name, dot, position, description, paths)
+         SELECT $1, $2,
+                COALESCE($3, (SELECT dot FROM project_areas WHERE project_id = $1 AND name = $4), ''),
+                COALESCE((SELECT position FROM project_areas WHERE project_id = $1 AND name = $4), 0),
+                COALESCE($5, (SELECT description FROM project_areas WHERE project_id = $1 AND name = $4), ''),
+                COALESCE($6::jsonb, (SELECT paths FROM project_areas WHERE project_id = $1 AND name = $4), '[]'::jsonb)
            ON CONFLICT (project_id, name) DO NOTHING`,
-        [req.project.id, to, dot, from]
+        [req.project.id, to, dot, from, description, paths]
       );
       await client.query('DELETE FROM project_areas WHERE project_id = $1 AND name = $2', [req.project.id, from]);
       await client.query('UPDATE roadmap_items SET area = $1, updated_at = now() WHERE project_id = $2 AND area = $3', [to, req.project.id, from]);
-    } else if (dot !== null) {
       await client.query(
-        `INSERT INTO project_areas (project_id, name, dot, position) VALUES ($1, $2, $3, 0)
-           ON CONFLICT (project_id, name) DO UPDATE SET dot = EXCLUDED.dot`,
-        [req.project.id, to, dot]
+        `UPDATE slices SET areas = (
+           SELECT COALESCE(jsonb_agg(DISTINCT CASE WHEN a = $3 THEN $2 ELSE a END), '[]'::jsonb)
+             FROM jsonb_array_elements_text(areas) a), updated_at = now()
+          WHERE project_id = $1 AND areas ? $3`, [req.project.id, to, from]);
+    } else if (dot !== null || description !== null || paths !== null) {
+      // An upsert, because a component that arrived from a push has no
+      // registry row yet; each field left out keeps what it had.
+      await client.query(
+        `INSERT INTO project_areas (project_id, name, dot, position, description, paths)
+         VALUES ($1, $2, COALESCE($3, ''), 0, COALESCE($4, ''), COALESCE($5::jsonb, '[]'::jsonb))
+           ON CONFLICT (project_id, name) DO UPDATE SET
+             dot = COALESCE($3, project_areas.dot),
+             description = COALESCE($4, project_areas.description),
+             paths = COALESCE($5::jsonb, project_areas.paths)`,
+        [req.project.id, to, dot, description, paths]
       );
     }
     await client.query('COMMIT');
@@ -186,6 +218,12 @@ board.delete('/areas/:name', async (req, res) => {
     await client.query('BEGIN');
     await client.query('DELETE FROM project_areas WHERE project_id = $1 AND name = $2', [req.project.id, name]);
     await client.query('UPDATE roadmap_items SET area = NULL, updated_at = now() WHERE project_id = $1 AND area = $2', [req.project.id, name]);
+    // #616 — and off every slice that named it: a slice must not keep
+    // touching a component that no longer exists.
+    await client.query(
+      `UPDATE slices SET areas = (
+         SELECT COALESCE(jsonb_agg(a), '[]'::jsonb) FROM jsonb_array_elements_text(areas) a WHERE a <> $2), updated_at = now()
+        WHERE project_id = $1 AND areas ? $2`, [req.project.id, name]);
     await client.query('COMMIT');
   } catch (e) {
     await client.query('ROLLBACK');

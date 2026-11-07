@@ -741,7 +741,11 @@ export const SCREENS = [
   // here are two tabs of ONE screen (For you) reached by two routes, and both
   // are walked on purpose: the route is the contract, and a strip that stopped
   // honouring one of its keys would still render perfectly on the other.
-  { id: 'project-auto', label: 'Project — Auto-ideas', path: '#/p/<slug>/auto' },
+  { id: 'project-auto', label: 'Project — Ideas & Icebox', path: '#/p/<slug>/auto' },
+  // #616 — the spine's two docs. Read screens: a press would open an editor,
+  // and an editor's Save writes, so only first paint is walked here.
+  { id: 'project-charter', label: 'Project — Charter', path: '#/p/<slug>/charter' },
+  { id: 'project-architecture', label: 'Project — Architecture', path: '#/p/<slug>/architecture' },
   {
     id: 'project-artifacts',
     label: 'Project — Artifacts',

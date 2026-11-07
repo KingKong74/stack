@@ -57,6 +57,11 @@ deleted. Deleting a slice ices its items and clears their Ready first. Item POST
 part with none takes its parent's. The one-shot migration (clusters → slices, in-flight → "Carried
 over", the rest → Icebox) is guarded on an empty `milestones` table, so a reboot never re-files.
 
+The charter and architecture doc are artifacts (one each, unique index; a second is a 409) and ADRs
+are `adr` artifacts with `status`. The plain artifact list leaves them out (`?types=` asks). The
+payload carries only the charter's capped opening. Areas are the components (`description`,
+`paths`); renaming or deleting one rewrites `slices.areas` in the same transaction.
+
 ## Sprints
 
 `sprints` has status `planned | active | done`, with at most one `active` per project enforced by a

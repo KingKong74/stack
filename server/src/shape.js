@@ -341,7 +341,7 @@ export function projectListShape(p, { progress, metaLine, pushesThisWeek }) {
   };
 }
 
-export function projectDetailShape(p, { progress, metaLine, pushesThisWeek, cadence, activity, bugs, roadmap, checks, sprints, milestones, slices, keepResumeCard, sessionDefaults, staleItemDays, liveBranches, geminiReady, since }) {
+export function projectDetailShape(p, { progress, metaLine, pushesThisWeek, cadence, activity, bugs, roadmap, checks, sprints, milestones, slices, charter, keepResumeCard, sessionDefaults, staleItemDays, liveBranches, geminiReady, since }) {
   const latest = activity[0];
   return {
     ...projectListShape(p, { progress, metaLine, pushesThisWeek }),
@@ -367,6 +367,8 @@ export function projectDetailShape(p, { progress, metaLine, pushesThisWeek, cade
     // #608 — the spine. A slice with no milestone cannot exist (schema.sql).
     milestones: milestones || [],
     slices: slices || [],
+    // #616 — the charter's opening (charterSummary), or null for none written.
+    charter: charter ?? null,
     // The Monday the Roadmap timeline counts weeks from. null = no start date,
     // which the calendar view states rather than inventing one.
     weekZero: p.week_zero ? new Date(p.week_zero).toISOString().slice(0, 10) : null,
@@ -561,6 +563,24 @@ export function sliceShape(row) {
     position: Number(row.position) || 0,
     archived: !!row.archived,
     createdAt: row.created_at || null,
+    updatedAt: row.updated_at || null,
+  };
+}
+
+// #616 — THE CHARTER'S OPENING, for the payload SessionStart reads. A capped
+// prompt states its own cap (root CLAUDE.md), so `truncated` says whether the
+// summary is the whole charter, and the hook says "the first N characters"
+// when it is not. Whitespace is collapsed: it is injected as one paragraph.
+export const CHARTER_SUMMARY_CAP = 600;
+export function charterSummary(row) {
+  if (!row) return null;
+  const head = String(row.head ?? '').replace(/\s+/g, ' ').trim();
+  const truncated = String(row.head ?? '').length > CHARTER_SUMMARY_CAP;
+  return {
+    id: row.id,
+    summary: head.slice(0, CHARTER_SUMMARY_CAP),
+    truncated,
+    cap: CHARTER_SUMMARY_CAP,
     updatedAt: row.updated_at || null,
   };
 }

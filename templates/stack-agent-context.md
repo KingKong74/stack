@@ -189,8 +189,8 @@ Open roadmap items can carry a claim (`claimedBy` — the branch name, e.g.
   `readyRank` order, lowest first. The sprint in progress (`status: "active"`
   in `sprints`) is the PLANNING lane: designed and broken down, not built.
   An empty Ready queue means nothing to build unattended.
-- **The spine**: a project's `milestones` hold `slices`; an item's `sliceId`
-  is its slice, and null is the Icebox (kept, off the board, never Ready).
+- **The spine**: `charter` is the charter's opening; `milestones` hold
+  `slices`; `sliceId` null is the Icebox (off the board, never Ready).
 - **Never set `ready`/`readyRank`, move an existing item's sprint or slice, or
   write a milestone or slice.** Those are the owner's call. You MAY file NEW
   items into an open sprint (`sprintId`) or a slice (`sliceId`) on

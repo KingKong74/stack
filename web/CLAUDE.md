@@ -6,6 +6,7 @@ its file: `lib/branch.ts`, `lib/plan.ts`, `lib/quality.ts`, `lib/termClipboard.t
 `components/Brandmark.tsx`, `components/RoadmapModal.tsx`, `components/Asking.tsx`,
 `detail/Board.tsx`, `detail/BoardFocus.tsx`, `detail/BacklogTimeline.tsx`, `detail/ForYou.tsx`, `detail/Plans.tsx`,
 `detail/Development.tsx`, `detail/SkillsAgents.tsx`, `detail/Loops.tsx`, `detail/Artifacts.tsx`, `detail/Spine.tsx`,
+`detail/Architecture.tsx`,
 `components/Markdown.tsx`.
 
 ## Structure

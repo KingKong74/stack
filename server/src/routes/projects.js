@@ -11,6 +11,7 @@ import {
   projectListShape, projectDetailShape, resumeSince, sprintShape, milestoneShape, sliceShape,
 } from '../shape.js';
 import { MILESTONE_ORDER, SLICE_SELECT, SLICE_ORDER } from './spine.js';
+import { charterSummary, CHARTER_SUMMARY_CAP } from '../shape.js';
 import { readUsage, readTests, readRuns, PULSE_DAYS } from '../pulse.js';
 import { readSettings, sessionDefaultLines } from '../settings.js';
 import { geminiEnabled } from '../gemini.js';
@@ -116,7 +117,7 @@ projects.get('/:slug', async (req, res) => {
   const p = rows[0];
 
   const appSettings = await readSettings();
-  const [sessions, bugs, road, checks, sprintRows, weekly, cadence, live, msRows, sliceRows] = await Promise.all([
+  const [sessions, bugs, road, checks, sprintRows, weekly, cadence, live, msRows, sliceRows, charterRows] = await Promise.all([
     q(
       // `authored` rides along for resumeSince(): which of these pushes actually
       // wrote the resume card, and what has landed since.
@@ -160,6 +161,11 @@ projects.get('/:slug', async (req, res) => {
     // #608 — the spine: milestones and slices, in routes/spine.js's own order.
     q(`SELECT * FROM milestones WHERE project_id = $1 ${MILESTONE_ORDER}`, [p.id]),
     q(`${SLICE_SELECT} WHERE s.project_id = $1 ${SLICE_ORDER}`, [p.id]),
+    // #616 — the charter's OPENING, never the doc: artifacts stay out of this
+    // payload (routes/artifacts.js), and SessionStart reads it every session.
+    // LEFT(…) so a 200 KB charter is never shipped to be cut here.
+    q(`SELECT id, LEFT(body, ${CHARTER_SUMMARY_CAP + 1}) AS head, updated_at FROM artifacts
+        WHERE project_id = $1 AND type = 'charter'`, [p.id]),
   ]);
 
   res.json(
@@ -175,6 +181,7 @@ projects.get('/:slug', async (req, res) => {
       sprints: sprintRows.rows.map(sprintShape),
       milestones: msRows.rows.map(milestoneShape),
       slices: sliceRows.rows.map(sliceShape),
+      charter: charterSummary(charterRows.rows[0]),
       keepResumeCard: appSettings.keep_resume_card,
       sessionDefaults: sessionDefaultLines(appSettings.session_defaults),
       // The parked-item stale threshold (#247) rides the detail payload so the

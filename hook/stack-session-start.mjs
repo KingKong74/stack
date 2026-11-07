@@ -113,8 +113,9 @@ const bullets = (arr, max = 5) =>
     .map((x) => String(x).trim()).filter(Boolean).slice(0, max)
     .map((x) => `- ${x}`).join('\n');
 
-// Compose the injected block from a project detail payload.
-function buildBlock(p) {
+// Compose the injected block from a project detail payload. `spine` is the
+// spine section (#616, ./spine-block.mjs), already built, or [] without it.
+function buildBlock(p, spine = []) {
   const lines = [];
   lines.push(`# Stack — where you left off: ${p.name || 'this project'}`);
 
@@ -136,6 +137,10 @@ function buildBlock(p) {
   }
 
   if (p.northStar) lines.push('', `**North star:** ${String(p.northStar).replace(/\s+/g, ' ').trim().slice(0, 500)}`);
+
+  // #616 — THE SPINE: the charter, the current milestone and its slices, and
+  // the slice this branch is working. Where it is going, before any card.
+  if (spine.length) lines.push('', ...spine);
 
   if (p.summary) lines.push('', p.summary);
 
@@ -243,7 +248,12 @@ function buildBlock(p) {
     if (res.status === 404) done('');           // not tracked yet — nothing to say
     if (!res.ok) done('');                       // auth/other error — stay silent
     const project = await res.json();
-    done(buildBlock(project));
+    // GUARDED: a ~/.stack copy of this hook without spine-block.mjs beside it
+    // loses the section, never the session (both hooks always exit 0).
+    let spine = [];
+    try { spine = (await import('./spine-block.mjs')).spineLines(project, branch); }
+    catch (e) { log(`no spine section: ${e.message}`); }
+    done(buildBlock(project, spine));
   } catch (e) {
     await ping;
     clearTimeout(timer);

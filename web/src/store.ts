@@ -1,5 +1,5 @@
 import type {
-  Milestone, Slice,
+  Milestone, Slice, AdrStatus,
   Project, Resume, Activity, Bug, Roadmap, RoadmapItem, Check, CheckRun, CheckHistory, Overview,
   ProjectStatus, ProjectCategory, Priority, Severity, BugStatus, SearchResponse, Settings, AutopilotRun, PlanStep,
   AuthDevice, Sprint, SprintPlan, ResumeSince, ProjectDebrief,
@@ -446,6 +446,8 @@ export async function getProjects(): Promise<Project[]> {
   return rows.map(toProject);
 }
 
+export interface CharterSummary { id: number; summary: string; truncated: boolean; cap: number; updatedAt: string | null }
+
 export interface ProjectDetailData {
   project: Project;
   currentPhase: string;
@@ -464,6 +466,9 @@ export interface ProjectDetailData {
   // reads as a board with no slices: everything is in the Icebox.
   milestones: Milestone[];
   slices: Slice[];
+  // #616 — the charter's opening (capped server-side, `truncated` says so), or
+  // null when none is written. The whole doc is on the Charter tab.
+  charter: CharterSummary | null;
   keepResumeCard: boolean;
   staleItemDays: number;   // parked-item stale threshold in days (#247) — ages the Parked view
   geminiReady: boolean;    // #278/#520 — a key is configured. The WHOLE answer for every ✧ in the app: the per-agent map that rode beside this went with the registry
@@ -479,7 +484,7 @@ export interface ProjectDetailData {
 export async function getProjectDetail(slug: string): Promise<ProjectDetailData> {
   const d = await request<ProjectPayload & {
     activity: Activity[]; bugs: Bug[]; roadmap: Roadmap;
-    checks?: Check[]; sprints?: Sprint[]; milestones?: Milestone[]; slices?: Slice[]; keepResumeCard?: boolean; shareToken?: string; liveBranches?: string[];
+    checks?: Check[]; sprints?: Sprint[]; milestones?: Milestone[]; slices?: Slice[]; charter?: CharterSummary | null; keepResumeCard?: boolean; shareToken?: string; liveBranches?: string[];
     staleItemDays?: number; geminiReady?: boolean;
     cadence?: { day: string; n: number }[]; lastPushAt?: string | null;
   }>(`/projects/${encodeURIComponent(slug)}`);
@@ -494,6 +499,7 @@ export async function getProjectDetail(slug: string): Promise<ProjectDetailData>
     sprints: d.sprints || [],
     milestones: d.milestones || [],
     slices: d.slices || [],
+    charter: d.charter ?? null,
     keepResumeCard: d.keepResumeCard !== false,
     // An older server that doesn't send it falls back to the same default (#247).
     staleItemDays: Number.isFinite(d.staleItemDays) ? Number(d.staleItemDays) : 21,
@@ -1275,7 +1281,7 @@ export async function createArea(slug: string, name: string, dot?: string): Prom
   return r.areas;
 }
 export async function patchArea(
-  slug: string, name: string, patch: Partial<{ name: string; dot: string }>,
+  slug: string, name: string, patch: Partial<{ name: string; dot: string; description: string; paths: string[] }>,
 ): Promise<BoardArea[]> {
   const r = await request<{ areas: BoardArea[] }>(`${areasBase(slug)}/${encodeURIComponent(name)}`, { method: 'PATCH', body: patch });
   return r.areas;
@@ -1891,7 +1897,14 @@ export async function putClaudeMd(slug: string, path: string, sha: string, body:
 // as a blob: URL the caller must revoke when it is done with it.
 const artifactsBase = (slug: string) => `/projects/${encodeURIComponent(slug)}/artifacts`;
 export const ARTIFACT_FILE_CAP = 10 * 1024 * 1024;
-type ArtifactFields = Partial<{ type: ArtifactType; title: string; body: string; url: string; tags: string[]; links: number[] }>;
+type ArtifactFields = Partial<{
+  type: ArtifactType; title: string; body: string; url: string; tags: string[]; links: number[];
+  status: AdrStatus; sliceId: number | null;
+}>;
+// #616 — the spine's docs (charter, architecture, ADRs), oldest first so an
+// ADR's number is its place. The plain list above leaves them out.
+export const getSpineDocs = (slug: string) =>
+  request<Artifact[]>(`${artifactsBase(slug)}?types=charter,architecture,adr`);
 export const getArtifacts = (slug: string) => request<Artifact[]>(artifactsBase(slug));
 export const createArtifact = (slug: string, input: ArtifactFields) =>
   request<Artifact>(artifactsBase(slug), { method: 'POST', body: input });

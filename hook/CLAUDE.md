@@ -24,6 +24,9 @@ The root `CLAUDE.md` holds the cross-package rules. This file holds what applies
 - **`stack-plan.mjs`** (PostToolUse on `ExitPlanMode`) posts an approved plan-mode plan to
   `/plans`, which files it as an Artifacts doc. The tool carries no plan text, so the file is found via the transcript; its header has
   the order. It records only, and never writes the roadmap.
+- **`spine-block.mjs`** (#616) builds SessionStart's charter, milestone and "your slice" lines. It is
+  pure (tested by `scripts/spine-block.test.mjs`) and loaded by a guarded dynamic import, so a copy
+  in `~/.stack` without it loses the section, not the session. Every cap it applies is stated.
 - Tokens come only from `~/.stack/env`, never the shell profile or settings.json.
 
 ```bash
