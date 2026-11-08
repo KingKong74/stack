@@ -543,6 +543,11 @@ export async function getProjectPulse(slug: string): Promise<ProjectPulse> {
 export function openTerminal(opts: {
   cwd: string; cmd: 'shell' | 'claude' | 'codex'; cols: number; rows: number;
   tmuxSession?: string; skipPerms?: boolean; codexModel?: string;
+  // An alias (opus/sonnet/haiku) or a full id; '' / absent = the CLI's default.
+  claudeModel?: string;
+  // "Work goes to": 'branch' starts a NEW session in its own worktree on
+  // `term/<id>` (terminal/session-worktree.mjs). Ignored on a re-attach.
+  dest?: TermDest;
   // #525 — claude's FIRST PROMPT, for a session this frame creates. The host
   // ignores it on a re-attach, so re-sending it on every reconnect is safe.
   brief?: string;
@@ -678,7 +683,13 @@ const LEGACY_LAYOUTS: Record<string, TermLayout> = { trio: 'columns' };
 // reader below simply stops looking at those two fields: a device that had
 // chosen 'runbook' keeps that value on disk, so restoring the segment restores
 // the choice rather than resetting everybody to the default.
+// The redesigned screen's three views: one session (Focus), one big session
+// with three beside it (Main + 3), and every session as a tile (Swarm).
+export type TermView = 'focus' | 'split' | 'swarm';
 export interface TermViewPrefs {
+  view: TermView;
+  /** Swarm's grid, columns × rows. */
+  grid: { c: number; r: number };
   railOpen: boolean;
   /** Retained so a device upgrading from the 1–4 control keeps its shape; the
    *  LAYOUT is what the screen reads. */
@@ -690,6 +701,10 @@ export function getTermViewPrefs(): TermViewPrefs {
   // Rail defaults COLLAPSED — the terminal canvas is the point of the screen;
   // expand it when you want the cockpit (the choice sticks per device).
   return readStoredJSON(TERM_VIEW_KEY, (p) => ({
+    view: p?.view === 'focus' || p?.view === 'swarm' ? p.view as TermView : 'split' as const,
+    grid: Number.isInteger(p?.grid?.c) && Number.isInteger(p?.grid?.r)
+      && p.grid.c >= 2 && p.grid.c <= 10 && p.grid.r >= 2 && p.grid.r <= 8
+      ? { c: p.grid.c, r: p.grid.r } : { c: 6, r: 4 },
     railOpen: p?.railOpen === true,
     // A device that stored the old `wide: true` keeps its full-width screen by
     // landing on two panes, which is the nearest honest reading of what it was
@@ -736,8 +751,16 @@ export function setTermWorkingItem(cwd: string, id: number | null) {
 // skipPermissions runs claude sessions with --dangerously-skip-permissions
 // (the daemon allow-lists the flag — the browser only ever sends a boolean).
 // Native CLI selection; legacy gateway/model preferences are deliberately ignored.
+// Where a new agent session's work goes. 'main' is the checkout itself (what
+// every session did before); 'branch' is its own worktree. A mirror-host mode
+// is drawn on the screen but has no wiring yet, so it is not a value here.
+export type TermDest = 'main' | 'branch';
 export interface TermSessionPrefs {
   autoStart: 'claude' | 'codex' | 'shell'; skipPermissions: boolean;
+  /** '' = the CLI default. Same allowlist as cleanModelId below. */
+  claudeModel: string;
+  codexModel: string;
+  dest: TermDest;
 }
 const TERM_SESSION_KEY = 'stack.termSession';
 export function getTermSessionPrefs(): TermSessionPrefs {
@@ -745,6 +768,9 @@ export function getTermSessionPrefs(): TermSessionPrefs {
     autoStart: p?.autoStart === 'shell' ? 'shell' as const
       : p?.autoStart === 'codex' ? 'codex' as const : 'claude' as const,
     skipPermissions: p?.skipPermissions !== false,
+    claudeModel: cleanModelId(p?.claudeModel),
+    codexModel: cleanModelId(p?.codexModel),
+    dest: p?.dest === 'branch' ? 'branch' as const : 'main' as const,
   }));
 }
 
@@ -801,6 +827,23 @@ export interface DetachedSession {
   // request, so the route asked for and the model that replied are two facts,
   // and a session with no tag can still have a readable transcript.
   resolvedModel?: string;
+  // Swarm: the pane's last lines as the host captured them, when it last moved
+  // (epoch ms, 0 = unknown), and its own branch ('' = the checkout itself) with
+  // the project that branch was cut from.
+  preview?: string[];
+  activityAt?: number;
+  branch?: string;
+  project?: string;
+}
+
+// Sessions hidden from Swarm, by tmux name (device-local). Hiding is a view:
+// the session keeps running and stays in the switcher.
+const TERM_SWARM_HIDDEN_KEY = 'stack.termSwarmHidden';
+export function getTermSwarmHidden(): string[] {
+  return readStoredJSON(TERM_SWARM_HIDDEN_KEY, (v) => (Array.isArray(v) ? v.filter((x) => typeof x === 'string').slice(0, 200) : []));
+}
+export function setTermSwarmHidden(names: string[]) {
+  try { localStorage.setItem(TERM_SWARM_HIDDEN_KEY, JSON.stringify(names.slice(0, 200))); } catch { /* private mode: this tab only */ }
 }
 
 export async function getTerminalAgent(): Promise<{ connected: boolean }> {

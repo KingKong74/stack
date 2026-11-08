@@ -50,7 +50,8 @@ import WebSocket from 'ws';
 import { createUsageMeter } from './usage-meter.mjs';
 import { createCodexAccount } from './codex-account.mjs';
 import { createPlanUsage } from './plan-usage.mjs';
-import { tmuxAvailable, validName, generateName, sessionArgv, sessionExists, killSession, clearFresh, listDetached, listStackSessions, listAutoSessions, markFresh, paneTail, paneTailStyled, reapDeadSessions, reapFreshSessions, reapIdleSessions, sendKeys, setKeep, setSessionModel } from './tmux-session.mjs';
+import { tmuxAvailable, validName, generateName, sessionArgv, sessionExists, killSession, clearFresh, listDetached, listStackSessions, listAutoSessions, markFresh, paneTail, paneTailStyled, reapDeadSessions, reapFreshSessions, reapIdleSessions, sendKeys, setKeep, setSessionBranch, setSessionModel } from './tmux-session.mjs';
+import { makeBranchSession } from './session-worktree.mjs';
 import { detectPrompt } from './prompt-scan.mjs';
 import { detectWaiting } from './input-wait.mjs';
 import { parseAutoName, readActivity } from './auto-scan.mjs';
@@ -302,6 +303,11 @@ function pushDetached() {
       // unrecorded, and the screen must say so rather than assuming Claude.
       model: describeModelTag(s.model),
       cmd: agentForTag(s.model),
+      // Swarm: when the pane last moved (tmux's own clock), and where its work
+      // goes when it runs on its own branch ('' = the checkout).
+      activity: s.activity || 0,
+      branch: s.branch || '',
+      project: s.project || '',
     };
   });
   sendUplink({ t: 'detached', sessions: sessionsList });
@@ -677,7 +683,7 @@ function startSession(msg) {
     sendUplink({ t: 'exit', sid, code: 1 });
   };
   if (!['shell', 'claude', 'codex'].includes(msg.cmd)) return failUplink('Unknown session type.');
-  const cwd = resolveCwd(msg.cwd);
+  let cwd = resolveCwd(msg.cwd);
   if (!cwd) return failUplink(`No such directory under ${ROOT}.`);
   if (sessions.size >= MAX_SESSIONS) return failUplink('Too many live sessions.');
 
@@ -696,12 +702,16 @@ function startSession(msg) {
   let reattached = false; // true when the named tmux session was already running
   let markNewSession = null; // set to the name when this call CREATES the session
   let modelTag = ''; // #503 — the provider/model this session runs on ('' = unrecorded)
+  let branch = '';   // "Work goes to: New branch" — set when this session runs in its own worktree
+  let branchProject = '';
 
   if (msg.cmd === 'claude' || msg.cmd === 'codex') {
     const codexModel = msg.cmd === 'codex' && !(validName(msg.tmuxSession) && sessionExists(msg.tmuxSession)) ? msg.codexModel : undefined;
-    if (codexModel && !codexAccount.get()?.models.some((m) => m.id === codexModel)) return failUplink('Codex model unavailable. Refresh the catalogue and try again.');
+    // Catalogue reads can be unavailable or stale. Validate syntax in
+    // nativeLaunch; the native CLI validates model availability for its account.
     let launch;
-    try { launch = nativeLaunch(msg.cmd, { skipPerms: msg.skipPerms, codexModel }); }
+    const claudeModel = msg.cmd === 'claude' && typeof msg.claudeModel === 'string' && msg.claudeModel ? msg.claudeModel : undefined;
+    try { launch = nativeLaunch(msg.cmd, { skipPerms: msg.skipPerms, codexModel, claudeModel }); }
     catch { return failUplink('Invalid agent launch options.'); }
     const agentCmdWith = (brief = '') => `${launch.command}${brief}`;
     const agentCmd = agentCmdWith();
@@ -716,6 +726,19 @@ function startSession(msg) {
       // a different thing to be told. Asking after the spawn would always
       // answer yes.
       reattached = sessionExists(tmuxSession);
+      // NEW BRANCH: only for a session this call creates. A re-attach keeps
+      // whatever tree it is already in, and the start frame (dest included)
+      // is re-sent on every reconnect. session-worktree.mjs says why a failure
+      // refuses the session rather than falling back to the checkout.
+      if (!reattached && msg.dest === 'branch') {
+        const wt = makeBranchSession({ cwd, tmuxName: tmuxSession, root: ROOT, home: homedir() });
+        if (!wt.ok) return failUplink(`Could not start this session on its own branch: ${wt.reason}`);
+        cwd = wt.cwd; branch = wt.branch; branchProject = wt.project;
+        log(`session ${sid}: ${tmuxSession} on its own branch ${branch} (${cwd})`);
+      } else if (reattached) {
+        const known = listStackSessions().find((x) => x.name === tmuxSession);
+        branch = known?.branch || ''; branchProject = known?.project || '';
+      }
       // #503 — what this tab is talking to. A session ALREADY RUNNING is asked
       // rather than assumed: computing a tag from the selected agent would
       // relabel a running session to something it is not. A new one gets the tag
@@ -770,6 +793,7 @@ function startSession(msg) {
         // #503 — same poll, same reason: tmux has nothing to hang an option on
         // until the shim's `new-session -A` has actually landed.
         setSessionModel(name, modelTag);
+        setSessionBranch(name, branch, branchProject);
       } else if (tries >= 30) {
         clearInterval(tick);
         log(`session ${sid}: tmux session ${name} never appeared — not marked fresh, so the unused reaper will leave it alone`);
@@ -819,6 +843,7 @@ function startSession(msg) {
     readyFrame.tmuxSession = tmuxSession;
     readyFrame.reattached = reattached;
   }
+  if (branch) { readyFrame.branch = branch; readyFrame.project = branchProject; }
   sendUplink(readyFrame);
   sendUplink(usageFrame(sid)); // usage snapshot lands with the prompt
   if (tmuxSession) pushDetached(); // a re-attach just consumed a detached entry

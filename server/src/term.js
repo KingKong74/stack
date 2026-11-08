@@ -1,5 +1,6 @@
 import { WebSocketServer } from 'ws';
 import { tokenValid } from './auth.js';
+import { previewLines, cleanBranch, cleanProject } from './term-preview.js';
 
 // The web-terminal relay. Containers on this host can't dial INTO the host
 // (firewalled), so the PTY daemon (terminal/stack-term.mjs) dials OUT to us
@@ -56,8 +57,14 @@ let detachedSessions = []; // [{ name, cwd, created, attached, keep, tail }]
 // name/cwd/created/attached/keep/tail); pruned when a name leaves the list.
 const detachedLabels = new Map(); // name -> label
 export const termDetached = () =>
-  detachedSessions.map(({ name, cwd, created, attached, keep, blocked, waiting, model, resolvedModel, cmd }) => ({
+  detachedSessions.map(({ name, cwd, created, attached, keep, blocked, waiting, model, resolvedModel, cmd, tail, activity, branch, project }) => ({
     name, cwd, created, attached, keep, cmd, label: detachedLabels.get(name) || '',
+    // Swarm (term-preview.js): the pane's last lines, when it last moved, and
+    // the session's own branch. 0 / [] / '' are "unknown", never "idle".
+    preview: previewLines(tail),
+    activityAt: Number(activity) || 0,
+    branch: cleanBranch(branch),
+    project: cleanProject(project),
     // #503 — what the session is talking to, as the HOST read it off the tmux
     // session a moment ago. null is UNRECORDED and is not the same claim as any
     // model: a session started by hand carries no tag, and a row that quietly
@@ -482,6 +489,10 @@ export function attachTerm(httpServer) {
             model: modelShape(s.model),
             cmd: s.cmd === 'codex' ? 'codex' : s.cmd === 'claude' ? 'claude' : undefined,
             resolvedModel: typeof s.resolvedModel === 'string' ? s.resolvedModel.slice(0, 120) : '',
+            // Swarm — an older daemon sends none of these: unknown, not idle.
+            activity: Number(s.activity) || 0,
+            branch: s.branch,
+            project: s.project,
           }));
         stampBlocked(detachedSessions);
         const alive = new Set(detachedSessions.map((s) => s.name));

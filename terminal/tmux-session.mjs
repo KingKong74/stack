@@ -210,6 +210,17 @@ export function setSessionModel(name, tag) {
   spawnSync('tmux', ['set-option', '-t', `=${name}:`, '@stack-model', String(tag)], { stdio: 'ignore' });
 }
 
+// Where a session's work goes, when it was started on its own branch: the
+// branch and the jail-relative repo it was cut from. A worktree session's path
+// is ~/.stack/worktrees/<key>, which says nothing about the project, so the
+// project rides on the session too. Best-effort, like setSessionModel: unset
+// reads as "the checkout itself", which is what every other session is.
+export function setSessionBranch(name, branch, project) {
+  if (!branch) return;
+  spawnSync('tmux', ['set-option', '-t', `=${name}:`, '@stack-branch', String(branch)], { stdio: 'ignore' });
+  if (project) spawnSync('tmux', ['set-option', '-t', `=${name}:`, '@stack-project', String(project)], { stdio: 'ignore' });
+}
+
 // List every stack-term-* tmux session on the host — the web daemon's own and
 // any started by hand (ssh + `stack term`), with whether a client is attached
 // anywhere. Only stack-term-* names: autopilot/test sessions are not the
@@ -218,13 +229,13 @@ export function setSessionModel(name, tag) {
 export function listStackSessions() {
   const r = spawnSync(
     'tmux',
-    ['list-sessions', '-F', '#{session_name}\t#{session_attached}\t#{session_created}\t#{session_path}\t#{session_activity}\t#{@stack-keep}\t#{@stack-fresh}\t#{@stack-model}'],
+    ['list-sessions', '-F', '#{session_name}\t#{session_attached}\t#{session_created}\t#{session_path}\t#{session_activity}\t#{@stack-keep}\t#{@stack-fresh}\t#{@stack-model}\t#{@stack-branch}\t#{@stack-project}'],
     { encoding: 'utf8' },
   );
   if (r.status !== 0) return []; // no server running = no sessions
   const out = [];
   for (const line of r.stdout.split('\n')) {
-    const [name, attached, created, path, activity, keep, fresh, model] = line.split('\t');
+    const [name, attached, created, path, activity, keep, fresh, model, branch, project] = line.split('\t');
     // One strict pattern (#218: #199) instead of the old two-step
     // validName() + startsWith() pair, whose rules could drift apart.
     if (typeof name !== 'string' || !/^stack-term-[A-Za-z0-9_-]{1,64}$/.test(name)) continue;
@@ -248,6 +259,9 @@ export function listStackSessions() {
       // way to the screen. tmux prints an unset user option as the empty
       // string, so there is nothing to normalise here.
       model: typeof model === 'string' ? model : '',
+      // setSessionBranch above; '' = the session runs in the checkout itself.
+      branch: typeof branch === 'string' ? branch : '',
+      project: typeof project === 'string' ? project : '',
     });
   }
   return out;

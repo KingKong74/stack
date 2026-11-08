@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type RefObject, type MouseEvent as ReactMouseEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { Terminal as XTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
@@ -6,8 +6,8 @@ import '@xterm/xterm/css/xterm.css';
 import {
   openTerminal,
   getTermUsagePrefs, setTermUsagePrefs, type TermUsagePrefs,
-  getTermViewPrefs, setTermViewPrefs, type TermViewPrefs, type TermPaneCount,
-  type TermLayout, LAYOUT_PANES, LAYOUT_META,
+  getTermViewPrefs, setTermViewPrefs, type TermViewPrefs, type TermView, type TermDest,
+  getTermSwarmHidden, setTermSwarmHidden, getProjects,
   createAutopilotSchedule,
   getAutopilotJobs, resumeAutopilotJob, hangupAutopilotJob, type AutopilotJob,
   getTerminalUsage, type TerminalUsageData,
@@ -17,7 +17,7 @@ import {
   setTermTmuxName, clearTermTmuxName,
   getTermOpenTabs, setTermOpenTabs,
   getTermNames, setTermName,
-  getTerminalAgent, getTermSessionPrefs, setTermSessionPrefs,
+  getTerminalAgent, getTermSessionPrefs, setTermSessionPrefs, type TermSessionPrefs,
   getProjectDetail, type ProjectDetailData,
   getOverview,
   peekTermLaunch, clearTermLaunch,
@@ -44,7 +44,10 @@ import { attachRenderer } from '../lib/termRenderer';
 // beside it, so the name is parsed back.
 import { ConfirmModal } from '../components/ConfirmModal';
 
-import { flatRoadmap } from '../lib/plan';
+import {
+  zoneRect, zoneAt, tileRects, clampRect, tileStatus, agoLabel, orderTiles, moveKey, compactLines,
+  STATUS_ORDER, GRID_OPTS, WORKING_MS, HOST_WORKING_MS, type Rect, type Zone, type TileStatus,
+} from '../lib/termSwarm';
 import { TopBar } from '../components/TopBar';
 import { crumbName } from '../lib/ui';
 
@@ -54,21 +57,26 @@ import { crumbName } from '../lib/ui';
 // connection), and the theme is a mintty/git-bash homage: black, grey
 // foreground, the classic ANSI palette.
 //
-// #489 — THE SCREEN IS THE MISSION CONTROL DESIGN, and the compromises #487
-// made while porting it are gone. Three shapes, and each is the owner's call:
+// THE SCREEN IS THE TERMINAL PROTOTYPE v2 DESIGN (claude.ai/design, "Terminal
+// Prototype v2"). The sessions rail is gone; what replaced it:
 //
-//  1. FULL BLEED. The page's 1080px column and its 32px gutters came off, so
-//     the terminals have the window. `.page.term-page` is what beats the
-//     `.page.detail` padding that was insetting the whole screen, and the row
-//     under the topbar owns the height — nothing below it guesses at chrome
-//     any more, which is the arithmetic full screen has always used.
-//  2. ONE RAIL, FLUSH LEFT, FULL HEIGHT: the sessions list, grouped by tool,
-//     each row a way into the first pane. It was three segments (Sessions ·
-//     Work · Runbook); the other two are gone, and the block above
-//     `claimedItems` says exactly what went with them.
-//  3. NO SESSION TABS. A session was drawn three times — the rail, its pane,
-//     and a tab strip in the head bar — and the strip was the one that wrapped
-//     the bar onto a second row. It went; nothing moved to replace it.
+//  • TABS ACROSS THE TOP, grouped by project, pinned first. A tab is a session
+//    this browser holds. Closing one DETACHES it (it keeps running on the host
+//    and stays in Swarm); End is the only thing that kills.
+//  • THREE VIEWS: Focus (one session), Main + 3 (one big, three small beside
+//    it) and Swarm (every session on the host as a tile, plus floating windows
+//    that snap to edges and corners). A tile is a READING (status, name, the
+//    pane's last lines); clicking one opens it as a window, which is a live
+//    terminal. Live terminals in all 48 tiles would be 48 sockets and renderers.
+//  • THE LIMITS sit in the bar, one meter per account, and open a breakdown.
+//    Absent telemetry is drawn as absent, never as 0%.
+//  • START says what it will do (tool, directory) and its ▼ holds the defaults
+//    for new sessions: location, where the work goes, and each tool's model.
+//
+// EVERY TERMINAL STAYS MOUNTED whatever the view (#137): the panes are one
+// keyed list in one parent, and a view only changes each pane's PLACEMENT
+// (main / mini / window / off). Moving a session between views must never
+// drop its socket or its scrollback.
 //
 // The terminal's own colours are untouched: black canvas, the mintty palette.
 // The chrome around it is Stack's palette; the box is git-bash.
@@ -109,15 +117,6 @@ const fmtTok = (n: number) =>
   n >= 1e6 ? `${(n / 1e6).toFixed(n >= 9.95e6 ? 0 : 1)}M`
   : n >= 1000 ? `${Math.round(n / 1000)}k` : String(n);
 
-// "10M", "1.5m", "800k" or a plain count → tokens (0 = unparseable).
-const parseTok = (s: string): number => {
-  const m = /^\s*([\d.]+)\s*([mk]?)\s*$/i.exec(s);
-  if (!m) return 0;
-  const n = parseFloat(m[1]);
-  if (!Number.isFinite(n) || n <= 0) return 0;
-  return Math.round(n * (m[2].toLowerCase() === 'm' ? 1e6 : m[2].toLowerCase() === 'k' ? 1e3 : 1));
-};
-
 // #489 — THE RUNBOOK CATALOGUE IS GONE with the rail segment that drew it,
 // and so are the custom commands stored beside it. `getTermCmds`/`setTermCmds`
 // and the `stack.term.cmds` key are UNTOUCHED in store.ts: whatever anybody
@@ -139,6 +138,15 @@ const parseTok = (s: string): number => {
 // tmux name, so keying names by tmux is why shells used to go unnamed.
 type Sess = {
   codexModel?: string;
+  // What a NEW session was asked to start on. Ignored by the host on a
+  // re-attach, so a restored tab never carries them.
+  claudeModel?: string;
+  dest?: TermDest;
+  // The session's own branch, when the host started it in a worktree, and the
+  // project that branch was cut from (its cwd is ~/.stack/worktrees/…, which
+  // says nothing about the project).
+  branch?: string;
+  project?: string;
   id: number; cwd: string; cmd: 'shell' | 'claude' | 'codex'; status: Status; note: string; tmux?: string; sid?: string;
   // #503 — what this session is talking to, as the HOST reported it. undefined
   // = not answered yet (the ready frame has not landed); null = answered, and
@@ -151,29 +159,41 @@ type Sess = {
   resolvedModel?: string;
 };
 
-// #487 — the rail groups sessions by TOOL, as the Mission Control design does.
-//
-// Agent groups precede utility shells in the session rail.
-const TOOL_GROUPS: { key: Sess['cmd']; name: string; mark: string }[] = [
-  { key: 'claude', name: 'Claude Code', mark: 'C' },
-  { key: 'codex', name: 'Codex', mark: 'X' },
-  { key: 'shell', name: 'Shell', mark: '$' },
-];
-// Inside a tool, the rail splits sessions by PROJECT: the first segment of the
-// cwd, which is what `~/slug` opens. Home ('') sorts last. The rest of the path
-// (`src/web`) is what is left to say on the row, since the head names the project.
-function byProject<T extends { cwd?: string }>(list: T[]): { project: string; rows: T[] }[] {
+// The project a session belongs to: the first segment of its cwd, which is
+// what `~/slug` opens, unless the host said otherwise (a branch session).
+const firstSeg = (cwd?: string) => (cwd || '').replace(/^[/\\~]+/, '').split('/')[0] || '';
+// Projects in a stable order, home ('') last.
+function byProject<T>(list: T[], projectOf: (x: T) => string): { project: string; rows: T[] }[] {
   const out = new Map<string, T[]>();
   for (const x of list) {
-    const p = (x.cwd || '').replace(/^[/\\~]+/, '').split('/')[0] || '';
+    const p = projectOf(x);
     out.set(p, [...(out.get(p) || []), x]);
   }
   return [...out.entries()]
     .sort(([a], [b]) => (a === '' ? 1 : b === '' ? -1 : a.localeCompare(b)))
     .map(([project, rows]) => ({ project, rows }));
 }
-const subPathOf = (cwd?: string) =>
-  (cwd || '').replace(/^[/\\~]+/, '').split('/').slice(1).join('/');
+
+// The tool glyph on a tab and in the Start menu.
+const TOOL: Record<Sess['cmd'], { name: string; glyph: string }> = {
+  claude: { name: 'Claude', glyph: '✳' },
+  codex: { name: 'Codex', glyph: '◎' },
+  shell: { name: 'Shell', glyph: '$' },
+};
+// Claude's models are CLI aliases: they resolve to the account's current model
+// of each family, so the list never goes stale on a release.
+const CLAUDE_MODELS = [
+  { id: '', name: 'Default', note: 'CLI default' },
+  { id: 'opus', name: 'Opus', note: 'Deepest reasoning' },
+  { id: 'sonnet', name: 'Sonnet', note: 'Balanced' },
+  { id: 'haiku', name: 'Haiku', note: 'Fastest' },
+];
+const STATUS_LABEL: Record<TileStatus, string> = { asking: 'asking', working: 'working', idle: 'idle', error: 'exit' };
+// A project's letter chip. Two tints, alternating by name, so neighbours read
+// apart; the colour carries no meaning beyond "this project, not that one".
+const projTint = (p: string) => ([...p].reduce((n, ch) => n + ch.charCodeAt(0), 0) % 2 ? 'b' : 'l');
+const projLetter = (p: string) => (p ? p[0].toUpperCase() : '~');
+
 // #503 — WHAT A SESSION IS TALKING TO, as a chip on its row.
 //
 // THREE STATES, and collapsing any two of them is the whole trap:
@@ -219,63 +239,21 @@ function ModelChip({ model, resolved, show }: {
   // one hover away and never competes with the thing you are looking for.
   return (
     <span className={`mdl ${model.key === 'anthropic' ? 'own' : 'alt'}`}
-      title={`${model.id || model.label} — ${model.key === 'codex' ? 'native Codex configuration; usage is not tracked' : model.key === 'anthropic' ? 'your own Anthropic subscription' : model.label}`}>
-      {model.key === 'anthropic' ? 'Claude' : model.key === 'codex' ? (model.id === 'native' ? 'Codex' : model.id) : (model.id || model.label)}
+      title={`${model.id || model.label} — ${model.key === 'codex' ? 'native Codex configuration; use /model in this session to check or change its model' : model.key === 'anthropic' ? 'your own Anthropic subscription' : model.label}`}>
+      {model.key === 'anthropic' ? 'Claude' : model.key === 'codex' ? (model.id === 'native' ? 'Codex · model unknown' : model.id) : (model.id || model.label)}
     </span>
   );
 }
 
 // `reload` (#518) re-attaches: a fresh renderer, a cleared screen and a new
 // socket onto the SAME tmux session, which redraws it whole. Never a kill.
-type Handle = { sendText: (s: string) => void; reconnect: () => void; reload: () => void; focus: () => void };
+// `tail` reads the session's own scrollback for its Swarm tile: what is on
+// screen now, not a 60-second-old host capture.
+type Handle = { sendText: (s: string) => void; reconnect: () => void; reload: () => void; focus: () => void; tail: (n: number) => string[] };
 
 // Mounted once by App and never unmounted (#137): sessions, sockets and
 // scrollback survive navigation. `visible` = the #/terminal route is showing;
-// away from it the component renders NOTHING (#492 dropped the floating dock
-// and its corner chip — a terminal pane docked over whatever screen you had
-// navigated to, and the running-sessions pill already says a session is live).
-// AN OPEN BLOCK ON THIS SCREEN COLLAPSES WHEN YOU CLICK OFF IT — the rail's
-// Settings popover, its limits list, the model picker — because a thing you
-// opened to read should not still be open when you have gone back to the
-// panes. Use it for the next one too rather than writing the listener pair a
-// fourth time.
-//
-// `box` goes on the WHOLE block, its toggle button included, so the toggle
-// reads as "inside" and its own onClick does the closing: the other way round,
-// this fires first and the same click re-opens what it just shut. Escape
-// closes too, putting focus back on the button.
-//
-// NO scroll or resize dismissal, unlike MoreMenu: none of these floats over an
-// anchor that can move out from under it — Settings is absolute inside a footer
-// pinned OUTSIDE the rail's scroller, the limits list is inline, and the
-// picker hangs off a button in the composer bar, which does not scroll — and a
-// capturing scroll listener would have xterm's own output collapsing them
-// mid-read. The picker's own long menu scrolls INSIDE itself, which is a
-// scroll event this would otherwise treat as a reason to shut it.
-function useCollapseOnClickAway(
-  open: boolean,
-  close: () => void,
-  box: RefObject<HTMLElement | null>,
-  btn: RefObject<HTMLElement | null>,
-) {
-  useEffect(() => {
-    if (!open) return;
-    const away = (e: MouseEvent) => {
-      if (!box.current?.contains(e.target as Node)) close();
-    };
-    const key = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { close(); btn.current?.focus(); }
-    };
-    document.addEventListener('mousedown', away);
-    document.addEventListener('keydown', key);
-    return () => {
-      document.removeEventListener('mousedown', away);
-      document.removeEventListener('keydown', key);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
-}
-
+// away from it the component renders NOTHING.
 export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible = true, boardHref = '', onProject }: {
   initialCwd?: string; initialAttach?: string; initialBrief?: boolean; visible?: boolean;
   /** Where ⌃` goes from here (lib/flick.ts), drawn as the topbar's Board button. */
@@ -286,8 +264,16 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   const [cwd, setCwd] = useState(initialCwd);
   // The seg control starts on the device's preferred session kind (Settings →
   // Terminal; default claude — that's what this screen is for).
-  const [codexModel, setCodexModel] = useState('');
-  const [mode, setMode] = useState<'shell' | 'claude' | 'codex'>(() => getTermSessionPrefs().autoStart);
+  // DEFAULTS FOR NEW SESSIONS — the tool, each tool's model, and where the work
+  // goes. Device-local (Settings → Terminal edits the same row), and read only
+  // when a session is CREATED: a restored tab re-attaches whatever it was.
+  const [defs, setDefs] = useState<TermSessionPrefs>(() => getTermSessionPrefs());
+  const saveDefs = (patch: Partial<TermSessionPrefs>) => {
+    const next = { ...getTermSessionPrefs(), ...patch };
+    setDefs(next); setTermSessionPrefs(next);
+  };
+  const mode = defs.autoStart;
+  const setMode = (m: Sess['cmd']) => saveDefs({ autoStart: m });
   const [sessions, setSessions] = useState<Sess[]>([]);
   // A mirror of `sessions` for the async restore (#486) to read. The adoption
   // pass resolves after its own round trip, by which time the `sessions` it
@@ -359,29 +345,19 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   const [usage, setUsage] = useState<TermUsage | null>(null);
   const [serverUsage, setServerUsage] = useState<TerminalUsageData | null>(null);
   const [usagePrefs, setPrefsState] = useState<TermUsagePrefs>(() => getTermUsagePrefs());
-  const [editLimit, setEditLimit] = useState(false);
-  const [limitDraft, setLimitDraft] = useState('');
   const [schedNote, setSchedNote] = useState('');
   const scheduling = useRef(false);
   const savePrefs = (p: TermUsagePrefs) => { setPrefsState(p); setTermUsagePrefs(p); };
-  // #136 — view prefs, device-local: whether the rail is open, and which pane
-  // layout the grid is in. #489 took `railSeg`/`railStyle` off the type with
-  // the two rail segments they belonged to (store.ts says why the stored row
-  // keeps them).
+  // #136 — view prefs, device-local: which view, and Swarm's grid.
   const [viewPrefs, setViewPrefsState] = useState(() => getTermViewPrefs());
   const saveViewPrefs = (p: Partial<TermViewPrefs>) => {
     const next = { ...viewPrefs, ...p };
     setViewPrefsState(next); setTermViewPrefs(next);
   };
-  // #276 — "Jump back in" opens the terminal already briefed. It used to land
-  // on the rail's Runbook segment, because that is where the ▶ Paste roadmap
-  // brief button lived; #489 removed that segment and moved the button to the
-  // head bar, where it is visible whatever the rail is doing. So all this flag
-  // still owes the link is an OPEN rail — the sessions list is what somebody
-  // arriving from "Jump back in" wants to see first, and landing collapsed
-  // hides the session they came to pick up.
+  // #276 — "Jump back in" opens the terminal already briefed, and the brief is
+  // pasted into a terminal you can see: Swarm shows none, so it lands in Focus.
   useEffect(() => {
-    if (initialBrief) saveViewPrefs({ railOpen: true });
+    if (initialBrief && viewPrefs.view === 'swarm') saveViewPrefs({ view: 'focus' });
   }, [initialBrief]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // #138 — bare-slug cwd resolution: a slug with no path separators (e.g.
@@ -399,13 +375,15 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
       // Explicit new sessions never adopt a remembered session by directory:
       // Claude and Codex can share a cwd. Reload restoration uses the host list.
       const name = tmux ?? (cmd !== 'shell' ? newTermName() : undefined);
-      return [...s, { id, cwd: cwdKey, cmd, codexModel: cmd === 'codex' ? codexModel : undefined, status: 'connecting', note: '', tmux: name }];
+      const fresh = !tmux;
+      return [...s, {
+        id, cwd: cwdKey, cmd, status: 'connecting', note: '', tmux: name,
+        codexModel: cmd === 'codex' && fresh ? defs.codexModel || undefined : undefined,
+        claudeModel: cmd === 'claude' && fresh ? defs.claudeModel || undefined : undefined,
+        dest: cmd !== 'shell' && fresh ? defs.dest : undefined,
+      }];
     });
     setActive(id);
-    // …and it goes into the shape that is already on screen. See
-    // `showWhenOpened` below: the row does not exist yet, so this is a note to
-    // the next render rather than a placement.
-    showWhenOpened.current = id;
     return id;
   };
   // The screen comes BACK the way it was left. Every tab this device had open
@@ -608,7 +586,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   // dependency says out loud which layout changes are expected to reflow.
   useEffect(() => {
     window.dispatchEvent(new Event('resize'));
-  }, [visible, full, viewPrefs.layout, viewPrefs.railOpen]);
+  }, [visible, full, viewPrefs.view]);
 
   // #491 — CLOSING A PANE NO LONGER ADJUSTS THE SHAPE HERE. It used to
   // decrement the stored pane count, which was this screen's second opinion
@@ -616,6 +594,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   // themselves, so the close needs only to close.
   const closeSession = (id: number) => {
     handles.current.delete(id);
+    setWins((w) => w.filter((x) => x.id !== id));
     setSessions((s) => {
       const rest = s.filter((x) => x.id !== id);
       if (id === active && rest.length) setActive(rest[rest.length - 1].id);
@@ -653,71 +632,6 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
     }
   };
 
-  // The per-tab ⏻ done to every tab at once. Same two steps as `endSession` —
-  // close the tab (which detaches its tmux session), then kill the name once
-  // the daemon advertises it — but the closes are ONE state write so the tab
-  // strip and the panes cannot disagree about what is open, and the poll is
-  // SHARED so N sessions cost one wait rather than N. A tab with no tmux
-  // session needs no kill: closing it already ends the process. As in
-  // `confirmKill`, `clearTermTmuxName` is called per killed name so a reload
-  // does not try to resume a name that is now dead. A name the daemon never
-  // advertises inside the poll window is NOT killed — it stays detached and
-  // reappears in the detached strip (`refreshDetached` re-reads on the way
-  // out), where it can be killed by hand. A kill that quietly did not land
-  // must not read as one that did.
-  const [endingAll, setEndingAll] = useState(false);
-  // `sessions` empties synchronously below, so the button's own label has
-  // nothing to count off while the kills are still landing — this is the
-  // count it reads instead for exactly that window.
-  const [endingAllCount, setEndingAllCount] = useState(0);
-  const [endAllAsk, setEndAllAsk] = useState(false);
-  // `endSessions` is the same thing for a SUBSET — the rail's ⌃-click pick.
-  // One path for both, so a bulk end and an end-all cannot drift apart on how
-  // a kill is confirmed landed.
-  const endAllSessions = () => endSessions(sessions);
-  const endSessions = async (list: Sess[]) => {
-    if (!list.length) return;
-    setEndingAllCount(list.length);
-    const cwdOf = new Map(list.filter((s) => s.tmux).map((s) => [s.tmux!, s.cwd]));
-    const ids = new Set(list.map((s) => s.id));
-    for (const id of ids) handles.current.delete(id);
-    setSessions((cur) => {
-      const rest = cur.filter((x) => !ids.has(x.id));
-      if (ids.has(active)) setActive(rest.length ? rest[rest.length - 1].id : 0);
-      return rest;
-    });
-    setEndPick((p) => p.filter((id) => !ids.has(id)));
-    const left = new Set(cwdOf.keys());
-    if (!left.size) return;
-    setEndingAll(true);
-    try {
-      for (let i = 0; i < 12 && left.size; i++) {
-        await new Promise((r) => setTimeout(r, 500));
-        const adv = await getDetachedSessions().catch(() => []);
-        for (const d of adv) {
-          if (!left.has(d.name)) continue;
-          left.delete(d.name);
-          clearTermTmuxName(cwdOf.get(d.name) ?? d.cwd, d.name);
-          await killDetachedSession(d.name).catch(() => { /* the refresh below tells the truth */ });
-        }
-      }
-    } finally {
-      setEndingAll(false);
-      void refreshDetached();
-    }
-  };
-  // ⌃-CLICK (⌘ on a Mac) PICKS A RAIL ROW for a bulk end instead of bringing
-  // it into the first pane — the file-manager gesture, because that is the one
-  // a hand reaches for. Live rows collect here by tab id; idle rows share
-  // `killPick` with their ☐, so the two ways of picking one agree. A plain
-  // click clears the live pick: selection is a mode you are in only while
-  // holding the modifier, and a leftover pick behind an ordinary click is how
-  // a bulk end takes a session nobody meant.
-  const [endPick, setEndPick] = useState<number[]>([]);
-  const [endPickAsk, setEndPickAsk] = useState(false);
-  const isPickClick = (e: ReactMouseEvent) => e.ctrlKey || e.metaKey;
-  const toggleEndPick = (id: number) =>
-    setEndPick((p) => (p.includes(id) ? p.filter((n) => n !== id) : [...p, id]));
   const setStatus = (id: number, status: Status, note: string) =>
     setSessions((s) => s.map((x) => (x.id === id ? { ...x, status, note } : x)));
 
@@ -757,16 +671,6 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   // renders. A tab whose session the daemon has not advertised yet has no
   // answer, which reads as unpinned, the same as the reaper would read it.
   const pinnedOf = (tmux?: string) => !!tmux && detached.some((d) => d.name === tmux && d.keep);
-  // #487 — is this session sitting on a permission prompt. Read off the
-  // daemon's own scan (`blocked`), which is the same source the Approve button
-  // above the canvas answers from, so the rail's "N asking" and the row you
-  // press can never disagree about who is waiting.
-  //
-  // It leans toward NULL exactly as `terminal/prompt-scan.mjs` does: a false
-  // positive here puts an "asking" badge on a session nobody asked anything,
-  // which is worse than noticing a real one a tick late.
-  const blockedOf = (x: Sess) =>
-    (x.tmux ? detached.find((d) => d.name === x.tmux)?.blocked : null) ?? null;
   // #519 — …or has FINISHED and is waiting at its own input. The rail marks
   // either stop (a bypass-permissions session only ever makes the second);
   // the Approve strip above the canvas stays on `blockedOf` alone, because a
@@ -778,28 +682,17 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
 
   const attachDetached = (d: DetachedSession) => {
     setDetached((l) => l.filter((x) => x.name !== d.name));
-    setKillPick((p) => p.filter((n) => n !== d.name));
-    openSession(d.cwd, d.cmd || 'claude', d.name);
+    return openSession(d.cwd, d.cmd || 'claude', d.name);
   };
 
-  // Killing host sessions, one or many. The route only ever kills DETACHED
-  // sessions — the daemon refuses a name a client still holds — so selection
-  // is offered on those chips alone; to kill one you are attached to, close
-  // the tab first (that detaches it) and it reappears here.
-  const [killPick, setKillPick] = useState<string[]>([]);
-  const [killTargets, setKillTargets] = useState<DetachedSession[] | null>(null);
-  const toggleKillPick = (name: string) =>
-    setKillPick((p) => (p.includes(name) ? p.filter((n) => n !== name) : [...p, name]));
-  const confirmKill = async () => {
-    const list = killTargets ?? [];
-    setKillTargets(null);
-    await killIdle(list);
-  };
+  // Killing host sessions. The route only ever kills DETACHED sessions — the
+  // daemon refuses a name a client still holds — so a tile's End on a session
+  // nobody here is attached to comes through here, and a tab's End goes
+  // through `endSession`, which detaches first.
   const killIdle = async (list: DetachedSession[]) => {
     if (!list.length) return;
     const names = new Set(list.map((d) => d.name));
     setDetached((l) => l.filter((x) => !names.has(x.name)));
-    setKillPick((p) => p.filter((n) => !names.has(n)));
     // Sequential, not Promise.all: the daemon takes these over one socket, and
     // a failure part-way should still leave the rest killed. One refresh at the
     // end re-syncs whatever actually died.
@@ -847,18 +740,6 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
 
   const detachedShown = detached.filter(
     (d) => !sessions.some((s) => s.tmux === d.name && (s.status === 'live' || s.status === 'connecting')));
-  const killable = detachedShown.filter((d) => !d.attached);
-  // Derived, not stored: a tab closed or an idle row re-attached since the
-  // pick simply drops out, rather than a stale id ending something else.
-  const pickedLive = sessions.filter((s) => endPick.includes(s.id));
-  const pickedIdle = killable.filter((d) => killPick.includes(d.name));
-  const confirmEndPick = () => {
-    setEndPickAsk(false);
-    const live = pickedLive;
-    setEndPick([]);
-    void endSessions(live);
-    if (pickedIdle.length) void killIdle(pickedIdle);
-  };
 
   // ---- what each claude session is DOING (#120), on this screen ----
   // Gemini's one-line take, keyed by the host tmux session — the only id both
@@ -941,8 +822,18 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   // ever gates the FIRST name; nothing decrements it and nothing re-asks.
   const seenRef = useRef<Record<number, number>>({});
   const NAME_AFTER_BYTES = 2000;
+  // …and what Swarm reads as WORKING: a session that put out a real amount in
+  // the last few seconds. A trickle (a cursor, a status redraw) is not work, so
+  // bytes are pooled over a short window and only a pool past the bar counts.
+  const lastBusy = useRef<Record<number, number>>({});
+  const busyPool = useRef<Record<number, { t: number; n: number }>>({});
   const noteOutput = (id: number, bytes: number) => {
     seenRef.current[id] = (seenRef.current[id] || 0) + bytes;
+    const t = Date.now();
+    const pool = busyPool.current[id];
+    const cur = pool && t - pool.t < 4000 ? { t: pool.t, n: pool.n + bytes } : { t, n: bytes };
+    busyPool.current[id] = cur;
+    if (cur.n > 800) lastBusy.current[id] = t;
   };
   useEffect(() => {
     if (!visible) return;
@@ -1001,7 +892,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   // then fight over the focus on mount, the loser's onBlur commits an empty
   // draft, and the rename closes itself the instant it opens. One editor at a
   // time, and the surface you double-clicked is the one that gets it.
-  const [renaming, setRenaming] = useState<{ id: number; where: 'rail' | 'pane' } | null>(null);
+  const [renaming, setRenaming] = useState<{ id: number; where: 'tab' | 'pane' } | null>(null);
   const [draft, setDraft] = useState('');
   // This mount's renames, keyed by tab id, for the same reason `typed` is: a
   // SHELL tab never gets a tmux name (its process dies with the socket), and a
@@ -1010,19 +901,6 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   // tab's life, and copied into `names` once there is a tmux name to key on.
   // '' is a rename to nothing — it clears, and must shadow nothing.
   const [renamed, setRenamed] = useState<Record<number, string>>({});
-  const [modelsOpen, setModelsOpen] = useState(false);
-  const modelsRef = useRef<HTMLDivElement | null>(null);
-  const modelsBtn = useRef<HTMLButtonElement | null>(null);
-  useCollapseOnClickAway(modelsOpen, () => setModelsOpen(false), modelsRef, modelsBtn);
-  const [setsOpen, setSetsOpen] = useState(false);
-  const setsRef = useRef<HTMLDivElement | null>(null);
-  const setsBtn = useRef<HTMLButtonElement | null>(null);
-  useCollapseOnClickAway(setsOpen, () => setSetsOpen(false), setsRef, setsBtn);
-  const [limitsOpen, setLimitsOpen] = useState(false);
-  const limitsRef = useRef<HTMLDivElement | null>(null);
-  const limitsBtn = useRef<HTMLButtonElement | null>(null);
-  useCollapseOnClickAway(limitsOpen, () => setLimitsOpen(false), limitsRef, limitsBtn);
-  const [limitIdx, setLimitIdx] = useState(0);
   // THE ORDER IS THE ORDER OF AUTHORITY, and the two human sources sit above
   // the machine one: the name stored against this tmux session, then this
   // mount's capture, then — only for a session nobody here typed into — the
@@ -1050,7 +928,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
     if (wrote) setNames(getTermNames());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [typed, renamed, sessions]);
-  const startRename = (x: Sess, where: 'rail' | 'pane') => {
+  const startRename = (x: Sess, where: 'tab' | 'pane') => {
     setRenaming({ id: x.id, where }); setDraft(labelOf(x));
   };
   // BLUR COMMITS rather than discarding — losing a name you just typed by
@@ -1070,217 +948,6 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
     if (e.key === 'Enter') commitRename(x);
     if (e.key === 'Escape') { setRenaming(null); setDraft(''); }
   };
-  // WHICH SESSIONS ARE ON SCREEN, and WHERE (#487).
-  //
-  // It was a sliding WINDOW over the session list — start at the active tab,
-  // take N — so a pane was a position in a list and "put this session in that
-  // pane" had no meaning. Panes are SLOTS instead: `slots[i]` names the session
-  // in pane i, which is what lets a pane stay put while sessions come and go
-  // around it. #491 took the DRAGGING that used to rearrange them (see the ⤢
-  // button below, which is what moved a session after it); the slots stayed,
-  // because they are what keeps a pane still, not what moved one.
-  //
-  // SLOTS ARE NOT PERSISTED. A session id is a per-mount counter, so a stored
-  // arrangement would point at whatever happened to take those numbers next
-  // time — a layout restored onto the wrong terminals is worse than one that
-  // simply starts tidy. The LAYOUT is device-local; the arrangement inside it
-  // lasts as long as the screen is open.
-  const layout = viewPrefs.layout;
-
-  // THE LAYOUT IS THE OWNER'S, AND NOTHING ELSE MOVES IT (owner's call).
-  //
-  // #491 had the shape follow the session count — a third session stepped you
-  // from Side by side into 3-up on its own. It is gone, and the reason is what
-  // the fit could not know: which of the shapes that seat N sessions you meant
-  // to be in. Four sessions fit the 2×2 and they fit Focus, and a ladder that
-  // walks you into the 2×2 every time a session opens takes Focus away from
-  // you repeatedly and silently — you press it, open a terminal, and you are
-  // somewhere else. The count is a fact about sessions; the shape is a
-  // judgement about which one you are working in, and only a person has it.
-  //
-  // WHAT REPLACES IT is the block below: a new session goes into the view you
-  // are already in, taking a free pane or the first one. So opening a terminal
-  // still puts it in front of you — it just does not rearrange the screen to
-  // do it.
-
-  const [slots, setSlots] = useState<(number | null)[]>([]);
-
-  // #491 — DRAG-AND-DROP IS GONE FROM THIS SCREEN (owner's call), and with it
-  // the hold-then-drag gate #490 had to build for it: a pane title and a rail
-  // row are both things you CLICK — focus a session, select text in the
-  // terminal under it — and making them drag handles meant every slightly
-  // imprecise click risked tearing a pane out of the grid. The gate made that
-  // rarer; removing the drag removes it.
-  //
-  // WHAT MOVES A SESSION NOW: the pane's ⤢ button and a click on a rail row,
-  // both of which put it in the first pane (`focusInSlot`). That is one
-  // arrangement gesture rather than N, and it is the one that was already
-  // there for a session the grid was not showing at all.
-
-  /**
-   * The slot assignment for a layout: every entry still alive is KEPT where it
-   * is, and holes are filled from the sessions nobody has placed. Keeping
-   * beats re-deriving because a pane must not move under the cursor when an
-   * unrelated session opens or dies somewhere else on screen.
-   *
-   * Pure, and given everything it reads, so it can be called during render
-   * without becoming a second source of truth beside `slots`.
-   */
-  const slotsFor = (lay: TermLayout, all: Sess[], cur: (number | null)[]): (number | null)[] => {
-    const want = Math.max(1, Math.min(LAYOUT_PANES[lay], Math.max(1, all.length)));
-    const alive = new Set(all.map((x) => x.id));
-    const used = new Set<number>();
-    const out: (number | null)[] = [];
-    for (let i = 0; i < want; i++) {
-      const id = cur[i];
-      if (id != null && alive.has(id) && !used.has(id)) { out[i] = id; used.add(id); }
-      else out[i] = null;
-    }
-    // The ACTIVE session is placed first when it has no slot, so clicking a
-    // rail row always puts it on screen rather than behind a full grid.
-    const queue = [
-      ...all.filter((x) => x.id === active && !used.has(x.id)),
-      ...all.filter((x) => x.id !== active && !used.has(x.id)),
-    ];
-    let q = 0;
-    for (let i = 0; i < want; i++) {
-      if (out[i] != null) continue;
-      const next = queue[q++];
-      if (next) { out[i] = next.id; used.add(next.id); }
-    }
-    return out;
-  };
-
-  const slotIds = slotsFor(layout, sessions, slots);
-  const paneCount = slotIds.length;
-  const shownIds = slotIds.filter((x): x is number => x != null);
-
-  // ---- #487 · what the design's chrome reads ------------------------------
-  //
-  // THE LIMITS BLOCK's rows. The design lists three PROVIDERS; these are the
-  // three real windows the daemon reads off the Claude account, which is the
-  // same shape over numbers that are actually measured. A window the daemon
-  // did not report is simply absent — an unmeasured limit drawn at 0% reads as
-  // "plenty left", which is the most expensive possible way to be wrong here.
-  const planLimits = useMemo(() => {
-    const p = usage?.plan;
-
-    const rows: { key: string; name: string; pct: number; resets: string }[] = [];
-    if (p?.session) {
-      rows.push({ key: 'session', name: 'Claude · Session', pct: Math.round(p.session.pct),
-        resets: p.session.resetAt ? `resets ${fmtReset(p.session.resetAt)}` : 'no reset reported' });
-    }
-    if (p?.week) {
-      rows.push({ key: 'week', name: 'Claude · Week', pct: Math.round(p.week.pct),
-        resets: p.week.resetAt ? `resets ${fmtReset(p.week.resetAt, true)}` : 'no reset reported' });
-    }
-    if (p?.weekModel) {
-      rows.push({ key: 'weekModel', name: `Week · ${p.weekModel.model || 'strong model'}`,
-        pct: Math.round(p.weekModel.pct),
-        resets: p.weekModel.resetAt ? `resets ${fmtReset(p.weekModel.resetAt, true)}` : 'no reset reported' });
-    }
-    for (const l of usage?.codex?.limits || []) rows.push({ ...l, resets: l.resetAt ? `resets ${fmtReset(l.resetAt, true)}` : 'no reset reported' });
-    return rows;
-  }, [usage]);
-
-  // THE ATTENTION PILL — sessions stopped on a permission prompt. The design's
-  // wording exactly, because it is the right wording: one of them names the
-  // session, several do not, and the difference is whether naming it saves you
-  // a look.
-  const waiting = sessions.filter((x) => (x.status === 'live') && !!blockedOf(x));
-  const attentionLabel = waiting.length === 1
-    ? `1 session waiting on you — ${labelOf(waiting[0]) || waiting[0].cwd || 'unnamed'}`
-    : `${waiting.length} sessions waiting on you`;
-
-  /** Put a session in the FIRST pane, swapping out whatever is there, and make
-   *  it the one taking keystrokes. The layout is untouched: a rail click and
-   *  the attention pill are both "show me this one", not "reshape the screen".
-   */
-  const showInLead = (id: number) => {
-    const next = slotsFor(layout, sessions, slots).slice();
-    const from = next.indexOf(id);
-    if (from === 0) { setActive(id); return; }
-    if (from !== -1) next[from] = next[0];
-    next[0] = id;
-    setSlots(next);
-    setActive(id);
-  };
-
-  /** The pane's ⤢ — BRING THIS ONE TO THE FOCUS VIEW.
-   *
-   *  It used to move the session into slot 0 and leave the layout alone, on
-   *  the reasoning that a shape somebody picked is not a thing a focus press
-   *  should undo. That was wrong in the one way that mattered: in the 2×2 and
-   *  the 6-up, EVERY PANE IS THE SAME SIZE, so slot 0 is not a focus position
-   *  and the button did its work invisibly. Pressing it looked like pressing a
-   *  dead control — which is exactly what it was reported as.
-   *
-   *  So it now does what its name says: switches to Focus and puts this
-   *  session in the big pane. That gives it one meaning from every shape
-   *  rather than a real effect in two of them and none in the rest. Sessions
-   *  that Focus cannot seat are not closed or detached — every session stays
-   *  mounted whatever is on screen — so 6-up brings them all back.
-   */
-  const focusPane = (id: number) => {
-    const next = slotsFor('focus', sessions, slots).slice();
-    const from = next.indexOf(id);
-    if (from > 0) next[from] = next[0];
-    next[0] = id;
-    setSlots(next);
-    setActive(id);
-    if (layout !== 'focus') {
-      saveViewPrefs({ layout: 'focus', panes: Math.min(4, LAYOUT_PANES.focus) as TermPaneCount });
-    }
-  };
-
-  // A NEW SESSION LANDS IN THE VIEW YOU ARE ALREADY IN (owner's call).
-  //
-  // `slotsFor` already fills a FREE pane with whoever is unplaced, so most of
-  // the time this does nothing. It is here for the case that has no free pane:
-  // opening a fourth terminal in Side by side used to leave it running on the
-  // host, live, focused, and drawn nowhere — the screen's own answer being to
-  // grow itself, which is the behaviour that just went. It takes the first
-  // pane instead, which is where you were about to look anyway.
-  //
-  // Keyed off the id rather than the count so it fires once, for the session
-  // that was actually opened, and never re-runs on an unrelated change. It has
-  // to wait for a render because `openSession` adds to `sessions` through a
-  // functional update — the row does not exist yet when the ref is set.
-  const showWhenOpened = useRef<number | null>(null);
-  useEffect(() => {
-    const id = showWhenOpened.current;
-    if (id == null) return;
-    if (!sessions.some((x) => x.id === id)) return; // not landed yet
-    showWhenOpened.current = null;
-    if (slotsFor(layout, sessions, slots).includes(id)) return; // a free pane took it
-    showInLead(id);
-  }, [sessions]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // A LAYOUT BUTTON CHANGES THE SHAPE AND NOTHING ELSE (owner's call).
-  //
-  // It used to FILL what it opened: pressing Focus with one session running
-  // attached to whatever detached sessions the host had, newest first, and
-  // then started fresh ones for any pane still empty — on the reasoning that
-  // asking for N terminals is asking for N terminals. It is gone, and the
-  // reason is what it did rather than what it meant. Pressing a shape is a
-  // question about the screen; it was answered by reaching onto the HOST and
-  // attaching to work somebody else — or you, yesterday, in another window —
-  // had left running. Nothing said which sessions it had taken, and the panes
-  // it filled looked exactly like panes you had opened. A control that starts
-  // and joins real processes has to be a control you pressed for that.
-  //
-  // An empty pane is now just an empty pane, and the only things on this
-  // screen that start a session are the two the human presses FOR that: the
-  // head bar's spawn button, and the empty cell itself, which spawns the same
-  // thing and names it the same way. Neither reaches onto the host for work it
-  // did not start — resuming a detached session is still one click, on its own
-  // row in the rail, where it says what it is resuming.
-  const chooseLayout = (lay: TermLayout) => {
-    // The pane COUNT rides along so a device that later loads an older build
-    // lands on the nearest shape rather than on the default.
-    saveViewPrefs({ layout: lay, panes: Math.min(4, LAYOUT_PANES[lay]) as TermPaneCount });
-  };
-
   // A roadmap brief handed over by the board's ⌨ To terminal (one-shot).
   // Pasted bracketed so multi-line briefs land in claude/bash as one block —
   // nothing runs until the human presses Enter.
@@ -1301,51 +968,14 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
 
   // The project a booked session runs against — the dispatcher resolves repos
   // as $STACK_AUTOPILOT_ROOT/<slug>, so the cwd's first segment IS the slug.
-  const projectSlug = (activeSess?.cwd || cwd).trim().replace(/^[/\\]+/, '').split('/')[0] || '';
+  const projectSlug = activeSess?.project || firstSeg(activeSess?.cwd ?? cwd.trim());
   const schedKey = usage?.sched ? `${projectSlug} ${usage.sched.runDate} ${usage.sched.atTime}` : '';
   const booked = !!schedKey && usagePrefs.lastAutoKey === schedKey;
-  // Daemon frames are the real-time numerator; server 24h total is the fallback
-  // before the first frame arrives (no active PTY session). Denominator: the
-  // nightly autopilot budget when set (server-side); user's device-local
-  // estimate when the budget is 0 (unlimited) or the server is unreachable.
+  // Today's fresh tokens off this host's Claude transcripts (the daemon's
+  // frames), with the server's 24h figure as the fallback before one lands.
   const usedTokens = usage?.tokens ?? serverUsage?.tokensToday ?? 0;
-  const effectiveLimit = serverUsage && serverUsage.tokenBudget > 0
-    ? serverUsage.tokenBudget
-    : usagePrefs.dailyLimit;
-  const usagePct = usedTokens > 0 ? Math.round((usedTokens / effectiveLimit) * 100) : 0;
-
-  // #489 — THE WORK COCKPIT IS GONE, and this is the whole of what went with
-  // it, said once so nobody has to reconstruct it from the diff:
-  //
-  //  • THE TERMINAL NO LONGER READS THE PLAN. It fetched the cwd's project
-  //    (`getProjectDetail`), derived the runner's own next-up order and drew it
-  //    two ways — one lane per sprint, or one item promoted with the rest
-  //    behind a typed filter. Both are gone; nothing on this screen now knows
-  //    what the night would take next.
-  //  • A TAB CAN NO LONGER CLAIM. `term:<name>` claims were written from here
-  //    (`patchRoadmapItem` with `claimed_by`) and released from here. The
-  //    CLAIM ITSELF IS UNCHANGED — `claimed_by` is still the don't-re-pick
-  //    marker, SessionStart still injects it, the lane rules still read it —
-  //    but a browser can no longer make or drop one from this screen, so a
-  //    session worked in a tab now claims the way every other session does:
-  //    by hand, or not at all. That is a real gap, not a tidy-up.
-  //  • SENDING WORK TO THE PROMPT went with it: the rail typed an item's brief
-  //    at the active session, bracketed, and Stack still never pressed Enter.
-  //    The board's ⌨ To terminal handoff survives — it arrives through
-  //    sessionStorage and is pasted by the head bar's ▶ Paste brief.
-  //  • THE PINNED "WORKING ON" ITEM (`stack.term.working`) has no reader.
-  //    `getTermWorkingItem`/`setTermWorkingItem` stay in store.ts with whatever
-  //    each device pinned, for the same reason the runbook's commands do.
-  //
-  // What is NOT affected: the usage strip and the resume-job chip
-  // pills and the layout switcher all sat above the canvas, never in the rail.
-  //
-  // ONE READ OF THE PLAN SURVIVES, and it is the head bar's, not the rail's:
-  // "N branches claimed" is a fact about the whole project that belongs beside
-  // the spawn controls — it is what says somebody else is already on this
-  // checkout before you open a sixth session in it. It costs one fetch and
-  // nothing writes back, which is the whole difference between it and the
-  // cockpit that went.
+  // The focused session's tracked project, for the crumb and ⌃` (onProject).
+  // A cwd that is not a project leaves both absent rather than guessing.
   const [detail, setDetail] = useState<ProjectDetailData | null>(null);
   const [detailSlug, setDetailSlug] = useState('');
   useEffect(() => {
@@ -1362,10 +992,6 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   const board = detailSlug === projectSlug ? detail : null;
   const boardProject = board ? board.project.id : '';
   useEffect(() => { onProject?.(boardProject); }, [boardProject, onProject]);
-  const claimedItems = useMemo(
-    () => (board ? flatRoadmap(board.roadmap).filter((it) => !it.done && it.claimedBy) : []),
-    [board]);
-
   const bookReset = async () => {
     const sched = usage?.sched;
     if (!sched || scheduling.current || booked) return;
@@ -1443,24 +1069,427 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   useAutoRefresh(loadHost, visible);
 
 
+  // ---- the v2 screen: views, tabs, Swarm and its windows -------------------
+
+  const view: TermView = viewPrefs.view;
+  const setView = (v: TermView) => { saveViewPrefs({ view: v }); setTilePeek(null); };
+  const grid = viewPrefs.grid;
+
+  // Device clock for the tiles' "working" and "4m". Re-read every few seconds
+  // while the screen shows, so a session that stops reads idle without input.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!visible) return;
+    const t = setInterval(() => setNow(Date.now()), 4000);
+    return () => clearInterval(t);
+  }, [visible]);
+
+  const projectOf = (s: Sess) => s.project || firstSeg(s.cwd);
+  const projectOfDet = (d: DetachedSession) => d.project || firstSeg(d.cwd);
+  const isPinned = (s: Sess) => !!s.tmux && pinnedOf(s.tmux);
+  const detOf = (s: Sess) => (s.tmux ? detached.find((d) => d.name === s.tmux) : undefined);
+  // A live tab's status off its OWN evidence: real output recently, read off
+  // the socket; the host's 60s push would make "working" a minute late.
+  const statusOf = (s: Sess): TileStatus => tileStatus({
+    asking: !!askFor(s), failed: s.status === 'error' || s.status === 'closed',
+    activeAt: lastBusy.current[s.id] || 0, now, windowMs: WORKING_MS,
+  });
+  const statusOfDet = (d: DetachedSession): TileStatus => tileStatus({
+    asking: !!askOf(d), failed: false, activeAt: d.activityAt || 0, now, windowMs: HOST_WORKING_MS,
+  });
+  const nameOf = (s: Sess) => labelOf(s) || (s.status === 'live'
+    ? (labelBusy ? 'naming this session…' : 'New session') : s.note || s.status);
+  const nameOfDet = (d: DetachedSession) => labels[d.name] || d.label || 'Not named yet';
+  // Where the work goes, as the header and a window's title say it.
+  const destLabel = (s: Sess) => (s.cmd === 'shell' ? ''
+    : s.branch ? `⎇ ${s.branch}` : s.dest === 'branch' ? '⎇ new branch…' : '⎇ main');
+
+  // TABS — the sessions this browser holds, grouped by project, pinned first.
+  const tabGroups = byProject(sessions, projectOf)
+    .map((g) => ({ ...g, rows: [...g.rows].sort((a, b) => Number(isPinned(b)) - Number(isPinned(a))) }));
+  const tabOrder = tabGroups.flatMap((g) => g.rows);
+  const cur = sessions.find((s) => s.id === active) ?? null;
+  // Main + 3's small panes: the next three tabs, pinned first.
+  const minis = view === 'split'
+    ? [...tabOrder.filter((s) => isPinned(s)), ...tabOrder.filter((s) => !isPinned(s))]
+      .filter((s) => s.id !== cur?.id).slice(0, 3)
+    : [];
+
+  // ---- Swarm: floating windows -------------------------------------------
+  type Win = Rect & { id: number; z: number; snapped: boolean; prev?: { w: number; h: number } };
+  const [wins, setWins] = useState<Win[]>([]);
+  const zTop = useRef(0);
+  const [drag, setDrag] = useState<number | null>(null);
+  const [snapPreview, setSnapPreview] = useState<Rect | null>(null);
+  const [openIn, setOpenIn] = useState<number | null>(null);
+  const swarmBodyRef = useRef<HTMLDivElement | null>(null);
+  // The area windows live in: below Swarm's own head row, the full window
+  // width. Read live, because the bar above can wrap.
+  const area = (): Rect => {
+    const top = swarmBodyRef.current?.getBoundingClientRect().top ?? 120;
+    return { x: 0, y: top, w: window.innerWidth, h: window.innerHeight - top };
+  };
+  const focusWin = (id: number) => setWins((ws) => {
+    const top = Math.max(0, ...ws.map((w) => w.z));
+    const me = ws.find((w) => w.id === id);
+    return me && me.z !== top ? ws.map((w) => (w.id === id ? { ...w, z: ++zTop.current } : w)) : ws;
+  });
+  const openWin = (id: number, geo?: Rect & { snapped?: boolean }) => {
+    const a = area();
+    setWins((ws) => {
+      const w = Math.min(860, a.w * 0.62), h = Math.min(580, a.h * 0.75);
+      if (ws.some((x) => x.id === id)) {
+        return ws.map((x) => (x.id === id
+          ? { ...x, ...(geo ? clampRect(geo, a) : {}), snapped: !!geo?.snapped, z: ++zTop.current } : x));
+      }
+      const off = (ws.length % 6) * 28;
+      const base = geo ?? { x: a.x + (a.w - w) / 2 - 70 + off, y: a.y + (a.h - h) / 2 - 50 + off, w, h };
+      return [...ws, { ...clampRect(base, a), id, z: ++zTop.current, snapped: !!geo?.snapped, prev: geo?.snapped ? { w, h } : undefined }];
+    });
+    setActive(id);
+    setTilePeek(null);
+  };
+  const closeWin = (id: number) => { setWins((ws) => ws.filter((w) => w.id !== id)); setOpenIn(null); };
+  const toggleMax = (id: number) => {
+    const a = area();
+    setWins((ws) => ws.map((w) => {
+      if (w.id !== id) return w;
+      if (w.snapped) {
+        const p = w.prev || { w: 860, h: 580 };
+        return { ...w, ...clampRect({ x: a.x + (a.w - p.w) / 2, y: a.y + 40, w: p.w, h: p.h }, a), snapped: false };
+      }
+      return { ...w, ...zoneRect('max', a), snapped: true, prev: { w: w.w, h: w.h } };
+    }));
+  };
+  const tileAllWins = () => {
+    const a = area();
+    setWins((ws) => {
+      const order = [...ws].sort((p, q) => p.z - q.z).map((w) => w.id);
+      const rects = tileRects(ws.length, a);
+      return ws.map((w) => ({ ...w, ...rects[order.indexOf(w.id)], snapped: true, prev: w.snapped ? w.prev : { w: w.w, h: w.h } }));
+    });
+  };
+  // DRAG A TITLE BAR to move; to an edge or corner to snap. A snapped window
+  // un-snaps to its old size under the pointer, as a desktop's does.
+  const startWinDrag = (e: ReactMouseEvent, id: number) => {
+    if (e.button !== 0 || (e.target as HTMLElement).closest('button,input')) return;
+    e.preventDefault();
+    focusWin(id);
+    const w0 = wins.find((w) => w.id === id);
+    if (!w0) return;
+    let base: Rect = { x: w0.x, y: w0.y, w: w0.w, h: w0.h };
+    if (w0.snapped) {
+      const r = w0.prev || { w: 860, h: 580 };
+      base = { w: r.w, h: r.h, x: e.clientX - r.w * ((e.clientX - w0.x) / w0.w), y: w0.y };
+    }
+    const ox = e.clientX - base.x, oy = e.clientY - base.y;
+    let zone: Zone | null = null;
+    const move = (ev: MouseEvent) => {
+      const a = area();
+      zone = zoneAt(ev.clientX, ev.clientY, a);
+      setSnapPreview(zone ? zoneRect(zone, a) : null);
+      setWins((ws) => ws.map((w) => (w.id === id
+        ? { ...w, w: base.w, h: base.h, x: ev.clientX - ox, y: Math.max(a.y, ev.clientY - oy), snapped: false } : w)));
+    };
+    const up = () => {
+      window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up);
+      const a = area();
+      setDrag(null); setSnapPreview(null);
+      setWins((ws) => ws.map((w) => (w.id !== id ? w : zone
+        ? { ...w, ...zoneRect(zone, a), snapped: true, prev: { w: base.w, h: base.h } }
+        : { ...w, ...clampRect(w, a) })));
+    };
+    window.addEventListener('mousemove', move); window.addEventListener('mouseup', up);
+    setDrag(id); setOpenIn(null);
+  };
+  const startWinResize = (e: ReactMouseEvent, id: number, dir: string) => {
+    if (e.button !== 0) return;
+    e.preventDefault(); e.stopPropagation();
+    focusWin(id);
+    const w0 = wins.find((w) => w.id === id);
+    if (!w0) return;
+    const sx = e.clientX, sy = e.clientY;
+    const move = (ev: MouseEvent) => {
+      const dx = ev.clientX - sx, dy = ev.clientY - sy, a = area();
+      let { x, y, w, h } = w0;
+      if (dir.includes('e')) w = Math.max(320, w0.w + dx);
+      if (dir.includes('s')) h = Math.max(200, w0.h + dy);
+      if (dir.includes('w')) { w = Math.max(320, w0.w - dx); x = w0.x + w0.w - w; }
+      if (dir.includes('n')) { h = Math.max(200, w0.h - dy); y = Math.max(a.y, w0.y + w0.h - h); h = w0.y + w0.h - y; }
+      setWins((ws) => ws.map((v) => (v.id === id ? { ...v, x, y, w, h, snapped: false } : v)));
+    };
+    const up = () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); setDrag(null); };
+    window.addEventListener('mousemove', move); window.addEventListener('mouseup', up);
+    setDrag(id); setOpenIn(null);
+  };
+
+  // ---- Swarm: tiles ----------------------------------------------------------
+  // One tile per session on the host: the tabs here, then everything else the
+  // daemon advertises. A tile is a reading; opening one makes it a window.
+  type Tile = {
+    key: string; sess?: Sess; det?: DetachedSession; name: string; project: string; cmd: Sess['cmd'];
+    st: TileStatus; ago: string; pinned: boolean; dest: string;
+  };
+  const allTiles: Tile[] = [
+    ...sessions.map((s): Tile => {
+      const d = detOf(s);
+      return {
+        key: s.tmux || `tab:${s.id}`, sess: s, det: d, name: nameOf(s), project: projectOf(s), cmd: s.cmd,
+        st: statusOf(s), ago: agoLabel(lastBusy.current[s.id] || d?.activityAt || 0, now), pinned: isPinned(s), dest: destLabel(s),
+      };
+    }),
+    ...detachedShown.map((d): Tile => ({
+      key: d.name, det: d, name: nameOfDet(d), project: projectOfDet(d), cmd: d.cmd || 'claude',
+      st: statusOfDet(d), ago: agoLabel(d.activityAt || 0, now), pinned: !!d.keep,
+      dest: d.branch ? `⎇ ${d.branch}` : '⎇ main',
+    })),
+  ];
+  const [hidden, setHiddenState] = useState<string[]>(() => getTermSwarmHidden());
+  const setHidden = (next: string[]) => { setHiddenState(next); setTermSwarmHidden(next); };
+  const [tileOrder, setTileOrder] = useState<string[]>([]);
+  const cap = grid.c * grid.r;
+  const compact = cap >= 35;
+  const shownTiles = orderTiles(allTiles.filter((t) => !hidden.includes(t.key)), tileOrder);
+  const tiles = shownTiles.slice(0, cap);
+  const hiddenCount = allTiles.filter((t) => hidden.includes(t.key)).length;
+  const [tilePeek, setTilePeek] = useState<string | null>(null);
+  const [dragTile, setDragTile] = useState<string | null>(null);
+  const [dropOn, setDropOn] = useState<string | null>(null);
+  const [dragTab, setDragTab] = useState<number | null>(null);
+  const [dropWin, setDropWin] = useState<number | null>(null);
+  const [flash, setFlash] = useState<string | null>(null);
+  const flashTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(flashTimer.current), []);
+  const askingCount = allTiles.filter((t) => t.st === 'asking').length;
+  const workingCount = allTiles.filter((t) => t.st === 'working').length;
+  const linesOf = (t: Tile): string[] => {
+    const live = t.sess ? handles.current.get(t.sess.id)?.tail(40) : undefined;
+    return live?.length ? live : t.det?.preview || [];
+  };
+  // A tile opens as a window. A session nobody here holds is attached first,
+  // which makes it a tab like any other.
+  const openTile = (t: Tile, geo?: Rect & { snapped?: boolean }) => {
+    const id = t.sess ? t.sess.id : t.det ? attachDetached(t.det) : null;
+    if (id != null) openWin(id, geo);
+  };
+  // A REPLY from a tile types the text and presses Enter, the same as typing it
+  // at the pane. A session not attached here is attached first, and the reply
+  // waits for it to be live.
+  const pendingReply = useRef(new Map<number, string>());
+  const [replies, setReplies] = useState<Record<string, string>>({});
+  const sendReply = (t: Tile) => {
+    const text = (replies[t.key] || '').trim();
+    if (!text) return;
+    setReplies((r) => ({ ...r, [t.key]: '' }));
+    if (t.sess && t.sess.status === 'live') { handles.current.get(t.sess.id)?.sendText(`${text}\r`); return; }
+    const id = t.sess ? t.sess.id : t.det ? attachDetached(t.det) : null;
+    if (id != null) pendingReply.current.set(id, text);
+  };
+  useEffect(() => {
+    for (const [id, text] of pendingReply.current) {
+      const s = sessions.find((x) => x.id === id);
+      if (!s) { pendingReply.current.delete(id); continue; }
+      if (s.status !== 'live') continue;
+      pendingReply.current.delete(id);
+      // A beat for claude's input box to draw before the keystrokes land.
+      setTimeout(() => handles.current.get(id)?.sendText(`${text}\r`), 600);
+    }
+  }, [sessions]);
+  const hideTile = (key: string, id?: number) => {
+    setHidden([...new Set([...hidden, key])]);
+    if (id != null) closeWin(id);
+    setTilePeek(null);
+  };
+  const sortByStatus = () => setTileOrder(STATUS_ORDER.flatMap((k) => shownTiles.filter((t) => t.st === k)).map((t) => t.key));
+  const [fillAsk, setFillAsk] = useState(0);
+  const fillEmpty = (n: number) => {
+    for (let i = 0; i < n; i++) openSession(undefined, mode);
+    setFillAsk(0);
+  };
+  // A tab clicked in Swarm lights its tile rather than leaving the view.
+  const spotlight = (key: string, id: number) => {
+    setActive(id);
+    const at = shownTiles.findIndex((t) => t.key === key);
+    if (at >= cap) setTileOrder([...shownTiles.slice(0, cap - 1).map((t) => t.key), key, ...shownTiles.slice(cap - 1).map((t) => t.key).filter((k) => k !== key)]);
+    setFlash(key);
+    clearTimeout(flashTimer.current);
+    flashTimer.current = setTimeout(() => setFlash(null), 1600);
+  };
+
+  // Swarm takes a TAB dragged onto it as a window, snapped where it lands.
+  const isTabDrag = (e: ReactDragEvent) => dragTab != null && e.dataTransfer.types.includes('text/x-stack-tab');
+  const onSwarmDragOver = (e: ReactDragEvent) => {
+    if (!isTabDrag(e)) return;
+    e.preventDefault();
+    const a = area(), z = zoneAt(e.clientX, e.clientY, a);
+    const pv = z ? zoneRect(z, a) : { x: e.clientX - 200, y: Math.max(a.y, e.clientY - 20), w: 400, h: 260 };
+    if (!snapPreview || Math.abs(snapPreview.x - pv.x) > 4 || Math.abs(snapPreview.y - pv.y) > 4 || snapPreview.w !== pv.w || dropWin != null) {
+      setSnapPreview(pv); setDropWin(null);
+    }
+  };
+  const onSwarmDrop = (e: ReactDragEvent) => {
+    if (!isTabDrag(e) || dragTab == null) return;
+    e.preventDefault();
+    const a = area(), z = zoneAt(e.clientX, e.clientY, a);
+    openWin(dragTab, z ? { ...zoneRect(z, a), snapped: true } : { x: e.clientX - 200, y: e.clientY - 20, w: 400, h: 260 });
+    const s = sessions.find((x) => x.id === dragTab);
+    if (s?.tmux) setHidden(hidden.filter((k) => k !== s.tmux));
+    setDragTab(null); setSnapPreview(null); setDropWin(null);
+  };
+  // …and a tab dropped on a window puts that session in the window instead.
+  const swapWin = (winId: number, id: number) => {
+    setWins((ws) => (ws.some((w) => w.id === id) ? ws : ws.map((w) => (w.id === winId ? { ...w, id, z: ++zTop.current } : w))));
+    setActive(id);
+    setDragTab(null); setDropWin(null); setSnapPreview(null);
+  };
+
+  // ---- the bar ----------------------------------------------------------------
+  const [menu, setMenu] = useState<{ id: number; x: number; y: number } | null>(null);
+  const [switcher, setSwitcher] = useState(false);
+  const [q, setQ] = useState('');
+  const [newMenu, setNewMenu] = useState(false);
+  const [gridMenu, setGridMenu] = useState(false);
+  const [usageOpen, setUsageOpen] = useState<{ key: 'claude' | 'codex'; x: number } | null>(null);
+  const [endTarget, setEndTarget] = useState<{ sess?: Sess; det?: DetachedSession } | null>(null);
+  const tabRowRef = useRef<HTMLDivElement | null>(null);
+
+  // Escape closes what is OPEN ON TOP of the terminals, and only that. It is
+  // never taken while nothing is open: Esc is a key claude itself uses.
+  const anyPopover = !!(menu || switcher || newMenu || gridMenu || usageOpen || openIn != null);
+  useEffect(() => {
+    if (!anyPopover) return;
+    const k = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      setMenu(null); setSwitcher(false); setNewMenu(false); setGridMenu(false); setUsageOpen(null); setOpenIn(null);
+    };
+    window.addEventListener('keydown', k);
+    return () => window.removeEventListener('keydown', k);
+  }, [anyPopover]);
+  // The active tab scrolls itself into view.
+  useEffect(() => {
+    const row = tabRowRef.current;
+    const el = row?.querySelector(`[data-tab="${active}"]`) as HTMLElement | null;
+    if (!row || !el) return;
+    const r = el.getBoundingClientRect(), rr = row.getBoundingClientRect();
+    if (r.left < rr.left) row.scrollLeft -= rr.left - r.left + 8;
+    else if (r.right > rr.right) row.scrollLeft += r.right - rr.right + 8;
+  }, [active, sessions.length]);
+
+  const selectTab = (s: Sess) => {
+    if (view === 'swarm') spotlight(s.tmux || `tab:${s.id}`, s.id);
+    else setActive(s.id);
+  };
+  const togglePinSess = (s: Sess) => { if (s.tmux) void togglePin(s.tmux, !isPinned(s)); };
+  const closeUnpinned = () => { for (const s of sessions) if (!isPinned(s)) closeSession(s.id); setMenu(null); };
+  const askEnd = (sess?: Sess, det?: DetachedSession) => { setEndTarget({ sess, det }); setMenu(null); setTilePeek(null); };
+  const doEnd = () => {
+    const t = endTarget;
+    setEndTarget(null);
+    if (t?.sess) { closeWin(t.sess.id); void endSession(t.sess); } else if (t?.det) void killIdle([t.det]);
+  };
+
+  // THE LIMITS, one meter per account. Only what the daemon measured: a window
+  // it did not report is ABSENT, because an unmeasured limit drawn at 0% reads
+  // as "plenty left", the most expensive way to be wrong here.
+  type LimWin = { pct: number; resetAt: number | null };
+  const meters: { key: 'claude' | 'codex'; name: string; session: LimWin | null; week: LimWin | null; extra: { key: string; name: string; w: LimWin }[]; tokens: string }[] = [
+    {
+      key: 'claude', name: 'Claude',
+      session: usage?.plan?.session ?? null, week: usage?.plan?.week ?? null,
+      extra: usage?.plan?.weekModel ? [{ key: 'weekModel', name: `Week · ${usage.plan.weekModel.model || 'strong model'}`, w: usage.plan.weekModel }] : [],
+      tokens: usedTokens > 0 ? fmtTok(usedTokens) : '',
+    },
+    {
+      key: 'codex', name: 'Codex',
+      session: usage?.codex?.limits?.find((l) => l.key.endsWith(':primary')) ?? null,
+      week: usage?.codex?.limits?.find((l) => l.key.endsWith(':secondary')) ?? null,
+      extra: (usage?.codex?.limits || []).filter((l) => !/:(primary|secondary)$/.test(l.key)).map((l) => ({ key: l.key, name: l.name, w: l })),
+      tokens: '',
+    },
+  ];
+  const tone = (pct: number) => (pct >= 90 ? 'hot' : pct >= 70 ? 'warm' : 'ok');
+  const fmtIn = (ms: number | null) => {
+    if (!ms) return '';
+    const m = Math.max(0, Math.round((ms - now) / 60000));
+    return m >= 1440 ? `in ${Math.floor(m / 1440)}d ${Math.floor((m % 1440) / 60)}h` : m >= 60 ? `in ${Math.floor(m / 60)}h ${m % 60}m` : `in ${m}m`;
+  };
+  const meterOf = (k: 'claude' | 'codex') => meters.find((m) => m.key === k)!;
+
+  // Locations for Start's defaults: tracked projects, from the one list read.
+  const [projects, setProjects] = useState<string[]>([]);
+  useEffect(() => {
+    if (!visible || projects.length) return;
+    getProjects().then((ps) => setProjects(ps.map((p) => p.id))).catch(() => { /* the input still takes any path */ });
+  }, [visible]); // eslint-disable-line react-hooks/exhaustive-deps
+  const codexModels = [{ id: '', label: 'Default' }, ...(usage?.codex?.models || [])];
+  const modelName = (tool: Sess['cmd']) => (tool === 'claude'
+    ? CLAUDE_MODELS.find((m) => m.id === defs.claudeModel)?.name || defs.claudeModel
+    : tool === 'codex' ? codexModels.find((m) => m.id === defs.codexModel)?.label || defs.codexModel : 'login shell');
+  const startLabel = `${TOOL[mode].name} in ~/${cwd.trim()}`;
+
+  const swGroups = (() => {
+    const t = q.trim().toLowerCase();
+    const match = (name: string, project: string, key: string) => !t || `${name} ${project} ${key}`.toLowerCase().includes(t);
+    return [
+      ...tabGroups.map((g) => ({
+        title: `Open · ${g.project || '~ home'}`,
+        rows: g.rows.filter((s) => match(nameOf(s), g.project, s.tmux || '')).map((s) => ({
+          key: `s${s.id}`, name: nameOf(s), project: g.project, st: statusOf(s), pinned: isPinned(s), on: s.id === active,
+          pick: () => { setActive(s.id); if (view === 'swarm') setView('focus'); setSwitcher(false); setQ(''); },
+        })),
+      })),
+      {
+        title: 'Not open',
+        rows: detachedShown.filter((d) => match(nameOfDet(d), projectOfDet(d), d.name)).map((d) => ({
+          key: d.name, name: nameOfDet(d), project: projectOfDet(d), st: statusOfDet(d), pinned: !!d.keep, on: false,
+          pick: () => { attachDetached(d); if (view === 'swarm') setView('focus'); setSwitcher(false); setQ(''); },
+        })),
+      },
+    ].filter((g) => g.rows.length);
+  })();
+
+  // Plain functions, NOT components: a component defined inside this render is
+  // a new type every render, which remounts it — and the rename input with it,
+  // dropping the caret on every keystroke.
+  const pinIcon = (size = 11) => (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+      <path d="M10.5 1 15 5.5l-1.6.8-2.9 2.9.4 3.6-1.4 1.4-3-3L2 15.7 1 14.7l4.5-4.5-3-3 1.4-1.4 3.6.4 2.9-2.9z" />
+    </svg>
+  );
+  const projChip = (p: string, size = 16) => (
+    <span className={`tv-proj ${projTint(p)}`} style={{ width: size, height: size }} aria-hidden="true">{projLetter(p)}</span>
+  );
+  // A session's name, renamed by a double-click on whichever surface drew it.
+  const nameEdit = (s: Sess, where: 'tab' | 'pane', className: string) => (
+    renaming?.id === s.id && renaming.where === where ? (
+      <input className="tv-rename" autoFocus value={draft} aria-label="Session name"
+        onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}
+        onChange={(e) => setDraft(e.target.value)} onBlur={() => commitRename(s)} onKeyDown={renameKeys(s)} />
+    ) : (
+      <span className={className} title={`${labelOf(s) || 'Not named yet'} — double-click to rename`}
+        onDoubleClick={(e) => { e.stopPropagation(); startRename(s, where); }}>{nameOf(s)}</span>
+    )
+  );
+
+  const handlesFor = (id: number) => ([
+    ['n', 'tv-h-n'], ['s', 'tv-h-s'], ['e', 'tv-h-e'], ['w', 'tv-h-w'],
+    ['ne', 'tv-h-ne'], ['nw', 'tv-h-nw'], ['se', 'tv-h-se'], ['sw', 'tv-h-sw'],
+  ] as const).map(([d, c]) => <div key={d} className={`tv-h ${c}`} onMouseDown={(e) => startWinResize(e, id, d)} />);
+  const topZ = Math.max(0, ...wins.map((w) => w.z));
+  // Stacking by RANK, not the raw counter: z climbs on every focus, and a
+  // window must never rise over the popovers (56) or a confirm dialog (50).
+  const winRank = new Map([...wins].sort((p, q) => p.z - q.z).map((w, i) => [w.id, i]));
+  const skipPerms = getTermSessionPrefs().skipPermissions;
+
   return (
     <>
-    <div className={`term-screen${visible ? (full ? ' term-fullscreen' : '') : ' term-hidden'}`}>
-      {/* #316 — the review quick link is the rail's `review ↗`, not a second
-          button up here: one entrance per screen. */}
-      {/* THE CRUMB NAMES THE PROJECT WHEN THERE IS ONE. A terminal is opened
-          from a project (⌨ passes its slug as the cwd) far more often than
-          from nowhere, and `Projects / Terminal` said nothing about WHICH
-          checkout the session in front of you is running in. The step is drawn
-          only when the cwd resolves to a tracked project — `board` is null for
-          a plain directory — because a slug Stack has never heard of is not a
-          project and must not be drawn as one. */}
+    <div className={`term-screen tv${visible ? (full ? ' term-fullscreen' : '') : ' term-hidden'}`}>
+      {/* THE CRUMB NAMES THE PROJECT WHEN THERE IS ONE — only when the cwd
+          resolves to a tracked project; a slug Stack has never heard of is not
+          a project and must not be drawn as one. */}
       <TopBar crumb={[
         { label: 'Projects', href: hrefTo.dashboard },
         ...(board ? [{ label: crumbName(board.project.name), href: hrefTo.detail(board.project.id) }] : []),
-        // The cwd only: a crumb href that re-attached would MIRROR the session the
-        // new tab lands beside, and a duplicate of this screen wants the same
-        // directory, not the same pane.
         { label: 'Terminal', href: hrefTo.terminal(cwd) },
       ]}
         actions={<>
@@ -1473,169 +1502,190 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
           <a className="btn-repo" href={hrefTo.control} title="Mission Control">Mission Control</a>
         </>} />
 
-      {/* #489 — THE COCKPIT IS FULL-BLEED, and the page's own frame is gone
-          with the width cap that came with it. Every other screen in Stack is
-          a document in a 1080px column; this one is an instrument panel, and
-          the terminal is the instrument. There is no `term-wide` any more
-          either — it widened the page when panes > 1, which was the same
-          answer to the same question asked from the other side. */}
-      <div className="page term-page">
-        <div className="term-layout">
-        <div className="term-col">
-        <div className="term-bar">
-          {/* #490 — THE BAR READS RIGHT-TO-LEFT. Everything you PRESS is on the
-              right, under the hand that is already there for the layout
-              switcher; the left holds only what you READ. The branch count is
-              the one passive thing on this bar, so it is the only thing here. */}
-          {/* Real claim state (#277 — a claim is a BRANCH, and is called one),
-              not a count of browser tabs: open roadmap items a branch holds. */}
-          {claimedItems.length > 0 && (
-            <span className="term-lanes"
-              title={claimedItems.map((it) => `⚑ ${it.claimedBy} — #${it.id} ${it.title}`).join('\n')}>
-              {claimedItems.length} branch{claimedItems.length === 1 ? '' : 'es'} claimed
+      <div className="page term-page tv-page">
+        {/* ---- THE BAR: tabs · switcher · limits · start · views ---- */}
+        <div className="tv-bar">
+          <div className="tv-tabs" ref={tabRowRef}
+            onWheel={(e) => { const r = tabRowRef.current; if (r && Math.abs(e.deltaY) > Math.abs(e.deltaX)) r.scrollLeft += e.deltaY; }}>
+            {tabGroups.map((g) => (
+              <div className="tv-tabgroup" key={g.project || '~'}>
+                {g.rows.map((s) => {
+                  const st = statusOf(s);
+                  const on = s.id === active && (view !== 'swarm' || flash === (s.tmux || `tab:${s.id}`));
+                  return (
+                    <div key={s.id} data-tab={s.id} className={`tv-tab${on ? ' on' : ''} p-${projTint(g.project)}`}
+                      draggable onDragStart={(e) => { e.dataTransfer.effectAllowed = 'copyMove'; e.dataTransfer.setData('text/x-stack-tab', String(s.id)); setDragTab(s.id); }}
+                      onDragEnd={() => { setDragTab(null); setSnapPreview(null); }}
+                      onClick={() => selectTab(s)}
+                      onContextMenu={(e) => { e.preventDefault(); setMenu({ id: s.id, x: e.clientX, y: e.clientY }); }}
+                      title={`${nameOf(s)} · ${TOOL[s.cmd].name} · ${s.cwd || '~'} (right-click for options)`}>
+                      <span className={`tv-glyph ${s.cmd}`} aria-hidden="true">{TOOL[s.cmd].glyph}</span>
+                      <span className="tv-tab-body">
+                        {nameEdit(s, 'tab', 'tv-tab-name')}
+                        <span className="tv-tab-sub">
+                          <span className={`tv-dot ${st}`} />
+                          <span className={`tv-tool ${s.cmd}`}>{TOOL[s.cmd].name}</span>
+                          <span>·</span>
+                          <span className={`tv-pname ${projTint(g.project)}`}>{g.project || '~'}</span>
+                          <span>·</span>
+                          <span className="tv-ell">{s.status === 'live' ? STATUS_LABEL[st] : s.status}</span>
+                          {isPinned(s) && <span className="tv-pinmark">{pinIcon(10)}</span>}
+                        </span>
+                      </span>
+                      <button className="tv-x" aria-label="Close tab"
+                        title={s.tmux ? 'Close the tab — the session keeps running, in Swarm' : 'Close the tab — a shell ends with it'}
+                        onClick={(e) => { e.stopPropagation(); closeSession(s.id); }}>×</button>
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+          <button className={`tv-btn tv-switch${switcher ? ' on' : ''}`} title="All sessions"
+            onClick={() => { setSwitcher((v) => !v); setQ(''); }}>
+            <span className="mono">{sessions.length}</span><span className="caret">▼</span>
+          </button>
+          <div className="tv-meters">
+            {meters.map((m) => {
+              const s = m.session;
+              return (
+                <button key={m.key} className={`tv-meter${usageOpen?.key === m.key ? ' on' : ''}`}
+                  title={s ? `${m.name}: ${Math.round(s.pct)}% of the session window used${s.resetAt ? `, resets ${fmtReset(s.resetAt)}` : ''}${m.week ? `. Weekly ${Math.round(m.week.pct)}%.` : '.'} Click for the breakdown.`
+                    : `Stack cannot see ${m.name}'s limits right now. Click for what it can see.`}
+                  onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); const k = m.key; setUsageOpen((u) => (u?.key === k ? null : { key: k, x: Math.max(8, Math.min(r.left, window.innerWidth - 348)) })); }}>
+                  <span className="tv-meter-row">
+                    <span className="nm">{m.name}</span>
+                    <span className="tv-meter-bar"><span className={`v ${s ? tone(s.pct) : ''}`} style={{ width: `${s ? Math.min(100, s.pct) : 0}%` }} /></span>
+                    <span className={`pct ${s ? tone(s.pct) : ''}`}>{s ? `${Math.round(s.pct)}%` : '—'}</span>
+                  </span>
+                  <span className="tv-meter-sub">
+                    {s ? `↻ ${s.resetAt ? fmtReset(s.resetAt) : 'no reset reported'}${m.tokens ? ` · ${m.tokens} tokens` : ''}` : 'not measured'}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          <div className="tv-start">
+            <div className="tv-path">
+              <span className="pre">~/</span>
+              <input value={cwd} list="tv-projects" spellCheck={false} aria-label="Directory for new sessions"
+                title="A project slug (e.g. stack) opens ~/slug. A sub-path (stack/src) opens ~/stack/src. Blank is home."
+                onChange={(e) => setCwd(e.target.value.replace(/^~\//, ''))}
+                onKeyDown={(e) => { if (e.key === 'Enter') openSession(); }} />
+              <datalist id="tv-projects">{projects.map((p) => <option key={p} value={p} />)}</datalist>
+            </div>
+            <select className="tv-select" aria-label="Session type" value={mode}
+              onChange={(e) => setMode(e.target.value as Sess['cmd'])}>
+              <option value="claude">Claude</option><option value="codex">Codex</option><option value="shell">Shell</option>
+            </select>
+            <span className="tv-split-btn">
+              <button className="tv-go" onClick={() => openSession()} title={`Open ${startLabel}`}>
+                <span className="plus">+</span>Start
+              </button>
+              <button className="tv-go caret" aria-label="Session defaults" title="Model and where work goes"
+                onClick={() => setNewMenu((v) => !v)}>▼</button>
             </span>
-          )}
-          <div className="term-bar-gap" />
-          {/* #138 — bare slug (no /) resolves to $HOME/<slug> on the daemon;
-              a full path like "stack/src" also works within that root.
-              The "~/" label makes the relative-to-home semantics visible. */}
-          <span className="term-lbl">~/</span>
-          <input className="field-input term-cwd" value={cwd} placeholder="project slug or sub-path (blank = home)"
-            title="A project slug (e.g. stack) opens ~/slug. A sub-path (e.g. stack/src) opens ~/stack/src. Leave blank for home."
-            onChange={(e) => setCwd(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') openSession(); }} />
-          <select className="field-input term-mode-btn" aria-label="Session type" value={mode}
-            onChange={(e) => {
-              const next = e.target.value as Sess['cmd'];
-              setMode(next);
-              setTermSessionPrefs({ ...getTermSessionPrefs(), autoStart: next });
-            }}>
-            <option value="claude">Claude</option>
-            <option value="codex">Codex</option>
-            <option value="shell">Shell</option>
-          </select>
-          {/* #487 — the design's spawn button SAYS WHAT IT WILL DO: the tool
-              and the directory, not "+ New session". Both are already chosen
-              in the two controls beside it, so a button that repeats them back
-              is the last chance to notice you are about to open claude in the
-              wrong project — which is the mistake this label prevents and a
-              generic one cannot. */}
-          <button className="btn-submit sm term-spawn" onClick={() => openSession()}
-            title={`Open a ${mode === 'claude' ? 'Claude' : mode === 'codex' ? 'Codex' : 'shell'} session in ~/${cwd.trim() || ''}`}>
-            + {mode === 'claude' ? 'Claude' : mode === 'codex' ? 'Codex' : 'Shell'} in ~/{cwd.trim()}
-          </button>
-          {/* #489 — the roadmap brief's paste button, moved out of the rail's
-              Runbook segment when that segment went. It is drawn ONLY when a
-              brief actually arrived (the board's ⌨ To terminal, or the
-              dashboard's Jump back in), which is what keeps a one-shot action
-              out of the bar the rest of the time. Nothing runs until the human
-              presses Enter — the same rule it followed on the rail. */}
+            {newMenu && (
+              <>
+                <div className="tv-scrim" onClick={() => setNewMenu(false)} />
+                <div className="tv-pop tv-newmenu" role="dialog" aria-label="New session">
+                  {(['claude', 'codex', 'shell'] as const).map((k) => {
+                    const lim = k === 'shell' ? null : meterOf(k).session;
+                    return (
+                      <button key={k} className="tv-kind" onClick={() => { setMode(k); setNewMenu(false); openSession(undefined, k); }}>
+                        <span className={`tv-glyph ${k}`}>{TOOL[k].glyph}</span>
+                        <span className="b">
+                          <span className="n">{TOOL[k].name} session</span>
+                          <span className="s">{modelName(k)} · ~/{cwd.trim()}{lim ? ` · ${Math.round(lim.pct)}% used` : ''}</span>
+                        </span>
+                      </button>
+                    );
+                  })}
+                  <div className="tv-rule" />
+                  <div className="tv-defs">
+                    <span className="eyebrow">Defaults for new sessions</span>
+                    {projects.length > 0 && (
+                      <div className="grp">
+                        <span className="cap">Location</span>
+                        <div className="opts">
+                          {projects.slice(0, 10).map((p) => (
+                            <button key={p} className={`tv-opt mono${firstSeg(cwd) === p ? ' on' : ''}`} onClick={() => setCwd(p)}>
+                              {projChip(p)}~/{p}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    <div className="grp">
+                      <span className="cap">Work goes to</span>
+                      <div className="opts col">
+                        {([
+                          { v: 'main', name: 'Commit to main', note: 'Runs in the checkout itself, as every session always has' },
+                          { v: 'branch', name: 'New branch', note: 'Its own worktree on term/<id>, cut from origin/main; review it before merging' },
+                        ] as const).map((o) => (
+                          <button key={o.v} className={`tv-dest${defs.dest === o.v ? ' on' : ''}`} onClick={() => saveDefs({ dest: o.v as TermDest })} title={o.note}>
+                            <span className="n">{o.name}</span><span className="s">{o.note}</span>
+                          </button>
+                        ))}
+                        <button className="tv-dest" disabled title="Not wired yet">
+                          <span className="n">Mirror host</span><span className="s">Work on a copy of the host, promote to main once it checks out. Not wired yet.</span>
+                        </button>
+                      </div>
+                    </div>
+                    <div className="grp">
+                      <span className="cap">Claude</span>
+                      <div className="opts">
+                        {CLAUDE_MODELS.map((m) => (
+                          <button key={m.id || 'default'} className={`tv-opt${defs.claudeModel === m.id ? ' on' : ''}`} title={`${m.note}${m.id ? ` · --model ${m.id}` : ''}`}
+                            onClick={() => saveDefs({ claudeModel: m.id })}>{m.name}</button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="grp">
+                      <span className="cap">Codex</span>
+                      <div className="opts">
+                        {codexModels.map((m) => (
+                          <button key={m.id || 'default'} className={`tv-opt${defs.codexModel === m.id ? ' on' : ''}`} title={m.id || 'the CLI default'}
+                            onClick={() => saveDefs({ codexModel: m.id })}>{m.label}</button>
+                        ))}
+                        {!usage?.codex?.models?.length && <span className="tv-dim">catalogue unavailable</span>}
+                      </div>
+                    </div>
+                    <span className="tv-dim">A session already running keeps its model; use /model inside it.</span>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
           {brief && (
-            <button className="btn-repo sm" onClick={pasteBrief}
-              title="Types the roadmap brief into the active session — review it, then press Enter yourself">
-              ▶ Paste brief
-            </button>
+            <button className="tv-btn" onClick={pasteBrief}
+              title="Types the roadmap brief into the active session — review it, then press Enter yourself">▶ Paste brief</button>
           )}
-          {/* #489 — THE SESSION TABS ARE GONE FROM THIS BAR. They were the
-              third place one session was drawn: the rail lists it, a pane
-              holds it, and this strip named it again — and being the widest
-              of the three, it is what pushed the rest of the bar onto a
-              second row. Everything it did is on the rail's session row:
-              press to focus, × to close, ⏻ to end. Nothing about a session
-              MOVED to make room; a duplicate went. */}
-          {/* Called END, not close, on purpose — the pane and rail controls
-              already name the two endings apart (× closes a pane and the host
-              session keeps running, ⏻ is the one that stops it), so a control
-              that kills must not be spelled "close". */}
-          {(sessions.length > 0 || endingAll) && (
-            <button className="btn-cancel sm" disabled={endingAll} onClick={() => setEndAllAsk(true)}
-              title={`End every session — closes all ${sessions.length} tab${sessions.length === 1 ? '' : 's'} and kills the ones still running on the host`}>
-              {endingAll ? `⏻ Ending ${endingAllCount}…` : `⏻ End all ${sessions.length}`}
-            </button>
-          )}
-          {/* NOTHING ON THIS BAR RE-NAMES A SESSION: ✧ Re-label went with
-              the re-asking it belonged to (#490). Renaming is a double-click
-              on the name itself, rail or pane — see `renaming`. */}
-          {/* #305 — the grid takes the whole window. Sits beside the pane
-              count because they are the same question asked twice: how much
-              screen do these terminals get. The head bar itself survives, so
-              the way out is where the way in was. */}
-          <button className={`btn-repo sm term-full-btn${full ? ' on' : ''}`} onClick={toggleFull}
-            aria-pressed={full}
-            title={full
-              ? 'Leave full screen (esc also works)'
-              : 'Full screen — the terminals take the whole window and the page chrome goes away'}>
-            {full ? '⤡' : '⤢'}
-          </button>
-          {activeSess && (activeSess.status === 'closed' || activeSess.status === 'error') && (
-            <button className="btn-cancel sm" onClick={() => handles.current.get(active)?.reconnect()}>
-              ↻ Reconnect
-            </button>
-          )}
-          {/* #518 — every pane at once, for the morning after: the same
-              re-attach each pane's own ↻ does. */}
-          {sessions.length > 1 && (
-            <button className="btn-repo sm"
-              title="Reload every pane — re-attach each agent session on a fresh screen (none is killed); shells are only repainted"
-              onClick={() => { for (const h of handles.current.values()) h.reload(); }}>
-              ↻ All
-            </button>
-          )}
-          {/* How many terminals are on screen at once — this replaced the
-              wide-mode toggle. Panes are filled from the active tab onwards,
-              so picking a tab puts it top-left and its neighbours beside it. */}
-          {/* THE LAYOUT SWITCHER — seven shapes (#487, #491). The screen
-              already picks a symmetric one per session count as sessions come
-              and go, so this is HERE for the other question: the auto-fit
-              answers "how many are open", and pressing a shape says "this is
-              how I want to look at them" — including the two asymmetric ones
-              the ladder will never choose for you. It holds until the set of
-              sessions changes. Picking one still FILLS it — empty panes take
-              the sessions already running on the host before any new one is
-              spawned, so a bigger shape does not strand claude sessions
-              nobody is watching. */}
-          <span className="seg-control sm term-panes" role="tablist" aria-label="Terminal layout">
-            {LAYOUT_META.map((l) => (
-              <button key={l.key} role="tab" aria-selected={layout === l.key}
-                className={`seg-opt ${layout === l.key ? 'on' : ''}`}
-                title={`${l.name} — ${l.hint}. Empty panes fill from the sessions still running on the host, then with new ones; the shape follows the session count on its own until you press one.`}
-                onClick={() => void chooseLayout(l.key)}>
-                {l.icon}
+          <div className="tv-views" role="tablist" aria-label="Terminal view">
+            {([['focus', 'Focus'], ['split', 'Main + 3'], ['swarm', 'Swarm']] as const).map(([k, label]) => (
+              <button key={k} role="tab" aria-selected={view === k} className={`tv-view${view === k ? ' on' : ''}`}
+                title={label} aria-label={label} onClick={() => setView(k)}>
+                {k === 'focus' && <svg width="16" height="14" viewBox="0 0 16 14" fill="none" stroke="currentColor" strokeWidth="1.4"><rect x="1" y="1" width="14" height="12" rx="2" /></svg>}
+                {k === 'split' && <svg width="16" height="14" viewBox="0 0 16 14" fill="none" stroke="currentColor" strokeWidth="1.4"><rect x="1" y="1" width="14" height="7" rx="1.5" /><rect x="1" y="10" width="3.6" height="3" rx="0.8" /><rect x="6.2" y="10" width="3.6" height="3" rx="0.8" /><rect x="11.4" y="10" width="3.6" height="3" rx="0.8" /></svg>}
+                {k === 'swarm' && <svg width="16" height="14" viewBox="0 0 16 14" fill="none" stroke="currentColor" strokeWidth="1.4"><rect x="1" y="1" width="3.6" height="5" rx="0.8" /><rect x="6.2" y="1" width="3.6" height="5" rx="0.8" /><rect x="11.4" y="1" width="3.6" height="5" rx="0.8" /><rect x="1" y="8" width="3.6" height="5" rx="0.8" /><rect x="6.2" y="8" width="3.6" height="5" rx="0.8" /><rect x="11.4" y="8" width="3.6" height="5" rx="0.8" /></svg>}
+                {k === 'swarm' && askingCount > 0 && <span className="tv-badge">{askingCount}</span>}
               </button>
             ))}
-          </span>
+          </div>
+          <button className={`tv-btn tv-icon${full ? ' on' : ''}`} onClick={toggleFull} aria-pressed={full}
+            title={full ? 'Leave full screen (esc also works)' : 'Full screen — the terminals take the whole window'}>
+            {full ? '⤡' : '⤢'}
+          </button>
         </div>
 
-        {/* #487 — THE ATTENTION STRIP, the design's second toolbar row. It is
-            drawn only when it has something to say: a permanent "0 waiting"
-            trains the eye to skip the row that will one day say 3.
-            The "N of M sessions shown" sentence that used to sit beside the
-            pill is GONE — it was true on every screen the app has ever drawn,
-            so it took a row of the canvas permanently to restate the two
-            things already in front of you (the rail lists the sessions, the
-            grid shows which are up), and its tail was a tip, not a state. A
-            row that is always there is a row nobody reads, which is exactly
-            what the pill beside it cannot afford. */}
-        {waiting.length > 0 && (
-          <div className="term-attn">
-            <button className="ta-pill" title="Jump to the first session waiting on an answer"
-              onClick={() => { const w = waiting[0]; if (w) showInLead(w.id); }}>
-              <span className="d" />{attentionLabel}
-            </button>
-          </div>
+        {/* FAIL SILENT, AND SAY SO: with no daemon on the line every list here
+            is empty because Stack cannot see, not because nothing runs. */}
+        {hostConnected === false && (
+          <div className="tv-blind">Stack cannot see the host: the terminal daemon is not connected. Sessions and Swarm show nothing until it is back.</div>
         )}
 
-        {/* WHAT IS LEFT ABOVE THE CANVAS IS THE DAY'S EVENTS, not its readings.
-            THE TOKEN COUNT MOVED TO THE RAIL (owner's call), where it sits with
-            the three plan windows — it is the fourth of the same question and
-            the one figure they do not carry, and a reading that never changes
-            state does not earn a permanent row across the top of the screen.
-            (#487 had already moved the plan windows off this strip for the same
-            reason: three copies of one percentage on one screen.)
-            So this strip is drawn only when something has HAPPENED — a limit
-            reset landing, a session paused, a booking offered or taken — and is
-            absent, rather than empty, the rest of the time. Everything in it is
-            an event or the button that answers one. */}
+        {/* THE DAY'S EVENTS — drawn only when something has HAPPENED: a limit
+            reset landing, a session paused, a booking offered or taken. */}
         {(usage?.resetLabel || resumeJob || usage?.sched || schedNote) && (
           <div className="term-usage">
             {usage?.resetLabel && <span className="tu-reset">⏳ limit resets {usage.resetLabel}</span>}
@@ -1648,15 +1698,11 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                   : `${resumeJob.slug} resuming…`}
                 {(resumeJob.status === 'paused' || resumeJob.notBefore) && (
                   <button className="btn-submit sm" onClick={() => void actOnResume(resumeAutopilotJob)}
-                    title="Resume the paused session now — the host picks it up within a minute">
-                    ▶ Resume now
-                  </button>
+                    title="Resume the paused session now — the host picks it up within a minute">▶ Resume now</button>
                 )}
                 {resumeJob.status === 'queued' && resumeJob.notBefore && (
                   <button className="btn-cancel sm" onClick={() => void actOnResume(hangupAutopilotJob)}
-                    title="Hang up — hold the session so it only resumes when you say">
-                    Hang up
-                  </button>
+                    title="Hang up — hold the session so it only resumes when you say">Hang up</button>
                 )}
               </span>
             )}
@@ -1672,827 +1718,396 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
           </div>
         )}
 
-        {/* #490 — "PICK UP WHERE IT STOPPED" IS GONE FROM ABOVE THE CANVAS.
-            It was a horizontal strip of long chips that grew a row every time
-            the host kept a session, pushing the terminals down the page — on a
-            busy host it was taking three rows before a single pane was drawn.
-            The same sessions are in the rail now, which is already the list of
-            what is running and has a column shape that suits one. */}
-
-          {/* #487 — the grid is driven by the LAYOUT, and each pane knows its
-              SLOT: the layout class is what styles.css turns into the
-              asymmetric shapes, and `order` is what puts a pane in its cell. */}
-          <div className={`term-main term-grid lay-${layout} p${paneCount}`}>
-            {sessions.map((s) => {
-              const slot = slotIds.indexOf(s.id);
-              const shown = slot !== -1;
-              // Every session stays MOUNTED whether or not it is on screen —
-              // unmounting one would drop its socket and its scrollback, which
-              // is the whole reason this component never unmounts either. Off
-              // -screen panes are hidden, not destroyed.
-              // `lead` marks the FIRST pane on screen, which Main + stack
-              // gives the tall left column to and Focus the full-width top
-              // row. It has to be a class rather than :first-child, because
-              // off-screen panes stay in the DOM (they keep their sockets) and
-              // would win that selector while invisible.
-              //
-              // A CLICK ON A PANE DOES NOT MOVE THE FOCUS (owner's call). It
-              // used to: mousedown anywhere on a pane made that session the
-              // active one, so a drag to select output, a scroll, or a stray
-              // click on the way to a button quietly moved what ⤢, the pane
-              // ring and the head bar were all pointing at. ⤢ is the control
-              // that says it now, and it is the only one. Typing still goes
-              // where you clicked — xterm's own textarea takes the keyboard on
-              // a click, which is the browser's job and not this state's.
-              return (
-              <div key={s.id}
-                className={`term-pane${shown ? '' : ' off'}${s.id === active ? ' focused' : ''}${shown && slot === 0 ? ' lead' : ''}`}
-                style={shown ? { order: slot } : undefined}
-                data-slot={shown ? slot : undefined}>
-                {/* The title: what this session is working on, in its own
-                    words via the labeller. It sits ON the pane rather than on
-                    the tab because with four terminals up, the tab strip is no
-                    longer where you are looking. */}
-                {/* The title bar. It was the pane's drag handle until #491
-                    took dragging off the screen; nothing replaced it, because
-                    a bar that is only a label cannot swallow a gesture meant
-                    for the terminal under it. */}
-                <div className="term-pane-title"
-                  title={'Copy: drag to select in the terminal — releasing copies it (⌃⇧C, or ⌃C with a selection).\n'
-                    + 'Paste: ⌃V. Shift-drag selects in the browser instead of tmux.\n'
-                    + 'Drop a file on the terminal and its path is typed in — that is how you hand a session an image.'}>
-                  <span className={`dot ${s.status}`} />
-                  {/* The tool mark, from the design: which runtime this pane
-                      is. Two today (claude / shell); it is a lookup rather
-                      than a ternary so a CLI runtime (#481) drops in beside
-                      them without touching the pane. */}
-                  <span className={`term-mark ${s.cmd}`} aria-hidden="true">
-                    {s.cmd === 'claude' ? 'C' : s.cmd === 'codex' ? 'X' : '$'}
-                  </span>
-                  {/* THE NAME IS EDITABLE ON BOTH SURFACES, on a double-click.
-                      The rail is where you rename a session you are looking
-                      FOR; the pane is where you rename the one you are looking
-                      AT. */}
-                  {renaming?.id === s.id && renaming.where === 'pane' ? (
-                    <input className="tcg-edit pane-edit" autoFocus value={draft}
-                      aria-label="Session name"
-                      onClick={(e) => e.stopPropagation()}
-                      onChange={(e) => setDraft(e.target.value)}
-                      onBlur={() => commitRename(s)}
-                      onKeyDown={renameKeys(s)} />
-                  ) : (
-                    <span className="what"
-                      title={`${labelOf(s) || 'Not named yet'} — double-click to rename`}
-                      onDoubleClick={(e) => { e.stopPropagation(); startRename(s, 'pane'); }}>
-                      {labelOf(s) || (s.status === 'live'
-                        ? (labelBusy ? 'naming this session…' : 'not named yet')
-                        : s.note || s.status)}
+        {/* ---- THE STAGE. Every pane is a child of this one element, keyed,
+            in the same position, whatever the view — see the file header. ---- */}
+        <div className={`tv-stage v-${view}`}>
+          {sessions.map((s) => {
+            const winOf = wins.find((w) => w.id === s.id);
+            const miniAt = minis.findIndex((m) => m.id === s.id);
+            const place = view === 'swarm' ? (winOf ? 'win' : 'off')
+              : s.id === cur?.id ? 'main' : miniAt >= 0 ? 'mini' : 'off';
+            const st = statusOf(s);
+            const pinned = isPinned(s);
+            const p = projectOf(s);
+            const style = place === 'mini' ? { gridColumn: miniAt + 1, gridRow: 2 }
+              : place === 'win' && winOf ? {
+                left: Math.round(winOf.x), top: Math.round(winOf.y), width: Math.round(winOf.w), height: Math.round(winOf.h),
+                zIndex: 30 + Math.min(18, winRank.get(s.id) ?? 0), transition: drag === s.id ? 'none' : undefined,
+              } : undefined;
+            return (
+              <div key={s.id} data-win={place === 'win' ? s.id : undefined}
+                className={`tv-pane ${place}${place === 'win' && winOf?.z === topZ ? ' front' : ''}${dropWin === s.id ? ' drop' : ''}`}
+                style={style}
+                onMouseDown={place === 'win' ? () => focusWin(s.id) : undefined}
+                onDragOver={place === 'win' ? (e) => { if (!isTabDrag(e)) return; e.preventDefault(); e.stopPropagation(); if (dropWin !== s.id) { setDropWin(s.id); setSnapPreview(null); } } : undefined}
+                onDrop={place === 'win' ? (e) => { if (!isTabDrag(e) || dragTab == null) return; e.preventDefault(); e.stopPropagation(); swapWin(s.id, dragTab); } : undefined}>
+                {place === 'main' ? (
+                  <div className="tv-head">
+                    {projChip(p, 20)}
+                    {nameEdit(s, 'pane', 'tv-head-name')}
+                    <span className="tv-head-meta">{TOOL[s.cmd].name} · ~/{p || ''} · {s.tmux || 'shell'}</span>
+                    <span className={`tv-pill ${s.status === 'live' ? st : s.status === 'connecting' ? 'idle' : 'error'}`}>
+                      {s.status === 'live' ? STATUS_LABEL[st] : s.status}
                     </span>
-                  )}
-                  <span className="where">
-                    {`${s.cmd} · ${s.cwd || '~'}`}
-                  </span>
-                  {notice?.id === s.id && <span className="pane-notice">{notice.label}</span>}
-                  {/* #292 — pin this session against the idle reaper. On the
-                      PANE because that is where you are when you realise the
-                      thing you are half-way through should outlive the
-                      threshold: a session parked mid-investigation, or one
-                      waiting out a usage-limit reset, is indistinguishable
-                      from an abandoned tab to the reaper's own measure. */}
-                  {s.tmux && (() => {
-                    const pinned = pinnedOf(s.tmux);
-                    return (
-                      <button className={`pane-btn pin${pinned ? ' on' : ''}`} aria-pressed={pinned}
-                        title={pinned
-                          ? `Pinned — the idle reaper will not take ${s.tmux}. Click to unpin.`
-                          : `Pin ${s.tmux} so the idle reaper never takes it, however quiet it goes`}
-                        onClick={(e) => { e.stopPropagation(); void togglePin(s.tmux!, !pinned); }}>
-                        {pinned ? '📌' : '📍'}
-                      </button>
-                    );
-                  })()}
-                  {/* #518 — ↻ RELOAD THIS PANE when it has stopped moving.
-                      Re-attaches the same host session (never kills it) on a
-                      fresh screen and renderer; on a shell, only repaints. */}
-                  <button className="pane-btn"
-                    title={s.tmux
-                      ? `Reload — re-attach ${s.tmux} on a fresh screen. Use it when this pane has frozen; the session itself is untouched.`
-                      : 'Repaint this pane (a shell cannot be re-attached — reloading one would end it)'}
-                    aria-label="Reload this pane"
-                    onClick={(e) => { e.stopPropagation(); handles.current.get(s.id)?.reload(); }}>↻</button>
-                  {/* Two different endings, named as such. Closing a claude
-                      tab DETACHES it — the host session keeps running, which
-                      is the whole point of #171 — so a control called × must
-                      not imply the work stopped. ⏻ is the one that stops it. */}
-                  {s.tmux && (
-                    <button className="pane-btn end" disabled={ending === s.id}
-                      title={`End this session — closes the tab AND kills ${s.tmux} on the host`}
-                      onClick={(e) => { e.stopPropagation(); void endSession(s); }}>
-                      {ending === s.id ? '…' : '⏻'}
-                    </button>
-                  )}
-                  {/* ⤢ — bring this pane to the front of the arrangement.
-                      The design calls it Focus; here it moves the session into
-                      slot 0 rather than changing the layout, because the layout
-                      is a choice somebody made and a focus press is not a
-                      request to undo it. */}
-                  {paneCount > 1 && (
-                    <button className="pane-btn"
-                      title="Focus this session — the Focus shape, with this one in the big pane"
-                      onClick={(e) => { e.stopPropagation(); focusPane(s.id); }}
-                      aria-label="Bring this session to the focus view">⤢</button>
-                  )}
-                  <button className="pane-btn"
-                    title={s.tmux
-                      ? 'Close this pane — the session keeps running on the host, re-attach it any time'
-                      : 'Close this pane — the session ends with it'}
-                    onClick={(e) => { e.stopPropagation(); closeSession(s.id); }}
-                    aria-label="Close pane">×</button>
-                </div>
-                <TermSession sess={s} visible={shown} focused={shown && s.id === active}
-                  /* FOCUS'S SMALL PANES GET A SMALLER FACE. They are a third of
-                     the width and a fraction of the height, so at the shared
-                     14px they hold a dozen wrapped lines and are genuinely
-                     hard to read — the complaint that prompted this. The size
-                     is not decoration: it is what puts a useful number of ROWS
-                     and COLUMNS in a short pane, which is the only thing that
-                     makes one worth glancing at, and 11px was still wrapping
-                     ordinary claude output. The big pane keeps the full size,
-                     since that is the one you are working in. */
-                  fontSize={layout === 'focus' && slot !== 0 ? 10 : undefined}
-                  onStatus={(st, note) => setStatus(s.id, st, note)}
+                    {destLabel(s) && <span className={`tv-destchip ${s.branch || s.dest === 'branch' ? 'branch' : 'main'}`} title="Where this session's work goes">{destLabel(s)}</span>}
+                    {notice?.id === s.id && <span className="pane-notice">{notice.label}</span>}
+                    <span className="tv-head-acts">
+                      {(s.status === 'closed' || s.status === 'error') && (
+                        <button className="tv-btn sm" onClick={() => handles.current.get(s.id)?.reconnect()}>↻ Reconnect</button>
+                      )}
+                      <button className="tv-btn sm" aria-label="Reload this pane"
+                        title={s.tmux ? `Reload — re-attach ${s.tmux} on a fresh screen. The session itself is untouched.` : 'Repaint this pane'}
+                        onClick={() => handles.current.get(s.id)?.reload()}>↻</button>
+                      {s.tmux && (
+                        <button className={`tv-btn sm${pinned ? ' pinned' : ''}`} aria-pressed={pinned} onClick={() => togglePinSess(s)}
+                          title={pinned ? `Pinned — first in its group, and the idle reaper will not take ${s.tmux}` : 'Pin — first in its group, and safe from the idle reaper'}>
+                          {pinIcon()}{pinned ? 'Pinned' : 'Pin'}
+                        </button>
+                      )}
+                      <button className="tv-btn sm" onClick={() => closeSession(s.id)}
+                        title={s.tmux ? 'Close the tab — the session keeps running, in Swarm' : 'Close the tab — a shell ends with it'}>Close tab</button>
+                      <button className="tv-btn sm danger" disabled={ending === s.id} onClick={() => askEnd(s)}>{ending === s.id ? 'Ending…' : 'End'}</button>
+                    </span>
+                  </div>
+                ) : null}
+                {place === 'mini' ? (
+                  <div className="tv-mini-head">
+                    <span className={`tv-dot ${st}`} />
+                    {projChip(p, 18)}
+                    {nameEdit(s, 'pane', 'tv-mini-name')}
+                    {s.tmux && (
+                      <button className={`tv-ico${pinned ? ' pinned' : ''}`} title={pinned ? 'Unpin' : 'Pin'} onClick={() => togglePinSess(s)}>{pinIcon()}</button>
+                    )}
+                    <button className="tv-ico" title="Move to main" onClick={() => setActive(s.id)}>⤢</button>
+                    <button className="tv-ico" title="Close tab" onClick={() => closeSession(s.id)}>×</button>
+                  </div>
+                ) : null}
+                {place === 'win' && winOf ? (
+                  <>
+                    {handlesFor(s.id)}
+                    <div className={`tv-win-head${drag === s.id ? ' dragging' : ''}`} onMouseDown={(e) => startWinDrag(e, s.id)}
+                      onDoubleClick={(e) => { if (!(e.target as HTMLElement).closest('button')) toggleMax(s.id); }}
+                      title="Drag to move · drag to an edge or corner to snap · double-click to maximise">
+                      <span className={`tv-dot ${st}`} />
+                      {projChip(p, 18)}
+                      {nameEdit(s, 'pane', 'tv-win-name')}
+                      <span className="tv-win-meta">{TOOL[s.cmd].name}{destLabel(s) ? ` · ${destLabel(s)}` : ''}</span>
+                      <span className="tv-head-acts">
+                        {s.tmux && (
+                          <button className={`tv-ico${pinned ? ' pinned' : ''}`} title={pinned ? 'Unpin' : 'Pin'} onClick={() => togglePinSess(s)}>{pinIcon()}</button>
+                        )}
+                        <span className="tv-rel">
+                          <button className={`tv-btn sm${openIn === s.id ? ' on' : ''}`} onClick={() => setOpenIn(openIn === s.id ? null : s.id)}>
+                            Open in<span className="caret">▼</span>
+                          </button>
+                          {openIn === s.id && (
+                            <span className="tv-pop tv-openin">
+                              <button onClick={() => { closeWin(s.id); setActive(s.id); setView('focus'); }}>
+                                <span className="n">Open in Focus</span><span className="s">Full screen, one session</span>
+                              </button>
+                              <button onClick={() => { closeWin(s.id); setActive(s.id); setView('split'); }}>
+                                <span className="n">Open in Main + 3</span><span className="s">Large terminal, others beside it</span>
+                              </button>
+                            </span>
+                          )}
+                        </span>
+                        <button className="tv-btn sm danger" onClick={() => askEnd(s)}>End</button>
+                        <button className="tv-ico" aria-label="Close window" title="Close the window — the tab stays open" onClick={() => closeWin(s.id)}>×</button>
+                      </span>
+                    </div>
+                  </>
+                ) : null}
+                <TermSession key="term" sess={s} visible={place !== 'off'}
+                  focused={place === 'main' ? s.id === active : place === 'win' ? winOf?.z === topZ : false}
+                  /* The small panes get a smaller face so a useful number of rows and
+                     columns fit; the big one keeps the full size. */
+                  fontSize={place === 'mini' ? 10 : place === 'win' ? 12 : undefined}
+                  onStatus={(stt, note) => setStatus(s.id, stt, note)}
                   onUsage={setUsage}
                   onTmux={(name) => noteTmux(s.id, s.cwd, name)}
-                  onModel={(mdl) => setSessions((cur) => cur.map((x) => (x.id === s.id ? { ...x, model: mdl, cmd: mdl?.key === 'codex' ? 'codex' : mdl?.key === 'anthropic' || mdl?.key === 'omniroute' ? 'claude' : x.cmd } : x)))}
-                  onSid={(sid) => setSessions((cur) => cur.map((x) => (x.id === s.id ? { ...x, sid } : x)))}
+                  onBranch={(branch, project) => setSessions((c) => c.map((x) => (x.id === s.id ? { ...x, branch, project: project || x.project } : x)))}
+                  onModel={(mdl) => setSessions((c) => c.map((x) => (x.id === s.id ? { ...x, model: mdl, cmd: mdl?.key === 'codex' ? 'codex' : mdl?.key === 'anthropic' || mdl?.key === 'omniroute' ? 'claude' : x.cmd } : x)))}
+                  onSid={(sid) => setSessions((c) => c.map((x) => (x.id === s.id ? { ...x, sid } : x)))}
                   onExit={(name) => noteTmuxEnded(s.cwd, name)}
                   onOutput={(bytes) => noteOutput(s.id, bytes)}
                   onTyped={(text) => noteTyped(s.id, text)}
                   onNotice={(label, ms) => noteNotice(s.id, label, ms)}
                   register={(h) => { if (h) handles.current.set(s.id, h); else handles.current.delete(s.id); }} />
-              </div>
-              );
-            })}
-            {sessions.length === 0 && (
-              <div className="term-holder gitbash term-empty">
-                <span>No session open.</span>
-                <span className="dim">Resume one from the rail, or start one here.</span>
-                <button type="button" className="term-start" onClick={() => openSession()}
-                  title={`Open a ${mode === 'claude' ? 'Claude' : mode === 'codex' ? 'Codex' : 'shell'} session in ~/${cwd.trim() || ''}`}>
-                  + {mode === 'claude' ? 'Claude' : mode === 'codex' ? 'Codex' : 'Shell'} in ~/{cwd.trim()}
-                </button>
-              </div>
-            )}
-            {/* THE SHAPE'S EMPTY PANES, drawn as empty rather than left as a
-                hole in the grid. A shape with more panes than sessions is now
-                an ordinary state — nothing fills it for you — so the screen has
-                to say that is what you are looking at, or a 2×2 holding one
-                terminal reads as three panes that failed to load. */}
-            {sessions.length > 0 && Array.from(
-              { length: Math.max(0, LAYOUT_PANES[layout] - shownIds.length) },
-              (_, i) => (
-                <div key={`empty-${i}`} className="term-pane empty"
-                  style={{ order: shownIds.length + i }}>
-                  {/* THE EMPTY CELL IS THE START BUTTON. Since a layout button
-                      stopped filling its spare panes for you, the way to fill
-                      one was the head bar at the top of the screen — which is
-                      the one place you are not looking when what you are
-                      looking at is the hole. The whole cell takes the click
-                      rather than a small button inside it: there is nothing
-                      else in an empty pane to hit by mistake.
-
-                      It spawns exactly what the head bar's own spawn button
-                      would — same tool, same directory — and SAYS SO, the
-                      #487 rule: a control that opens claude somewhere has to
-                      name the somewhere, or it is the wrong-project mistake
-                      waiting to happen.
-
-                      WHERE IT LANDS: in the FIRST free pane, which is only
-                      this one when this is the first of them. `slotsFor`
-                      keeps one slot per session, so a shape with three spare
-                      cells has no slot 3 to put a session in until slots 1
-                      and 2 are taken — the cells fill in order however you
-                      press them. All of them offer the start because a dead
-                      cell beside a live one would read as broken. */}
-                  <button type="button" className="term-holder gitbash term-empty term-pane-new"
-                    onClick={() => openSession()}
-                    title={`Open a ${mode === 'claude' ? 'Claude' : mode === 'codex' ? 'Codex' : 'shell'} session in ~/${cwd.trim() || ''}`}>
-                    <span className="plus" aria-hidden="true">+</span>
-                    <span className="what">New {mode === 'claude' ? 'Claude' : mode === 'codex' ? 'Codex' : 'shell'} session</span>
-                    <span className="dim">in ~/{cwd.trim()}</span>
-                  </button>
-                </div>
-              ),
-            )}
-          </div>
-        </div>{/* /term-col */}
-
-          {/* ---- #489: THE RAIL IS THE SESSIONS LIST AND NOTHING ELSE, which
-              is what the Mission Control design has always drawn. #487 kept
-              Work and Runbook beside it as a compromise; the owner has called
-              it, and a rail with one job does not need a segment picker, a
-              layout switcher for one of its segments, or a head row to hold
-              either. It is flush to the left edge and the full height of the
-              page now — a fixture of the screen rather than a panel inside it
-              — so collapsing it is what gives the terminals the last 250px,
-              and that choice stays device-local. ---- */}
-          <div className={`term-cockpit${viewPrefs.railOpen ? '' : ' collapsed'}`}>
-            <div className="tc-top">
-              <button
-                className="term-rail-toggle"
-                title={viewPrefs.railOpen ? 'Collapse the sessions rail' : 'Expand the sessions rail'}
-                onClick={() => saveViewPrefs({ railOpen: !viewPrefs.railOpen })}>
-                <span className="term-rail-toggle-icon">{viewPrefs.railOpen ? '‹' : '›'}</span>
-              </button>
-            </div>
-            {/* #487 — the design's rail head: what this rail is, and the two
-                counts that say whether it is worth opening. Only while open;
-                collapsed, the marks below carry the same information in the
-                space there is. */}
-            {viewPrefs.railOpen && (
-              <div className="tc-toolshead">
-                <span className="lbl">Tools</span>
-                <span className="n">
-                  {sessions.filter((x) => !!x.tmux && pinnedOf(x.tmux)).length} pinned
-                  {' · '}
-                  {sessions.filter((x) => x.status === 'live').length} live
-                </span>
-              </div>
-            )}
-            {/* COLLAPSED — one mark per tool, with the asking badge riding it.
-                The design's collapsed rail, and it earns its 52px: the badge is
-                the one thing you must not have to expand a rail to discover. */}
-            {!viewPrefs.railOpen && sessions.length > 0 && (
-              <div className="tc-marks">
-                {TOOL_GROUPS.map((g) => {
-                  const mine = sessions.filter((x) => x.cmd === g.key);
-                  if (!mine.length) return null;
-                  const asks = mine.filter((x) => !!askFor(x)).length;
-                  return (
-                    <button key={g.key} className={`tc-markbtn ${g.key}`}
-                      title={`${mine.length} ${g.name}${asks ? ` · ${asks} waiting on you` : ''} — open the rail`}
-                      onClick={() => saveViewPrefs({ railOpen: true })}>
-                      {g.mark}
-                      {asks > 0 && <span className="b">{asks}</span>}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-            {viewPrefs.railOpen && (
-              <>
-                {/* NO HEAD ROW. It existed to hold the segment picker and
-                    whichever control the Work segment wanted beside it; with
-                    one segment left there is nothing for it to carry, and an
-                    empty bar is 30px of the rail's height spent on nothing. */}
-                {(
-                  /* ---- #487 · SESSIONS — the design's rail, on real data.
-                     What is running, grouped by TOOL, and a click on a row
-                     brings that session into the first pane (#491 took the
-                     drag). The count beside a tool is its sessions;
-                     the pill beside that is how many are BLOCKED on a
-                     permission prompt, which is the one fact on this rail that
-                     changes what you do next.
-                     ---- */
-                  <>
-                  <div className="tc-sessions">
-                    {sessions.length === 0 ? (
-                      <div className="tc-empty pad">
-                        No session open. Start one with + New session.
-                      </div>
-                    ) : TOOL_GROUPS.map((g) => {
-                      const mine = sessions.filter((x) => x.cmd === g.key);
-                      if (!mine.length) return null;
-                      const asking = mine.filter((x) => !!askFor(x)).length;
-                      return (
-                        <div className="tcg" key={g.key}>
-                          <div className="tcg-head">
-                            <span className={`term-mark ${g.key}`} aria-hidden="true">{g.mark}</span>
-                            <span className="nm">{g.name}</span>
-                            {asking > 0 && (
-                              <span className="asking" title={`${asking} waiting on you`}>
-                                <span className="d" />{asking} asking
-                              </span>
-                            )}
-                            <span className="n">{mine.length}</span>
-                          </div>
-                          {byProject(mine).map(({ project, rows }) => (
-                          <div className="tcg-proj" key={project || '~'}>
-                          <div className="tcg-projhead">
-                            <span className="nm">{project || '~ home'}</span>
-                            <span className="n">{rows.length}</span>
-                          </div>
-                          {rows.map((x) => {
-                            const onScreen = slotIds.includes(x.id);
-                            const pinned = !!x.tmux && pinnedOf(x.tmux);
-                            // The one thing on this row that is not a reading
-                            // but a REQUEST: this session has stopped and is
-                            // waiting for an answer.
-                            const ask = askFor(x);
-                            return (
-                              <div key={x.id}
-                                className={`tcg-row${x.id === active ? ' on' : ''}${onScreen ? '' : ' off'}${ask ? ' asking' : ''}${endPick.includes(x.id) ? ' picked' : ''}`}
-                                aria-selected={endPick.includes(x.id)}
-                                title={(ask
-                                  ? (ask.kind === 'permission'
-                                    ? 'Stopped on a question — click to bring it into the first pane and answer it'
-                                    : 'Finished and waiting on you — click to bring it into the first pane')
-                                  : onScreen
-                                    ? 'Click to bring this session into the first pane'
-                                    : 'Not on screen — click to bring it into the first pane')
-                                  + '\n⌃-click to select it for a bulk end'}
-                                onClick={(e) => {
-                                  if (isPickClick(e)) { e.preventDefault(); toggleEndPick(x.id); return; }
-                                  setEndPick([]);
-                                  if (renaming?.id !== x.id) showInLead(x.id);
-                                }}>
-                                <span className={`dot ${x.status}`} />
-                                {/* TWO LINES: the name gets the row's full
-                                    width, and everything else — model, sub-path
-                                    — reads beneath it. On one line the chip and
-                                    the cwd squeezed the name to a few letters. */}
-                                <span className="tcg-body">
-                                <span className="tcg-l1">
-                                {renaming?.id === x.id && renaming.where === 'rail' ? (
-                                  <input className="tcg-edit" autoFocus value={draft}
-                                    aria-label="Session name"
-                                    onClick={(e) => e.stopPropagation()}
-                                    onChange={(e) => setDraft(e.target.value)}
-                                    onBlur={() => commitRename(x)}
-                                    onKeyDown={renameKeys(x)} />
-                                ) : (
-                                  <span className="t"
-                                    title={`${labelOf(x) || 'Not named yet'} — double-click to rename`}
-                                    onDoubleClick={(e) => { e.stopPropagation(); startRename(x, 'rail'); }}>
-                                    {labelOf(x) || (x.status === 'live'
-                                      ? (labelBusy ? 'naming…' : 'not named yet')
-                                      : x.note || x.status)}
-                                  </span>
-                                )}
-                                {/* THE ASK MARK — a session that has STOPPED to
-                                    ask you something. The group head already
-                                    counts them ("2 asking") and the strip above
-                                    the canvas names one, but neither says WHICH
-                                    row: with six sessions under one tool the
-                                    count sends you reading every line. So the
-                                    mark goes where the eye already is — on the
-                                    name — and the row's left edge goes with it,
-                                    because a 7px dot is not findable down a
-                                    column of eight.
-                                    It pulses for the same reason the head's
-                                    badge does: a permission prompt is a session
-                                    that has stopped dead, and a still dot reads
-                                    as decoration. It is NOT a button — the
-                                    whole row already does the one useful thing
-                                    (bring it into the first pane, where the
-                                    question is), and a target inside a target
-                                    is how you mis-click a rail.
-                                    It leans towards NULL with `blockedOf`: a
-                                    false mark puts an orange dot on a session
-                                    nobody asked anything, which is worse than
-                                    catching a real one a tick late. */}
-                                {ask && (
-                                  <span className="tcg-ask" aria-label="Waiting on your answer"
-                                    title={`Waiting on you — ${ask.title || ask.question}${ask.kind === 'permission' ? '' : ask.detail ? `\n${ask.detail}` : ''}`}>
-                                    <span className="d" />
-                                  </span>
-                                )}
-                                {/* THE PIN IS DRAWN ONLY WHEN IT IS ON
-                                    (owner's call). Every row carried an unlit
-                                    📍 as well, so the column said nothing: a
-                                    mark on every row marks nothing, and an
-                                    idle-looking pin beside a live session
-                                    reads as a STATE the session is in rather
-                                    than as a control. Lit, it is the one fact
-                                    worth seeing down this list — which session
-                                    the reaper will not take. PINNING happens
-                                    on the PANE, where 📍 sits beside the
-                                    session you are actually looking at. */}
-                                {x.tmux && pinned && (
-                                  <button className="tcg-btn on" aria-pressed="true"
-                                    title={`Pinned — the idle reaper will not take ${x.tmux}. Click to unpin.`}
-                                    onClick={(e) => { e.stopPropagation(); void togglePin(x.tmux!, false); }}>
-                                    📌
-                                  </button>
-                                )}
-                                </span>
-                                <span className="tcg-l2">
-                                {/* The design's last column is the session's
-                                    token count. There is no PER-SESSION token
-                                    figure on this screen — the daemon reports
-                                    one host-wide number — and printing it on
-                                    every row would have six sessions each
-                                    claiming the same 54k. The directory is
-                                    what is true per row, and it is the thing
-                                    you actually need when two sessions wear
-                                    similar names. */}
-                                <ModelChip model={x.model}
-                                  resolved={x.resolvedModel || (x.tmux ? resolvedByTmux.get(x.tmux) : '')}
-                                  show={x.cmd !== 'shell'} />
-                                {subPathOf(x.cwd) && <span className="cw">{subPathOf(x.cwd)}/</span>}
-                                </span>
-                                </span>
-                              </div>
-                            );
-                          })}
-                          </div>
-                          ))}
-                        </div>
-                      );
-                    })}
-                    {/* #490 — IDLE ON THE HOST, moved off the canvas. These are
-                        sessions the daemon is holding that no pane here shows:
-                        a page reload's orphans, and ones attached on another
-                        device. They were a strip of wide chips above the
-                        terminals; a rail is a column, so each is a row that
-                        leads with the directory and carries its name beneath.
-                        Re-attach is the whole row — the biggest target, and the
-                        thing you almost always want. The pin, the kill tick and
-                        × stay small and to the side, because two of those three
-                        destroy a running session. */}
-                    {detachedShown.length > 0 && (
-                      <div className="tc-idle">
-                        <div className="tci-head">
-                          <span className="lbl">Idle on the host</span>
-                          <span className="n">{detachedShown.length}</span>
-                        </div>
-                        {byProject(detachedShown).map(({ project, rows }) => (
-                        <div className="tcg-proj" key={project || '~'}>
-                        <div className="tcg-projhead">
-                          <span className="nm">{project || '~ home'}</span>
-                          <span className="n">{rows.length}</span>
-                        </div>
-                        {rows.map((d) => {
-                          const nm = labels[d.name] || d.label || '';
-                          const picked = killPick.includes(d.name);
-                          return (
-                            <div key={d.name}
-                              className={`tci-row${d.attached ? ' away' : ''}${picked ? ' picked' : ''}${d.keep ? ' pinned' : ''}${askOf(d) ? ' asking' : ''}`}>
-                              <button className="tci-main"
-                                title={d.attached
-                                  ? `Attached on another device (tmux ${d.name}) — open it here too: both screens mirror the same session`
-                                  : `Re-attach to this running agent session (tmux ${d.name}${d.created ? `, since ${new Date(d.created).toLocaleString()}` : ''})`}
-                                onClick={(e) => {
-                                  // ⌃-click picks rather than re-attaches — on
-                                  // a killable row only, the same rule as its ☐.
-                                  if (isPickClick(e)) { e.preventDefault(); if (!d.attached) toggleKillPick(d.name); return; }
-                                  attachDetached(d);
-                                }}>
-                                {/* Name on line 1, as the live rows have it;
-                                    the project head above says where. */}
-                                <span className="t">{nm || 'not named yet'}</span>
-                                <span className="w">
-                                  ↺ {subPathOf(d.cwd) ? `${subPathOf(d.cwd)}/` : ''}
-                                  <span className="st">{d.attached ? 'another device' : 'detached'}</span>
-                                  {/* An idle row is the one place an unanswered
-                                      question can sit unseen for hours: no pane
-                                      draws it, so the attention strip above the
-                                      canvas — which reads the SESSIONS list —
-                                      cannot name it either. The mark is the
-                                      same one the rail's live rows wear because
-                                      it means the same thing; here re-attaching
-                                      is what you do about it, and re-attaching
-                                      is what the whole row already does.
-                                      It goes on the DIRECTORY line rather than
-                                      under the name, because the name line is
-                                      conditional — a session the labeller has
-                                      not answered for yet would drop the mark
-                                      with it. */}
-                                  {askOf(d) && (
-                                    <span className="tcg-ask" aria-label="Waiting on your answer"
-                                      title={`Waiting on you — ${askOf(d)!.title || askOf(d)!.question}`}>
-                                      <span className="d" />
-                                    </span>
-                                  )}
-                                  {/* The host reports the agent tag for persistent
-                                      sessions; absent tags remain unknown. */}
-                                  <ModelChip model={d.model ?? null} resolved={d.resolvedModel} show />
-                                </span>
-                              </button>
-                              <span className="tci-acts">
-                                {/* #292 — the keep pin, on EVERY row: the reaper
-                                    measures output rather than attachment, so a
-                                    session mirrored elsewhere is exactly as
-                                    reapable and exactly as worth protecting. */}
-                                <button className={`td-pin${d.keep ? ' on' : ''}`} aria-pressed={!!d.keep}
-                                  aria-label={d.keep ? `Unpin ${d.name}` : `Pin ${d.name}`}
-                                  title={d.keep
-                                    ? 'Pinned — the idle reaper will not take this session. Click to unpin.'
-                                    : 'Pin this session so the idle reaper never takes it, however quiet it goes'}
-                                  onClick={() => void togglePin(d.name, !d.keep)}>
-                                  {d.keep ? '📌' : '📍'}
-                                </button>
-                                {/* Kill controls only on killable rows: the
-                                    daemon refuses a name a client still holds,
-                                    so offering them on an attached row would be
-                                    a button that cannot work. */}
-                                {!d.attached && (
-                                  <button className={`td-pick${picked ? ' on' : ''}`} onClick={() => toggleKillPick(d.name)}
-                                    aria-pressed={picked} aria-label={`Select ${d.name} to kill`}
-                                    title={picked ? 'Unselect' : 'Select for a bulk kill'}>{picked ? '☑' : '☐'}</button>
-                                )}
-                                {!d.attached && (
-                                  <button className="td-x" aria-label="Kill this detached session"
-                                    title="Kill this session on the host" onClick={() => setKillTargets([d])}>×</button>
-                                )}
-                              </span>
-                            </div>
-                          );
-                        })}
-                        </div>
-                        ))}
-                        {killable.length > 1 && (
-                          <div className="tci-bulk">
-                            <button className="btn-repo sm"
-                              onClick={() => setKillPick(killPick.length === killable.length ? [] : killable.map((d) => d.name))}>
-                              {killPick.length === killable.length ? 'select none' : `select all ${killable.length}`}
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                    {/* ONE bulk bar for both kinds of pick — ⌃-clicked live
-                        rows and ticked idle ones — so a selection that spans
-                        the two ends in one press and one confirm. */}
-                    {pickedLive.length + pickedIdle.length > 0 && (
-                      <div className="tci-bulk tcg-bulk">
-                        <span className="n">{pickedLive.length + pickedIdle.length} selected</span>
-                        <button className="btn-repo sm" onClick={() => { setEndPick([]); setKillPick([]); }}>clear</button>
-                        <button className="btn-cancel sm" disabled={endingAll}
-                          title="Close the selected tabs and kill their sessions on the host"
-                          onClick={() => setEndPickAsk(true)}>
-                          ⏻ End {pickedLive.length + pickedIdle.length}
-                        </button>
-                      </div>
-                    )}
-
+                {place === 'main' ? (
+                  <div className="tv-foot">
+                    {s.cmd === 'claude' && skipPerms && <span className="danger">›› bypass permissions on</span>}
+                    {s.cmd === 'codex' && <span className="danger">›› approvals and sandbox off</span>}
+                    <span className="note" title={s.note}>{s.status === 'live' ? '' : s.note}</span>
+                    <span className="right">
+                      <ModelChip model={s.cmd === 'codex' && (!s.model || s.model.id === 'native')
+                        ? { key: 'codex', id: s.codexModel || 'native', label: 'Codex' } : s.model}
+                        resolved={s.resolvedModel || (s.tmux ? resolvedByTmux.get(s.tmux) : '')}
+                        show={s.cmd !== 'shell'} />
+                      {s.cmd === 'claude' && usedTokens > 0 && <span title="Fresh tokens today across this host's Claude sessions — the daemon has no per-session count">{fmtTok(usedTokens)} today</span>}
+                    </span>
                   </div>
+                ) : null}
+              </div>
+            );
+          })}
 
-                    {/* #490 — THE STATUS PILLS, moved off the header. Two facts
-                        and no third: what the focused pane is holding, and
-                        the host connection state. Pinned
-                        with the footers rather than sitting in the scroller,
-                        because a status you have to scroll to is not a status. */}
-                    <div className="tc-status">
-                      {activeSess && (
-                        <span className={`tcs-row ${activeSess.status}`}>
-                          <span className="d" />
-                          <span className="n">
-                            {activeSess.status === 'live' ? 'live'
-                              : activeSess.status === 'connecting' ? 'connecting'
-                              : activeSess.status === 'closed' ? 'closed' : 'error'}
-                          </span>
-                          <span className="v" title={activeSess.note}>
-                            {activeSess.status === 'live' || activeSess.status === 'connecting'
-                              ? activeSess.note : (activeSess.note || '')}
-                          </span>
-                        </span>
-                      )}
+          {view !== 'swarm' && !cur && (
+            <div className="tv-none">
+              <span className="h">No tabs open</span>
+              <span className="d">Open a session from Swarm, or start a new one.</span>
+              <span className="row">
+                <button className="tv-btn" onClick={() => setView('swarm')}>Open Swarm</button>
+                <button className="tv-go solo" onClick={() => openSession()} title={`Open ${startLabel}`}>New session</button>
+              </span>
+            </div>
+          )}
+          {view === 'split' && cur && Array.from({ length: Math.max(0, 3 - minis.length) }, (_, i) => (
+            <button key={`new-${i}`} className="tv-newcell" style={{ gridColumn: minis.length + i + 1, gridRow: 2 }}
+              onClick={() => openSession()} title={`Open ${startLabel}`}>
+              <span className="plus">+</span><span className="l">New session</span><span className="d">{startLabel}</span>
+            </button>
+          ))}
 
-                    </div>
-
-                    {/* The two footers sit OUTSIDE the scroller (#490): the
-                        list above is `flex: 1`, so a sibling after it is pinned
-                        to the bottom of the rail. Inside it they were merely
-                        the last thing in a scrolling column — which on a rail
-                        with two sessions put Settings and the limits halfway up
-                        the screen with empty rail beneath them.
-
-                        ---- #487 · the design's two rail footers ----
-                        SETTINGS, with the integrations popover: what is wired
-                        into these sessions, and whether each is actually on.
-                        The design lists four fixtures; these are the real ones
-                        this screen can answer for, and each says its own state
-                        rather than a decorative "Enabled". */}
-                    <div className="tc-foot" ref={modelsRef}>
-                      <button ref={modelsBtn} className="tc-footbtn" aria-expanded={modelsOpen} onClick={() => setModelsOpen((v) => !v)}>Codex models</button>
-                      {modelsOpen && <div className="tc-pop" role="dialog" aria-label="Codex models">
-                          <span className="cap">Codex models · new sessions</span>
-                          <select className="field-input" aria-label="Codex model" value={codexModel} onChange={(e) => { setCodexModel(e.target.value); setMode('codex'); }}>
-                            <option value="">CLI default</option>
-                            {(usage?.codex?.models || []).map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
-                          </select>
-                          <span className="dim">For an existing session, use /model.</span>
-                          {!usage?.codex?.models?.length && <span className="dim">Model catalogue unavailable</span>}
-                        </div>}
-                    </div>
-                    <div className="tc-foot" ref={setsRef}>
-                      <button ref={setsBtn} className="tc-footbtn" aria-expanded={setsOpen}
-                        onClick={() => setSetsOpen((v) => !v)}>
-                        <span className="ico">⚙</span>
-                        <span className="lbl">Settings</span>
-                        <span className={`chip ${hostConnected ? 'ok' : 'off'}`}>
-                          <span className="d" />{hostConnected === null ? 'Unknown' : hostConnected ? 'Connected' : 'Offline'}
-                        </span>
-                      </button>
-                      {setsOpen && (
-                        <div className="tc-pop" role="dialog" aria-label="Active integrations">
-                          <span className="cap">Active integrations</span>
-                          {[
-                            { n: 'Terminal daemon', d: 'host-side tmux + the uplink',
-                              on: hostConnected === true, s: hostConnected === null ? 'Cannot see' : hostConnected ? 'Connected' : 'Offline' },
-                            { n: 'Claude and Codex', d: 'native CLIs · account and model configured in each CLI',
-                              on: true, s: 'Native' },
-                            { n: 'Session labeller', d: 'names sessions from what they are doing',
-                              on: Object.keys(labels).length > 0, s: Object.keys(labels).length ? 'In use' : 'Idle' },
-                            { n: 'Idle reaper', d: 'pinned sessions are exempt',
-                              on: true, s: `${sessions.filter((x) => !!x.tmux && pinnedOf(x.tmux)).length} pinned` },
-                          ].map((i) => (
-                            <div className="row" key={i.n}>
-                              <span className="b">
-                                <span className="n">{i.n}</span>
-                                <span className="d">{i.d}</span>
-                              </span>
-                              <span className={`st ${i.on ? 'on' : 'off'}`}>{i.s}</span>
-                            </div>
-                          ))}
-
-                        </div>
-                      )}
-                    </div>
-
-                    {/* TODAY'S TOKENS — off the top of the screen and onto the
-                        rail, directly above the windows it belongs with. The
-                        limits below are PERCENTAGES the daemon reads off the
-                        Claude account; this is the COUNT read off the host's
-                        transcripts, which is the one figure they do not carry.
-                        With no plan data it also keeps the budget bar and the
-                        editable estimate, because then it is the only thing on
-                        the screen measuring the day — the same fallback the
-                        strip had, in a column instead of a row. */}
-                    {(usage || serverUsage) && (
-                      <div className="tc-tokens">
-                        <span className="tt-head">
-                          <span className="nm">Tokens today</span>
-                          <span className="v" title="Fresh tokens today (input + output + cache writes) from this host's transcripts">
-                            {fmtTok(usedTokens)}
-                          </span>
-                        </span>
-                        {!usage?.plan?.session && (
-                          <>
-                            <span className="tl-bar">
-                              <span className="v" style={{
-                                width: `${Math.min(100, usagePct)}%`,
-                                background: usagePct >= 100 ? 'var(--critical)'
-                                  : usagePct >= 85 ? 'var(--building)' : 'var(--accent-text)',
-                              }} />
-                            </span>
-                            <span className="tt-sub">
-                              of{' '}
-                              {serverUsage && serverUsage.tokenBudget > 0
-                                ? <span title="The per-run token budget, set in Stack settings">{fmtTok(serverUsage.tokenBudget)} budget</span>
-                                : editLimit
-                                  ? (
-                                    <input className="field-input tu-edit" autoFocus value={limitDraft}
-                                      onChange={(e) => setLimitDraft(e.target.value)}
-                                      onKeyDown={(e) => {
-                                        if (e.key === 'Enter') {
-                                          const v = parseTok(limitDraft);
-                                          if (v) savePrefs({ ...usagePrefs, dailyLimit: v });
-                                          setEditLimit(false);
-                                        } else if (e.key === 'Escape') setEditLimit(false);
-                                      }}
-                                      onBlur={() => setEditLimit(false)} />
-                                  ) : (
-                                    <button className="tu-limit" title="Daily token estimate (this device only) — click to change"
-                                      onClick={() => { setLimitDraft(fmtTok(usagePrefs.dailyLimit)); setEditLimit(true); }}>
-                                      {fmtTok(usagePrefs.dailyLimit)} estimate
-                                    </button>
-                                  )
-                              }
-                            </span>
-                          </>
-                        )}
-                        {usage?.totalTokens != null && usage.totalTokens > (usage?.tokens ?? 0) && (
-                          <span className="tt-sub" title="Raw volume including prompt-cache reads — the fresh count above is what tracks real work">
-                            {fmtTok(usage.totalTokens)} incl. cache reads
-                          </span>
-                        )}
-                      </div>
-                    )}
-
-                    {/* THE LIMITS, the design's bottom block. Its three are
-                        three PROVIDERS; these are the three real windows the
-                        daemon reads off the Claude account — session, week,
-                        and the weekly cap on the strong model — which is the
-                        same shape (name, plan, percentage, bar, reset) over
-                        numbers that are actually measured. Nothing here is an
-                        estimate; when the daemon has no plan data the block is
-                        absent rather than guessing. */}
-                    {planLimits.length > 0 && (
-                      <div className="tc-limits" ref={limitsRef}>
-                        <button ref={limitsBtn} className="tl-head" aria-expanded={limitsOpen}
-                          onClick={() => setLimitsOpen((v) => !v)}>
-                          <span className="c">{limitsOpen ? '▾' : '▸'}</span>
-                          <span className="nm">{planLimits[limitIdx % planLimits.length].name}</span>
-                          <span className="pct">{planLimits[limitIdx % planLimits.length].pct}%</span>
-                        </button>
-                        <span className="tl-bar">
-                          <span className="v" style={{
-                            width: `${Math.min(100, planLimits[limitIdx % planLimits.length].pct)}%`,
-                            background: planLimits[limitIdx % planLimits.length].pct >= 90
-                              ? 'var(--critical)' : 'var(--accent-text)',
-                          }} />
-                        </span>
-                        {!limitsOpen && (
-                          <span className="tl-reset">{planLimits[limitIdx % planLimits.length].resets}</span>
-                        )}
-                        {limitsOpen && planLimits.map((l, i) => (
-                          <button key={l.key} className={`tl-row${i === limitIdx ? ' on' : ''}`}
-                            onClick={() => setLimitIdx(i)}>
-                            <span className="t"><span className="nm">{l.name}</span><span className="pct">{l.pct}%</span></span>
-                            <span className="tl-bar sm">
-                              <span className="v" style={{
-                                width: `${Math.min(100, l.pct)}%`,
-                                background: l.pct >= 90 ? 'var(--critical)' : 'var(--accent-text)',
-                              }} />
-                            </span>
-                            <span className="tl-reset">{l.resets}</span>
+          {view === 'swarm' && (
+            <div className="tv-swarm" onDragOver={onSwarmDragOver} onDrop={onSwarmDrop}
+              onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setSnapPreview(null); }}>
+              <div className="tv-swarm-head">
+                <span className="tv-counts">
+                  {allTiles.length} sessions · <span className="asking">{askingCount} asking</span> · <span className="working">{workingCount} working</span>
+                </span>
+                <span className="tv-hint">{wins.length ? 'Drag a window to an edge to split, a corner to quarter' : 'Hover to read · click to open · drag to reorder · drag a tab here to open it as a window'}</span>
+                <span className="tv-rel">
+                  <button className={`tv-btn tv-icon${gridMenu ? ' on' : ''}`} title="Grid size" aria-label="Grid size" onClick={() => setGridMenu((v) => !v)}>
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><circle cx="8" cy="8" r="2.3" /><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4" /></svg>
+                  </button>
+                  {gridMenu && (
+                    <>
+                      <div className="tv-scrim" onClick={() => setGridMenu(false)} />
+                      <div className="tv-pop tv-gridmenu">
+                        <span className="eyebrow">Swarm grid</span>
+                        {GRID_OPTS.map((g) => (
+                          <button key={`${g.c}x${g.r}`} className={`tv-gridopt${grid.c === g.c && grid.r === g.r ? ' on' : ''}`}
+                            onClick={() => { saveViewPrefs({ grid: { c: g.c, r: g.r } }); setGridMenu(false); }}>
+                            <span className="l">{g.c}×{g.r}</span><span className="n">{g.note}</span><span className="t">{g.c * g.r} tiles</span>
                           </button>
                         ))}
                       </div>
-                    )}
+                    </>
+                  )}
+                </span>
+                {cap - tiles.length > 0 && (
+                  <button className="tv-go solo sm" title="Start a new session in every empty slot, using your defaults"
+                    onClick={() => setFillAsk(cap - tiles.length)}>Fill {cap - tiles.length} empty</button>
+                )}
+                {tiles.length > 0 && (
+                  <button className="tv-btn sm" title="Hide every tile from Swarm (sessions keep running)"
+                    onClick={() => { setHidden([...new Set([...hidden, ...allTiles.map((t) => t.key)])]); setWins([]); setTilePeek(null); }}>Hide all</button>
+                )}
+                {hiddenCount > 0 && (
+                  <button className="tv-btn sm" title="Bring hidden sessions back into Swarm" onClick={() => setHidden([])}>Show {hiddenCount} hidden</button>
+                )}
+                {tiles.length > 1 && <button className="tv-btn sm" title="Asking first, then failed, working, idle" onClick={sortByStatus}>Sort by status</button>}
+                {wins.length > 0 && (
+                  <>
+                    <button className="tv-btn sm" onClick={tileAllWins}>Tile {wins.length} window{wins.length === 1 ? '' : 's'}</button>
+                    <button className="tv-btn sm" onClick={() => { setWins([]); setOpenIn(null); }}>Close all</button>
                   </>
                 )}
-              </>
-            )}
-          </div>
+              </div>
+              <div className="tv-grid" ref={swarmBodyRef}
+                style={{ gridTemplateColumns: `repeat(${grid.c}, minmax(0,1fr))`, gridTemplateRows: `repeat(${grid.r}, minmax(0,1fr))` }}>
+                {tiles.map((t) => {
+                  const hov = tilePeek === t.key;
+                  const lines = hov ? linesOf(t) : [];
+                  const last = hov ? '' : (t.sess ? linesOf(t) : t.det?.preview || []).filter((l) => l.trim()).slice(-1)[0] || '';
+                  const openId = t.sess?.id;
+                  return (
+                    <div key={t.key}
+                      className={`tv-tile${hov ? ' hov' : ''}${compact ? ' compact' : ''}${flash === t.key ? ' flash' : ''}${dropOn === t.key && dragTile !== t.key ? ' drop' : ''}${dragTile === t.key ? ' dragging' : ''} p-${projTint(t.project)}`}
+                      draggable
+                      onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/x-stack-tile', t.key); setDragTile(t.key); setTilePeek(null); }}
+                      onDragEnd={() => { setDragTile(null); setDropOn(null); }}
+                      onDragOver={(e) => { if (!dragTile) return; e.preventDefault(); if (dropOn !== t.key) setDropOn(t.key); }}
+                      onDrop={(e) => { if (!dragTile) return; e.preventDefault(); e.stopPropagation(); setTileOrder(moveKey(shownTiles.map((x) => x.key), dragTile, t.key)); setDragTile(null); setDropOn(null); }}
+                      onClick={() => openTile(t)}
+                      onMouseEnter={() => setTilePeek(t.key)}
+                      onMouseLeave={() => setTilePeek((k) => (k === t.key ? null : k))}
+                      title={`${t.name} — click to open it as a window`}>
+                      <div className="tv-tile-top" />
+                      {!hov ? (
+                        <div className="tv-tile-face">
+                          <div className="tv-tile-row">
+                            {compact && projChip(t.project, 14)}
+                            <span className={`tv-dot ${t.st}`} />
+                            <span className={`tv-st ${t.st}`}>{STATUS_LABEL[t.st]}</span>
+                            <span className="ago">{t.ago}</span>
+                            {t.pinned && <span className="tv-pinmark">{pinIcon()}</span>}
+                          </div>
+                          <span className="tv-tile-name">{t.name}</span>
+                          {!compact && (
+                            <span className="tv-tile-proj">{projChip(t.project)}{t.project || '~'} · {TOOL[t.cmd].name}{t.sess ? '' : ' · not open'}</span>
+                          )}
+                          {!compact && last && <span className="tv-tile-last">{last}</span>}
+                        </div>
+                      ) : (
+                        <div className="tv-tile-peek" onClick={(e) => e.stopPropagation()}>
+                          <div className="tv-tile-row">
+                            <span className={`tv-dot ${t.st}`} />
+                            {projChip(t.project)}
+                            <span className="tv-tile-pname">{t.name}</span>
+                            {(t.sess?.tmux || t.det) && (
+                              <button className={`tv-ico${t.pinned ? ' pinned' : ''}`} title={t.pinned ? 'Unpin' : 'Pin'}
+                                onClick={() => (t.sess ? togglePinSess(t.sess) : t.det && void togglePin(t.det.name, !t.det.keep))}>{pinIcon()}</button>
+                            )}
+                            <button className="tv-btn xs" title="Hide from Swarm (keeps running)" onClick={() => hideTile(t.key, openId)}>Hide</button>
+                            <button className="tv-btn xs danger" disabled={!!t.det?.attached && !t.sess}
+                              title={t.det?.attached && !t.sess ? 'Attached on another device — end it there, or open it here first' : 'End this session'}
+                              onClick={() => askEnd(t.sess, t.sess ? undefined : t.det)}>End</button>
+                          </div>
+                          <div className="tv-tile-lines" ref={(el) => { if (el) el.scrollTop = el.scrollHeight; }}
+                            onClick={() => openTile(t)}>
+                            {lines.length ? lines.map((l, i) => <div key={i} className={/^\s*[❯>]/.test(l) ? 'you' : ''}>{l || ' '}</div>)
+                              : <div className="dim">Nothing captured yet. Click to open it.</div>}
+                          </div>
+                          {t.st === 'asking' && !compact && (
+                            <div className="tv-reply">
+                              <input value={replies[t.key] || ''} placeholder="Reply…" aria-label={`Reply to ${t.name}`}
+                                onChange={(e) => { const v = e.target.value; setReplies((r) => ({ ...r, [t.key]: v })); }}
+                                onKeyDown={(e) => { if (e.key === 'Enter') sendReply(t); }} />
+                              <button className="tv-go solo xs" onClick={() => sendReply(t)}>Send</button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+                {Array.from({ length: Math.max(0, cap - tiles.length) }, (_, i) => (
+                  <button key={`e${i}`} className={`tv-newcell${dropOn === 'end' ? ' drop' : ''}`}
+                    onClick={() => openSession()} title={`Open ${startLabel}`}
+                    onDragOver={(e) => { if (!dragTile) return; e.preventDefault(); if (dropOn !== 'end') setDropOn('end'); }}
+                    onDrop={(e) => { if (!dragTile) return; e.preventDefault(); e.stopPropagation(); setTileOrder(moveKey(shownTiles.map((x) => x.key), dragTile, null)); setDragTile(null); setDropOn(null); }}>
+                    <span className="plus">+</span><span className="l">New session</span>
+                  </button>
+                ))}
+              </div>
+              {shownTiles.length > cap && (
+                <div className="tv-more">{shownTiles.length - cap} more not shown at {grid.c}×{grid.r} — a bigger grid, Hide, or the {sessions.length} ▼ switcher reaches them.</div>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>
-    {killTargets && killTargets.length > 0 && (
+
+    {view === 'swarm' && snapPreview && visible && (
+      <div className="tv-snap" style={{ left: snapPreview.x, top: snapPreview.y, width: snapPreview.w, height: snapPreview.h }} />
+    )}
+
+    {visible && menu && (() => {
+      const s = sessions.find((x) => x.id === menu.id);
+      if (!s) return null;
+      const key = s.tmux || `tab:${s.id}`;
+      const isHidden = hidden.includes(key);
+      return (
+        <div className="tv-scrim" onClick={() => setMenu(null)} onContextMenu={(e) => { e.preventDefault(); setMenu(null); }}>
+          <div className="tv-pop tv-menu" style={{ left: menu.x, top: menu.y }} onClick={(e) => e.stopPropagation()}>
+            {s.tmux && <button onClick={() => { togglePinSess(s); setMenu(null); }}>{isPinned(s) ? 'Unpin' : 'Pin tab'}</button>}
+            <button onClick={() => { closeSession(s.id); setMenu(null); }}>Close tab</button>
+            <button onClick={() => { setHidden(isHidden ? hidden.filter((k) => k !== key) : [...hidden, key]); if (!isHidden) closeWin(s.id); setMenu(null); }}>
+              {isHidden ? 'Show in Swarm' : 'Hide from Swarm'}
+            </button>
+            <button onClick={closeUnpinned}>Close unpinned tabs</button>
+            <button onClick={() => { startRename(s, 'tab'); setMenu(null); }}>Rename…</button>
+            <div className="tv-rule" />
+            <button className="danger" onClick={() => askEnd(s)}>End session…</button>
+          </div>
+        </div>
+      );
+    })()}
+
+    {visible && usageOpen && (() => {
+      const m = meterOf(usageOpen.key);
+      const win = (label: string, w: LimWin | null) => (w ? (
+        <div className="tv-uwin" key={label}>
+          <span className="t"><span className="l">{label}</span><span className={`p ${tone(w.pct)}`}>{Math.round(w.pct)}%</span></span>
+          <span className="bar"><span className={`v ${tone(w.pct)}`} style={{ width: `${Math.min(100, w.pct)}%` }} /></span>
+          <span className="s">{w.resetAt ? `resets ${fmtReset(w.resetAt, true)} · ${fmtIn(w.resetAt)}` : 'no reset reported'}</span>
+        </div>
+      ) : (
+        <div className="tv-uwin" key={label}><span className="t"><span className="l">{label}</span><span className="p">—</span></span><span className="s">not measured</span></div>
+      ));
+      const mine = sessions.filter((s) => s.cmd === m.key);
+      return (
+        <div className="tv-scrim" onClick={() => setUsageOpen(null)}>
+          <div className="tv-pop tv-usage" style={{ left: usageOpen.x }} onClick={(e) => e.stopPropagation()}>
+            <span className="h"><span className="n">{m.name} usage</span><span className="dim">{mine.length} open here</span></span>
+            {win(m.key === 'claude' ? 'Session · 5-hour window' : 'Session window', m.session)}
+            {win('Weekly', m.week)}
+            {m.extra.map((x) => win(x.name, x.w))}
+            {m.key === 'claude' ? (
+              <div className="tv-ustats">
+                <span><span className="k">Fresh today</span><span className="v">{usedTokens > 0 ? fmtTok(usedTokens) : '—'}</span></span>
+                <span><span className="k">Incl. cache reads</span><span className="v">{usage?.totalTokens ? fmtTok(usage.totalTokens) : '—'}</span></span>
+                <span><span className="k">Run budget</span><span className="v">{serverUsage && serverUsage.tokenBudget > 0 ? fmtTok(serverUsage.tokenBudget) : 'none'}</span></span>
+              </div>
+            ) : (
+              <span className="tv-dim">Codex reports its limit windows only; Stack has no token count for it.</span>
+            )}
+            <span className="tv-dim">Per-model and per-session splits are not measured on this host, so they are not drawn.</span>
+          </div>
+        </div>
+      );
+    })()}
+
+    {visible && switcher && (
+      <div className="tv-scrim" onClick={() => { setSwitcher(false); setQ(''); }}>
+        <div className="tv-pop tv-switcher" onClick={(e) => e.stopPropagation()}>
+          <div className="find"><input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a session…" aria-label="Find a session" /></div>
+          <div className="list">
+            {swGroups.map((g) => (
+              <div key={g.title}>
+                <div className="gh"><span className="eyebrow">{g.title}</span><span className="n">{g.rows.length}</span></div>
+                {g.rows.map((r) => (
+                  <button key={r.key} className={`row${r.on ? ' on' : ''}`} onClick={r.pick}>
+                    <span className={`tv-dot ${r.st}`} />
+                    {projChip(r.project)}
+                    <span className="nm">{r.name}</span>
+                    {r.pinned && <span className="tv-pinmark">{pinIcon()}</span>}
+                    <span className={`tv-st ${r.st}`}>{STATUS_LABEL[r.st]}</span>
+                  </button>
+                ))}
+              </div>
+            ))}
+            {!swGroups.length && <span className="empty">{hostConnected === false ? 'Stack cannot see the host right now.' : 'No sessions match.'}</span>}
+          </div>
+        </div>
+      </div>
+    )}
+
+    {endTarget && (endTarget.sess || endTarget.det) && (
       <ConfirmModal
-        title={killTargets.length === 1 ? 'Kill detached session?' : `Kill ${killTargets.length} detached sessions?`}
-        body={killTargets.length === 1 ? (
-          <>The agent session in <b>{killTargets[0].cwd ? `~/${killTargets[0].cwd}` : '~'}</b> is still running
-            on the host. Killing it ends the process — anything unfinished in that conversation is lost.</>
-        ) : (
-          <>These agent sessions are still running on the host. Killing them ends the processes —
-            anything unfinished in those conversations is lost.
-            <ul className="td-killlist">
-              {killTargets.map((d) => (
-                <li key={d.name}>
-                  <b>{d.cwd ? `~/${d.cwd}` : '~'}</b>
-                  {labels[d.name] || d.label ? ` — ${labels[d.name] || d.label}` : ''}
-                </li>
-              ))}
-            </ul>
-          </>
-        )}
-        confirmLabel={killTargets.length === 1 ? 'Kill session' : `Kill ${killTargets.length} sessions`}
+        title="End session?"
+        body={<>
+          “{endTarget.sess ? nameOf(endTarget.sess) : nameOfDet(endTarget.det!)}” will be killed on the host. Closing the
+          tab instead keeps it running in Swarm.
+          <span className="tv-dim mono" style={{ display: 'block', marginTop: 8 }}>
+            {endTarget.sess?.tmux || endTarget.det?.name || 'shell'} · ~/{endTarget.sess ? endTarget.sess.cwd : endTarget.det!.cwd}
+          </span>
+        </>}
+        confirmLabel="End session"
         danger
-        onConfirm={() => void confirmKill()}
-        onCancel={() => setKillTargets(null)}
+        onConfirm={doEnd}
+        onCancel={() => setEndTarget(null)}
       />
     )}
-    {endPickAsk && pickedLive.length + pickedIdle.length > 0 && (
+    {fillAsk > 0 && (
       <ConfirmModal
-        title={`End ${pickedLive.length + pickedIdle.length} selected session${pickedLive.length + pickedIdle.length === 1 ? '' : 's'}?`}
-        body={
-          <>Each tab closes, and each session still running on the host is killed — anything
-            unfinished in those conversations is lost.
-            <ul className="td-killlist">
-              {pickedLive.map((s) => (
-                <li key={s.id}>
-                  <b>{s.cmd}</b> in <b>{s.cwd ? `~/${s.cwd}` : '~'}</b>
-                  {labelOf(s) ? ` — ${labelOf(s)}` : s.tmux ? ` — tmux ${s.tmux}` : ''}
-                </li>
-              ))}
-              {pickedIdle.map((d) => (
-                <li key={d.name}>
-                  <b>idle</b> in <b>{d.cwd ? `~/${d.cwd}` : '~'}</b>
-                  {labels[d.name] || d.label ? ` — ${labels[d.name] || d.label}` : ''}
-                </li>
-              ))}
-            </ul>
-          </>
-        }
-        confirmLabel={`End ${pickedLive.length + pickedIdle.length}`}
-        danger
-        onConfirm={confirmEndPick}
-        onCancel={() => setEndPickAsk(false)}
-      />
-    )}
-    {endAllAsk && sessions.length > 0 && (
-      <ConfirmModal
-        title={`End all ${sessions.length} sessions?`}
-        body={
-          <>Every tab closes, and each session still running on the host is killed — anything
-            unfinished in those conversations is lost.
-            <ul className="td-killlist">
-              {sessions.map((s) => (
-                <li key={s.id}>
-                  <b>{s.cmd}</b> in <b>{s.cwd ? `~/${s.cwd}` : '~'}</b>
-                  {s.tmux ? ` — tmux ${s.tmux}` : ' — the tab is the whole session, so closing it ends it'}
-                </li>
-              ))}
-            </ul>
-          </>
-        }
-        confirmLabel={`End all ${sessions.length}`}
-        danger
-        onConfirm={() => { setEndAllAsk(false); void endAllSessions(); }}
-        onCancel={() => setEndAllAsk(false)}
+        title={`Start ${fillAsk} new ${TOOL[mode].name} session${fillAsk === 1 ? '' : 's'}?`}
+        body={<>One for every empty slot, each in <b>~/{cwd.trim()}</b>{mode !== 'shell' ? <> on {modelName(mode)}, with work going to <b>{defs.dest === 'branch' ? 'its own branch' : 'main'}</b></> : null}. Every one is a real process on the host.</>}
+        confirmLabel={`Start ${fillAsk}`}
+        onConfirm={() => fillEmpty(fillAsk)}
+        onCancel={() => setFillAsk(0)}
       />
     )}
     </>
@@ -2501,8 +2116,8 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
 
 // One tab: an xterm instance + its websocket, kept mounted (hidden when
 // inactive) so the scrollback survives tab switches.
-function TermSession({ sess, visible, focused, fontSize, onStatus, onUsage, onTmux, onModel, onSid, onExit, onOutput, onTyped, onNotice, register }: {
-  sess: { codexModel?: string; id: number; cwd: string; cmd: 'shell' | 'claude' | 'codex'; tmux?: string };
+function TermSession({ sess, visible, focused, fontSize, onStatus, onUsage, onTmux, onBranch, onModel, onSid, onExit, onOutput, onTyped, onNotice, register }: {
+  sess: { codexModel?: string; claudeModel?: string; dest?: TermDest; id: number; cwd: string; cmd: 'shell' | 'claude' | 'codex'; tmux?: string };
   // Rendered on screen at all (it may be one of several panes)...
   visible: boolean;
   // ...and the one that takes keystrokes. With a grid these stopped being the
@@ -2515,6 +2130,8 @@ function TermSession({ sess, visible, focused, fontSize, onStatus, onUsage, onTm
   onStatus: (s: Status, note: string) => void;
   onUsage: (u: TermUsage) => void;
   onTmux: (name: string) => void;
+  // The session's own branch, when the host started it in a worktree.
+  onBranch: (branch: string, project: string) => void;
   // #503 — what the host says this session is running on. Arrives on the ready
   // frame, and again on a 'model' frame if a usage-limit switch-over moves it.
   onModel: (m: SessionModel | null) => void;
@@ -2694,11 +2311,13 @@ function TermSession({ sess, visible, focused, fontSize, onStatus, onUsage, onTm
 
     const connect = () => {
       clearTimeout(retryTimer);
+      ended = false;
       wsRef.current?.close();
       onStatus('connecting', retries ? `connection lost — re-attaching (${retries})` : '');
       safeFit();
       const ws = openTerminal({
-        codexModel: sess.codexModel, cwd: sess.cwd, cmd: sess.cmd, cols: term.cols, rows: term.rows,
+        codexModel: sess.codexModel, claudeModel: sess.claudeModel, dest: sess.dest,
+        cwd: sess.cwd, cmd: sess.cmd, cols: term.cols, rows: term.rows,
         tmuxSession: sess.cmd !== 'shell' && tmuxRef.current ? tmuxRef.current : undefined,
         // Device pref (Settings → Terminal): claude without permission prompts.
         // A boolean only — the daemon maps it to its one allow-listed flag.
@@ -2731,13 +2350,14 @@ function TermSession({ sess, visible, focused, fontSize, onStatus, onUsage, onTm
       };
 
       ws.addEventListener('message', (ev) => {
+        if (disposed || ws !== wsRef.current) return;
         let m: {
           t: string; data?: string; msg?: string; code?: number; cwd?: string;
           // The relay multiplexes by sid and forwards the daemon's frames
           // whole, so every frame carries it — that is how a tab learns the
           // one id the labeller keys on.
           sid?: string;
-          tmuxSession?: string;
+          tmuxSession?: string; branch?: string; project?: string;
           model?: SessionModel | null;
           tokens?: number; resetAt?: number; resetLabel?: string; sched?: { runDate: string; atTime: string };
           totalTokens?: number; plan?: TermUsage['plan']; codex?: TermUsage['codex'];
@@ -2759,6 +2379,7 @@ function TermSession({ sess, visible, focused, fontSize, onStatus, onUsage, onTm
         else if (m.t === 'ready') {
           retries = 0;
           if (m.tmuxSession) { tmuxRef.current = m.tmuxSession; onTmux(m.tmuxSession); clearTermLaunch(m.tmuxSession); }
+          if (typeof m.branch === 'string' && m.branch) onBranch(m.branch, typeof m.project === 'string' ? m.project : '');
           // Always reported, including when it is null: "the host does not know
           // what this is on" is an answer the rail must be able to draw, and a
           // daemon too old to send the field at all leaves it undefined, which
@@ -2959,6 +2580,13 @@ function TermSession({ sess, visible, focused, fontSize, onStatus, onUsage, onTm
       reconnect: () => { retries = 0; connect(); },
       reload,
       focus: () => term.focus(),
+      tail: (n) => {
+        const b = term.buffer.active;
+        const end = b.baseY + b.cursorY;
+        const out: string[] = [];
+        for (let i = Math.max(0, end - n * 2); i <= end; i++) out.push(b.getLine(i)?.translateToString(true) ?? '');
+        return compactLines(out, n);
+      },
     });
 
     return () => {

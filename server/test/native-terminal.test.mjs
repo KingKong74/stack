@@ -32,6 +32,9 @@ test('terminal API exposes host status and retires gateway/catalogue endpoints',
 test('only native Claude and Codex launch; Codex always launches in YOLO mode', () => {
   assert.equal(nativeLaunch('claude').command, 'exec claude');
   assert.equal(nativeLaunch('claude', { skipPerms: true }).command, 'exec claude --dangerously-skip-permissions');
+  assert.equal(nativeLaunch('claude', { skipPerms: true, claudeModel: 'sonnet' }).command,
+    'exec claude --dangerously-skip-permissions --model sonnet');
+  assert.throws(() => nativeLaunch('claude', { claudeModel: 'opus; rm -rf ~' }), /Invalid Claude model/);
   assert.deepEqual(nativeLaunch('codex', { skipPerms: true, provider: 'omniroute', model: 'untrusted' }),
     { command: 'exec codex --dangerously-bypass-approvals-and-sandbox', tag: 'codex:native' });
   for (const cmd of ['gemini', 'qwen', 'omniroute', 'codex; echo bad', '']) {
@@ -129,9 +132,18 @@ test('daemon launches, resizes and reattaches Codex without a gateway', { timeou
     const attached = await waitFor((f) => f.t === 'ready' && f.sid === 'attach');
     assert.equal(attached.cmd, 'codex');
     assert.equal(attached.model.key, 'codex');
+    // An unavailable catalogue must not block a model the user selected earlier.
+    start('selected', 'codex', { codexModel: 'gpt-5.3-codex' });
+    const selected = await waitFor((f) => f.t === 'ready' && f.sid === 'selected');
+    assert.equal(selected.model.id, 'gpt-5.3-codex');
+    const selectedOutput = await waitFor((f) => f.t === 'out' && f.sid === 'selected'
+      && Buffer.from(f.data, 'base64').toString().includes('SPAWN'));
+    assert.match(Buffer.from(selectedOutput.data, 'base64').toString(), /--model gpt-5.3-codex/);
+    start('invalid-model', 'codex', { codexModel: 'bad;command' });
+    assert.match((await waitFor((f) => f.t === 'err' && f.sid === 'invalid-model')).msg, /Invalid agent launch options/);
     start('bad', 'gemini');
     assert.match((await waitFor((f) => f.t === 'err' && f.sid === 'bad')).msg, /Unknown session type/);
-    for (const sid of ['codex', 'attach']) ws.send(JSON.stringify({ t: 'kill', sid }));
+    for (const sid of ['codex', 'attach', 'selected']) ws.send(JSON.stringify({ t: 'kill', sid }));
     await waitFor((f) => f.t === 'exit' && f.sid === 'codex');
     await waitFor((f) => f.t === 'exit' && f.sid === 'attach');
   } finally {
@@ -140,6 +152,68 @@ test('daemon launches, resizes and reattaches Codex without a gateway', { timeou
     ws?.terminate();
     wss.close();
     await new Promise((r) => http.close(r));
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('"Work goes to: New branch" starts a new session in its own worktree, and refuses out loud when it cannot', { timeout: 20_000 }, async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'stack-branch-session-'));
+  const script = (name, body) => writeFileSync(join(dir, name), `#!${process.execPath}\n${body}`, { mode: 0o755 });
+  script('tmux', `
+    const a = process.argv.slice(2);
+    if (a[0] === 'has-session') process.exit(1);
+  `);
+  script('python3', `
+    console.log('SPAWN ' + JSON.stringify(process.argv.slice(2)));
+    process.stdin.on('data', () => {});
+  `);
+  const { spawnSync } = await import('node:child_process');
+  const { mkdirSync } = await import('node:fs');
+  const repo = join(dir, 'proj');
+  mkdirSync(join(repo, 'sub'), { recursive: true });
+  mkdirSync(join(dir, 'plain'));
+  const g = (...a) => spawnSync('git', ['-C', repo, ...a], { encoding: 'utf8' });
+  g('init', '-q', '-b', 'main'); writeFileSync(join(repo, 'sub', 'f'), 'x');
+  g('add', '.'); g('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'init');
+  const http = createServer((_req, res) => { res.setHeader('content-type', 'application/json'); res.end('{"termIdleHours":0}'); });
+  const wss = new WebSocketServer({ server: http });
+  let child; let ws; let logs = '';
+  try {
+    http.listen(0, '127.0.0.1');
+    await once(http, 'listening');
+    const connection = once(wss, 'connection');
+    child = spawn(process.execPath, [resolve('terminal/stack-term.mjs')], {
+      env: { PATH: `${dir}:${process.env.PATH}`, HOME: dir, STACK_TERM_ROOT: dir,
+        STACK_API: `http://127.0.0.1:${http.address().port}`, STACK_TOKEN: 'fixture-only' },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    child.stderr.on('data', (d) => { logs += d; }); child.stdout.on('data', (d) => { logs += d; });
+    [ws] = await connection;
+    const frames = [];
+    ws.on('message', (raw) => frames.push(JSON.parse(raw)));
+    const waitFor = async (predicate) => {
+      const end = Date.now() + 8000;
+      while (Date.now() < end) { const m = frames.find(predicate); if (m) return m; await new Promise((r) => setTimeout(r, 20)); }
+      assert.fail(`No matching frame. Daemon log: ${logs}`);
+    };
+    ws.send(JSON.stringify({ t: 'start', sid: 'br', cmd: 'claude', cwd: 'proj/sub', cols: 80, rows: 24,
+      tmuxSession: 'stack-term-abc123', dest: 'branch', claudeModel: 'sonnet' }));
+    const ready = await waitFor((f) => f.t === 'ready' && f.sid === 'br');
+    assert.equal(ready.branch, 'term/abc123');
+    assert.equal(ready.project, 'proj');
+    assert.equal(ready.cwd, '~/.stack/worktrees/term-abc123/sub', 'the same sub-path, inside the new tree');
+    const spawned = await waitFor((f) => f.t === 'out' && f.sid === 'br' && Buffer.from(f.data, 'base64').toString().includes('SPAWN'));
+    assert.match(Buffer.from(spawned.data, 'base64').toString(), /--model sonnet/);
+    assert.equal(g('rev-parse', '--abbrev-ref', 'HEAD').stdout.trim(), 'main', 'the checkout itself is untouched');
+    assert.match(g('branch', '--list', 'term/abc123').stdout, /term\/abc123/);
+
+    ws.send(JSON.stringify({ t: 'start', sid: 'nogit', cmd: 'claude', cwd: 'plain', cols: 80, rows: 24,
+      tmuxSession: 'stack-term-def456', dest: 'branch' }));
+    assert.match((await waitFor((f) => f.t === 'err' && f.sid === 'nogit')).msg, /own branch: .*not inside a git repository/);
+    assert.ok(!frames.some((f) => f.t === 'ready' && f.sid === 'nogit'), 'never falls back to the checkout');
+    ws.send(JSON.stringify({ t: 'kill', sid: 'br' }));
+  } finally {
+    ws?.close(); child?.kill(); await new Promise((r) => http.close(r));
     rmSync(dir, { recursive: true, force: true });
   }
 });
