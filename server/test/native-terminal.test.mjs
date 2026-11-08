@@ -58,7 +58,7 @@ test('SSH terminal launcher uses native Codex and records its tmux tag', async (
     const { main } = await import('../../scripts/stack-term-cli.mjs');
     assert.equal(await main(['--cli', 'codex']), 0);
     const calls = readFileSync(join(dir, 'calls'), 'utf8').trim().split('\n').map(JSON.parse);
-    const launch = calls.find((args) => args[0] === 'new-session').join(' ');
+    const launch = calls.find((args) => args.includes('new-session')).join(' ');
     assert.match(launch, /exec codex --dangerously-bypass-approvals-and-sandbox/);
     assert.match(launch, /@stack-model 'codex:native'/);
     assert.doesNotMatch(launch, /omniroute/);

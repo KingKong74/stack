@@ -70,8 +70,18 @@ export function sessionExists(name) {
 // capability for tmux to bother: TERM is xterm-256color (pty-shim), whose
 // terminfo carries Ms, and the terminal-features append covers any host whose
 // terminfo does not.
+//
+// COLOUR. A new session's environment is the tmux SERVER's global one, copied
+// from whatever process happened to start the server. A daemon launched from a
+// non-interactive shell carries NO_COLOR=1, and after a server restart every
+// Claude session drew monochrome (2026-11-08). So the chain scrubs the global
+// env BEFORE new-session, on every start: start-server makes that legal when
+// no server is running yet, and an existing server is repaired in place.
 export function sessionArgv(name, cwd, shellCmd) {
-  return ['tmux', 'new-session', '-A', '-s', name, '-c', cwd, shellCmd,
+  return ['tmux', 'start-server',
+    ';', 'set-environment', '-gu', 'NO_COLOR',
+    ';', 'set-environment', '-g', 'COLORTERM', 'truecolor',
+    ';', 'new-session', '-A', '-s', name, '-c', cwd, shellCmd,
     ';', 'set-option', '-g', 'mouse', 'on',
     ';', 'set-option', '-g', 'set-clipboard', 'on',
     ';', 'set-option', '-as', 'terminal-features', ',*:clipboard',

@@ -770,8 +770,12 @@ function startSession(msg) {
     argv = [process.env.SHELL || '/bin/bash', '-l'];
   }
 
+  // A daemon started from a non-interactive shell inherits NO_COLOR=1 and
+  // TERM=xterm; neither belongs in a session drawn by xterm.js.
+  const { NO_COLOR: _nc, ...childEnv } = process.env;
   const child = spawn('python3', [SHIM, cwd, ...argv], {
     stdio: ['pipe', 'pipe', 'pipe', 'pipe'], // fd3 = resize control
+    env: { ...childEnv, TERM: 'xterm-256color', COLORTERM: 'truecolor' },
   });
   // The fresh mark, once the session exists — POLLED, not guessed at. The
   // shim's `new-session -A` runs in another process, so there is no moment

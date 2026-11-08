@@ -535,7 +535,10 @@ test('the fresh mark is a separate option from the pin and does not disturb it',
 test('one `new-session -A` does create AND attach, with no race between them', () => {
   const argv = sessionArgv('stack-term-x', '/home/bailey/stack', 'exec claude');
   assert.equal(argv[0], 'tmux');
-  assert.deepEqual(argv.slice(1, 8),
+  const at = argv.indexOf('new-session');
+  assert.ok(argv.slice(0, at).join(' ').includes('set-environment -gu NO_COLOR'),
+    'the server env is scrubbed BEFORE the session copies it, or Claude draws monochrome');
+  assert.deepEqual(argv.slice(at, at + 7),
     ['new-session', '-A', '-s', 'stack-term-x', '-c', '/home/bailey/stack', 'exec claude']);
   const tail = argv.join(' ');
   assert.match(tail, /mouse on/, 'without it the wheel cannot scroll');
