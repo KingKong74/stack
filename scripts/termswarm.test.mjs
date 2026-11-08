@@ -73,3 +73,12 @@ test('compact lines mirror the host preview', () => {
   assert.deepEqual(compactLines(['', 'a  ', '', '', 'b', '', '']), ['a', '', 'b']);
   assert.equal(compactLines(Array.from({ length: 30 }, (_, i) => `x${i}`), 5).length, 5);
 });
+
+test('a coloured peek narrows like the plain one and keeps its colours', async () => {
+  const { compactRich, paletteColour } = await import(new URL('../web/src/lib/termSwarm.ts', import.meta.url).href);
+  const rows = [[], [{ t: 'ok ', c: 'red' }, { t: '   ' }], [], [], [{ t: 'b' }], [], []];
+  assert.deepEqual(compactRich(rows), [[{ t: 'ok', c: 'red' }], [], [{ t: 'b' }]]);
+  assert.equal(paletteColour(1, { red: '#bf0000' }), '#bf0000');
+  assert.equal(paletteColour(196, {}), '#ff0000');
+  assert.equal(paletteColour(232, {}), '#080808');
+});

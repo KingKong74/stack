@@ -135,3 +135,41 @@ export function compactLines(lines: string[], n = 14): string[] {
   while (out.length && out[out.length - 1] === '') out.pop();
   return out.slice(-n);
 }
+
+/** One run of same-coloured text in a Swarm peek line. `c` is a CSS colour
+ *  taken from the session's own palette (never Stack's), absent = default ink. */
+export type PeekSeg = { t: string; c?: string; b?: boolean; d?: boolean };
+
+/** compactLines over coloured rows: the same narrowing, decided on each row's
+ *  text, so the peek of a live tab keeps the session's colours. */
+export function compactRich(rows: PeekSeg[][], n = 14): PeekSeg[][] {
+  const textOf = (r: PeekSeg[]) => r.map((s) => s.t).join('');
+  const out: PeekSeg[][] = [];
+  for (const raw of rows) {
+    const segs: PeekSeg[] = [];
+    let left = 240;
+    for (const s of raw) { if (left <= 0) break; segs.push({ ...s, t: s.t.slice(0, left) }); left -= s.t.length; }
+    while (segs.length && !segs[segs.length - 1].t.replace(/\s+$/, '')) segs.pop();
+    if (segs.length) segs[segs.length - 1] = { ...segs[segs.length - 1], t: segs[segs.length - 1].t.replace(/\s+$/, '') };
+    if (!segs.length && (!out.length || !out[out.length - 1].length)) continue;
+    out.push(segs);
+  }
+  while (out.length && !textOf(out[out.length - 1])) out.pop();
+  return out.slice(-n);
+}
+
+const ANSI16 = ['black', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white',
+  'brightBlack', 'brightRed', 'brightGreen', 'brightYellow', 'brightBlue', 'brightMagenta', 'brightCyan', 'brightWhite'] as const;
+const hex2 = (v: number) => v.toString(16).padStart(2, '0');
+
+/** An xterm palette index as a CSS colour: the 16 from the session's theme,
+ *  then xterm's own 6×6×6 cube and 24-step grey ramp. */
+export function paletteColour(i: number, theme: Partial<Record<(typeof ANSI16)[number], string>>): string | undefined {
+  if (i < 16) return theme[ANSI16[i]];
+  if (i < 232) {
+    const k = i - 16, lv = (x: number) => (x ? 55 + x * 40 : 0);
+    return `#${hex2(lv(Math.floor(k / 36)))}${hex2(lv(Math.floor(k / 6) % 6))}${hex2(lv(k % 6))}`;
+  }
+  const g = 8 + (i - 232) * 10;
+  return `#${hex2(g)}${hex2(g)}${hex2(g)}`;
+}

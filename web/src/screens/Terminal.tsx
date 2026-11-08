@@ -45,8 +45,8 @@ import { attachRenderer } from '../lib/termRenderer';
 import { ConfirmModal } from '../components/ConfirmModal';
 
 import {
-  zoneRect, zoneAt, tileRects, clampRect, tileStatus, agoLabel, orderTiles, moveKey, compactLines,
-  STATUS_ORDER, GRID_OPTS, WORKING_MS, HOST_WORKING_MS, type Rect, type Zone, type TileStatus,
+  zoneRect, zoneAt, tileRects, clampRect, tileStatus, agoLabel, orderTiles, moveKey, compactLines, compactRich, paletteColour,
+  STATUS_ORDER, GRID_OPTS, WORKING_MS, HOST_WORKING_MS, type Rect, type Zone, type TileStatus, type PeekSeg,
 } from '../lib/termSwarm';
 import { TopBar } from '../components/TopBar';
 import { crumbName } from '../lib/ui';
@@ -249,7 +249,8 @@ function ModelChip({ model, resolved, show }: {
 // socket onto the SAME tmux session, which redraws it whole. Never a kill.
 // `tail` reads the session's own scrollback for its Swarm tile: what is on
 // screen now, not a 60-second-old host capture.
-type Handle = { sendText: (s: string) => void; reconnect: () => void; reload: () => void; focus: () => void; tail: (n: number) => string[] };
+// `peek` is the same tail with each cell's colour, so a hover reads like the session.
+type Handle = { sendText: (s: string) => void; reconnect: () => void; reload: () => void; focus: () => void; tail: (n: number) => string[]; peek: (n: number) => PeekSeg[][] };
 
 // Mounted once by App and never unmounted (#137): sessions, sockets and
 // scrollback survive navigation. `visible` = the #/terminal route is showing;
@@ -1266,6 +1267,11 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
     const live = t.sess ? handles.current.get(t.sess.id)?.tail(40) : undefined;
     return live?.length ? live : t.det?.preview || [];
   };
+  // The hover peek: a live tab in its own colours; a host capture is plain text.
+  const peekOf = (t: Tile): PeekSeg[][] => {
+    const live = t.sess ? handles.current.get(t.sess.id)?.peek(40) : undefined;
+    return live?.length ? live : (t.det?.preview || []).map((l) => (l ? [{ t: l }] : []));
+  };
   // A tile opens as a window. A session nobody here holds is attached first,
   // which makes it a tab like any other.
   const openTile = (t: Tile, geo?: Rect & { snapped?: boolean }) => {
@@ -1920,7 +1926,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                 style={{ gridTemplateColumns: `repeat(${grid.c}, minmax(0,1fr))`, gridTemplateRows: `repeat(${grid.r}, minmax(0,1fr))` }}>
                 {tiles.map((t) => {
                   const hov = tilePeek === t.key;
-                  const lines = hov ? linesOf(t) : [];
+                  const lines = hov ? peekOf(t) : [];
                   const last = hov ? '' : (t.sess ? linesOf(t) : t.det?.preview || []).filter((l) => l.trim()).slice(-1)[0] || '';
                   const openId = t.sess?.id;
                   return (
@@ -1968,7 +1974,11 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                           </div>
                           <div className="tv-tile-lines" ref={(el) => { if (el) el.scrollTop = el.scrollHeight; }}
                             onClick={() => openTile(t)}>
-                            {lines.length ? lines.map((l, i) => <div key={i} className={/^\s*[❯>]/.test(l) ? 'you' : ''}>{l || ' '}</div>)
+                            {lines.length ? lines.map((l, i) => (
+                              <div key={i}>{l.length ? l.map((g, j) => (
+                                <span key={j} className={g.b ? 'b' : g.d ? 'd' : undefined} style={g.c ? { color: g.c } : undefined}>{g.t}</span>
+                              )) : ' '}</div>
+                            ))
                               : <div className="dim">Nothing captured yet. Click to open it.</div>}
                           </div>
                           {t.st === 'asking' && !compact && (
@@ -2042,7 +2052,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
       const mine = sessions.filter((s) => s.cmd === m.key);
       return (
         <div className="tv-scrim" onClick={() => setUsageOpen(null)}>
-          <div className="tv-pop tv-usage" style={{ left: usageOpen.x }} onClick={(e) => e.stopPropagation()}>
+          <div className={`tv-pop tv-usage k-${m.key}`} style={{ left: usageOpen.x }} onClick={(e) => e.stopPropagation()}>
             <span className="h"><span className="n">{m.name} usage</span><span className="dim">{mine.length} open here</span></span>
             {win(m.key === 'claude' ? 'Session · 5-hour window' : 'Session window', m.session)}
             {win('Weekly', m.week)}
@@ -2588,6 +2598,34 @@ function TermSession({ sess, visible, focused, fontSize, onStatus, onUsage, onTm
         const out: string[] = [];
         for (let i = Math.max(0, end - n * 2); i <= end; i++) out.push(b.getLine(i)?.translateToString(true) ?? '');
         return compactLines(out, n);
+      },
+      peek: (n) => {
+        const b = term.buffer.active;
+        const end = b.baseY + b.cursorY;
+        const theme = term.options.theme || {};
+        const cell = b.getNullCell();
+        const colourOf = (rgb: boolean, pal: boolean, v: number) =>
+          rgb ? `#${v.toString(16).padStart(6, '0')}` : pal ? paletteColour(v, theme) : undefined;
+        const rows: PeekSeg[][] = [];
+        for (let i = Math.max(0, end - n * 2); i <= end; i++) {
+          const line = b.getLine(i);
+          const segs: PeekSeg[] = [];
+          if (line) {
+            for (let x = 0; x < line.length; x++) {
+              if (!line.getCell(x, cell) || cell.getWidth() === 0) continue;
+              const inv = !!cell.isInverse();
+              const c = inv ? colourOf(cell.isBgRGB(), cell.isBgPalette(), cell.getBgColor()) || theme.background
+                : colourOf(cell.isFgRGB(), cell.isFgPalette(), cell.getFgColor());
+              const bo = !!cell.isBold(), d = !!cell.isDim();
+              const ch = cell.getChars() || ' ';
+              const last = segs[segs.length - 1];
+              if (last && last.c === c && !!last.b === bo && !!last.d === d) last.t += ch;
+              else segs.push({ t: ch, ...(c ? { c } : {}), ...(bo ? { b: true } : {}), ...(d ? { d: true } : {}) });
+            }
+          }
+          rows.push(segs);
+        }
+        return compactRich(rows, n);
       },
     });
 
