@@ -84,8 +84,7 @@ export function HowToGuide({ onClose }: { onClose: () => void }) {
             A <b>sprint</b> is a named, ordered box of board items, and the order inside it is the
             priority — top first. The sprint in progress is what gets <b>planned</b>; what gets
             <b> built</b> is the Ready queue, which the autopilot works through whenever there is
-            budget. A session can file a plan straight into a sprint. The arm switch is on the
-            Inbox; the worker cap, the budget and the two models are in Settings.
+            budget. The worker cap, the budget and the two models are in Settings.
           </div>
         </div>
 

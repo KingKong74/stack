@@ -12,7 +12,7 @@
 //  • "Now" is in-flight work: claimed and NOT yet built, the spine's IN FLIGHT
 //    stage (lib/spine.ts), which subtracts Built because a claim stays after
 //    the work lands. "Waiting on you" is Built with no verdict, which is the
-//    Inbox's built pane, so the count and the Inbox agree.
+//    board's built work awaiting a human verdict.
 //  • The Icebox and Auto-ideas counts are `homeOf`, the same as their pane.
 //
 // Read-only. Every press is a link to the screen that owns the write.
@@ -126,7 +126,7 @@ export function Course({ slug, items, milestones, slices, sprints, charter, resu
           </ul>
           {inFlight.length > NOW_SHOWN && <p className="co-dim">…and {inFlight.length - NOW_SHOWN} more on the board.</p>}
           {waiting.length > 0 && (
-            <button className="k-btn sm secondary co-wait" onClick={() => go.inbox()}>
+            <button className="k-btn sm secondary co-wait" onClick={() => go.detail(slug, 'roadmap')}>
               <KitIcon name="circle-check" size={13} />{waiting.length} built, waiting on your verdict
             </button>
           )}

@@ -76,7 +76,7 @@
 // THE CARD MENU: Park/Unpark, Archive, Delete (a `hook` row's delete tombstones
 // its fingerprint, so it has no undo), and Sign off on a held card. Edit item…
 // opens the full modal, the only writer of a human `risk`. Verdicts are given
-// on the Inbox (screens/Inbox.tsx); this screen draws a verdicted card in Done
+// through the API; this screen draws a verdicted card in Done
 // and says when a machine gave the verdict.
 
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
@@ -3102,7 +3102,7 @@ function BacklogView({
         ) : (
           <span className="say">
             No sprint is in progress, so there is nothing to plan. Building is the Ready
-            queue's job, on the Inbox.
+            queue's job.
           </span>
         )}
       </div>

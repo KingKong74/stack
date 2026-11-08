@@ -292,15 +292,13 @@ export function Settings() {
               </div>
             </section>
 
-            {/* ---- The continuous loop's budget. The arm switch and the mode
-                live on #/inbox beside the loop's status; these are the
-                limits it builds inside, which you set once and leave. ---- */}
+            {/* The continuous loop's budget limits. */}
             <section className="set-card">
               <div className="set-card-head">
                 <div className="set-card-title">Autopilot budget</div>
                 <div className="set-card-sub">
                   The limits the loop builds inside: it builds the Ready queue <b>whenever there is
-                  budget</b>. The on switch is on the <a href={hrefTo.inbox}>Inbox</a>.
+                  budget</b>.
                 </div>
               </div>
               <div className="set-row col">

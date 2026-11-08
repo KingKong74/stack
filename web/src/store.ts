@@ -5,7 +5,7 @@ import type {
   AuthDevice, Sprint, SprintPlan, ResumeSince, ProjectDebrief,
   SchedSpan, ProjectPulse, BoardShape, BoardList, BoardArea, ItemKind,
   AgentProfile, AgentProfilesRoom, ModelsRoom, ContextRoom, ClaudeMdRead,
-  ProjectKind, Spaces, SpaceArea, Workflow, WishIdea, IdeaStage, InboxData,
+  ProjectKind, Spaces, SpaceArea, Workflow, WishIdea, IdeaStage,
   Artifact, ArtifactType, Proposition,
 } from './types';
 
@@ -380,14 +380,6 @@ export async function hangupAutopilotJob(id: string): Promise<AutopilotJob> {
 // That is the whole point of pressing it here rather than letting an unattended
 // enqueue drop it silently — `request()` throws on a 409 with the server's own
 // sentence, which names the hold, so nothing here has to compose one.
-// THE INBOX (server routes/inbox.js): everything waiting on the human, across
-// projects, in one read.
-export async function getInbox(): Promise<InboxData> {
-  return request<InboxData>('/inbox');
-}
-export async function getInboxCount(): Promise<{ waiting: number; built: number; held: number; hold: string; seen: boolean }> {
-  return request('/inbox/count');
-}
 // A merge job for a built branch; the dispatcher merges it into main, and a
 // conflict aborts it rather than forcing anything.
 export async function queueMerge(slug: string, branch: string, itemId: number): Promise<AutopilotJob> {

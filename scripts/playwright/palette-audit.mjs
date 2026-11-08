@@ -227,7 +227,6 @@ const SCREENS = [
   { slug: 'settings', hash: '#/settings' },
   { slug: 'skills', hash: '#/skills' },
   { slug: 'timeline', hash: '#/timeline' },
-  { slug: 'inbox', hash: '#/inbox' },
 ];
 
 // -------------------------------------------------------- the in-page audit

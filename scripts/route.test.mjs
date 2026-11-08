@@ -249,3 +249,6 @@ test('hrefTo.detail leaves the tab alone — it is the SCREEN that aliases them'
     assert.equal(parseHash(`#/p/stack/${tab}`).tab, tab, `${tab} was swallowed by the router`);
   }
 });
+
+assert.deepEqual(parseHash('#/inbox'), { name: 'dashboard' });
+assert.deepEqual(parseHash('#/inbox/old'), { name: 'dashboard' });
