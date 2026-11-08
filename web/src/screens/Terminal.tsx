@@ -1512,8 +1512,10 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                 {g.rows.map((s) => {
                   const st = statusOf(s);
                   const on = s.id === active && (view !== 'swarm' || flash === (s.tmux || `tab:${s.id}`));
+                  // Main + 3: which tabs are on the stage, and where (main green, the small three blue).
+                  const slot = view !== 'split' ? '' : s.id === cur?.id ? ' in-main' : minis.some((m) => m.id === s.id) ? ' in-mini' : '';
                   return (
-                    <div key={s.id} data-tab={s.id} className={`tv-tab${on ? ' on' : ''} p-${projTint(g.project)}`}
+                    <div key={s.id} data-tab={s.id} className={`tv-tab${on ? ' on' : ''}${slot} p-${projTint(g.project)}`}
                       draggable onDragStart={(e) => { e.dataTransfer.effectAllowed = 'copyMove'; e.dataTransfer.setData('text/x-stack-tab', String(s.id)); setDragTab(s.id); }}
                       onDragEnd={() => { setDragTab(null); setSnapPreview(null); }}
                       onClick={() => selectTab(s)}
@@ -1549,7 +1551,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
             {meters.map((m) => {
               const s = m.session;
               return (
-                <button key={m.key} className={`tv-meter${usageOpen?.key === m.key ? ' on' : ''}`}
+                <button key={m.key} className={`tv-meter k-${m.key}${usageOpen?.key === m.key ? ' on' : ''}`}
                   title={s ? `${m.name}: ${Math.round(s.pct)}% of the session window used${s.resetAt ? `, resets ${fmtReset(s.resetAt)}` : ''}${m.week ? `. Weekly ${Math.round(m.week.pct)}%.` : '.'} Click for the breakdown.`
                     : `Stack cannot see ${m.name}'s limits right now. Click for what it can see.`}
                   onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); const k = m.key; setUsageOpen((u) => (u?.key === k ? null : { key: k, x: Math.max(8, Math.min(r.left, window.innerWidth - 348)) })); }}>

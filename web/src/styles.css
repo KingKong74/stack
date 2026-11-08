@@ -8964,6 +8964,10 @@ button.ar-open:hover { background: var(--surface-hover); }
 .tv-tab.on { background: var(--surface-card); border-color: var(--border-default); color: var(--text-primary); }
 .tv-tab.on.p-b { box-shadow: inset 0 -2px 0 var(--blue-400); }
 .tv-tab.on.p-l { box-shadow: inset 0 -2px 0 var(--lime-400); }
+/* Main + 3: the tabs on the stage are underlined by where they sit, whatever
+   their project tint. Main is live green; the three small panes the accent. */
+.tv-tab.in-main, .tv-tab.on.in-main { background: var(--live-tint); box-shadow: inset 0 -2px 0 var(--live); }
+.tv-tab.in-mini, .tv-tab.on.in-mini { background: var(--accent-tint); box-shadow: inset 0 -2px 0 var(--blue-400); }
 .tv-glyph {
   flex: none; width: 26px; height: 26px; border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: center;
   font: var(--weight-semibold) 13px/1 var(--font-mono);
@@ -9042,6 +9046,8 @@ button.ar-open:hover { background: var(--surface-hover); }
 .tv-meter-bar .v, .tv-uwin .bar .v { display: block; height: 100%; border-radius: var(--radius-pill); background: var(--lime-500); }
 .tv-meter-bar .v.warm, .tv-uwin .bar .v.warm { background: var(--amber-500); }
 .tv-meter-bar .v.hot, .tv-uwin .bar .v.hot { background: var(--red-500); }
+.tv-meter.k-claude .tv-meter-bar .v:not(.hot) { background: var(--tool-claude-fg); }
+.tv-meter.k-claude .tv-meter-row .pct:not(.hot) { color: var(--tool-claude-fg); }
 .tv-meter-row .pct { flex: none; font: var(--weight-medium) var(--text-2xs)/1 var(--font-mono); color: var(--text-secondary); }
 .tv-meter-row .pct.warm, .tv-uwin .p.warm { color: var(--status-warning-fg); }
 .tv-meter-row .pct.hot, .tv-uwin .p.hot { color: var(--status-danger-fg); }
@@ -9177,7 +9183,7 @@ button.ar-open:hover { background: var(--surface-hover); }
 .tv-stage { flex: 1; min-height: 0; min-width: 0; background: var(--surface-canvas); }
 .tv-stage.v-focus { display: grid; grid-template: minmax(0, 1fr) / minmax(0, 1fr); }
 .tv-stage.v-split {
-  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: minmax(0, 1.7fr) minmax(0, 1fr);
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: minmax(0, 2.4fr) minmax(0, 1fr);
   gap: var(--space-3); padding: var(--space-3);
 }
 .tv-stage.v-swarm { display: flex; flex-direction: column; }

@@ -35,6 +35,7 @@ import { buildPrompt } from '../prompts.js';
 import { askGemini, geminiEnabled } from '../gemini.js';
 import { readSettings } from '../settings.js';
 import { numericId } from '../params.js';
+import { reviewDigest } from '../review-digest.js';
 import { SPRINT_SLICE_ONLY } from './sprints.js';
 
 // Mounted at /api/projects/:slug/roadmap.
@@ -112,6 +113,17 @@ const cleanKind = (v) => {
 };
 
 const FLY_SESSION_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+
+// The board's REVIEW ALL digest (?ids=1,2,3) — what each built change can show
+// for itself before a human ticks it done. A READ and nothing else: the ticking
+// is the ordinary PATCH below, one row at a time, so every rule `done` carries
+// is applied exactly as a single tick applies it. `review-digest.js` says where
+// each field comes from and what its absence means.
+roadmap.get('/review-digest', async (req, res) => {
+  const ids = String(req.query.ids || '').split(',').map((s) => Number(s.trim())).filter((n) => Number.isInteger(n) && n > 0);
+  if (!ids.length) return res.json({ suite: null, branchesAt: null, items: {} });
+  res.json(await reviewDigest(q, req.project.id, ids));
+});
 
 // POST /  -> create a roadmap item (optionally pre-claimed to a lane)
 //
