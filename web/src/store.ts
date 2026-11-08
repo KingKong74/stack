@@ -1893,7 +1893,7 @@ export async function getContextRoom(): Promise<ContextRoom> {
   return request<ContextRoom>('/context');
 }
 
-/** Each live project's CLAUDE.md files, read off the host now. Stack keeps no copy. */
+/** Each live project's CLAUDE.md and AGENTS.md files, read off the host now. Stack keeps no copy. */
 export async function getClaudeMd(): Promise<ClaudeMdRead> {
   return request<ClaudeMdRead>('/context/claude-md');
 }

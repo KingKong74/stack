@@ -38,7 +38,7 @@
 //    gateway the server cannot see at all.
 //  • CONTEXT (wired) — what text actually reaches a model here: the session
 //    defaults, each SPAWN PROFILE's prompt, the ✧ assist steer, and each
-//    project's CLAUDE.md files READ LIVE OFF THE HOST. Stack once kept a DB
+//    project's CLAUDE.md and AGENTS.md files READ LIVE OFF THE HOST. Stack once kept a DB
 //    copy of every CLAUDE.md and wrote it back on a schedule, and a stale copy
 //    silently reverted this repo's own file for days. So a CLAUDE.md here is
 //    never stored, is written only by a human's Save, and that Save is refused
@@ -956,6 +956,8 @@ const kb = (n: number) => (n < 1000 ? `${n} B` : `${(n / 1000).toFixed(1)} KB`);
 // because it comes from a different read (the host, live) with its own failure
 // states, and the room must not wait on the host to draw the rest.
 function claudeMdDoc(slug: string, name: string, f: ClaudeMdFile): ContextDoc {
+  const fileName = f.path.split('/').pop() || 'CLAUDE.md';
+  const agent = fileName === 'AGENTS.md' ? 'Codex' : 'Claude Code';
   const dir = f.path.includes('/') ? f.path.slice(0, f.path.lastIndexOf('/') + 1) : '';
   const pct = f.budget ? Math.round((f.bytes / f.budget) * 100) : null;
   return {
@@ -963,8 +965,8 @@ function claudeMdDoc(slug: string, name: string, f: ClaudeMdFile): ContextDoc {
     path: `${slug}/${f.path}`,
     kind: 'repo',
     scope: dir
-      ? `Claude Code sessions in ${name}, when they work under ${dir}`
-      : `Every Claude Code session opened in ${name}`,
+      ? `${agent} sessions in ${name}, when they work under ${dir}`
+      : `Every ${agent} session opened in ${name}`,
     inherits: true,
     summary: 'Read off the host just now. Stack keeps no copy. Saving writes the file on disk and does not commit it.',
     meta: [
@@ -976,7 +978,7 @@ function claudeMdDoc(slug: string, name: string, f: ClaudeMdFile): ContextDoc {
     reads: null,
     readsLabel: '',
     edit: f.truncated ? null : {
-      kind: 'claude-md', slug, path: f.path, sha: f.sha, value: f.body, label: 'CLAUDE.md',
+      kind: 'claude-md', slug, path: f.path, sha: f.sha, value: f.body, label: fileName,
       hint: 'Saves straight to the file on the host. If a session or a pull changed it since you opened it, the save is refused and nothing is overwritten. Saving does not commit.',
     },
     note: f.truncated ? 'This file is over the host\'s read cap, so only the start is shown, and it cannot be edited here.' : '',
@@ -1037,7 +1039,7 @@ function Context() {
         <span className="lede">
           {all.length} pieces of prompt text · {words.toLocaleString()} words. What Stack itself puts
           in front of a model — the session block every session starts with, each spawn profile's
-          prompt and the ✧ steer — then each project's CLAUDE.md files, read live off the host.
+          prompt and the ✧ steer — then each project's CLAUDE.md and AGENTS.md files, read live off the host.
         </span>
       </div>
 
@@ -1066,17 +1068,17 @@ function Context() {
             );
           })}
           {/* FAIL SILENT: no daemon means Stack cannot see the files, which
-              must never be drawn as "no CLAUDE.md anywhere". */}
+              must never be drawn as "no instruction files anywhere". */}
           <div className="mcx-docfoot">
-            {mdBusy && !md ? 'Reading the repos’ CLAUDE.md files off the host…'
-              : mdErr ? `Could not ask for the repos’ CLAUDE.md files: ${mdErr}`
-              : md && !md.connected ? 'Stack cannot see the host (the terminal daemon is not connected), so the repos’ CLAUDE.md files are not shown. That is not the same as having none.'
-              : md && !md.ok ? `The host could not read the CLAUDE.md files: ${md.reason}`
+            {mdBusy && !md ? 'Reading the repos’ CLAUDE.md and AGENTS.md files off the host…'
+              : mdErr ? `Could not ask for the repos’ CLAUDE.md and AGENTS.md files: ${mdErr}`
+              : md && !md.connected ? 'Stack cannot see the host (the terminal daemon is not connected), so the repos’ CLAUDE.md and AGENTS.md files are not shown. That is not the same as having none.'
+              : md && !md.ok ? `The host could not read the CLAUDE.md and AGENTS.md files: ${md.reason}`
               : <>
-                  Each CLAUDE.md is read live, and Stack keeps no copy. A Save writes the file and is
+                  Each instruction file is read live, and Stack keeps no copy. A Save writes the file and is
                   refused if it changed on disk since you opened it.
-                  {repos.filter((p) => p.more).map((p) => ` ${p.name} has ${p.more} more CLAUDE.md files than the ${p.files.length} listed.`).join('')}
-                  {noFiles.length ? ` No CLAUDE.md in: ${noFiles.map((p) => p.name).join(', ')}.` : ''}
+                  {repos.filter((p) => p.more).map((p) => ` ${p.name} has ${p.more} more CLAUDE.md and AGENTS.md files than the ${p.files.length} listed.`).join('')}
+                  {noFiles.length ? ` No CLAUDE.md or AGENTS.md in: ${noFiles.map((p) => p.name).join(', ')}.` : ''}
                   {noCheckout.length ? ` No checkout on this host for: ${noCheckout.map((p) => p.name).join(', ')}.` : ''}
                 </>}
             {md && !mdBusy ? <> <button type="button" className="k-btn sm ghost" onClick={reloadMd}>Re-read</button></> : null}

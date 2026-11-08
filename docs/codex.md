@@ -19,7 +19,7 @@ instructions. Existing authenticated Codex access is separate from Stack's API c
 | Resume context and branch claims | Read explicitly; no automatic Claude SessionStart injection. |
 | Rich activity and resume update | Author JSON and invoke the existing checkpoint poster explicitly. |
 | SessionEnd backstop, usage and edit watching | No Codex integration; do not infer zero usage or no active edits. |
-| Mission Control context editor | Existing implementation manages CLAUDE.md; AGENTS.md support is not added here. |
+| Mission Control context editor | Lists CLAUDE.md and AGENTS.md live from each checkout, with guarded human saves. |
 
 The Terminal page offers Claude and Codex, plus a utility Shell. It no longer offers gateway
 models or provider fallback. Old device routing preferences are ignored. Claude's permission

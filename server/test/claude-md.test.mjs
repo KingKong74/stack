@@ -69,5 +69,24 @@ symlinkSync(join(root, 'outside.md'), join(repo, 'sym', 'CLAUDE.md'));
 refuse('never writes through a symlink', { path: 'sym/CLAUDE.md', sha: sha(Buffer.from('secret')) });
 check('the symlink target is untouched', readFileSync(join(root, 'outside.md'), 'utf8'), 'secret');
 
+// Both instruction families share discovery and the guarded Save contract.
+put('AGENTS.md', '# codex root\n');
+put('web/AGENTS.md', '# codex web\n');
+put('node_modules/pkg/AGENTS.md', '# dependency\n');
+put('AGENTS.override.md', '# outside this editor’s allowlist\n');
+const both = listClaudeMd({ root, slugs: ['demo'] })[0].files;
+check('both root and nested instruction files are listed', both.map((f) => f.path),
+  ['AGENTS.md', 'CLAUDE.md', 'big/CLAUDE.md', 'web/AGENTS.md', 'web/CLAUDE.md']);
+const agentsFile = both.find((f) => f.path === 'AGENTS.md');
+const savedAgents = writeClaudeMd({ root, slug: 'demo', path: 'AGENTS.md', sha: agentsFile.sha, body: '# codex edited\n' });
+check('AGENTS.md saves with the opened hash', [savedAgents.ok, readFileSync(join(repo, 'AGENTS.md'), 'utf8')], [true, '# codex edited\n']);
+refuse('a stale AGENTS.md save is refused', { path: 'AGENTS.md', sha: agentsFile.sha });
+refuse('a missing AGENTS.md is never created', { path: 'new/AGENTS.md' });
+refuse('other instruction filenames remain refused', { path: 'AGENTS.override.md' });
+symlinkSync(join(root, 'outside.md'), join(repo, 'sym', 'AGENTS.md'));
+refuse('AGENTS.md symlinks are refused', { path: 'sym/AGENTS.md', sha: sha(Buffer.from('secret')) });
+const nestedAgents = both.find((f) => f.path === 'web/AGENTS.md');
+check('nested AGENTS.md can be saved', writeClaudeMd({ root, slug: 'demo', path: nestedAgents.path, sha: nestedAgents.sha, body: '# nested edit\n' }).ok, true);
+
 console.log(fails ? `\n${fails} failed` : '\nall passed');
 process.exit(fails ? 1 : 0);
