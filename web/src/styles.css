@@ -321,9 +321,6 @@
      chip, so a Claude tab and a Codex tab read apart before you read either. */
   --tool-claude-fg: oklch(0.78 0.12 50);
   --tool-claude-bg: oklch(0.32 0.06 50);
-  /* the Claude limit meter and its breakdown: a lighter clay than the glyph,
-     so a thin bar still reads as orange rather than brown */
-  --tool-claude-limit: oklch(0.86 0.1 62);
 
   --panel: var(--surface-raised);
 
@@ -8982,8 +8979,10 @@ button.ar-open:hover { background: var(--surface-hover); }
 .tv-meter-bar .v, .tv-uwin .bar .v { display: block; height: 100%; border-radius: var(--radius-pill); background: var(--lime-500); }
 .tv-meter-bar .v.warm, .tv-uwin .bar .v.warm { background: var(--amber-500); }
 .tv-meter-bar .v.hot, .tv-uwin .bar .v.hot { background: var(--red-500); }
-.tv-meter.k-claude .tv-meter-bar .v:not(.hot), .tv-usage.k-claude .tv-uwin .bar .v:not(.hot) { background: var(--tool-claude-limit); }
-.tv-meter.k-claude .tv-meter-row .pct:not(.hot), .tv-usage.k-claude .tv-uwin .p:not(.hot) { color: var(--tool-claude-limit); }
+/* The Claude limit draws in the design's orange (Terminal Prototype v2: the
+   meter's amber bar and warning-tone figure) until it runs hot. */
+.tv-meter.k-claude .tv-meter-bar .v:not(.hot), .tv-usage.k-claude .tv-uwin .bar .v:not(.hot) { background: var(--amber-500); }
+.tv-meter.k-claude .tv-meter-row .pct:not(.hot), .tv-usage.k-claude .tv-uwin .p:not(.hot) { color: var(--status-warning-fg); }
 .tv-meter-row .pct { flex: none; font: var(--weight-medium) var(--text-2xs)/1 var(--font-mono); color: var(--text-secondary); }
 .tv-meter-row .pct.warm, .tv-uwin .p.warm { color: var(--status-warning-fg); }
 .tv-meter-row .pct.hot, .tv-uwin .p.hot { color: var(--status-danger-fg); }
