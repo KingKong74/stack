@@ -9405,3 +9405,10 @@ a.pp-link:hover { text-decoration: underline; }
 @media (max-width: 640px) {
   .pp-dialog > .pp-foot { bottom: calc(-1 * var(--space-5)); margin: 0 calc(-1 * var(--space-5)); padding: var(--space-4) var(--space-5); }
 }
+
+/* The whole slice stays scrollable, including on a narrow board. */
+.sf { overflow: auto; }
+.sf .bf-chrome { position: sticky; top: 0; padding: var(--space-6); background: var(--surface-canvas); z-index: 1; flex-wrap: wrap; }
+.sf-content { max-width: 1100px; margin: 0 auto; padding: var(--space-6); overflow-wrap: anywhere; }
+.sf-items { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr)); gap: var(--space-5); }
+.sf-item { width: 100%; text-align: left; font: inherit; color: inherit; }

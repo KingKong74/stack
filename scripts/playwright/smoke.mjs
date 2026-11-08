@@ -229,6 +229,19 @@ const ROADMAP_PANELS = [
   // need a slice on the board; after the #608 migration every board with work
   // in flight has one ("Carried over" at least).
   {
+    id: 'board-slicezoom',
+    label: 'Board — double-click a slice header to zoom',
+    click: '.km-slicegroup .km-grouphead .nm',
+    dblclick: true,
+    expect: '.sf .sf-content',
+  },
+  {
+    id: 'board-slicezoom-back',
+    label: 'Board — return from slice zoom',
+    click: '.sf .bf-back',
+    expect: 'body:not(:has(.sf)) .km-grouphead',
+  },
+  {
     id: 'board-sliceedit',
     label: 'Board — a slice head opens its editor',
     click: '.km-grouphead [aria-label^="Edit slice"]',
