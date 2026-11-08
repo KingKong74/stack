@@ -378,27 +378,12 @@ const ROADMAP_PANELS = [
   },
 ];
 
-// THE DESIGN'S THREE OTHER VIEWS (detail/Artifacts.tsx, SkillsAgents.tsx,
-// Loops.tsx). Loops is a mockup on component state, so a press there writes
-// nothing anywhere. Artifacts and Skills & agents are WIRED: their presses are
-// view state only (a type tab, a grouping, a fold opened), and NEVER New, Edit,
-// a switch, a tool cell, a model picker or Adopt. New's menu creates a row from
-// one more click, and Edit leaves a real artifact one keystroke from a save
-// (and a project with none has no Edit to press).
-const ARTIFACTS_PANELS = [
-  {
-    id: 'artifacts-type',
-    label: 'Artifacts — a type tab filters the list',
-    click: '.ar .ar-type:nth-child(2)',
-    expect: '.ar .ar-type:nth-child(2).on',
-  },
-  {
-    id: 'artifacts-group',
-    label: 'Artifacts — Group by Item regroups the list',
-    click: '.ar .ar-gb:nth-of-type(3)',
-    expect: '.ar .ar-gb:nth-of-type(3).on',
-  },
-];
+// THE DESIGN'S OTHER VIEWS (detail/SkillsAgents.tsx, Loops.tsx). Loops is a
+// mockup on component state, so a press there writes nothing anywhere. Skills
+// & agents is WIRED: its presses are view state only (a fold opened), and
+// NEVER a switch, a tool cell, a model picker or Adopt. Artifacts has no
+// view-only press left (every control there creates, edits or deletes), so
+// only its first paint is walked.
 const AGENTS_PANELS = [
   {
     id: 'agents-fold',
@@ -744,7 +729,6 @@ export const SCREENS = [
     id: 'project-artifacts',
     label: 'Project — Artifacts',
     path: '#/p/<slug>/artifacts',
-    interactions: ARTIFACTS_PANELS,
   },
   {
     id: 'project-agents',

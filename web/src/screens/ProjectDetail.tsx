@@ -749,7 +749,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
         )}
 
         {/* The design's three tabs: each file's header says what is real. */}
-        {tab === 'artifacts' && <Artifacts slug={slug} items={allRoadmap} />}
+        {tab === 'artifacts' && <Artifacts slug={slug} />}
         {tab === 'charter' && <Charter slug={slug} cap={data.charter?.cap ?? 600} />}
         {tab === 'architecture' && (
           <Architecture slug={slug} items={allRoadmap} slices={data.slices} milestones={data.milestones} />
