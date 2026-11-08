@@ -1485,131 +1485,55 @@ a.tab { display: inline-block; }
 .show-summary { font-size: 13.5px; line-height: 1.65; color: var(--body); white-space: pre-wrap; }
 .show-foot { margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--line-2); font-size: 12px; color: var(--faint); text-align: center; }
 
-/* ---------- the landing page + the token gate (first-load screen) ----------
-   Claude Design "Stack Project Logo Design" (ac7ecb0c), artboard "Stack
-   Landing v2". The layout is the design's verbatim; components/TokenGate.tsx
-   carries the two notes about it that are decisions rather than details.
+/* ---------- the title card (first-load screen) ----------
+   Claude Design project 7f40db62 "Stack Landing", artboard 2a "Title card";
+   components/TokenGate.tsx carries the notes. The glows are the design's two
+   radial washes, mixed from the brand blue and lime. */
+.tcard { min-height: 100vh; min-height: 100dvh; box-sizing: border-box; display: flex; align-items: center; justify-content: center; padding: 48px 16px; color: var(--text-primary); font: var(--type-body);
+  background:
+    radial-gradient(520px 340px at 50% 30%, color-mix(in oklch, var(--blue-500) 22%, transparent), transparent 70%),
+    radial-gradient(360px 240px at 60% 42%, color-mix(in oklch, var(--lime-500) 10%, transparent), transparent 70%),
+    var(--surface-canvas); }
+.tcard-col { width: 100%; max-width: 380px; display: flex; flex-direction: column; align-items: center; gap: 32px; }
+.tcard-head { display: flex; flex-direction: column; align-items: center; gap: 16px; text-align: center; }
+.tcard-mark { all: unset; cursor: pointer; display: block; border-radius: var(--radius-lg); }
+.tcard-mark:focus-visible { box-shadow: var(--ring-focus); }
+.tcard-mark svg { display: block; }
+.tcard-word { margin: 0; font: var(--weight-semibold) var(--text-4xl)/1 var(--font-sans); letter-spacing: -0.03em; }
+.tcard-line { margin: 0; font: var(--type-body); color: var(--text-secondary); }
 
-   `.gate` IS STILL A CENTRING WRAPPER and screens/Showcase.tsx still uses it
-   for its "Nothing here" card, so it and `.gate-card`/`-title`/`-sub` stay
-   block-level with margins between them. The landing does NOT use `.gate` —
-   it scrolls, so its gate section is `.land-gate` and only the card is shared.
-   Restyle the card and you restyle a showcase error; that is intended (one
-   card), but check both. */
+.tcard-card { width: 100%; box-sizing: border-box; background: var(--surface-card); border: 1px solid var(--border-default); border-radius: var(--radius-xl); padding: 24px; display: flex; flex-direction: column; gap: 14px; }
+.tcard-seg { display: grid; grid-template-columns: 1fr 1fr; padding: 3px; gap: 3px; background: var(--surface-sunken); border-radius: var(--radius-md); }
+.tcard-seg button { all: unset; cursor: pointer; text-align: center; padding: 7px 0; border-radius: var(--radius-sm); font: var(--type-label); color: var(--text-tertiary); transition: var(--transition-control); }
+.tcard-seg button.on { background: var(--surface-raised); color: var(--text-primary); }
+.tcard-seg button:focus-visible { box-shadow: var(--ring-focus); }
+.tcard-input { font: var(--type-code); background: var(--surface-sunken); color: var(--text-primary); border: 1px solid var(--border-default); border-radius: var(--radius-md); padding: 11px 12px; outline: none; min-width: 0; }
+.tcard-input::placeholder { color: var(--text-tertiary); }
+.tcard-input:focus { border-color: var(--border-focus); box-shadow: var(--ring-focus); }
+.tcard-error { font: var(--type-caption); color: var(--critical-text); }
+.tcard-btn { all: unset; cursor: pointer; text-align: center; padding: 11px 0; border-radius: var(--radius-md); background: var(--action-primary); color: var(--white); font: var(--weight-semibold) var(--text-md)/1.2 var(--font-sans); transition: var(--transition-control); }
+.tcard-btn:hover:not(:disabled) { background: var(--action-primary-hover); }
+.tcard-btn:focus-visible { box-shadow: var(--ring-focus); }
+.tcard-btn:disabled { opacity: .55; cursor: default; }
+.tcard-foot { font: var(--type-code); font-size: var(--text-2xs); color: var(--text-tertiary); }
+
+/* The mark's play: the tile pops, the plates slide apart and settle, top
+   first. Plates are the 2nd–4th rects of StackMark at this size. */
+@keyframes titlePlate { 0% { transform: translateX(0); } 35%, 60% { transform: translateX(var(--dx)); } 100% { transform: translateX(0); } }
+@keyframes titlePop { 0%, 100% { transform: scale(1); } 20% { transform: scale(.94); } 55% { transform: scale(1.04); } }
+.tcard-mark.play svg { animation: titlePop 700ms var(--ease-out); }
+.tcard-mark.play rect + rect { transform-box: fill-box; animation: titlePlate 700ms var(--ease-standard) both; }
+.tcard-mark.play rect:nth-of-type(2) { --dx: -9px; }
+.tcard-mark.play rect:nth-of-type(3) { --dx: 9px; animation-delay: 90ms; }
+.tcard-mark.play rect:nth-of-type(4) { --dx: 9px; animation-delay: 180ms; }
+
+/* `.gate` is a centring wrapper and `.gate-card` its card. screens/Showcase.tsx
+   uses both for its "Nothing here" card. */
 .gate { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
-
-.land { display: flex; flex-direction: column; align-items: center; background: var(--surface-canvas); color: var(--text-primary); font: var(--type-body); overflow-x: hidden; }
-.land-band, .land-nav { width: 100%; box-sizing: border-box; max-width: 1120px; padding-inline: clamp(20px, 6vw, 80px); }
-
-.land-nav { display: flex; align-items: center; justify-content: space-between; gap: var(--space-5); padding-block: var(--space-5); }
-.land-navlink { background: none; border: none; padding: 0; font: var(--type-label); color: var(--text-secondary); white-space: nowrap; cursor: pointer; transition: var(--transition-control); }
-.land-navlink:hover { color: var(--text-primary); }
-
-/* The landing keeps its wordmark on a phone. The global rule above (720px)
-   drops `.brandmark .word` because the TOPBAR is fighting a crumb and a
-   searchbox for the same row; the landing's nav has two things in it and its
-   gate card has the whole card, so on both the word has the room and the
-   brand is the point. */
-@media (max-width: 720px) {
-  .land .brandmark .word { display: revert; }
-}
-
-/* Hero. The two glows are decoration behind the type — pointer-events off, and
-   they are the reason the hero's own children are positioned. */
-.land-hero { position: relative; width: 100%; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-7); text-align: center; min-height: min(82vh, 800px); padding: var(--space-10) clamp(20px, 6vw, 80px); }
-.land-hero > *:not(.land-glow) { position: relative; }
-.land-glow { position: absolute; top: 8%; left: 50%; transform: translateX(-50%); width: min(820px, 130%); height: 440px; border-radius: 50%; background: radial-gradient(closest-side, var(--blue-tint), transparent 78%); filter: blur(18px); pointer-events: none; }
-.land-glow.lime { top: 16%; width: min(340px, 78%); height: 200px; filter: none; background: radial-gradient(closest-side, var(--lime-tint), transparent 72%); }
-
-.land-heromark { display: flex; flex-direction: column; align-items: center; gap: 18px; }
-.land-heromark svg { filter: drop-shadow(0 12px 34px var(--scrim)); }
-.land-eyebrow { font: var(--type-eyebrow); letter-spacing: var(--tracking-caps); text-transform: uppercase; color: var(--text-tertiary); white-space: nowrap; }
-.land-eyebrow.accent { color: var(--text-accent); white-space: normal; }
-
-.land-h1 { font: var(--weight-semibold) clamp(38px, 8vw, 76px)/1.04 var(--font-sans); letter-spacing: -0.04em; margin: 0; max-width: 15em; text-wrap: balance; }
-.land-lede { font: var(--weight-regular) clamp(16px, 2.2vw, 20px)/1.55 var(--font-sans); color: var(--text-secondary); margin: 0; max-width: 48ch; text-wrap: pretty; }
-
-.land-hero-pills { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: var(--space-4); font: var(--weight-medium) var(--text-xs)/1 var(--font-mono); color: var(--text-tertiary); }
-.land-pill { display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; border-radius: var(--radius-pill); padding: 6px 11px; }
-.land-pill i { width: 6px; height: 6px; border-radius: 50%; flex: none; }
-.land-pill.info { background: var(--status-info-bg); color: var(--status-info-fg); }
-.land-pill.info i { background: var(--blue-500); }
-.land-pill.ok { background: var(--status-success-bg); color: var(--status-success-fg); }
-.land-pill.ok i { background: var(--lime-500); }
-.land-pill-plain { white-space: nowrap; }
-
-/* Every band below the hero is ruled off from the one above it. */
-.land-band { padding-block: var(--space-10); border-top: 1px solid var(--border-subtle); display: flex; flex-direction: column; gap: var(--space-8); }
-.land-band-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--space-4); }
-.land-band-note { font: var(--type-caption); font-family: var(--font-mono); color: var(--text-tertiary); white-space: nowrap; }
-
-.land-nouns { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr)); gap: var(--space-6); }
-.land-noun { display: flex; flex-direction: column; gap: var(--space-4); background: var(--surface-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: var(--space-6); }
-.land-noun-n { font: var(--weight-medium) var(--text-xs)/1 var(--font-mono); color: var(--text-link); }
-.land-noun-n.accent { color: var(--text-accent); }
-.land-noun h2 { font: var(--type-heading); margin: 0; }
-.land-noun p { font: var(--type-body-sm); color: var(--text-secondary); margin: 0; text-wrap: pretty; }
-
-/* The console mock. Illustrative — see the note in TokenGate.tsx. */
-.land-mockband { border-top: none; gap: var(--space-5); padding-block: var(--space-9) var(--space-10); }
-.land-mock { display: flex; flex-direction: column; gap: var(--space-6); background: var(--surface-sunken); border: 1px solid var(--border-subtle); border-radius: var(--radius-2xl); padding: clamp(16px, 3vw, 32px); }
-.land-mock-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(290px, 100%), 1fr)); gap: var(--space-6); }
-.land-mock-pane { display: flex; flex-direction: column; gap: var(--space-4); background: var(--surface-raised); border: 1px solid var(--border-subtle); border-radius: var(--radius-xl); padding: var(--space-6); }
-.land-mock-runs { display: flex; flex-direction: column; gap: var(--space-4); background: var(--surface-card); border: 1px solid var(--border-default); border-radius: var(--radius-xl); padding: var(--space-6); box-shadow: var(--shadow-md); }
-.land-mock-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); }
-.land-mock-head .t { font: var(--type-label); color: var(--text-primary); white-space: nowrap; }
-.land-mock-head .n { font: var(--weight-medium) var(--text-2xs)/1 var(--font-mono); color: var(--text-tertiary); white-space: nowrap; }
-
-.land-mock-task { display: flex; flex-direction: column; gap: var(--space-4); background: var(--surface-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: var(--space-5); }
-.land-mock-task.queued { opacity: .72; }
-.land-mock-task .t { font: var(--type-body-sm); color: var(--text-primary); }
-.land-mock-task .m { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
-.land-mock-task .id { font: var(--weight-medium) var(--text-2xs)/1 var(--font-mono); color: var(--text-link); white-space: nowrap; }
-.land-mock-task .area { font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-tertiary); white-space: nowrap; }
-.land-mock-task .tag { font: var(--type-label); border-radius: var(--radius-sm); padding: 2px 8px; white-space: nowrap; }
-.land-mock-task .tag.info, .land-pipeline .step.info { background: var(--status-info-bg); color: var(--status-info-fg); }
-.land-mock-task .tag.ok, .land-pipeline .step.ok { background: var(--status-success-bg); color: var(--status-success-fg); }
-.land-mock-task .tag.neutral, .land-pipeline .step.neutral { background: var(--status-neutral-bg); color: var(--status-neutral-fg); }
-
-.land-run { display: flex; flex-direction: column; gap: var(--space-3); }
-.land-run-top { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); font: var(--weight-medium) var(--text-xs)/1 var(--font-mono); color: var(--text-primary); white-space: nowrap; }
-.land-run-top .n { color: var(--text-tertiary); }
-.land-run-top .done { color: var(--text-accent); }
-.land-run-track { height: 6px; border-radius: var(--radius-pill); background: var(--surface-overlay); overflow: hidden; }
-.land-run-fill { height: 100%; }
-
-.land-mock-log { display: flex; flex-direction: column; gap: var(--space-3); background: var(--surface-sunken); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: var(--space-5); font: var(--type-code); color: var(--text-secondary); }
-.land-mock-log .dim { color: var(--text-tertiary); }
-.land-mock-log .ok { color: var(--text-accent); }
-.land-mock-foot { display: flex; align-items: center; gap: var(--space-4); border-top: 1px solid var(--border-subtle); padding-top: var(--space-5); }
-.land-mock-foot .btn { font: var(--type-label); color: var(--white); background: var(--action-primary); border-radius: var(--radius-md); padding: 9px 16px; white-space: nowrap; }
-.land-mock-foot .lnk { font: var(--type-body-sm); color: var(--text-secondary); white-space: nowrap; }
-
-.land-pipeline { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-4); background: var(--surface-raised); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: var(--space-5); font: var(--weight-medium) var(--text-xs)/1 var(--font-mono); }
-.land-pipeline .dim { color: var(--text-tertiary); }
-.land-pipeline .step { border-radius: var(--radius-sm); padding: 4px 9px; white-space: nowrap; }
-
-.land-oneliners { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr)); gap: var(--space-7); }
-.land-oneliners h3 { font: var(--type-heading); margin: 0 0 var(--space-3); }
-.land-oneliners p { font: var(--type-body-sm); color: var(--text-secondary); margin: 0; text-wrap: pretty; }
-
-.land-gate { width: 100%; box-sizing: border-box; display: flex; justify-content: center; padding: var(--space-10) clamp(20px, 6vw, 80px) var(--space-11); border-top: 1px solid var(--border-subtle); background: var(--surface-sunken); }
-
 .gate-card { width: 100%; max-width: 420px; background: var(--card); border: 1px solid var(--border-default); border-radius: var(--radius-xl); padding: clamp(20px, 4vw, 32px); box-shadow: var(--shadow-lg); }
 .gate-card .brandmark { margin-bottom: 18px; }
 .gate-title { font-family: var(--disp); font-size: 20px; font-weight: 600; margin-bottom: 6px; }
 .gate-sub { font-size: 13px; line-height: 1.55; color: var(--muted); margin-bottom: 18px; }
-.gate .field-input, .gate-card .field-input { margin-bottom: 12px; }
-.gate-error { font-size: 12.5px; color: var(--critical-text); margin-bottom: 12px; }
-.gate-btn { width: 100%; justify-content: center; }
-.gate-btn:disabled { opacity: .55; cursor: default; }
-.gate-foot { font: var(--type-caption); color: var(--text-tertiary); margin-top: 12px; text-align: center; }
-.gate-help-toggle { display: block; margin: 12px auto 0; background: none; border: none; padding: 0; font: inherit; font-size: 12.5px; color: var(--accent-text); cursor: pointer; }
-.gate-help-toggle:hover { color: var(--accent-text-hover); }
-.gate-help { margin-top: 12px; padding: 12px 14px; background: var(--panel); border: 1px solid var(--line-2); border-radius: 10px; font-size: 12.5px; line-height: 1.6; color: var(--body); }
-.gate-help .mono { font-size: 11.5px; }
-.gate-link { display: block; margin: 18px auto 0; background: none; border: none; padding: 0; font: inherit; font-size: 13px; color: var(--muted); cursor: pointer; }
-.gate-link:hover { color: var(--ink); }
 .pcard .meta > * + * { margin-top: 0; }
 
 /* ---------- detail head: muted (unset) site/repo + inline URL editor ---------- */
