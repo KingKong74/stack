@@ -68,6 +68,10 @@
 //     the current milestone's only slice; with neither it goes to the Icebox,
 //     and the note line says so rather than letting the card vanish silently.
 //     The strip above the toolbar is the milestone (detail/Spine.tsx).
+// 13. THE PROPOSITIONS COLUMN COMES FIRST (detail/Propositions.tsx). It holds
+//     proposals, not cards: no drop, no `project_lists` key, nothing counted
+//     in "on the board". An accept makes ordinary sliced rows, which then
+//     appear in the delivery columns; the tile only points at them.
 //
 // THE CARD MENU: Park/Unpark, Archive, Delete (a `hook` row's delete tombstones
 // its fingerprint, so it has no undo), and Sign off on a held card. Edit item…
@@ -94,11 +98,12 @@ import {
   queueTermLaunch,
 } from '../store';
 import { DevelopmentView } from './Development';
-import { go } from '../lib/route';
+import { go, hrefTo } from '../lib/route';
 import { newTermName, termClaim, launchBrief } from '../lib/termLaunch';
 import type { BoardFolds, BoardView, BoardSort, BoardShow, BoardGroup } from '../store';
 import { BoardListView, SORT_LABEL, SHOW_LABEL } from './BoardList';
 import { BoardFocus, type FocusOpen, type FocusPhase } from './BoardFocus';
+import { PropositionsColumn } from './Propositions';
 
 // The five priorities, their glyphs and their tones come from `lib/ui.ts` —
 // ONE list, shared with the ＋ dock. This file carried its own copy of it while
@@ -1041,7 +1046,7 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
         <SpineStrip milestones={ms} slices={sl} iced={icedCount}
           onMilestone={() => { closeAll(); setMsEdit(true); }}
           onNewSlice={() => { closeAll(); setSliceEdit({ slice: null }); }}
-          onIcebox={() => go.detail(slug, 'auto')} />
+          onIcebox={() => go.detail(slug, 'auto')} milestonesHref={hrefTo.detail(slug, 'milestones')} />
         <div className="km-toolbar">
           <span className="searchbox sm km-search">
             <KitIcon name="search" size={14} />
@@ -1148,6 +1153,9 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
         )}
 
         <div className="km-cols">
+          {/* PROPOSITIONS FIRST (detail/Propositions.tsx): proposed work, not
+              cards. It takes no drop and is not a `project_lists` column. */}
+          <PropositionsColumn slug={slug} milestones={ms} onAccepted={onRefresh} />
           {columns.map((col, ci) => {
             const colFolded = foldedColumns.includes(col.key);
             const dragged = dragId === null ? null : rows.find((x) => x.id === dragId) || null;

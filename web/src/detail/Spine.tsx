@@ -68,9 +68,11 @@ export function SlicePicker({ value, slices, milestones, onPick, iceboxLabel = '
  * the Icebox. The Icebox count is what explains a low progress number right
  * after the spine landed: most of a board was iced for triage.
  */
-export function SpineStrip({ milestones, slices, iced, onMilestone, onNewSlice, onIcebox }: {
+export function SpineStrip({ milestones, slices, iced, onMilestone, onNewSlice, onIcebox, milestonesHref }: {
   milestones: Milestone[]; slices: Slice[]; iced: number;
   onMilestone: () => void; onNewSlice: () => void; onIcebox: () => void;
+  /** The Milestones tab, where every milestone (not just the current) lives. */
+  milestonesHref?: string;
 }) {
   const cur = currentMilestone(milestones);
   const inCur = cur ? slices.filter((s) => s.milestoneId === cur.id && !s.archived).length : 0;
@@ -84,6 +86,7 @@ export function SpineStrip({ milestones, slices, iced, onMilestone, onNewSlice, 
       </button>
       {cur?.goal.trim() && <span className="km-spine-goal">{cur.goal.trim().split('\n')[0]}</span>}
       {cur?.targetOn && <span className="k-tag" title="A target you set. It gates nothing.">by {cur.targetOn}</span>}
+      {milestonesHref && <a className="k-btn sm ghost" href={milestonesHref}>All milestones</a>}
       <span className="km-spine-rule" />
       <span className="km-spine-n">{inCur} slice{inCur === 1 ? '' : 's'}</span>
       <button className="k-btn sm secondary" onClick={onNewSlice}

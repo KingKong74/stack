@@ -6,7 +6,7 @@ import type {
   SchedSpan, ProjectPulse, BoardShape, BoardList, BoardArea, ItemKind,
   AgentProfile, AgentProfilesRoom, ModelsRoom, ContextRoom, ClaudeMdRead,
   ProjectKind, Spaces, SpaceArea, Workflow, WishIdea, IdeaStage, InboxData,
-  Artifact, ArtifactType,
+  Artifact, ArtifactType, Proposition,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -1968,3 +1968,16 @@ export async function downloadArtifactFile(slug: string, id: number, name: strin
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(href), 10_000);
 }
+
+// PROPOSITIONS — proposed milestones/slices/items (routes/propositions.js).
+// Accept and dismiss are the owner's; agents only POST.
+const propositionsBase = (slug: string) => `/projects/${encodeURIComponent(slug)}/propositions`;
+export const getPropositions = (slug: string) => request<Proposition[]>(propositionsBase(slug));
+export const patchProposition = (slug: string, id: number,
+  patch: Partial<Pick<Proposition, 'title' | 'outcome' | 'purpose' | 'tree' | 'links'>>) =>
+  request<Proposition>(`${propositionsBase(slug)}/${id}`, { method: 'PATCH', body: patch });
+export const acceptProposition = (slug: string, id: number, keys: string[], into?: Record<string, number>) =>
+  request<Proposition & { made: { key: string; type: string; id: number }[] }>(
+    `${propositionsBase(slug)}/${id}/accept`, { method: 'POST', body: { keys, into } });
+export const dismissProposition = (slug: string, id: number) =>
+  request<Proposition>(`${propositionsBase(slug)}/${id}/dismiss`, { method: 'POST' });

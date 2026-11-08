@@ -1913,3 +1913,40 @@ END $$;
 --    same contract a dismissed hook row has, so the next checkpoint cannot
 --    propose it again.
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS slice_id INTEGER REFERENCES slices(id) ON DELETE SET NULL;
+
+-- PROPOSITIONS (routes/propositions.js): a proposed package of work — new
+-- milestones, slices and items — that an agent may write and only the owner
+-- turns into real rows. A proposition is NOT on the roadmap: none of its
+-- nodes is a roadmap_items row, so no queue, lane or progress figure can see
+-- it until an explicit accept creates the rows.
+--  • `source_key` is the proposer's stable identity for it (e.g.
+--    'artifact:6'), unique per project, so a retried or repeated proposal
+--    updates the one row instead of copying it.
+--  • `tree` is the hierarchy, cleaned by the route: {milestones:[{key, name,
+--    goal, targetOn, milestoneId?, slices:[{key, title, spec, areas, links,
+--    items:[{key, title, kind, note, bucket, area, spec, dependsOn, links}]}]}]}.
+--  • `accepted` maps a node key to the real row an accept made
+--    ({type, id}); a key in it is never created twice.
+--  • `status` 'dismissed' is the tombstone: a re-POST of the same source_key
+--    is refused, so a dismissed proposal never resurfaces by itself.
+CREATE TABLE IF NOT EXISTS propositions (
+  id           SERIAL PRIMARY KEY,
+  project_id   INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  source_key   TEXT NOT NULL,
+  title        TEXT NOT NULL,
+  outcome      TEXT NOT NULL DEFAULT '',
+  purpose      TEXT NOT NULL DEFAULT '',
+  tree         JSONB NOT NULL DEFAULT '{"milestones":[]}'::jsonb,
+  links        JSONB NOT NULL DEFAULT '[]'::jsonb,
+  artifact_id  INTEGER REFERENCES artifacts(id) ON DELETE SET NULL,
+  proposed_by  TEXT NOT NULL DEFAULT '',
+  origin       JSONB NOT NULL DEFAULT '{}'::jsonb,
+  status       TEXT NOT NULL DEFAULT 'proposed',   -- proposed | accepted | dismissed
+  accepted     JSONB NOT NULL DEFAULT '{}'::jsonb,
+  edited_at    TIMESTAMPTZ,
+  accepted_at  TIMESTAMPTZ,
+  dismissed_at TIMESTAMPTZ,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (project_id, source_key)
+);

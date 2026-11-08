@@ -961,3 +961,44 @@ export interface Artifact {
   createdAt: string;
   updatedAt: string;
 }
+
+// PROPOSITIONS (server/src/routes/propositions.js): a proposed package of new
+// milestones, slices and items. None of its nodes is a roadmap row until the
+// owner accepts it; `accepted` maps a node key to the real row it became.
+export type PropositionLink =
+  | { kind: 'artifact'; id: number; label: string }
+  | { kind: 'item'; id: number; label: string }
+  | { kind: 'url'; url: string; label: string };
+export interface PropItem {
+  key: string; title: string; kind: ItemKind; note: string; bucket: string; area: string;
+  spec: { goal?: string; acceptance?: string[]; files?: string[]; outOfScope?: string[] };
+  dependsOn: string[]; links: PropositionLink[];
+}
+export interface PropSlice { key: string; title: string; spec: string; areas: string[]; links: PropositionLink[]; items: PropItem[] }
+export interface PropMilestone {
+  key: string; name: string; goal: string; targetOn: string | null;
+  /** Set when the slices are proposed into a milestone that already exists. */
+  milestoneId: number | null;
+  slices: PropSlice[];
+}
+export interface Proposition {
+  id: number;
+  sourceKey: string;
+  title: string;
+  outcome: string;
+  purpose: string;
+  kind: 'milestone' | 'slices' | 'empty';
+  status: 'proposed' | 'accepted' | 'dismissed';
+  tree: { milestones: PropMilestone[] };
+  links: PropositionLink[];
+  accepted: Record<string, { type: 'milestone' | 'slice' | 'item'; id: number; existing?: boolean }>;
+  artifactId: number | null;
+  proposedBy: string;
+  origin: { kind?: string; sessionId?: string; branch?: string };
+  counts: { milestones: number; slices: number; items: number; accepted: number; total: number };
+  editedAt: string | null;
+  acceptedAt: string | null;
+  dismissedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}

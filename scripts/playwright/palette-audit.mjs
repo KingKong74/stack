@@ -162,6 +162,10 @@ const SCREENS = [
   // their status tags, all on --surface-raised. (The Ideas & Icebox pane is
   // the existing `auto` row further down.)
   { slug: 'charter', hash: '#/p/{slug}/charter' },
+  { slug: 'milestones', hash: '#/p/{slug}/milestones' },
+  // The Propositions column is at first paint on `roadmap`; its detail dialog
+  // (--surface-overlay, status tags, the tree) only when a tile exists.
+  { slug: 'board-proposition', hash: '#/p/{slug}/roadmap', press: ['?.pp-tile'] },
   { slug: 'architecture', hash: '#/p/{slug}/architecture' },
   // #469 — a filtered board (one area picked, the rest of the row dimmed)
   // and an open inline title editor, which paints its own text over a card in

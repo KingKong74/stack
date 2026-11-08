@@ -9295,3 +9295,113 @@ button.ar-open:hover { background: var(--surface-hover); }
   .tv-stage.v-split .tv-pane.mini, .tv-stage.v-split .tv-newcell { display: none; }
   .tv-head-meta, .tv-destchip { display: none; }
 }
+
+/* ==========================================================================
+   MILESTONES (detail/Milestones.tsx) — the tab beside the Charter, and the
+   Charter's right-hand summary, which drops under the doc on narrow screens.
+   ========================================================================== */
+.sp-withside { display: flex; gap: var(--space-7); align-items: flex-start; min-width: 0; }
+.sp-withside > .sp { flex: 1 1 auto; }
+.ms-aside {
+  flex: 0 0 260px; position: sticky; top: var(--space-6);
+  display: flex; flex-direction: column; gap: var(--space-3); min-width: 0;
+  background: var(--surface-raised); border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg); padding: var(--space-5);
+}
+.ms-aside .k-btn { align-self: flex-start; margin-top: var(--space-2); }
+.ms-asidegoal { font: var(--type-body-sm); color: var(--text-secondary); text-wrap: pretty; }
+.ms-asidenext { font: var(--type-body-sm); color: var(--text-primary); }
+@media (max-width: 1100px) {
+  .sp-withside { flex-direction: column; }
+  .ms-aside { position: static; flex-basis: auto; width: 100%; max-width: 920px; }
+}
+.ms-head { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3); min-width: 0; }
+.ms-name { font: var(--type-label); color: var(--text-primary); overflow-wrap: anywhere; }
+a.ms-name { color: var(--accent-text); text-decoration: none; }
+a.ms-name:hover { text-decoration: underline; }
+.ms-slices { display: flex; flex-direction: column; gap: var(--space-2); }
+.ms-slicelist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+.ms-slicelist li { display: flex; align-items: baseline; gap: var(--space-3); min-width: 0; }
+.ms-slice { font: var(--type-body-sm); color: var(--accent-text); text-decoration: none; overflow-wrap: anywhere; }
+.ms-slice:hover { text-decoration: underline; }
+.ms-date { width: auto; max-width: 220px; }
+
+/* ==========================================================================
+   PROPOSITIONS (detail/Propositions.tsx) — the board's first column and the
+   detail dialog. A tile is a button, so it is reachable and opens by keyboard.
+   ========================================================================== */
+.pp-col {
+  /* Not a `.km-col`: it is no list, takes no drop, and every query that walks
+     the delivery columns must not find it. It wears their shape. */
+  flex: 1 0 var(--column-w); min-width: var(--column-w);
+  background: var(--surface-sunken); border: 1px dashed var(--border-subtle);
+  border-radius: var(--radius-lg); padding: var(--space-4);
+  display: flex; flex-direction: column; gap: var(--space-4);
+}
+.pp-lede { font: var(--type-caption); color: var(--text-tertiary); padding: 0 4px; }
+.pp-tile {
+  display: flex; flex-direction: column; gap: var(--space-2); text-align: left; min-width: 0;
+  background: var(--surface-card); border: 1px dashed var(--border-default);
+  border-radius: var(--radius-md); padding: var(--space-4); cursor: pointer; color: var(--text-primary);
+  font: inherit;
+}
+.pp-tile:hover { border-color: var(--border-strong); background: var(--surface-overlay); }
+.pp-tile:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 2px; }
+.pp-tile.settled { opacity: 0.75; }
+.pp-tilehead { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.pp-title { font: var(--type-label); color: var(--text-primary); overflow-wrap: anywhere; }
+.pp-outcome {
+  font: var(--type-body-sm); color: var(--text-secondary); overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.pp-outcome.full { display: block; -webkit-line-clamp: unset; }
+.pp-counts { font: var(--weight-regular) var(--text-2xs)/1.4 var(--font-mono); color: var(--text-tertiary); }
+.pp-settled { align-self: flex-start; }
+
+.pp-dialog { width: 880px; max-height: calc(100vh - 2 * var(--space-7)); overflow-y: auto; }
+.pp-dhead { display: flex; align-items: flex-start; gap: var(--space-4); }
+.pp-dtitle { display: flex; flex-direction: column; gap: var(--space-3); flex: 1; min-width: 0; }
+.pp-dtitle .sp-h { overflow-wrap: anywhere; }
+.pp-prov { overflow-wrap: anywhere; }
+.pp-prov a { color: var(--accent-text); }
+.pp-links { display: flex; flex-direction: column; gap: var(--space-2); }
+.pp-link {
+  display: inline-flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); min-width: 0;
+  font: var(--type-body-sm); color: var(--accent-text); text-decoration: none;
+}
+a.pp-link:hover { text-decoration: underline; }
+.pp-url { color: var(--text-secondary); }
+.pp-url code { font: var(--weight-regular) var(--text-2xs)/1.4 var(--font-mono); color: var(--text-secondary); overflow-wrap: anywhere; }
+.pp-tree, .pp-kids { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-3); }
+.pp-kids { padding-left: var(--space-6); border-left: 1px solid var(--border-subtle); margin-left: 7px; }
+.pp-node { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+.pp-row { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); min-width: 0; }
+.pp-name { font: var(--type-body-sm); color: var(--text-primary); overflow-wrap: anywhere; min-width: 0; }
+.pp-ms > .pp-row .pp-name { font: var(--type-label); }
+.pp-check { width: 16px; height: 16px; accent-color: var(--accent); flex: none; }
+.pp-acc { text-decoration: none; }
+.pp-body { padding-left: var(--space-6); font: var(--type-body-sm); color: var(--text-secondary); }
+.pp-into { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3); padding-left: var(--space-6); }
+.pp-into .k-select { max-width: 100%; }
+.pp-spec { font: var(--type-body-sm); color: var(--text-secondary); padding-left: var(--space-6); display: flex; flex-direction: column; gap: var(--space-2); }
+.pp-spec summary { cursor: pointer; color: var(--text-tertiary); font: var(--type-caption); }
+.pp-spec summary:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 2px; }
+.pp-p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.pp-list { margin: 0; padding-left: var(--space-6); display: flex; flex-direction: column; gap: 2px; overflow-wrap: anywhere; }
+.pp-foot { flex-wrap: wrap; }
+.pp-edit { display: flex; flex-direction: column; gap: var(--space-4); }
+.pp-ein { flex: 1; min-width: 160px; height: var(--control-h-sm); }
+@media (max-width: 640px) {
+  .km-scrim.pp-scrim { padding: var(--space-3); align-items: stretch; }
+  .pp-dialog { padding: var(--space-5); max-height: calc(100vh - 2 * var(--space-3)); }
+  .pp-kids { padding-left: var(--space-4); }
+}
+/* The decision stays in reach however long the structure is. */
+.pp-dialog > .pp-foot {
+  position: sticky; bottom: calc(-1 * var(--space-7)); z-index: 1;
+  margin: 0 calc(-1 * var(--space-7)); padding: var(--space-4) var(--space-7);
+  background: var(--surface-overlay); border-top: 1px solid var(--border-subtle);
+}
+@media (max-width: 640px) {
+  .pp-dialog > .pp-foot { bottom: calc(-1 * var(--space-5)); margin: 0 calc(-1 * var(--space-5)); padding: var(--space-4) var(--space-5); }
+}

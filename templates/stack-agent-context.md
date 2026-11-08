@@ -138,17 +138,9 @@ actually broke.
 
 ## FLY CARDS ARE SWITCHED OFF (#381, paused #477)
 
-**Do not open a roadmap card for the work you are asked to do.** A session used
-to POST `{"source":"fly", …}` when it started anything that was not already a
-roadmap item, so the work was recorded somewhere the owner could review it. The
-owner turned that off: the cards arrived faster than anyone triaged them, and an
-idea pipeline nobody empties is worse than no pipeline, because it makes the
-board look busy with work no one has agreed to.
-
-The route still accepts a fly post, so this is one setting away from coming
-back, but **the `fly` session default is off**, which means
-you will not be told to open one, and you should not do it unasked. Record what
-you did in your summary and in `/checkpoint` instead.
+**Do not open a roadmap card for the work you are asked to do.** The `fly`
+session default is off, so you will not be told to, and you should not do it
+unasked. Record what you did in your summary and in `/checkpoint` instead.
 
 A card the OWNER asks you to open is a different thing: post it `source:"manual"`
 (a human asked for it, so it is committed work and never held) and say so — and
@@ -196,6 +188,13 @@ Open roadmap items can carry a claim (`claimedBy` — the branch name, e.g.
   `POST /roadmap` or `/batch`; they land at its bottom. A part with no
   `sliceId` takes its parent's. Filing is not
   approval: a `fly`/`plan` item stays held until signed off.
+- **To propose a plan, POST a PROPOSITION**, not milestones/slices:
+  `POST /api/projects/<slug>/propositions` `{sourceKey, title, outcome,
+  purpose, artifactId?, links[], tree:{milestones:[{key, name, goal,
+  milestoneId?, slices:[{key, title, spec, items:[{key, title, kind, spec,
+  dependsOn[]}]}]}]}}`. A stable `sourceKey` (e.g. `artifact:6`) makes a
+  retry update, never copy; 409 `dismissed` = never re-propose; 409 `edited`
+  = the owner owns it, use a new key. Accept and dismiss are the owner's.
 - **A claim is on the ITEM; the collision is on the FILE.** A claim says who
   owns a roadmap row, not who owns a file — two sessions in one checkout share
   a dirty tree, so git cannot tell their edits apart. If you are in a shared

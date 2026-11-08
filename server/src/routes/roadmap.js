@@ -145,7 +145,7 @@ roadmap.get('/review-digest', async (req, res) => {
 // A THIRD, 'plan', is a planning run's child item: held the same way, deduped
 // per parent, and honouring the dismiss tombstone like 'fly'. A plan child
 // carries `parentId` and usually a `spec`.
-async function createItem(db, projectId, body) {
+export async function createItem(db, projectId, body) {
   const title = String(body?.title || '').trim().slice(0, 300);
   if (!title) return { status: 400, body: { error: 'Title is required.' } };
   const wantSource = String(body?.source || 'manual').trim().toLowerCase();

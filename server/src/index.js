@@ -31,6 +31,7 @@ import { triage } from './routes/triage.js';
 import { tips } from './routes/tips.js';
 import { artifacts } from './routes/artifacts.js';
 import { plans } from './routes/plans.js';
+import { propositions } from './routes/propositions.js';
 import { skills } from './routes/skills.js';
 import { models } from './routes/models.js';
 import { context } from './routes/context.js';
@@ -96,6 +97,8 @@ app.use('/api/projects/:slug/checks', requireToken, checks);
 app.use('/api/projects/:slug/artifacts', requireToken, artifacts);
 // Plan-mode plans captured by hook/stack-plan.mjs — see routes/plans.js.
 app.use('/api/projects/:slug/plans', requireToken, plans);
+// Proposed milestones/slices/items awaiting the owner — see routes/propositions.js.
+app.use('/api/projects/:slug/propositions', requireToken, propositions);
 app.use('/api/projects/:slug/autopilot', requireToken, autopilot);
 app.use('/api/projects/:slug/branches', requireToken, branches);
 // The Development tab's audit trail: sessions and autopilot runs, plus what is live.

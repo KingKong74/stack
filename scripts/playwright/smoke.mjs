@@ -186,7 +186,7 @@ const ROADMAP_PANELS = [
   {
     id: 'board-colmenu',
     label: 'Board — column actions menu',
-    click: '.km-col:nth-child(1) [aria-label^="Column actions"]',
+    click: '.km-col:nth-child(2) [aria-label^="Column actions"]',
     expect: 'body > .km-menu:not(.card)',
   },
   {
@@ -194,8 +194,8 @@ const ROADMAP_PANELS = [
     // cards and the composer under them.
     id: 'board-composer',
     label: 'Board — lane composer',
-    click: '.km-col:nth-child(2) .km-add',
-    expect: '.km-col:nth-child(2) .km-composer',
+    click: '.km-col:nth-child(3) .km-add',
+    expect: '.km-col:nth-child(3) .km-composer',
   },
   {
     // #469 — the inline title editor. It opens on a DOUBLE click and on
@@ -269,23 +269,25 @@ const ROADMAP_PANELS = [
   // the other order could have the area press reporting a control that is not
   // missing, only hidden behind a fold this harness itself just made.
   //
+  // (`.km-cols`' FIRST child is the Propositions column, detail/Propositions.tsx,
+  // which is not a list: every nth-child below counts it, hence the +1.)
   // Column 3 rather than 1 or 2: those two carry the menu and composer presses
   // above, and a column that has been folded and unfolded is a column whose
   // popovers have all been closed.
   {
     id: 'board-colfold',
     label: 'Board — a column folds to its head',
-    click: '.km-col:nth-child(3) .km-foldbtn',
+    click: '.km-col:nth-child(4) .km-foldbtn',
     expect: '.km-col.folded',
   },
   {
     // …and back. `.km-add` is the proof: the Create button goes with the fold,
     // and a fold is BOARD-WIDE, so while column 3 is folded there is no
-    // `.km-col:nth-child(3) .km-add` in any section to match early.
+    // `.km-col:nth-child(4) .km-add` in any section to match early.
     id: 'board-colunfold',
     label: 'Board — the same column opens again',
-    click: '.km-col:nth-child(3) .km-foldbtn',
-    expect: '.km-col:nth-child(3) .km-add',
+    click: '.km-col:nth-child(4) .km-foldbtn',
+    expect: '.km-col:nth-child(4) .km-add',
   },
   {
     // An AREA folds in every column at once, so one press folds every group
@@ -724,6 +726,9 @@ export const SCREENS = [
   // #616 — the spine's two docs. Read screens: a press would open an editor,
   // and an editor's Save writes, so only first paint is walked here.
   { id: 'project-charter', label: 'Project — Charter', path: '#/p/<slug>/charter' },
+  // Milestones: the real milestone rows, beside the Charter. First paint only,
+  // for the same reason (its buttons write).
+  { id: 'project-milestones', label: 'Project — Milestones', path: '#/p/<slug>/milestones' },
   { id: 'project-architecture', label: 'Project — Architecture', path: '#/p/<slug>/architecture' },
   {
     id: 'project-artifacts',

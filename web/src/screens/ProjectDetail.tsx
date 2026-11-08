@@ -29,6 +29,7 @@ import { RoadmapModal, type RoadmapFields } from '../components/RoadmapModal';
 import { useAutoRefresh } from '../lib/autoRefresh';
 import { Charter, Architecture } from '../detail/Architecture';
 import { Course } from '../detail/Course';
+import { Milestones, MilestoneSummary } from '../detail/Milestones';
 import { newItemSched, flatRoadmap, isAutoIdea, isIced, isBoardWork } from '../lib/plan';
 import { PRIORITY_DEFAULT, crumbName } from '../lib/ui';
 
@@ -42,7 +43,7 @@ import { PRIORITY_DEFAULT, crumbName } from '../lib/ui';
 // and Quality's "open the commit that caught this" link targets it. An inner
 // strip that swallowed the key would have broken all three at once.
 type Tab = 'overview' | 'quality' | 'roadmap' | 'activity' | 'auto' | 'plans'
-  | 'artifacts' | 'agents' | 'loops' | 'charter' | 'architecture';
+  | 'artifacts' | 'agents' | 'loops' | 'charter' | 'milestones' | 'architecture';
 /** The keys that land on the For-you screen, in strip order. */
 const FORYOU_TABS: Tab[] = ['overview', 'activity', 'auto'];
 const isForYou = (t: Tab) => FORYOU_TABS.includes(t);
@@ -56,7 +57,7 @@ const isMockTab = (t: Tab) => t === 'roadmap'
 // The four readings of a project. `navSections` below is the ONE list of them
 // — #432 moved them from a horizontal strip into the console's left rail, and
 // a second copy anywhere is how the two would drift.
-const TAB_KEYS = new Set<Tab>(['overview', 'quality', 'roadmap', 'activity', 'auto', 'plans', 'artifacts', 'agents', 'loops', 'charter', 'architecture']);
+const TAB_KEYS = new Set<Tab>(['overview', 'quality', 'roadmap', 'activity', 'auto', 'plans', 'artifacts', 'agents', 'loops', 'charter', 'milestones', 'architecture']);
 // 'bugs' and 'audit' both land on Quality — old deep links (bookmarks, a search
 // payload from an older server, a ⌘K target) keep working. 'tips' still
 // resolves too: the recipe library was a tab, then the bottom-left dock, and
@@ -501,6 +502,14 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
           key: 'charter', label: 'Charter', icon: NavIcons.map,
           menu: placeMenu(hrefTo.detail(slug, 'charter'), 'charter'), onClick: () => setTab('charter'),
         },
+        // MILESTONES sit immediately right of (under) the Charter: the Charter
+        // says what the project is for, this row is where it is going next,
+        // read from the real milestone rows. Its count is the live ones.
+        {
+          key: 'milestones', label: 'Milestones', icon: NavIcons.flag,
+          count: data.milestones.filter((m) => m.status !== 'done').length || undefined,
+          menu: placeMenu(hrefTo.detail(slug, 'milestones'), 'milestones'), onClick: () => setTab('milestones'),
+        },
         {
           key: 'architecture', label: 'Architecture', icon: NavIcons.layers,
           menu: placeMenu(hrefTo.detail(slug, 'architecture'), 'architecture'), onClick: () => setTab('architecture'),
@@ -750,7 +759,13 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
 
         {/* The design's three tabs: each file's header says what is real. */}
         {tab === 'artifacts' && <Artifacts slug={slug} />}
-        {tab === 'charter' && <Charter slug={slug} cap={data.charter?.cap ?? 600} />}
+        {tab === 'charter' && (
+          <Charter slug={slug} cap={data.charter?.cap ?? 600}
+            aside={<MilestoneSummary slug={slug} milestones={data.milestones} slices={data.slices} items={allRoadmap} />} />
+        )}
+        {tab === 'milestones' && (
+          <Milestones slug={slug} milestones={data.milestones} slices={data.slices} items={allRoadmap} onRefresh={reread} />
+        )}
         {tab === 'architecture' && (
           <Architecture slug={slug} items={allRoadmap} slices={data.slices} milestones={data.milestones} />
         )}

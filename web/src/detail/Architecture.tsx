@@ -20,7 +20,7 @@
 // board's area routes. Nothing is fetched into the project payload except the
 // charter's capped opening.
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { KitIcon } from './kit/KitIcon';
 import { Markdown } from '../components/Markdown';
 import type { AdrStatus, Artifact, BoardArea, Milestone, RoadmapItem, Slice } from '../types';
@@ -133,10 +133,14 @@ async function upsertDoc(slug: string, doc: Artifact | null, type: 'charter' | '
   return doc ? patchArtifact(slug, doc.id, { body }) : createArtifact(slug, { type, title, body });
 }
 
-export function Charter({ slug, cap }: { slug: string; cap: number }) {
+// `aside` is the milestone summary (detail/Milestones.tsx): milestones are real
+// rows with their own tab, so the Charter shows them beside the doc and never
+// keeps a copy of them in its text.
+export function Charter({ slug, cap, aside }: { slug: string; cap: number; aside?: ReactNode }) {
   const { docs, err, setErr, put } = useSpineDocs(slug);
   const charter = docs?.find((d) => d.type === 'charter') ?? null;
   return (
+    <div className="sp-withside">
     <div className="sp">
       <div className="sp-lede">
         <h2 className="sp-h">Charter</h2>
@@ -153,6 +157,8 @@ export function Charter({ slug, cap }: { slug: string; cap: number }) {
             catch (e) { setErr((e as Error)?.message || 'Could not save the charter.'); throw e; }
           }} />
       )}
+    </div>
+    {aside}
     </div>
   );
 }
