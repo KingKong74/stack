@@ -8894,6 +8894,12 @@ button.ar-open:hover { background: var(--surface-hover); }
   cursor: pointer; transition: var(--transition-control); color: var(--text-tertiary);
 }
 .tv-tab:hover { background: var(--surface-hover); }
+/* Parked: still running on the host, not open here. Drawn back, not gone. */
+.tv-tab.parked { border-style: dashed; border-color: var(--border-subtle); }
+.tv-tab.parked .tv-glyph { opacity: 0.6; }
+.tv-tab.parked .tv-tab-name { color: var(--text-tertiary); }
+.tv-tab.parked:hover .tv-glyph { opacity: 1; }
+.tv-tab.parked:hover .tv-tab-name { color: var(--text-secondary); }
 .tv-tab.on { background: var(--surface-card); border-color: var(--border-default); color: var(--text-primary); }
 .tv-tab.on.p-b { box-shadow: inset 0 -2px 0 var(--blue-400); }
 .tv-tab.on.p-l { box-shadow: inset 0 -2px 0 var(--lime-400); }

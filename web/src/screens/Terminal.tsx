@@ -593,7 +593,21 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   // decrement the stored pane count, which was this screen's second opinion
   // about how many terminals are on it; the auto-fit below reads the sessions
   // themselves, so the close needs only to close.
-  const detachSession = (id: number) => {
+  // `park` (a close): the session keeps running, so it goes straight into the
+  // parked list rather than blinking out of the bar until the daemon's next
+  // advertisement. An End never parks, and its name is kept out of the bar
+  // for good (`endingNames`), so a kill in flight never reappears as parked.
+  const endingNames = useRef(new Set<string>());
+  const detachSession = (id: number, park = true) => {
+    const was = sessions.find((x) => x.id === id);
+    if (was?.tmux && was.cmd !== 'shell') {
+      const name = was.tmux;
+      if (!park) endingNames.current.add(name);
+      else setDetached((l) => (l.some((d) => d.name === name) ? l : [...l, {
+        name, cwd: was.cwd, created: Math.floor(Date.now() / 1000), cmd: was.cmd as 'claude' | 'codex',
+        label: labelOf(was) || undefined, keep: pinnedOf(name), branch: was.branch, project: was.project,
+      }]));
+    }
     handles.current.delete(id);
     setWins((w) => w.filter((x) => x.id !== id));
     setSessions((s) => {
@@ -625,7 +639,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   const [ending, setEnding] = useState<number | null>(null);
   const endSession = async (sess: Sess) => {
     const name = sess.tmux;
-    detachSession(sess.id);
+    detachSession(sess.id, false);
     if (!name) return;
     setEnding(sess.id);
     try {
@@ -703,6 +717,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   const killIdle = async (list: DetachedSession[]) => {
     if (!list.length) return;
     const names = new Set(list.map((d) => d.name));
+    for (const n of names) endingNames.current.add(n);
     setDetached((l) => l.filter((x) => !names.has(x.name)));
     // Sequential, not Promise.all: the daemon takes these over one socket, and
     // a failure part-way should still leave the rest killed. One refresh at the
@@ -750,7 +765,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   }, [detached]);
 
   const detachedShown = detached.filter(
-    (d) => !sessions.some((s) => s.tmux === d.name && (s.status === 'live' || s.status === 'connecting')));
+    (d) => !endingNames.current.has(d.name) && !sessions.some((s) => s.tmux === d.name && (s.status === 'live' || s.status === 'connecting')));
 
   // ---- what each claude session is DOING (#120), on this screen ----
   // Gemini's one-line take, keyed by the host tmux session — the only id both
@@ -1119,6 +1134,20 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   const tabGroups = byProject(sessions, projectOf)
     .map((g) => ({ ...g, rows: [...g.rows].sort((a, b) => Number(isPinned(b)) - Number(isPinned(a))) }));
   const tabOrder = tabGroups.flatMap((g) => g.rows);
+  // THE BAR holds every session on the host, not just the ones this browser
+  // has open: closing a tab only parks it (still running, still here, drawn
+  // dim), and only End takes it off. A parked tab keeps its place, because its
+  // position is remembered by its tmux name, the key that survives a close.
+  type BarEntry = { key: string; sess?: Sess; det?: DetachedSession; project: string; pinned: boolean };
+  const barSeen = useRef(new Map<string, number>());
+  const barEntries: BarEntry[] = [
+    ...sessions.map((x) => ({ key: x.tmux || `tab:${x.id}`, sess: x, project: projectOf(x), pinned: isPinned(x) })),
+    ...detachedShown.map((d) => ({ key: d.name, det: d, project: projectOfDet(d), pinned: !!d.keep })),
+  ];
+  for (const e of barEntries) if (!barSeen.current.has(e.key)) barSeen.current.set(e.key, barSeen.current.size);
+  const barGroups = byProject(barEntries, (e) => e.project).map((g) => ({
+    ...g, rows: [...g.rows].sort((a, b) => Number(b.pinned) - Number(a.pinned) || (barSeen.current.get(a.key)! - barSeen.current.get(b.key)!)),
+  }));
   const cur = sessions.find((s) => s.id === active) ?? null;
   // Main + 3's small panes: the next three tabs, pinned first.
   const minis = view === 'split'
@@ -1360,13 +1389,12 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   };
 
   // ---- the bar ----------------------------------------------------------------
-  const [menu, setMenu] = useState<{ id: number; x: number; y: number } | null>(null);
+  const [menu, setMenu] = useState<{ id: number; det?: string; x: number; y: number } | null>(null);
   const [switcher, setSwitcher] = useState(false);
   const [q, setQ] = useState('');
   const [newMenu, setNewMenu] = useState(false);
   const [gridMenu, setGridMenu] = useState(false);
   const [usageOpen, setUsageOpen] = useState<{ key: 'claude' | 'codex'; x: number } | null>(null);
-  const [endTarget, setEndTarget] = useState<{ sess?: Sess; det?: DetachedSession } | null>(null);
   const tabRowRef = useRef<HTMLDivElement | null>(null);
 
   // Escape closes what is OPEN ON TOP of the terminals, and only that. It is
@@ -1395,13 +1423,17 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
     if (view === 'swarm') spotlight(s.tmux || `tab:${s.id}`, s.id);
     else setActive(s.id);
   };
+  const openParked = (d: DetachedSession) => {
+    const id = attachDetached(d);
+    if (view === 'swarm') spotlight(d.name, id);
+  };
   const togglePinSess = (s: Sess) => { if (s.tmux) void togglePin(s.tmux, !isPinned(s)); };
   const closeUnpinned = () => { for (const s of sessions) if (!isPinned(s)) closeSession(s.id); setMenu(null); };
-  const askEnd = (sess?: Sess, det?: DetachedSession) => { setEndTarget({ sess, det }); setMenu(null); setTilePeek(null); };
-  const doEnd = () => {
-    const t = endTarget;
-    setEndTarget(null);
-    if (t?.sess) { closeWin(t.sess.id); void endSession(t.sess); } else if (t?.det) void killIdle([t.det]);
+  // End is immediate (owner's call, 2026-11-08): no confirm. Close is the
+  // gentle verb; End means it.
+  const askEnd = (sess?: Sess, det?: DetachedSession) => {
+    setMenu(null); setTilePeek(null);
+    if (sess) { closeWin(sess.id); void endSession(sess); } else if (det) void killIdle([det]);
   };
 
   // END ALL: every tab here and every session idling on the host, from any
@@ -1425,7 +1457,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
     const tabs = endAllTabs, idle = endAllIdle;
     setWins([]);
     const names = new Set(tabs.map((x) => x.tmux).filter((n): n is string => !!n));
-    for (const x of tabs) detachSession(x.id);
+    for (const x of tabs) detachSession(x.id, false);
     void killIdle(idle);
     for (let i = 0; i < 12 && names.size; i++) {
       await new Promise((r) => setTimeout(r, 500));
@@ -1558,9 +1590,35 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
         <div className="tv-bar">
           <div className="tv-tabs" ref={tabRowRef}
             onWheel={(e) => { const r = tabRowRef.current; if (r && Math.abs(e.deltaY) > Math.abs(e.deltaX)) r.scrollLeft += e.deltaY; }}>
-            {tabGroups.map((g) => (
+            {barGroups.map((g) => (
               <div className="tv-tabgroup" key={g.project || '~'}>
-                {g.rows.map((s) => {
+                {g.rows.map((e) => {
+                  const d = e.det;
+                  if (!e.sess && d) {
+                    const dst = statusOfDet(d);
+                    const dcmd = d.cmd || 'claude';
+                    return (
+                      <div key={e.key} className={`tv-tab parked${view === 'swarm' && flash === d.name ? ' on' : ''} p-${projTint(g.project)}`}
+                        onClick={() => openParked(d)}
+                        onContextMenu={(ev) => { ev.preventDefault(); setMenu({ id: -1, det: d.name, x: ev.clientX, y: ev.clientY }); }}
+                        title={`${nameOfDet(d)} · ${TOOL[dcmd].name} · ~/${d.cwd || ''} — running, not open here. Click to open; right-click to end.`}>
+                        <span className={`tv-glyph ${dcmd}`} aria-hidden="true">{TOOL[dcmd].glyph}</span>
+                        <span className="tv-tab-body">
+                          <span className="tv-tab-name">{nameOfDet(d)}</span>
+                          <span className="tv-tab-sub">
+                            <span className={`tv-dot ${dst}`} />
+                            <span className={`tv-tool ${dcmd}`}>{TOOL[dcmd].name}</span>
+                            <span>·</span>
+                            <span className={`tv-pname ${projTint(g.project)}`}>{g.project || '~'}</span>
+                            <span>·</span>
+                            <span className="tv-ell">{d.attached ? 'open elsewhere' : 'closed'}</span>
+                            {d.keep && <span className="tv-pinmark">{pinIcon(10)}</span>}
+                          </span>
+                        </span>
+                      </div>
+                    );
+                  }
+                  const s = e.sess!;
                   const st = statusOf(s);
                   const on = s.id === active && (view !== 'swarm' || flash === (s.tmux || `tab:${s.id}`));
                   // Main + 3: which tabs are on the stage, and where (main green, the small three blue).
@@ -1586,7 +1644,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                         </span>
                       </span>
                       <button className="tv-x" aria-label="Close tab"
-                        title={view === 'focus' ? 'Close the pane — the session stays in the top bar' : s.tmux ? 'Close the tab — the session keeps running, in Swarm' : 'Close the tab — a shell ends with it'}
+                        title={view === 'focus' ? 'Close the pane — the session stays in the top bar' : s.tmux ? 'Close — the session keeps running and stays in the bar' : 'Close the tab — a shell ends with it'}
                         onClick={(e) => { e.stopPropagation(); closeSession(s.id); }}>×</button>
                     </div>
                   );
@@ -1596,7 +1654,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
           </div>
           <button className={`tv-btn tv-switch${switcher ? ' on' : ''}`} title="All sessions"
             onClick={() => { setSwitcher((v) => !v); setQ(''); }}>
-            <span className="mono">{sessions.length}</span><span className="caret">▼</span>
+            <span className="mono">{barEntries.length}</span><span className="caret">▼</span>
           </button>
           <div className="tv-meters">
             {meters.map((m) => {
@@ -1822,7 +1880,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                         </button>
                       )}
                       <button className="tv-btn sm" onClick={() => closeSession(s.id)}
-                        title={view === 'focus' ? 'Close the pane — the session stays in the top bar' : s.tmux ? 'Close the tab — the session keeps running, in Swarm' : 'Close the tab — a shell ends with it'}>Close tab</button>
+                        title={view === 'focus' ? 'Close the pane — the session stays in the top bar' : s.tmux ? 'Close — the session keeps running and stays in the bar' : 'Close the tab — a shell ends with it'}>Close tab</button>
                       <button className="tv-btn sm danger" disabled={ending === s.id} onClick={() => askEnd(s)}>{ending === s.id ? 'Ending…' : 'End'}</button>
                     </span>
                   </div>
@@ -2066,6 +2124,21 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
     )}
 
     {visible && menu && (() => {
+      const pd = menu.det ? detached.find((x) => x.name === menu.det) : undefined;
+      if (pd) {
+        return (
+          <div className="tv-scrim" onClick={() => setMenu(null)} onContextMenu={(e) => { e.preventDefault(); setMenu(null); }}>
+            <div className="tv-pop tv-menu" style={{ left: menu.x, top: menu.y }} onClick={(e) => e.stopPropagation()}>
+              <button onClick={() => { openParked(pd); setMenu(null); }}>Open</button>
+              <button onClick={() => { void togglePin(pd.name, !pd.keep); setMenu(null); }}>{pd.keep ? 'Unpin' : 'Pin'}</button>
+              <div className="tv-rule" />
+              <button className="danger" disabled={!!pd.attached}
+                title={pd.attached ? 'Open on another device — end it there, or open it here first' : undefined}
+                onClick={() => askEnd(undefined, pd)}>End session</button>
+            </div>
+          </div>
+        );
+      }
       const s = sessions.find((x) => x.id === menu.id);
       if (!s) return null;
       const key = s.tmux || `tab:${s.id}`;
@@ -2081,7 +2154,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
             <button onClick={closeUnpinned}>Close unpinned tabs</button>
             <button onClick={() => { startRename(s, 'tab'); setMenu(null); }}>Rename…</button>
             <div className="tv-rule" />
-            <button className="danger" onClick={() => askEnd(s)}>End session…</button>
+            <button className="danger" onClick={() => askEnd(s)}>End session</button>
           </div>
         </div>
       );
@@ -2146,22 +2219,6 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
       </div>
     )}
 
-    {endTarget && (endTarget.sess || endTarget.det) && (
-      <ConfirmModal
-        title="End session?"
-        body={<>
-          “{endTarget.sess ? nameOf(endTarget.sess) : nameOfDet(endTarget.det!)}” will be killed on the host. Closing the
-          tab instead keeps it running in Swarm.
-          <span className="tv-dim mono" style={{ display: 'block', marginTop: 8 }}>
-            {endTarget.sess?.tmux || endTarget.det?.name || 'shell'} · ~/{endTarget.sess ? endTarget.sess.cwd : endTarget.det!.cwd}
-          </span>
-        </>}
-        confirmLabel="End session"
-        danger
-        onConfirm={doEnd}
-        onCancel={() => setEndTarget(null)}
-      />
-    )}
     {endAllAsk && (
       <ConfirmModal
         title={`End all ${endAllCount} session${endAllCount === 1 ? '' : 's'}?`}
