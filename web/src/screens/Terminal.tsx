@@ -61,8 +61,8 @@ import { crumbName } from '../lib/ui';
 // Prototype v2"). The sessions rail is gone; what replaced it:
 //
 //  • TABS ACROSS THE TOP, grouped by project, pinned first. A tab is a session
-//    this browser holds. Closing one DETACHES it (it keeps running on the host
-//    and stays in Swarm); End is the only thing that kills.
+//    this browser holds. In Focus, closing dismisses the pane but keeps its tab.
+//    Other views detach it (it stays in Swarm); End is the only thing that kills.
 //  • THREE VIEWS: Focus (one session), Main + 3 (one big, three small beside
 //    it) and Swarm (every session on the host as a tile, plus floating windows
 //    that snap to edges and corners). A tile is a READING (status, name, the
@@ -592,7 +592,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   // decrement the stored pane count, which was this screen's second opinion
   // about how many terminals are on it; the auto-fit below reads the sessions
   // themselves, so the close needs only to close.
-  const closeSession = (id: number) => {
+  const detachSession = (id: number) => {
     handles.current.delete(id);
     setWins((w) => w.filter((x) => x.id !== id));
     setSessions((s) => {
@@ -600,6 +600,16 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
       if (id === active && rest.length) setActive(rest[rest.length - 1].id);
       return rest;
     });
+  };
+
+  // Focus closes only the pane. Keep its socket, scrollback and top-bar tab
+  // so selecting the session again restores it without a detach/re-attach.
+  const closeSession = (id: number) => {
+    if (viewPrefs.view === 'focus') {
+      if (active === id) setActive(0);
+      return;
+    }
+    detachSession(id);
   };
 
   // End a session for REAL: close the tab, then kill the tmux session it was
@@ -614,7 +624,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   const [ending, setEnding] = useState<number | null>(null);
   const endSession = async (sess: Sess) => {
     const name = sess.tmux;
-    closeSession(sess.id);
+    detachSession(sess.id);
     if (!name) return;
     setEnding(sess.id);
     try {
@@ -1535,7 +1545,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                         </span>
                       </span>
                       <button className="tv-x" aria-label="Close tab"
-                        title={s.tmux ? 'Close the tab — the session keeps running, in Swarm' : 'Close the tab — a shell ends with it'}
+                        title={view === 'focus' ? 'Close the pane — the session stays in the top bar' : s.tmux ? 'Close the tab — the session keeps running, in Swarm' : 'Close the tab — a shell ends with it'}
                         onClick={(e) => { e.stopPropagation(); closeSession(s.id); }}>×</button>
                     </div>
                   );
@@ -1767,7 +1777,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                         </button>
                       )}
                       <button className="tv-btn sm" onClick={() => closeSession(s.id)}
-                        title={s.tmux ? 'Close the tab — the session keeps running, in Swarm' : 'Close the tab — a shell ends with it'}>Close tab</button>
+                        title={view === 'focus' ? 'Close the pane — the session stays in the top bar' : s.tmux ? 'Close the tab — the session keeps running, in Swarm' : 'Close the tab — a shell ends with it'}>Close tab</button>
                       <button className="tv-btn sm danger" disabled={ending === s.id} onClick={() => askEnd(s)}>{ending === s.id ? 'Ending…' : 'End'}</button>
                     </span>
                   </div>
@@ -1855,8 +1865,8 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
 
           {view !== 'swarm' && !cur && (
             <div className="tv-none">
-              <span className="h">No tabs open</span>
-              <span className="d">Open a session from Swarm, or start a new one.</span>
+              <span className="h">{sessions.length ? 'No session selected' : 'No tabs open'}</span>
+              <span className="d">{sessions.length ? 'Select a session from the top bar to reopen it.' : 'Open a session from Swarm, or start a new one.'}</span>
               <span className="row">
                 <button className="tv-btn" onClick={() => setView('swarm')}>Open Swarm</button>
                 <button className="tv-go solo" onClick={() => openSession()} title={`Open ${startLabel}`}>New session</button>
