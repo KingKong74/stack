@@ -186,6 +186,9 @@ const ROADMAP_PANELS = [
   {
     id: 'board-colmenu',
     label: 'Board — column actions menu',
+    // The card menu above is still open, and with the Propositions column
+    // first it can sit over this header at narrow widths: close it first.
+    clear: '.km-toolbar .km-count',
     click: '.km-col:nth-child(2) [aria-label^="Column actions"]',
     expect: 'body > .km-menu:not(.card)',
   },
@@ -1278,6 +1281,12 @@ async function runInteraction(page, { screenId, viewportName, interaction, sink 
     return false;
   };
 
+  // `clear`: an INERT element pressed first, to close a popover the previous
+  // interaction left open (the board closes every menu on a click anywhere
+  // on its root). Inert means it writes nothing; skipped when absent.
+  if (interaction.clear) {
+    await page.locator(interaction.clear).first().click({ timeout: CONTROL_TIMEOUT_MS }).catch(() => {});
+  }
   const control = page.locator(interaction.click).first();
   try {
     await control.waitFor({ state: 'visible', timeout: CONTROL_TIMEOUT_MS });
