@@ -584,12 +584,6 @@ const PLANS_PANELS = [
 // here. The Context Edit button is, because it only OPENS the editor; nothing
 // below ever submits one.
 const CONTROL_PANELS = [
-  {
-    id: 'control-overview',
-    label: 'Mission Control — Overview tab',
-    click: '.mcx-tabs .k-tab:nth-child(1)',
-    expect: '.mcx-pulseitem',
-  },
   // THE AGENTS TAB IS THE SPAWN PROFILES NOW (#520) and both selectors survived
   // the swap, which is worth stating rather than leaving to look like luck: the
   // tool rows reuse `.mcx-oprow` because a grant and an op switch are read the
@@ -598,7 +592,7 @@ const CONTROL_PANELS = [
   {
     id: 'control-agents',
     label: 'Mission Control — Agents tab',
-    click: '.mcx-tabs .k-tab:nth-child(2)',
+    click: '.mcx-tabs .k-tab:has-text("Agents")',
     expect: '.mcx-oprow',
   },
   // THE FRAME, SEPARATELY, because its absence is the silent expensive one. The
@@ -611,7 +605,7 @@ const CONTROL_PANELS = [
   {
     id: 'control-agents-frame',
     label: 'Mission Control — the Agents tab states its spawn policy',
-    click: '.mcx-tabs .k-tab:nth-child(2)',
+    click: '.mcx-tabs .k-tab:has-text("Agents")',
     expect: '.mcx-frame, .mcx-framewarn',
   },
   // Likewise the model TABLE, not the provider head — a head with no rows under
@@ -619,7 +613,7 @@ const CONTROL_PANELS = [
   {
     id: 'control-models',
     label: 'Mission Control — Models tab',
-    click: '.mcx-tabs .k-tab:nth-child(3)',
+    click: '.mcx-tabs .k-tab:has-text("Models")',
     expect: '.mcx-modelrow',
   },
   // The last provider is OmniRoute, which is shut at first paint and whose body
@@ -633,7 +627,7 @@ const CONTROL_PANELS = [
   {
     id: 'control-context',
     label: 'Mission Control — Context tab',
-    click: '.mcx-tabs .k-tab:nth-child(4)',
+    click: '.mcx-tabs .k-tab:has-text("Context")',
     expect: '.mcx-doctree',
   },
   // The second row is an AGENT doc, and the viewer carries the doc's kind as a
@@ -654,30 +648,9 @@ const CONTROL_PANELS = [
     expect: '.mcx-doceditor',
   },
   {
-    id: 'control-loops',
-    label: 'Mission Control — Loops tab',
-    click: '.mcx-tabs .k-tab:nth-child(5)',
-    expect: '.mcx-looprow',
-  },
-  // The panel note counts the active loops, so it is the one place a toggle
-  // that did nothing cannot hide. Safe to press: the Loops tab is a mockup and
-  // its switches are local state that leaving the page undoes.
-  {
-    id: 'control-loop-toggle',
-    label: 'Loops — a switch changes the active count',
-    click: '.mcx-looprow:first-of-type .k-switch-track',
-    expectTextChangeIn: '.mcx-panelhead .note',
-  },
-  {
-    id: 'control-connections',
-    label: 'Mission Control — Connections tab',
-    click: '.mcx-tabs .k-tab:nth-child(6)',
-    expect: '.mcx-conn',
-  },
-  {
     id: 'control-settings',
     label: 'Mission Control — Settings tab',
-    click: '.mcx-tabs .k-tab:nth-child(7)',
+    click: '.mcx-tabs .k-tab:has-text("Settings")',
     expect: '.mcx-dangerrow',
   },
 ];
@@ -687,11 +660,7 @@ const CONTROL_PANELS = [
 // for the --slug value at run time. Order matches the app's own nav order.
 export const SCREENS = [
   { id: 'dashboard', label: 'Dashboard', path: '#/' },
-  // Mission Control is the console kit's own screen, as a mockup: seven tabs
-  // that read nothing and write nothing. Walked for two reasons — it is linked
-  // from six topbars, so a layout break on it is a break the owner meets, and
-  // six of its seven tabs are only reachable by a press, which is what the
-  // interactions below are for.
+  // Three live tabs and the remaining Settings mockup.
   {
     id: 'control',
     label: 'Mission Control',

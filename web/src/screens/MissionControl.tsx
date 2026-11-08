@@ -1,6 +1,5 @@
-// MISSION CONTROL IS BEING WIRED, THREE TABS OF SEVEN (#514). Agents, Models
-// and Context read and write this installation. Overview, Loops, Connections
-// and Settings are still the console kit's sample rows and each one now wears a
+// MISSION CONTROL: Agents, Models and Context read and write this installation.
+// Settings retains the console kit's sample rows and wears a
 // Mock chip ON ITS OWN TAB — the #482/#496 rule, because a chip over the whole
 // screen warns about the three panes it is wrong for, and these mockups look
 // exactly like the real thing.
@@ -15,7 +14,7 @@
 //
 // THE KIT'S SEVEN TABS ARE NOT STACK'S SEVEN ROOMS, and the port's header owed
 // a MAPPING DECISION rather than a rename for each. Here is what the three
-// wired ones decided, and what the four left owe:
+// wired ones decided, and what Settings still owes:
 //
 //  • AGENTS (wired, and RE-AIMED by #520) is `agent_profiles` — the spawn
 //    catalogue the overnight runner hands `claude --agents`. It used to be the
@@ -46,22 +45,6 @@
 //    if the file changed on disk since it was opened. The owner's own words
 //    carry the Edit button; what is code has no button at all.
 //    `server/src/routes/context.js`'s header is the long version.
-//  • OVERVIEW (mock) is `autopilot_runs`, and the kit's "runs today / landed /
-//    failed" strip is THREE of the four buckets a night partitions into.
-//    `planned` and `noCommits` are the other two and they are not failures: a
-//    plan night is the advisor working, and folding it back into a land rate
-//    scores the advisor as having failed to land runs nobody asked it to land.
-//    `pulse.js` spells the partition out; the kit's four numbers cannot hold it.
-//  • LOOPS (mock) is the cron dispatcher, the nightly and the `autopilotEnabled`
-//    arm switch. The kit gives every loop its own toggle; Stack has ONE arm
-//    switch and three gates deciding who runs (the fleet cap, per-project
-//    serialisation, the area lane), and per-project cannot become a knob.
-//  • CONNECTIONS (mock) is `geminiReady`, `terminal.connected` and the provider
-//    keys `terminal/model-switch.mjs` resolves. The fail-safe direction is the
-//    trap: with no host daemon on the line the honest answer is "Stack cannot
-//    see", never a green card — the kit has a tone for Offline and Degraded and
-//    no tone at all for UNKNOWN, which is the NULL-verdict lie in card form.
-//    (The Models tab already draws that answer for OmniRoute; copy it here.)
 //  • SETTINGS (mock) duplicates `#/settings`, which is real and wired. Two rows
 //    of it have no counterpart at all (revoke every key, delete 209
 //    transcripts) and both are destructive; the fail-safe rules say an
@@ -77,7 +60,7 @@
 //
 // NOTHING ON A MOCK TAB IS A FACT ABOUT THIS INSTALLATION — every tone on one
 // (green pills, an amber bar, a red danger zone) is the kit's sample data, and
-// the four switches on them are local state that leaving the page undoes. A
+// the switches on it are local state that leaving the page undoes. A
 // wired tab's numbers are this installation's and nothing on one is invented:
 // where a number cannot be measured it is a DASH, never a zero.
 //
@@ -100,73 +83,14 @@ import { TopBar } from '../components/TopBar';
 import { KitIcon, type KitIconName } from '../detail/kit/KitIcon';
 
 type Tone = 'info' | 'warning' | 'success' | 'danger' | 'neutral';
-type McTab = 'overview' | 'agents' | 'models' | 'context' | 'loops' | 'connections' | 'settings';
+type McTab = 'agents' | 'models' | 'context' | 'settings';
 
-// `mock` is the tab's own chip. A COUNT ON A WIRED TAB IS A REAL COUNT and a
-// count on a mock one counts the MOCKUP, so the wired three take theirs from
-// the payload at render time and only the mock tabs carry a constant here.
-const TABS: { value: McTab; label: string; icon: KitIconName; n?: number; mock?: boolean }[] = [
-  { value: 'overview', label: 'Overview', icon: 'chart-no-axes-column', mock: true },
+// Settings is the only remaining mockup; its chip belongs on its own tab.
+const TABS: { value: McTab; label: string; icon: KitIconName; mock?: boolean }[] = [
   { value: 'agents', label: 'Agents', icon: 'users' },
   { value: 'models', label: 'Models', icon: 'terminal' },
   { value: 'context', label: 'Context', icon: 'file-text' },
-  { value: 'loops', label: 'Loops', icon: 'clock', n: 6, mock: true },
-  { value: 'connections', label: 'Connections', icon: 'git-branch', n: 7, mock: true },
   { value: 'settings', label: 'Settings', icon: 'settings', mock: true },
-];
-
-/* ---------- overview (MOCK — the kit's own sample fleet) ---------- */
-
-const PULSE: { label: string; value: string; note: string; accent?: boolean }[] = [
-  { label: 'Runs today', value: '14', note: '12 landed · 1 failed · 1 no-op' },
-  { label: 'Spend today', value: '$38', note: '$493 in the last 30 days', accent: true },
-  { label: 'Tokens today', value: '84.2M', note: '2.8B all time' },
-  { label: 'Loops firing', value: '6', note: '2 paused by you' },
-];
-
-const LIVE: { agent: string; model: string; task: string; phase: string; pct: number; tone: Tone;
-  elapsed: string; tokens: string; cost: string }[] = [
-  { agent: 'Implementer', model: 'claude-sonnet-5', task: 'Row recycling on scroll', phase: 'writing tests',
-    pct: 62, tone: 'warning', elapsed: '4m 12s', tokens: '1.8M', cost: '$2.40' },
-  { agent: 'Reviewer', model: 'claude-opus-5', task: 'PR #211 — token split', phase: 'reading diff',
-    pct: 28, tone: 'info', elapsed: '1m 03s', tokens: '620K', cost: '$1.10' },
-];
-
-const RECENT: { agent: string; model: string; task: string; result: string; tone: Tone;
-  commits: number; cost: string; dur: string }[] = [
-  { agent: 'Implementer', model: 'claude-sonnet-5', task: 'Extract the diff bar', result: 'landed', tone: 'success', commits: 3, cost: '$1.80', dur: '6m' },
-  { agent: 'Sweeper', model: 'claude-haiku-4-5', task: 'Nightly branch sweep', result: 'landed', tone: 'success', commits: 0, cost: '$0.12', dur: '48s' },
-  { agent: 'Implementer', model: 'claude-opus-5', task: 'Print sheet geometry', result: 'hit a limit', tone: 'warning', commits: 1, cost: '$4.20', dur: '18m' },
-  { agent: 'Advisor', model: 'claude-fable-5', task: 'Draft plan for KING-24', result: 'no commits', tone: 'neutral', commits: 0, cost: '$0.60', dur: '2m' },
-];
-
-/* ---------- loops (MOCK) ---------- */
-
-const LOOPS: { name: string; when: string; agent: string; guard: string; last: string; state: 'on' | 'paused'; runs: number }[] = [
-  { name: 'Land the green ones', when: 'every push', agent: 'Implementer', guard: 'checks pass and 0 behind main',
-    last: 'landed 17m ago', state: 'on', runs: 212 },
-  { name: 'Nightly branch sweep', when: '02:00 daily', agent: 'Sweeper', guard: 'no commits in 7 days',
-    last: 'ran 6h ago · flagged 1', state: 'on', runs: 92 },
-  { name: 'Quarantine flaky checks', when: 'after each suite', agent: 'Sweeper', guard: 'red 3 of last 20 runs',
-    last: 'ran 1h ago · no action', state: 'on', runs: 48 },
-  { name: 'Grade new bugs', when: 'on bug filed', agent: 'Bug triager', guard: 'never sets Blocking',
-    last: 'paused by you 2d ago', state: 'paused', runs: 28 },
-  { name: 'Plan night', when: 'Sun 21:00', agent: 'Advisor', guard: 'commits nothing, ever',
-    last: 'ran Sun · 2 plans drafted', state: 'on', runs: 12 },
-  { name: 'Auto-rebase stale branches', when: '03:00 daily', agent: 'Implementer', guard: 'stops if conflicts exceed 2 files',
-    last: 'paused by you 11d ago', state: 'paused', runs: 34 },
-];
-
-/* ---------- connections (MOCK) ---------- */
-
-const CONNECTIONS: { name: string; kind: string; detail: string; state: string; tone: Tone; last: string }[] = [
-  { name: 'GitHub', kind: 'Source', detail: 'bkane/console · main', state: 'Connected', tone: 'success', last: 'synced 17m ago' },
-  { name: 'Anthropic', kind: 'Model provider', detail: '5 models · 91% of tokens', state: 'Connected', tone: 'success', last: '410ms' },
-  { name: 'OpenAI', kind: 'Model provider', detail: '2 models · 6% of tokens', state: 'Connected', tone: 'success', last: '520ms' },
-  { name: 'Moonshot', kind: 'Model provider', detail: '1 model · 3% of tokens', state: 'Connected', tone: 'success', last: '780ms' },
-  { name: 'Ollama', kind: 'Local runtime', detail: 'localhost:11434', state: 'Offline', tone: 'neutral', last: 'unreachable' },
-  { name: 'Vercel', kind: 'Deploy', detail: 'console-bkane.vercel.app', state: 'Connected', tone: 'success', last: 'deployed 4h ago' },
-  { name: 'Sentry', kind: 'Telemetry', detail: 'no events in 30 days', state: 'Degraded', tone: 'warning', last: 'check the DSN' },
 ];
 
 /* ---------- the pieces the tabs share ---------- */
@@ -320,9 +244,8 @@ export function MissionControl() {
           {TABS.map((t) => (
             <button key={t.value} className={`k-tab${tab === t.value ? ' on' : ''}`} onClick={() => setTab(t.value)}>
               <KitIcon name={t.icon} size={14} />{t.label}
-              {t.n ? <span className="n">{t.n}</span> : null}
-              {/* THE CHIP RIDES ON THE TAB (#482, #496). Three of these tabs now
-                  read this installation and four do not, and they look exactly
+              {/* THE CHIP RIDES ON THE TAB (#482, #496). Three of these tabs
+                  read this installation; Settings is a mockup, and they look exactly
                   alike — one chip over the screen would warn about the wrong
                   three. */}
               {t.mock && (
@@ -333,7 +256,6 @@ export function MissionControl() {
           ))}
         </div>
 
-        {tab === 'overview' && <Overview />}
         {tab === 'agents' && (
           agentsBusy && !agents ? <Loading what="the agents" />
             : agentsErr ? <Failed err={agentsErr} onRetry={reloadAgents} />
@@ -341,70 +263,8 @@ export function MissionControl() {
         )}
         {tab === 'models' && <Models />}
         {tab === 'context' && <Context />}
-        {tab === 'loops' && <Loops />}
-        {tab === 'connections' && <Connections />}
         {tab === 'settings' && <SettingsTab />}
       </div>
-    </div>
-  );
-}
-
-/* ---------- Overview (MOCK) ---------- */
-
-function Overview() {
-  return (
-    <div className="mcx-stack">
-      <MockNote>
-        These are the console kit's sample rows. A night's outcomes actually
-        partition across FOUR buckets — landed, failed, planned and noCommits —
-        and the kit's three-number strip cannot hold the partition, so wiring
-        this one is a decision rather than a fetch.
-      </MockNote>
-
-      <section className="mcx-pulse">
-        {PULSE.map((p) => (
-          <div className="mcx-pulseitem" key={p.label}>
-            <span className="l">{p.label}</span>
-            <span className={`v${p.accent ? ' accent' : ''}`}>{p.value}</span>
-            <span className="note">{p.note}</span>
-          </div>
-        ))}
-      </section>
-
-      <Panel title="Running now" note="live agents" rule="live">
-        {LIVE.map((l) => (
-          <div className={`mcx-row mcx-liverow mcx-t-${l.tone}`} key={l.agent}>
-            <span className="mcx-liveicon"><KitIcon name="terminal" size={13} /></span>
-            <div className="body">
-              <span className="line">
-                <span className="who">{l.agent}</span>
-                <span className="model">{l.model}</span>
-                <span className="what">{l.task} — {l.phase}</span>
-              </span>
-              <span className="mcx-track"><span className="fill" style={{ width: `${l.pct}%` }} /></span>
-            </div>
-            <span className="num el">{l.elapsed}</span>
-            <span className="num tok">{l.tokens}</span>
-            <span className="num cost strong">{l.cost}</span>
-            <button className="mcx-link">watch</button>
-            <button className="mcx-link danger">stop</button>
-          </div>
-        ))}
-      </Panel>
-
-      <Panel title="Last runs" note="today" right={<button className="mcx-link">Full log</button>}>
-        {RECENT.map((r) => (
-          <div className="mcx-row mcx-runrow hoverable" key={r.task}>
-            <span className="who">{r.agent}</span>
-            <span className="what">{r.task}</span>
-            <span className="model">{r.model}</span>
-            <span className="num commits">{r.commits} commits</span>
-            <span className="num dur">{r.dur}</span>
-            <span className="num cost strong">{r.cost}</span>
-            <span className="end"><Pill tone={r.tone}>{r.result}</Pill></span>
-          </div>
-        ))}
-      </Panel>
     </div>
   );
 }
@@ -1070,87 +930,6 @@ function Models() {
           </section>
         );
       })}
-    </div>
-  );
-}
-
-/* ---------- Loops (MOCK) ---------- */
-
-function Loops() {
-  const [states, setStates] = useState<Record<string, boolean>>(
-    () => Object.fromEntries(LOOPS.map((l) => [l.name, l.state === 'on'])),
-  );
-  const active = Object.values(states).filter(Boolean).length;
-
-  return (
-    <div className="mcx-stack tight">
-      <MockNote>
-        The kit's sample loops. Stack has ONE arm switch (`autopilotEnabled`) and three gates
-        deciding who runs — the fleet cap, per-project serialisation and the area lane — and
-        per-project cannot become a knob, so a per-loop toggle is not the shape this wires to.
-      </MockNote>
-      <div className="mcx-intro">
-        <span className="lede">Loops run without you. Each one names its guard — the condition that stops it before it does damage.</span>
-        <button className="k-btn sm secondary"><KitIcon name="plus" size={13} />New loop</button>
-      </div>
-
-      <Panel title="Automation" note={`${active} of ${LOOPS.length} active`}>
-        {LOOPS.map((l) => (
-          <div className="mcx-row mcx-looprow hoverable" key={l.name}>
-            <Switch checked={states[l.name]} label={l.name}
-              onChange={(v) => setStates({ ...states, [l.name]: v })} />
-            <div className="body">
-              <span className="line">
-                <span className={`name${states[l.name] ? '' : ' off'}`}>{l.name}</span>
-                <span className="when">{l.when}</span>
-                <span className="who">{l.agent}</span>
-              </span>
-              <span className="guard">guard: {l.guard}</span>
-            </div>
-            <span className="num">{l.runs}</span>
-            <span className="last">{l.last}</span>
-            <button className="mcx-link">edit</button>
-          </div>
-        ))}
-      </Panel>
-    </div>
-  );
-}
-
-/* ---------- Connections (MOCK) ---------- */
-
-function Connections() {
-  return (
-    <div className="mcx-stack tight">
-      <MockNote>
-        The kit's sample integrations. The real answer is `geminiReady`, `terminal.connected` and the
-        provider keys `terminal/model-switch.mjs` resolves — and the trap is that the kit has a tone
-        for Offline and Degraded and none at all for UNKNOWN. The Models tab already draws that one.
-      </MockNote>
-      <div className="mcx-intro">
-        <span className="lede">Seven integrations · 1 offline, 1 degraded.</span>
-        <button className="k-btn sm secondary"><KitIcon name="plus" size={13} />Add connection</button>
-      </div>
-
-      <div className="mcx-conns">
-        {CONNECTIONS.map((c) => {
-          const off = c.state !== 'Connected';
-          return (
-            <section className={`mcx-conn mcx-t-${c.tone}${off ? ' off' : ''}`} key={c.name}>
-              <div className="top">
-                <span className="kind">{c.kind}</span>
-                <span className="end"><Pill tone={c.tone}>{c.state}</Pill></span>
-              </div>
-              <span className="name">{c.name}</span>
-              <span className="detail">{c.detail}</span>
-              <div className="foot">
-                <span className="last">{c.last}</span>
-                <span className="act">{off ? 'reconnect' : 'manage'}</span>
-              </div>
-            </section>
-          );
-        })}
-      </div>
     </div>
   );
 }
