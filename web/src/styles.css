@@ -8907,6 +8907,18 @@ button.ar-open:hover { background: var(--surface-hover); }
    their project tint. Main is live green; the three small panes the accent. */
 .tv-tab.in-main, .tv-tab.on.in-main { background: var(--live-tint); box-shadow: inset 0 -2px 0 var(--live); }
 .tv-tab.in-mini, .tv-tab.on.in-mini { background: var(--accent-tint); box-shadow: inset 0 -2px 0 var(--blue-400); }
+/* ASKING: a question is waiting. The tab leads the bar (its own group, ahead
+   of every project), turns amber and wears a pulsing dot until answered. */
+.tv-tab { position: relative; }
+.tv-tab.asking, .tv-tab.on.asking, .tv-tab.asking.in-main, .tv-tab.asking.in-mini { border-color: var(--amber-500); border-style: solid; }
+.tv-tab.asking, .tv-tab.on.asking, .tv-tab.on.asking.in-main, .tv-tab.on.asking.in-mini { background: var(--status-warning-bg); }
+.tv-tab.asking::after {
+  content: ''; position: absolute; top: 4px; right: 4px; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--amber-500); box-shadow: 0 0 0 2px var(--surface-canvas); animation: tv-ask-pulse 1.6s ease-in-out infinite;
+}
+@keyframes tv-ask-pulse { 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) { .tv-tab.asking::after { animation: none; } }
+.tv-tabgroup.asking { border-left-color: var(--amber-500); }
 .tv-glyph {
   flex: none; width: 26px; height: 26px; border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: center;
   font: var(--weight-semibold) 13px/1 var(--font-mono);
@@ -8924,7 +8936,10 @@ button.ar-open:hover { background: var(--surface-hover); }
 .tv-tool.shell { color: var(--text-accent); }
 .tv-pname.b { color: var(--blue-400); }
 .tv-pname.l { color: var(--lime-400); }
-.tv-pinmark { display: inline-flex; color: var(--text-link); }
+.tv-pinmark { display: inline-flex; }
+.tv-pinemo { display: inline-flex; line-height: 1; }
+.tv-ico .tv-pinemo { filter: grayscale(1); opacity: 0.55; }
+.tv-ico.pinned .tv-pinemo, .tv-ico:hover .tv-pinemo { filter: none; opacity: 1; }
 .tv-x {
   flex: none; align-self: flex-start; margin-top: 3px; width: 18px; height: 18px; display: flex; align-items: center; justify-content: center;
   border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--text-tertiary); cursor: pointer; font-size: var(--text-sm);

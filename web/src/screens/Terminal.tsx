@@ -1145,9 +1145,15 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
     ...detachedShown.map((d) => ({ key: d.name, det: d, project: projectOfDet(d), pinned: !!d.keep })),
   ];
   for (const e of barEntries) if (!barSeen.current.has(e.key)) barSeen.current.set(e.key, barSeen.current.size);
-  const barGroups = byProject(barEntries, (e) => e.project).map((g) => ({
-    ...g, rows: [...g.rows].sort((a, b) => Number(b.pinned) - Number(a.pinned) || (barSeen.current.get(a.key)! - barSeen.current.get(b.key)!)),
-  }));
+  // A session that is ASKING jumps to the front of the bar, ahead of every
+  // project, and wears a badge, so a question is never past the edge.
+  const askingEntry = (e: BarEntry) => (e.sess ? statusOf(e.sess) : e.det ? statusOfDet(e.det) : '') === 'asking';
+  const barSort = (rows: BarEntry[]) => [...rows].sort((a, b) => Number(b.pinned) - Number(a.pinned) || (barSeen.current.get(a.key)! - barSeen.current.get(b.key)!));
+  const barAsking = barEntries.filter(askingEntry);
+  const barGroups = [
+    ...(barAsking.length ? [{ project: '!asking', rows: barSort(barAsking) }] : []),
+    ...byProject(barEntries.filter((e) => !askingEntry(e)), (e) => e.project).map((g) => ({ ...g, rows: barSort(g.rows) })),
+  ];
   const cur = sessions.find((s) => s.id === active) ?? null;
   // Main + 3's small panes: the next three tabs, pinned first.
   const minis = view === 'split'
@@ -1534,10 +1540,10 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   // Plain functions, NOT components: a component defined inside this render is
   // a new type every render, which remounts it — and the rename input with it,
   // dropping the caret on every keystroke.
-  const pinIcon = (size = 11) => (
-    <svg width={size} height={size} viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-      <path d="M10.5 1 15 5.5l-1.6.8-2.9 2.9.4 3.6-1.4 1.4-3-3L2 15.7 1 14.7l4.5-4.5-3-3 1.4-1.4 3.6.4 2.9-2.9z" />
-    </svg>
+  // The red pin (owner's call, 2026-11-08): 📌 pinned, 📍 not. An emoji, not
+  // a tone, so it reads the same on every ground and needs no palette entry.
+  const pinIcon = (size = 11, on = true) => (
+    <span className="tv-pinemo" style={{ fontSize: size + 1 }} aria-hidden="true">{on ? '📌' : '📍'}</span>
   );
   const projChip = (p: string, size = 16) => (
     <span className={`tv-proj ${projTint(p)}`} style={{ width: size, height: size }} aria-hidden="true">{projLetter(p)}</span>
@@ -1591,14 +1597,14 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
           <div className="tv-tabs" ref={tabRowRef}
             onWheel={(e) => { const r = tabRowRef.current; if (r && Math.abs(e.deltaY) > Math.abs(e.deltaX)) r.scrollLeft += e.deltaY; }}>
             {barGroups.map((g) => (
-              <div className="tv-tabgroup" key={g.project || '~'}>
+              <div className={`tv-tabgroup${g.project === '!asking' ? ' asking' : ''}`} key={g.project}>
                 {g.rows.map((e) => {
                   const d = e.det;
                   if (!e.sess && d) {
                     const dst = statusOfDet(d);
                     const dcmd = d.cmd || 'claude';
                     return (
-                      <div key={e.key} className={`tv-tab parked${view === 'swarm' && flash === d.name ? ' on' : ''} p-${projTint(g.project)}`}
+                      <div key={e.key} className={`tv-tab parked${dst === 'asking' ? ' asking' : ''}${view === 'swarm' && flash === d.name ? ' on' : ''} p-${projTint(e.project)}`}
                         onClick={() => openParked(d)}
                         onContextMenu={(ev) => { ev.preventDefault(); setMenu({ id: -1, det: d.name, x: ev.clientX, y: ev.clientY }); }}
                         title={`${nameOfDet(d)} · ${TOOL[dcmd].name} · ~/${d.cwd || ''} — running, not open here. Click to open; right-click to end.`}>
@@ -1609,7 +1615,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                             <span className={`tv-dot ${dst}`} />
                             <span className={`tv-tool ${dcmd}`}>{TOOL[dcmd].name}</span>
                             <span>·</span>
-                            <span className={`tv-pname ${projTint(g.project)}`}>{g.project || '~'}</span>
+                            <span className={`tv-pname ${projTint(e.project)}`}>{e.project || '~'}</span>
                             <span>·</span>
                             <span className="tv-ell">{d.attached ? 'open elsewhere' : 'closed'}</span>
                             {d.keep && <span className="tv-pinmark">{pinIcon(10)}</span>}
@@ -1624,7 +1630,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                   // Main + 3: which tabs are on the stage, and where (main green, the small three blue).
                   const slot = view !== 'split' ? '' : s.id === cur?.id ? ' in-main' : minis.some((m) => m.id === s.id) ? ' in-mini' : '';
                   return (
-                    <div key={s.id} data-tab={s.id} className={`tv-tab${on ? ' on' : ''}${slot} p-${projTint(g.project)}`}
+                    <div key={s.id} data-tab={s.id} className={`tv-tab${on ? ' on' : ''}${slot}${st === 'asking' ? ' asking' : ''} p-${projTint(e.project)}`}
                       draggable onDragStart={(e) => { e.dataTransfer.effectAllowed = 'copyMove'; e.dataTransfer.setData('text/x-stack-tab', String(s.id)); setDragTab(s.id); }}
                       onDragEnd={() => { setDragTab(null); setSnapPreview(null); }}
                       onClick={() => selectTab(s)}
@@ -1637,7 +1643,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                           <span className={`tv-dot ${st}`} />
                           <span className={`tv-tool ${s.cmd}`}>{TOOL[s.cmd].name}</span>
                           <span>·</span>
-                          <span className={`tv-pname ${projTint(g.project)}`}>{g.project || '~'}</span>
+                          <span className={`tv-pname ${projTint(e.project)}`}>{e.project || '~'}</span>
                           <span>·</span>
                           <span className="tv-ell">{s.status === 'live' ? STATUS_LABEL[st] : s.status}</span>
                           {isPinned(s) && <span className="tv-pinmark">{pinIcon(10)}</span>}
@@ -1876,7 +1882,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                       {s.tmux && (
                         <button className={`tv-btn sm${pinned ? ' pinned' : ''}`} aria-pressed={pinned} onClick={() => togglePinSess(s)}
                           title={pinned ? `Pinned — first in its group, and the idle reaper will not take ${s.tmux}` : 'Pin — first in its group, and safe from the idle reaper'}>
-                          {pinIcon()}{pinned ? 'Pinned' : 'Pin'}
+                          {pinIcon(11, pinned)}{pinned ? 'Pinned' : 'Pin'}
                         </button>
                       )}
                       <button className="tv-btn sm" onClick={() => closeSession(s.id)}
@@ -1891,10 +1897,11 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                     {projChip(p, 18)}
                     {nameEdit(s, 'pane', 'tv-mini-name')}
                     {s.tmux && (
-                      <button className={`tv-ico${pinned ? ' pinned' : ''}`} title={pinned ? 'Unpin' : 'Pin'} onClick={() => togglePinSess(s)}>{pinIcon()}</button>
+                      <button className={`tv-ico${pinned ? ' pinned' : ''}`} title={pinned ? 'Unpin' : 'Pin'} onClick={() => togglePinSess(s)}>{pinIcon(11, pinned)}</button>
                     )}
                     <button className="tv-ico" title="Move to main" onClick={() => setActive(s.id)}>⤢</button>
-                    <button className="tv-ico" title="Close tab" onClick={() => closeSession(s.id)}>×</button>
+                    <button className="tv-ico" title="Close — the session keeps running and stays in the bar" onClick={() => closeSession(s.id)}>×</button>
+                    <button className="tv-btn xs danger" disabled={ending === s.id} title="End this session" onClick={() => askEnd(s)}>{ending === s.id ? 'Ending…' : 'End'}</button>
                   </div>
                 ) : null}
                 {place === 'win' && winOf ? (
@@ -1909,7 +1916,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                       <span className="tv-win-meta">{TOOL[s.cmd].name}{destLabel(s) ? ` · ${destLabel(s)}` : ''}</span>
                       <span className="tv-head-acts">
                         {s.tmux && (
-                          <button className={`tv-ico${pinned ? ' pinned' : ''}`} title={pinned ? 'Unpin' : 'Pin'} onClick={() => togglePinSess(s)}>{pinIcon()}</button>
+                          <button className={`tv-ico${pinned ? ' pinned' : ''}`} title={pinned ? 'Unpin' : 'Pin'} onClick={() => togglePinSess(s)}>{pinIcon(11, pinned)}</button>
                         )}
                         <span className="tv-rel">
                           <button className={`tv-btn sm${openIn === s.id ? ' on' : ''}`} onClick={() => setOpenIn(openIn === s.id ? null : s.id)}>
@@ -2072,7 +2079,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                             <span className="tv-tile-pname">{t.name}</span>
                             {(t.sess?.tmux || t.det) && (
                               <button className={`tv-ico${t.pinned ? ' pinned' : ''}`} title={t.pinned ? 'Unpin' : 'Pin'}
-                                onClick={() => (t.sess ? togglePinSess(t.sess) : t.det && void togglePin(t.det.name, !t.det.keep))}>{pinIcon()}</button>
+                                onClick={() => (t.sess ? togglePinSess(t.sess) : t.det && void togglePin(t.det.name, !t.det.keep))}>{pinIcon(11, t.pinned)}</button>
                             )}
                             <button className="tv-btn xs" title="Hide from Swarm (keeps running)" onClick={() => hideTile(t.key, openId)}>Hide</button>
                             <button className="tv-btn xs danger" disabled={!!t.det?.attached && !t.sess}
