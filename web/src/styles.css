@@ -8877,10 +8877,19 @@ button.ar-open:hover { background: var(--surface-hover); }
   padding: 0 var(--space-4); background: var(--surface-canvas); border-bottom: 1px solid var(--border-subtle);
 }
 .tv-tabs {
-  flex: 1; min-width: 120px; display: flex; align-items: center; gap: var(--space-2) var(--space-3);
-  overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
+  flex: 1 1 0; min-width: 120px; align-self: stretch; display: flex; align-items: center; gap: var(--space-2) var(--space-3);
+  overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent;
 }
-.tv-tabs::-webkit-scrollbar { display: none; }
+/* A thin bar that is always there when the row overflows: hidden, tabs past
+   the edge were reachable only by a wheel nobody knew about. */
+.tv-tabs::-webkit-scrollbar { height: 4px; }
+.tv-tabs::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: var(--radius-pill); }
+.tv-tabs::-webkit-scrollbar-track { background: transparent; }
+/* Everything right of the tabs keeps its size; only the tabs and the meters
+   give way, so the views and End all can never be pushed off screen. */
+.tv-bar > :not(.tv-tabs):not(.tv-meters) { flex-shrink: 0; }
+.tv-bar { overflow: hidden; }
+@media (max-width: 1280px) { .tv-start .tv-path { display: none; } }
 .tv-tabgroup { flex: none; display: flex; align-items: center; gap: var(--space-1); padding-left: var(--space-3); border-left: 1px solid var(--border-subtle); }
 .tv-tab {
   flex: none; width: 210px; height: 40px; box-sizing: border-box; display: flex; align-items: center; gap: var(--space-2);

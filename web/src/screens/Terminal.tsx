@@ -1404,6 +1404,41 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
     if (t?.sess) { closeWin(t.sess.id); void endSession(t.sess); } else if (t?.det) void killIdle([t.det]);
   };
 
+  // END ALL: every tab here and every session idling on the host, from any
+  // view. Pinned ones are kept — a pin is the owner saying "not this one", and
+  // a bulk action should not overrule it. Tabs detach first and are killed as
+  // the daemon advertises them, the same two steps as one End (`endSession`).
+  // The active tab is always in sight: picking one from the switcher, Swarm or
+  // a new Start scrolls the row to it rather than leaving it past the edge.
+  useEffect(() => {
+    if (!visible || active == null) return;
+    tabRowRef.current?.querySelector(`[data-tab="${active}"]`)?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }, [active, visible]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const [endAllAsk, setEndAllAsk] = useState(false);
+  const endAllTabs = sessions.filter((x) => !isPinned(x));
+  const endAllIdle = detached.filter((d) => !d.keep && !sessions.some((x) => x.tmux === d.name));
+  const endAllCount = endAllTabs.length + endAllIdle.length;
+  const endAllKept = sessions.length + detached.filter((d) => !sessions.some((x) => x.tmux === d.name)).length - endAllCount;
+  const doEndAll = async () => {
+    setEndAllAsk(false);
+    const tabs = endAllTabs, idle = endAllIdle;
+    setWins([]);
+    const names = new Set(tabs.map((x) => x.tmux).filter((n): n is string => !!n));
+    for (const x of tabs) detachSession(x.id);
+    void killIdle(idle);
+    for (let i = 0; i < 12 && names.size; i++) {
+      await new Promise((r) => setTimeout(r, 500));
+      const list = await getDetachedSessions().catch(() => []);
+      for (const d of list) {
+        if (!names.has(d.name)) continue;
+        names.delete(d.name);
+        await killDetachedSession(d.name).catch(() => { /* the refresh below tells the truth */ });
+      }
+    }
+    void refreshDetached();
+  };
+
   // THE LIMITS, one meter per account. Only what the daemon measured: a window
   // it did not report is ABSENT, because an unmeasured limit drawn at 0% reads
   // as "plenty left", the most expensive way to be wrong here.
@@ -1690,6 +1725,10 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
               </button>
             ))}
           </div>
+          <button className="tv-btn tv-endall danger" disabled={endAllCount === 0} onClick={() => setEndAllAsk(true)}
+            title={endAllCount ? `End all ${endAllCount} session${endAllCount === 1 ? '' : 's'} on the host${endAllKept ? ` (${endAllKept} pinned kept)` : ''}` : 'Nothing to end'}>
+            End all
+          </button>
           <button className={`tv-btn tv-icon${full ? ' on' : ''}`} onClick={toggleFull} aria-pressed={full}
             title={full ? 'Leave full screen (esc also works)' : 'Full screen — the terminals take the whole window'}>
             {full ? '⤡' : '⤢'}
@@ -2121,6 +2160,18 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
         danger
         onConfirm={doEnd}
         onCancel={() => setEndTarget(null)}
+      />
+    )}
+    {endAllAsk && (
+      <ConfirmModal
+        title={`End all ${endAllCount} session${endAllCount === 1 ? '' : 's'}?`}
+        body={<>Every tab here and every session idling on the host is killed, whatever it is doing.
+          {endAllKept > 0 && <> {endAllKept} pinned session{endAllKept === 1 ? ' is' : 's are'} kept; unpin {endAllKept === 1 ? 'it' : 'them'} to end {endAllKept === 1 ? 'it' : 'them'} too.</>}
+          {' '}Unattended runs (stack-auto) are never touched from here.</>}
+        confirmLabel={`End ${endAllCount}`}
+        danger
+        onConfirm={() => void doEndAll()}
+        onCancel={() => setEndAllAsk(false)}
       />
     )}
     {fillAsk > 0 && (

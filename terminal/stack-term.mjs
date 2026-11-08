@@ -31,7 +31,7 @@
 //   STACK_TERM_ROOT           cwd jail, default $HOME  (--root)
 //   STACK_TERM_IDLE_MINUTES   close inactive sessions after this many minutes, default 240  (--idle-minutes)
 //   STACK_TERM_FRESH_MINUTES  take a session NOBODY EVER ATTACHED TO after this many minutes, default 1
-//   STACK_TERM_MAX_SESSIONS   default 8  (--max-sessions)
+//   STACK_TERM_MAX_SESSIONS   default 48, Swarm's largest grid (8×6)  (--max-sessions)
 //
 // STACK_API and STACK_TOKEN are env-only — passing credentials as CLI flags would expose
 // them in process listings, which is against the project's security conventions.
@@ -91,7 +91,7 @@ const cli = meow(`
 	Options
 	  --root <directory>     Jail all sessions to this path (default: $HOME)
 	  --idle-minutes <n>     Close a session idle for this many minutes (default: 240)
-	  --max-sessions <n>     Maximum number of concurrent sessions (default: 8)
+	  --max-sessions <n>     Maximum number of concurrent sessions (default: 48)
 
 	Required environment variables (never passed as flags)
 	  STACK_API              App origin, e.g. https://stack.example
@@ -135,7 +135,7 @@ const IDLE_MS = (cli.flags.idleMinutes > 0 ? cli.flags.idleMinutes : (envInt('ST
 // Env-only: it is a fuse, not a policy, and the policy switch is the setting
 // the sweep below reads.
 const FRESH_MINUTES = envInt('STACK_TERM_FRESH_MINUTES') ?? 1;
-const MAX_SESSIONS = cli.flags.maxSessions > 0 ? cli.flags.maxSessions : (envInt('STACK_TERM_MAX_SESSIONS') ?? 8);
+const MAX_SESSIONS = cli.flags.maxSessions > 0 ? cli.flags.maxSessions : (envInt('STACK_TERM_MAX_SESSIONS') ?? 48);
 
 const API = (process.env.STACK_API || '').replace(/\/$/, '');
 const TOKEN = process.env.STACK_TOKEN || '';
@@ -685,7 +685,7 @@ function startSession(msg) {
   if (!['shell', 'claude', 'codex'].includes(msg.cmd)) return failUplink('Unknown session type.');
   let cwd = resolveCwd(msg.cwd);
   if (!cwd) return failUplink(`No such directory under ${ROOT}.`);
-  if (sessions.size >= MAX_SESSIONS) return failUplink('Too many live sessions.');
+  if (sessions.size >= MAX_SESSIONS) return failUplink(`The host is already holding ${MAX_SESSIONS} live sessions, its cap. End some, or raise STACK_TERM_MAX_SESSIONS in ~/.stack/env.`);
 
   // Shell sessions run the login shell directly; both agents persist in tmux.
   // Claude sessions run inside a named tmux session so the process survives
