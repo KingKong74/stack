@@ -59,12 +59,15 @@ export function Notes({ slug, milestones, slices, onRefresh }: {
     try { await fn(); } catch (e) { setErr((e as Error)?.message || 'Something went wrong.'); } finally { setBusy(false); }
   };
 
-  const add = () => guard(async () => {
-    const body = draft.trim();
-    if (!body) return;
-    put(await createArtifact(slug, { type: 'note', title: split(body).head.slice(0, 300) || 'Note', body }));
-    setDraft('');
-  });
+  const add = () => {
+    if (busy) return;
+    return guard(async () => {
+      const body = draft.trim();
+      if (!body) return;
+      put(await createArtifact(slug, { type: 'note', title: split(body).head.slice(0, 300) || 'Note', body }));
+      setDraft('');
+    });
+  };
 
   // Newest first: a scratchpad is read from the top.
   const sorted = useMemo(() => [...(notes || [])].sort((a, b) => b.id - a.id), [notes]);
@@ -99,27 +102,34 @@ export function Notes({ slug, milestones, slices, onRefresh }: {
 
   return (
     <div className="sp nt">
-      <div className="sp-lede">
-        <h2 className="sp-h">Notes</h2>
-        <span>Loose ideas and notes. Nothing here is work yet: when one is ready, turn it into a milestone, a slice or a task. Its first line becomes the name.</span>
-      </div>
+      <header className="nt-intro">
+        <span className="sp-eyebrow">Notes · a little room to think</span>
+        <h2>Let it be a little unfinished.</h2>
+        <p>Loose thoughts, big what-ifs, things to come back to. They don’t need to be a plan yet.</p>
+      </header>
       {err && <div className="km-err" role="alert">{err}</div>}
 
-      <div className="nt-compose">
-        <textarea className="km-textarea" rows={3} value={draft} placeholder="Jot an idea… (⌘/Ctrl + Enter to save)"
-          aria-label="New note"
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); add(); } }} />
-        <div className="sp-docacts">
-          <button className="k-btn sm" onClick={add} disabled={busy || !draft.trim()}>
-            <KitIcon name="plus" size={13} />Add note
-          </button>
-        </div>
-      </div>
-
-      {notes === null && !err && <span className="sp-empty">Reading…</span>}
-      {notes !== null && open.length === 0 && <span className="sp-empty">No open notes. Anything you jot above lands here.</span>}
       <div className="nt-list">
+        <div className="nt-compose">
+          <label className="nt-compose-label" htmlFor="nt-draft">What’s on your mind?</label>
+          <textarea id="nt-draft" className="km-textarea" rows={5} value={draft} placeholder="A thought, a question, a wild idea…"
+            aria-label="New note"
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); add(); } }} />
+          <div className="nt-compose-foot">
+            <span>⌘ / Ctrl + Enter to save</span>
+            <button className="k-btn sm" onClick={add} disabled={busy || !draft.trim()}>
+              <KitIcon name="plus" size={13} />Add note
+            </button>
+          </div>
+        </div>
+
+        {notes === null && !err && <span className="sp-empty">Reading…</span>}
+        {notes !== null && open.length === 0 && <div className="nt-empty">
+          <KitIcon name="pencil" size={24} />
+          <p>Start anywhere.</p>
+          <span>A sentence is enough. Leave it here and see where it goes.</span>
+        </div>}
         {open.map((n) => (
           <NoteCard key={n.id} note={n} busy={busy} milestones={milestones} slices={slices}
             onSave={(body) => guard(async () => { put(await patchArtifact(slug, n.id, { body, title: split(body).head.slice(0, 300) || 'Note' })); })}
@@ -130,7 +140,7 @@ export function Notes({ slug, milestones, slices, onRefresh }: {
 
       {done.length > 0 && (
         <details className="nt-done">
-          <summary><span className="sp-eyebrow">Converted</span><span className="sp-dim">{done.length}</span></summary>
+          <summary><span className="sp-eyebrow">Ideas that went somewhere</span><span className="sp-dim">{done.length}</span></summary>
           <div className="nt-list">
             {done.map((n) => (
               <div key={n.id} className="nt-card converted">
@@ -171,7 +181,7 @@ function NoteCard({ note, busy, milestones, slices, onSave, onDelete, onConvert 
 
   if (editing) {
     return (
-      <div className="nt-card">
+      <div className="nt-card nt-editing">
         <textarea className="km-textarea" rows={6} value={text} autoFocus aria-label="Edit note"
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
