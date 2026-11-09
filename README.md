@@ -13,8 +13,9 @@ removes the friction of re-loading context when you jump between projects.
 
 Each project tracks its live site, repo, deploy status, an auto-generated **activity feed**
 (one summary per session/push), a **bug tracker** and a **MoSCoW roadmap**. Two screens:
-a cover-forward **projects dashboard** and a four-tab **project detail**
-(Overview · Quality · Roadmap · Activity).
+a cover-forward **projects dashboard** and a **project detail** with a Course
+home, board, activity and project context. The Quality page is retired while a
+[replacement is considered](docs/quality-rethink.md); check and bug records remain intact.
 
 The dashboard opens with a **cross-project command deck** — a console that glances across everything:
 a resume hero (the one project to jump back into), a quiet attention row (**Blocked · Stale · Bugs**

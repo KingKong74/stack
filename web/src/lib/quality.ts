@@ -1,11 +1,6 @@
-// THE QUALITY PAGE'S PURE HALF — every number the screen shows, derived here so
-// the rail's badge and the screen behind it cannot disagree (#497).
-//
-// `detail/Quality.tsx` renders these and writes through `store.ts`; nothing in
-// this file fetches, and `scripts/quality.test.mjs` is its regression net. That
-// split is not tidiness: checks are Stack's ONLY automated regression net and a
-// green suite is what #212 auto-merge and #263 auto-verdict spend, so the
-// arithmetic that decides "is this suite green" is worth pinning.
+// Retained derivations from the retired Quality page. No active screen uses
+// these; scripts/quality.test.mjs preserves their behaviour while a replacement
+// is considered. The check runner and its verdict gates live on the server.
 //
 // ---- THE SEVERITY MAPPING (the decision the mockup left owing) -------------
 //

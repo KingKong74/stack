@@ -459,67 +459,11 @@ const LOOPS_PANELS = [
   },
 ];
 
-// The Quality screen is WIRED (#497), so these six presses now walk a screen
-// drawing this project's own checks and bugs. A tab is still where the screen
-// keeps the rest of itself and an unpressed tab is one this harness has
-// photographed rather than tested.
-//
-// ORDER IS LOAD-BEARING, the same way the board's is: the first two name
-// Overview's own rows, so they run before anything switches tabs. Each press
-// is proved by something that cannot already be on screen — no severity chip
-// is selected at first paint, no feature is folded open, and the check table
-// and the composer each exist only after the press that reveals it.
-//
-// THE BUGS FOLD IS THE ONE ASSERTION THE WIRING CHANGED. A bug cluster that is
-// not `fixed` OPENS at first paint — an open bug behind a click is a bug
-// nobody reads — so pressing its head SHUTS it, and `.ql-brow` appearing can
-// no longer be the proof. The caret is: it reads ▾ before the press and ▸
-// after, which is `expectTextChangeIn`'s whole purpose. Both steps together
-// still prove the same two things (the tab draws rows, the fold responds).
-const QUALITY_PANELS = [
-  {
-    id: 'quality-severity',
-    label: 'Quality — severity filter',
-    click: '.ql-sevfilter .ql-sevchip',
-    expect: '.ql-sevchip.on',
-  },
-  {
-    id: 'quality-feature',
-    label: 'Quality — a feature folds open',
-    click: '.ql-frow',
-    expect: '.ql-fbody',
-  },
-  {
-    id: 'quality-checks-tab',
-    label: 'Quality — Checks tab',
-    click: '.ql-tabs .k-tab:nth-child(2)',
-    expect: '.ql-crowhead',
-  },
-  {
-    id: 'quality-composer',
-    label: 'Quality — new-check composer',
-    click: '.ql-checkbar .k-btn',
-    expect: '.ql-composer',
-  },
-  {
-    id: 'quality-bugs-tab',
-    label: 'Quality — Bugs tab',
-    click: '.ql-tabs .k-tab:nth-child(3)',
-    expect: '.ql-brow',
-  },
-  {
-    id: 'quality-bugcluster',
-    label: 'Quality — a bug cluster folds shut',
-    click: '.ql-barea',
-    expectTextChangeIn: '.ql-barea .caret',
-  },
-];
-
 // The Plans tab is HALF WIRED (#482, Plans.tsx) and it is the widest screen in
 // here: SIX sub-views behind one strip, of which first paint shows one. Most of
 // the presses below exist only to walk the other five, because a sub-view
 // nothing has pressed is a screen this harness has photographed rather than
-// tested — the same reason Quality's three tabs are all walked.
+// tested.
 //
 // ORDER IS LOAD-BEARING. The Timeline is what first paint draws, so its two
 // real controls are pressed FIRST, before anything switches views. After that
@@ -715,9 +659,8 @@ export const SCREENS = [
   { id: 'project-overview', label: 'Project — Course (the home)', path: '#/p/<slug>' },
   {
     id: 'project-quality',
-    label: 'Project — Quality',
+    label: 'Project — retired Quality link (project home)',
     path: '#/p/<slug>/quality',
-    interactions: QUALITY_PANELS,
   },
   // The roadmap tab IS the board, so its controls are on screen at first paint
   // and need no navigating to. If a strip ever comes back over it, these
@@ -865,8 +808,7 @@ function printHelp() {
   --timeout <ms>   per-navigation timeout (default: 20000)
   --headed         run headed instead of headless
   --json           print the report JSON to stdout instead of the table
-  --report         POST the outcome to the project's own checks (Quality page,
-                    Suite segment) as '${REPORT_CHECK_NAME}' — off by default
+  --report         POST the outcome to the project's own checks ledger as '${REPORT_CHECK_NAME}' — off by default
   --no-interactions  walk and scan only; do not press any control. The default
                     is to press them, because a screen's first paint is its
                     most-tested state and #401's defects were all behind a
@@ -1554,7 +1496,7 @@ async function reportOutcome({ url, token, slug, totals, durationMs, screenRepor
     return { ok: false, reason };
   }
 
-  process.stdout.write(`\nreported to ${slug}'s Quality page: ${body.status.toUpperCase()} (${REPORT_CHECK_NAME})\n`);
+  process.stdout.write(`\nreported to ${slug}'s checks ledger: ${body.status.toUpperCase()} (${REPORT_CHECK_NAME})\n`);
   return { ok: true, name: REPORT_CHECK_NAME, status: body.status };
 }
 

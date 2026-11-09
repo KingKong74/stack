@@ -15,8 +15,6 @@ import { FLICK_HINT } from '../lib/flick';
 import { ConsoleNav, NavIcons, SpaceDot, type NavSection } from '../detail/ConsoleNav';
 import { absoluteHref, type MenuOption } from '../components/MoreMenu';
 import { TerminalNavFoot } from '../components/Asking';
-import { Quality } from '../detail/Quality';
-import { qualityAttention } from '../lib/quality';
 import { ForYou } from '../detail/ForYou';
 import { Plans } from '../detail/Plans';
 import { Board } from '../detail/Board';
@@ -33,16 +31,15 @@ import { Milestones, MilestoneSummary } from '../detail/Milestones';
 import { newItemSched, flatRoadmap, isAutoIdea, isIced, isBoardWork } from '../lib/plan';
 import { PRIORITY_DEFAULT, crumbName } from '../lib/ui';
 
-// #278 — Bugs and Audit are one tab now: Quality. They were halves of one loop
-// (run → see red → file → fix → re-run) and it crossed a tab boundary twice.
+// Quality is retired. Its URLs, and the older bugs/audit URLs, land on Course.
+// Checks, reports and bug records remain available through the API and CLI.
 //
 // FOR YOU IS THREE OF THESE KEYS, NOT ONE. `overview`, `activity` and `auto`
 // are the kit's three For-you tabs (ForYouScreen.jsx), and each keeps its own
 // ROUTE key rather than becoming component state: `#/p/x/activity` is in
-// bookmarks and in every older search payload, `hl` on it means a commit hash,
-// and Quality's "open the commit that caught this" link targets it. An inner
-// strip that swallowed the key would have broken all three at once.
-type Tab = 'overview' | 'quality' | 'roadmap' | 'activity' | 'auto' | 'plans'
+// bookmarks and older search payloads; `hl` on it means a commit hash.
+// An inner strip that swallowed the key would break those links.
+type Tab = 'overview' | 'roadmap' | 'activity' | 'auto' | 'plans'
   | 'artifacts' | 'agents' | 'loops' | 'charter' | 'milestones' | 'architecture';
 /** The keys that land on the For-you screen, in strip order. */
 const FORYOU_TABS: Tab[] = ['overview', 'activity', 'auto'];
@@ -63,20 +60,10 @@ const isMockTab = (t: Tab) => t === 'roadmap'
 // The four readings of a project. `navSections` below is the ONE list of them
 // — #432 moved them from a horizontal strip into the console's left rail, and
 // a second copy anywhere is how the two would drift.
-const TAB_KEYS = new Set<Tab>(['overview', 'quality', 'roadmap', 'activity', 'auto', 'plans', 'artifacts', 'agents', 'loops', 'charter', 'milestones', 'architecture']);
-// 'bugs' and 'audit' both land on Quality — old deep links (bookmarks, a search
-// payload from an older server, a ⌘K target) keep working. 'tips' still
-// resolves too: the recipe library was a tab, then the bottom-left dock, and
-// is now neither — the corner holds the quick ＋ instead — so an old link lands
-// on Overview rather than 404ing. 'futures' and 'notes' join them now that
-// Polaris and the Workbench are culled — both tabs are gone, but
-// `#/p/<slug>/futures` and `#/p/<slug>/notes` are in bookmarks and in every
-// older search payload, and landing them on Overview is the same courtesy the
-// three above already get. `hl` on such a link names a row that no longer has
-// a tab to be highlighted on; Overview ignores an `hl` it does not recognise,
-// which is the right nothing to do.
+const TAB_KEYS = new Set<Tab>(['overview', 'roadmap', 'activity', 'auto', 'plans', 'artifacts', 'agents', 'loops', 'charter', 'milestones', 'architecture']);
+// Retired tabs keep old bookmarks and search links inside the project.
 const LEGACY_TABS: Record<string, Tab> = {
-  bugs: 'quality', audit: 'quality', tips: 'overview', notes: 'overview', futures: 'overview',
+  quality: 'overview', bugs: 'overview', audit: 'overview', tips: 'overview', notes: 'overview', futures: 'overview',
 };
 const asTab = (t: string | undefined): Tab =>
   (t && TAB_KEYS.has(t as Tab) ? (t as Tab) : (t && LEGACY_TABS[t]) || 'overview');
@@ -304,23 +291,6 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
   // answers it. #444 had culled the only screen that could, which left the
   // hold unanswerable from any browser for six issues.
 
-  // BOTH WIRED ROWS CARRY A REAL COUNT, and every mock row carries a MOCK CHIP
-  // (#472). The rule behind both is one rule: a row's number and the screen
-  // behind it must agree, or one of them is lying — so a wired screen gets its
-  // real count and a mockup gets a chip saying the rows behind it are the
-  // console kit's, not this project's. Quality keeps its number BECAUSE it
-  // wears the chip: the count comes from the mockup and now says so.
-  //
-  // QUALITY'S BADGE IS THE SAME RULE, AND #497 GAVE IT BACK ITS REAL NUMBER.
-  // It was red checks plus serious open bugs (#278), then the mockup's own
-  // constant while the screen behind it was the kit's; it is this project's
-  // again — the open items graded blocking, broken or degraded. `lib/quality.ts`
-  // derives it from the payload the rail already has, and its header says why
-  // that can be done WITHOUT the per-check history the screen fetches: no grade
-  // of that rank depends on one, so the badge and the page count the same rows.
-  const qualityCount = useMemo(
-    () => qualityAttention(data.checks || [], data.bugs), [data.checks, data.bugs]);
-
   const guard = async (fn: () => Promise<void>) => {
     try { setActionError(''); await fn(); }
     catch (e) { setActionError((e as Error)?.message || 'Something went wrong.'); }
@@ -532,10 +502,6 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
           key: 'plans', label: 'Plans', icon: NavIcons.route,
           menu: placeMenu(hrefTo.detail(slug, 'plans'), 'plans'), onClick: () => setTab('plans'),
         },
-        {
-          key: 'quality', label: 'Quality', icon: NavIcons.check, count: qualityCount, bad: true,
-          menu: placeMenu(hrefTo.detail(slug, 'quality'), 'quality'), onClick: () => setTab('quality'),
-        },
       ],
     },
     {
@@ -711,16 +677,6 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
             slices={data.slices} milestones={data.milestones}
             activity={data.activity} onRefresh={reread} highlightId={highlightId}
             onEdit={(it) => setRoadModal({ open: true, title: it.title, note: it.note, editing: it })} />
-        )}
-        {/* QUALITY IS WIRED (#497) — the kit's QualityScreen on this project's
-            own checks and bugs. It takes both off the one payload every tab
-            renders from, plus the re-read, and fetches only the two things that
-            are NOT in that payload: the run ledger and the per-check history.
-            Quality.tsx's header lists what came back with the wiring and the
-            four places the kit's picture and this app's data disagreed;
-            lib/quality.ts owns every number on it, including the rail's. */}
-        {tab === 'quality' && (
-          <Quality slug={slug} checks={data.checks || []} bugs={data.bugs} onRefresh={reread} />
         )}
         {/* THE BOARD IS WIRED — the kit's BoardScreen on this project's own
             roadmap. It takes the flattened payload (memoised above, in payload

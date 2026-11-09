@@ -241,11 +241,11 @@ test('an href with no optional parts carries no query string at all', () => {
 });
 
 test('hrefTo.detail leaves the tab alone — it is the SCREEN that aliases them', () => {
-  // The legacy spellings (`bugs`/`audit` → Quality, `tips`/`notes`/`futures` →
+  // The retired tabs (`quality`/`bugs`/`audit`/`tips`/`notes`/`futures` →
   // Overview) are resolved by ProjectDetail's own map, not here, so the router
   // hands a tab through verbatim however old it is. This pins the boundary:
   // an unknown tab must REACH the screen for the screen to be able to alias it.
-  for (const tab of ['bugs', 'audit', 'tips', 'notes', 'futures', 'something-new']) {
+  for (const tab of ['quality', 'bugs', 'audit', 'tips', 'notes', 'futures', 'something-new']) {
     assert.equal(parseHash(`#/p/stack/${tab}`).tab, tab, `${tab} was swallowed by the router`);
   }
 });

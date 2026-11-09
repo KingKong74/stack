@@ -265,7 +265,7 @@ routes, `totals.passes` counts rows and `totals.interactions` counts the
 pressed ones. Counting passes as screens would report a run that pressed seven
 controls on one screen as having covered seven screens.
 
-## `--report`: landing a run on the Quality page
+## `--report`: recording a run in Stack
 
 `--report` is **opt-in** — a plain local run stays side-effect-free. When
 passed, after the run completes it POSTs the outcome to
@@ -275,8 +275,8 @@ so the file on disk always reflects whether the report landed. `<url>` is
 the **same base URL this run just smoked** — never a separately configured
 API host — and it carries the same bearer token the run used.
 
-That lands the result on the project's **Quality page, Suite segment**, as a
-check named `UI Smoke Harness` and marked "reported" rather than "run by
+That records the result in the project's checks API (the Quality page is
+retired), as a check named `UI Smoke Harness` and marked "reported" rather than "run by
 Stack". The row does not need seeding: `stack seed-checks` never creates it —
 the **first** `--report` POST plants the row itself, and every later one
 updates the same row by name.
@@ -296,7 +296,7 @@ whether the recording of that answer reached the server. So a failed POST
 status and body and records `reported: { ok: false, reason }` in
 `report.json` — but the process exit code still comes from the findings
 alone. It is never swallowed silently either: a report that did not land is a
-Quality page quietly showing yesterday's result as if it were today's, so
+stored check quietly retaining yesterday's result as if it were today's, so
 this is always visible in both the terminal and the stored report. A
 successful report prints one confirmation line and records
 `reported: { ok: true, name, status }`.
