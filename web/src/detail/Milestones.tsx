@@ -60,7 +60,6 @@ export function Milestones({ slug, milestones, slices, items, onRefresh }: {
   return (
     <div className="sp ms">
       <div className="sp-lede">
-        <h2 className="sp-h">Milestones</h2>
         <span>Where the project is going, one goal at a time. Slices belong to a milestone; at most one is current.
           The Charter holds the purpose and boundaries.</span>
       </div>

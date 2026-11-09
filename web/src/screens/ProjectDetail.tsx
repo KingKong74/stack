@@ -47,6 +47,12 @@ type Tab = 'overview' | 'quality' | 'roadmap' | 'activity' | 'auto' | 'plans'
 /** The keys that land on the For-you screen, in strip order. */
 const FORYOU_TABS: Tab[] = ['overview', 'activity', 'auto'];
 const isForYou = (t: Tab) => FORYOU_TABS.includes(t);
+/** The keys that land on the Charter screen (owner's call, 2026-11-09): the
+ *  charter, the milestones and the architecture are ONE rail row with a strip,
+ *  the same shape as For you. Each keeps its route key, so every deep link,
+ *  the SessionStart pointer and the smoke's paths land where they always did. */
+const SPINE_TABS: Tab[] = ['charter', 'milestones', 'architecture'];
+const isSpine = (t: Tab) => SPINE_TABS.includes(t);
 /** The two tabs that bring their OWN heading block — the console kit's screens
  *  open with a breadcrumb and their own title, so this screen's `detail-head`
  *  would stack a second one above them. The board is wired now (#443's mockup
@@ -495,24 +501,13 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
           menuLabel: `${project.name} board`,
           menu: placeMenu(hrefTo.detail(slug, 'roadmap'), 'board'), onClick: () => setTab('roadmap'),
         },
-        // #616 — THE SPINE'S TWO DOCS, right under the board they explain:
-        // what the project is for, and how it is built. No counts: neither is a
-        // queue, and the docs are not in the payload.
+        // #616 — THE SPINE, right under the board it explains: what the
+        // project is for, where it is going next and how it is built, as ONE
+        // row (SPINE_TABS) whose strip picks the view. No count on the row:
+        // the Milestones sub-tab carries the live ones.
         {
           key: 'charter', label: 'Charter', icon: NavIcons.map,
           menu: placeMenu(hrefTo.detail(slug, 'charter'), 'charter'), onClick: () => setTab('charter'),
-        },
-        // MILESTONES sit immediately right of (under) the Charter: the Charter
-        // says what the project is for, this row is where it is going next,
-        // read from the real milestone rows. Its count is the live ones.
-        {
-          key: 'milestones', label: 'Milestones', icon: NavIcons.flag,
-          count: data.milestones.filter((m) => m.status !== 'done').length || undefined,
-          menu: placeMenu(hrefTo.detail(slug, 'milestones'), 'milestones'), onClick: () => setTab('milestones'),
-        },
-        {
-          key: 'architecture', label: 'Architecture', icon: NavIcons.layers,
-          menu: placeMenu(hrefTo.detail(slug, 'architecture'), 'architecture'), onClick: () => setTab('architecture'),
         },
         // THE DESIGN'S THREE NEW ROWS ("Roadmap Canvas", 2026-10-12). Skills &
         // agents is wired to the app-wide profile and skill rows, so it carries
@@ -606,7 +601,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
             that said so was the terminal screen itself — the one you go to once
             you already suspect it. components/Asking.tsx owns the rule,
             including why the rows are NOT scoped to this project. */}
-        <ConsoleNav active={isForYou(tab) ? 'overview' : tab} sections={navSections}
+        <ConsoleNav active={isForYou(tab) ? 'overview' : isSpine(tab) ? 'charter' : tab} sections={navSections}
           footer={<TerminalNavFoot slug={slug} />} />
 
       {/* No `wide` modifier any more (#483): the console fills its column on
@@ -755,6 +750,18 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
         {tab === 'plans' && (
           <Plans items={allRoadmap} sprints={data.sprints} weekZero={project.weekZero}
             slug={slug} onBoard={() => setTab('roadmap')} />
+        )}
+
+        {/* THE CHARTER SCREEN — one strip, three views, the For-you shape:
+            the strip writes the ROUTE key, so each view keeps its deep link. */}
+        {isSpine(tab) && (
+          <TabStrip<Tab>
+            tabs={[
+              { key: 'charter', label: 'Charter' },
+              { key: 'milestones', label: 'Milestones', count: data.milestones.filter((m) => m.status !== 'done').length || undefined },
+              { key: 'architecture', label: 'Architecture' },
+            ]}
+            active={tab} onPick={setTab} />
         )}
 
         {/* The design's three tabs: each file's header says what is real. */}

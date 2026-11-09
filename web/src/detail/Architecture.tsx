@@ -140,7 +140,6 @@ export function Charter({ slug, cap, aside }: { slug: string; cap: number; aside
     <div className="sp-withside">
     <div className="sp">
       <div className="sp-lede">
-        <h2 className="sp-h">Charter</h2>
         <span>Why this project exists, who it is for and what done looks like. The project's spine starts here.</span>
       </div>
       {err && <div className="km-err" role="alert">{err}</div>}
@@ -173,7 +172,6 @@ export function Architecture({ slug, slices, milestones }: {
   return (
     <div className="sp">
       <div className="sp-lede">
-        <h2 className="sp-h">Architecture</h2>
         <span>The system map, how it is built, and the decisions behind it.</span>
       </div>
       {err && <div className="km-err" role="alert">{err}</div>}
