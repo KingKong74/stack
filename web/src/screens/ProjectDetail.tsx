@@ -767,7 +767,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
           <Milestones slug={slug} milestones={data.milestones} slices={data.slices} items={allRoadmap} onRefresh={reread} />
         )}
         {tab === 'architecture' && (
-          <Architecture slug={slug} items={allRoadmap} slices={data.slices} milestones={data.milestones} />
+          <Architecture slug={slug} slices={data.slices} milestones={data.milestones} />
         )}
         {tab === 'agents' && <SkillsAgents />}
         {tab === 'loops' && <Loops />}

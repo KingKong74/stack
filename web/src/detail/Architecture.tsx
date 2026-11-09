@@ -5,26 +5,23 @@
 //    server). SessionStart injects its OPENING into every session, capped at
 //    the server's CHARTER_SUMMARY_CAP, and the editor says so under the text:
 //    the first paragraph is what an agent reads, so it should stand alone.
-//  • THE ARCHITECTURE TAB has three parts:
-//      - COMPONENTS are the project's AREAS (owner's call, #608): a name and
-//        colour from the board, plus a description and the code paths it
-//        owns. The area LANE is still keyed by the name alone; paths gate
-//        nothing yet, and the tab says so rather than imply otherwise.
+//  • THE ARCHITECTURE TAB has two parts:
 //      - THE ARCHITECTURE DOC, one `architecture` artifact, the same editor.
 //      - THE DECISION LOG: `adr` artifacts, numbered by age (ADR-1 is the
 //        oldest), each with a status (proposed → accepted → superseded) and
 //        the slice it was decided for. A human gives the status; phase 4 lets
 //        /checkpoint PROPOSE one, never accept it.
 //
-// Everything here is a human's write, through routes/artifacts.js and the
-// board's area routes. Nothing is fetched into the project payload except the
+// Everything here is a human's write, through routes/artifacts.js.
+// The board's areas are NOT drawn here (owner's call, 2026-11-09): they are
+// the board's grouping and the automation's lane, not the system's components. Nothing is fetched into the project payload except the
 // charter's capped opening.
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { KitIcon } from './kit/KitIcon';
 import { Markdown } from '../components/Markdown';
-import type { AdrStatus, Artifact, BoardArea, Milestone, RoadmapItem, Slice } from '../types';
-import { getSpineDocs, createArtifact, patchArtifact, deleteArtifact, getBoardShape, patchArea } from '../store';
+import type { AdrStatus, Artifact, Milestone, Slice } from '../types';
+import { getSpineDocs, createArtifact, patchArtifact, deleteArtifact } from '../store';
 import { liveSlices, sliceLabel } from './Spine';
 import { timeAgo } from '../lib/ui';
 
@@ -163,14 +160,10 @@ export function Charter({ slug, cap, aside }: { slug: string; cap: number; aside
   );
 }
 
-export function Architecture({ slug, items, slices, milestones }: {
-  slug: string; items: RoadmapItem[]; slices: Slice[]; milestones: Milestone[];
+export function Architecture({ slug, slices, milestones }: {
+  slug: string; slices: Slice[]; milestones: Milestone[];
 }) {
   const { docs, err, setErr, put, drop } = useSpineDocs(slug);
-  const [areas, setAreas] = useState<BoardArea[] | null>(null);
-  useEffect(() => {
-    getBoardShape(slug).then((s) => setAreas(s.areas)).catch((e) => setErr((e as Error)?.message || 'Could not read the components.'));
-  }, [slug]);
   const arch = docs?.find((d) => d.type === 'architecture') ?? null;
   const adrs = useMemo(() => (docs || []).filter((d) => d.type === 'adr'), [docs]);
   const guard = async (fn: () => Promise<void>) => {
@@ -181,26 +174,9 @@ export function Architecture({ slug, items, slices, milestones }: {
     <div className="sp">
       <div className="sp-lede">
         <h2 className="sp-h">Architecture</h2>
-        <span>The system map, how it is built, and the decisions behind it. Slices name the components they touch.</span>
+        <span>The system map, how it is built, and the decisions behind it.</span>
       </div>
       {err && <div className="km-err" role="alert">{err}</div>}
-
-      <section className="sp-sec">
-        <div className="sp-sechead">
-          <span className="sp-eyebrow">Components</span>
-          <span className="sp-dim">The board's areas. The automation's lane is still the area's name; paths are notes for now.</span>
-        </div>
-        {areas === null && <span className="sp-empty">Reading…</span>}
-        {areas?.length === 0 && <span className="sp-empty">No areas yet. Make one from the board’s “New area”.</span>}
-        <div className="sp-comps">
-          {(areas || []).map((a) => (
-            <Component key={a.name} area={a}
-              open={items.filter((it) => !it.archived && !it.done && it.area.trim() === a.name).length}
-              touchedBy={liveSlices(slices, milestones).filter((s) => s.areas.includes(a.name)).map((s) => sliceLabel(s, milestones))}
-              onSave={(v) => guard(async () => { setAreas(await patchArea(slug, a.name, v)); })} />
-          ))}
-        </div>
-      </section>
 
       <section className="sp-sec">
         <div className="sp-sechead"><span className="sp-eyebrow">Architecture doc</span></div>
@@ -230,53 +206,6 @@ export function Architecture({ slug, items, slices, milestones }: {
             onDelete={() => guard(async () => { await deleteArtifact(slug, d.id); drop(d.id); })} />
         ))}
       </section>
-    </div>
-  );
-}
-
-function Component({ area, open, touchedBy, onSave }: {
-  area: BoardArea; open: number; touchedBy: string[];
-  onSave: (v: { description: string; paths: string[] }) => void;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [desc, setDesc] = useState(area.description);
-  const [paths, setPaths] = useState(area.paths.join('\n'));
-  useEffect(() => { setDesc(area.description); setPaths(area.paths.join('\n')); }, [area]);
-  return (
-    <div className="sp-comp">
-      <div className="sp-comphead">
-        <span className="km-dot" style={{ background: area.dot }} />
-        <span className="sp-compname">{area.name}</span>
-        {!area.registered && <span className="k-tag" title="Named by a card or a slice, never registered on the board">unregistered</span>}
-        <span className="sp-rule" />
-        <span className="sp-dim">{open} open</span>
-        {!editing && (
-          <button className="km-colbtn" aria-label={`Edit component ${area.name}`} title="Describe this component"
-            onClick={() => setEditing(true)}><KitIcon name="pencil" size={12} /></button>
-        )}
-      </div>
-      {editing ? (
-        <div className="sp-compedit">
-          <textarea className="km-textarea" rows={3} value={desc} placeholder="What this component is and what it is responsible for."
-            aria-label={`Description of ${area.name}`} onChange={(e) => setDesc(e.target.value)} />
-          <textarea className="km-textarea sp-mono" rows={3} value={paths} placeholder={'Code it owns, one glob per line\nserver/src/routes/spine.js'}
-            aria-label={`Paths owned by ${area.name}`} onChange={(e) => setPaths(e.target.value)} />
-          <div className="sp-docacts">
-            <button className="k-btn ghost sm" onClick={() => setEditing(false)}>Cancel</button>
-            <button className="k-btn sm" onClick={() => { setEditing(false); onSave({ description: desc, paths: paths.split('\n') }); }}>Save</button>
-          </div>
-        </div>
-      ) : (
-        <>
-          {area.description.trim()
-            ? <p className="sp-compdesc">{area.description}</p>
-            : <p className="sp-compdesc sp-dim">No description yet.</p>}
-          {area.paths.length > 0 && <div className="sp-paths">{area.paths.map((p) => <code key={p}>{p}</code>)}</div>}
-        </>
-      )}
-      {touchedBy.length > 0 && (
-        <div className="sp-touched"><span className="sp-dim">Touched by</span>{touchedBy.map((t) => <span className="k-tag" key={t}>{t}</span>)}</div>
-      )}
     </div>
   );
 }
