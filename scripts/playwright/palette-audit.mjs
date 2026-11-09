@@ -170,6 +170,7 @@ const SCREENS = [
   // (--surface-overlay, status tags, the tree) only when a tile exists.
   { slug: 'board-proposition', hash: '#/p/{slug}/roadmap', press: ['?.pp-tile'] },
   { slug: 'architecture', hash: '#/p/{slug}/architecture' },
+  { slug: 'notes', hash: '#/p/{slug}/notes' },
   // #469 — a filtered board (the group filter open, its last group picked)
   // and an open inline title editor, which paints its own text over a card in
   // the focus state. Neither exists at first paint.

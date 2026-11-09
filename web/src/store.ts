@@ -1915,6 +1915,8 @@ type ArtifactFields = Partial<{
 }>;
 // #616 — the spine's docs (charter, architecture, ADRs), oldest first so an
 // ADR's number is its place. The plain list above leaves them out.
+// The Notes view's loose ideas (detail/Notes.tsx), oldest first like the rest.
+export const getNotes = (slug: string) => request<Artifact[]>(`${artifactsBase(slug)}?types=note`);
 export const getSpineDocs = (slug: string) =>
   request<Artifact[]>(`${artifactsBase(slug)}?types=charter,architecture,adr`);
 export const getArtifacts = (slug: string) => request<Artifact[]>(artifactsBase(slug));

@@ -20,6 +20,10 @@
 //    (at most one each per project, a unique index; a second POST is a 409
 //    naming the first) and `adr` (with `status`). They have their own tabs,
 //    so the plain list leaves them out; `?types=` asks for them by name.
+//  • NOTES (2026-11-09): `note` is the owner's loose idea, kept on the
+//    Charter screen's Notes view until it is turned into a milestone, slice or
+//    task. A note is a scratchpad, not work, so the plain list leaves it out
+//    too. A converted note is kept, tagged `converted` and `became:<kind>:<id>`.
 //  • `links` ARE roadmap_items IDS IN THIS PROJECT. A write keeps only the ids
 //    that are, so an artifact cannot point at another project's row; a row
 //    deleted later simply drops out of the read.
@@ -40,9 +44,9 @@ artifacts.use(async (req, res, next) => {
   next();
 });
 
-export const ARTIFACT_TYPES = ['doc', 'plan', 'design', 'link', 'file', 'charter', 'architecture', 'adr'];
-// The spine's types: drawn on Charter and Architecture, not on Artifacts.
-export const SPINE_TYPES = ['charter', 'architecture', 'adr'];
+export const ARTIFACT_TYPES = ['doc', 'plan', 'design', 'link', 'file', 'charter', 'architecture', 'adr', 'note'];
+// The spine's types, and notes: drawn on the Charter screen, not on Artifacts.
+export const SPINE_TYPES = ['charter', 'architecture', 'adr', 'note'];
 export const ADR_STATUSES = ['proposed', 'accepted', 'superseded'];
 export const FILE_CAP = 10 * 1024 * 1024;
 const INLINE_IMAGES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);

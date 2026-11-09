@@ -6,6 +6,8 @@
 //    types out; `?types=` asks for them, oldest first.
 //  • An ADR's status is proposed | accepted | superseded (junk → proposed);
 //    every other type carries ''. `sliceId` must be a slice in this project.
+//  • A `note` (the Notes view's loose idea) is kept off the plain list too,
+//    carries no status, and is asked for with `?types=note`.
 //  • The payload carries the charter's OPENING, capped and saying so.
 //  • An area (component) takes a description and paths; renaming it rewrites
 //    every slice naming it, and deleting it strips it off them.
@@ -61,6 +63,19 @@ test('the plain list leaves the spine out; ?types= asks for it', async () => {
   assert.ok(plain.some((a) => a.title === 'a plain doc'));
   const spine = (await call('GET', `${P}/artifacts?types=charter,architecture,adr`)).body;
   assert.deepEqual(spine.map((a) => a.type).sort(), ['architecture', 'charter']);
+});
+
+test('a note is its own type, off the plain list, with no status', async () => {
+  const r = await call('POST', `${P}/artifacts`, { type: 'note', title: 'An idea', body: 'An idea\nmore', status: 'accepted' });
+  assert.equal(r.status, 201, r.text);
+  assert.equal(r.body.type, 'note');
+  assert.equal(r.body.status, '', 'only an ADR carries a status');
+  const plain = (await call('GET', `${P}/artifacts`)).body;
+  assert.ok(plain.every((a) => a.type !== 'note'), 'notes stay off the Artifacts tab');
+  const notes = (await call('GET', `${P}/artifacts?types=note`)).body;
+  assert.deepEqual(notes.map((a) => a.title), ['An idea']);
+  const tagged = await call('PATCH', `${P}/artifacts/${r.body.id}`, { tags: ['converted', 'became:milestone:7'] });
+  assert.deepEqual(tagged.body.tags, ['converted', 'became:milestone:7']);
 });
 
 test('ADR status and slice', async () => {

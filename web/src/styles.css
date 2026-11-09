@@ -8712,6 +8712,25 @@ button.ar-open:hover { background: var(--surface-hover); }
 .sp-docacts { display: flex; justify-content: flex-end; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
 .sp-docacts.top { justify-content: space-between; }
 
+/* NOTES — detail/Notes.tsx: the owner's loose ideas, as quiet cards. */
+.nt-compose { display: flex; flex-direction: column; gap: var(--space-3); }
+.nt-list { display: flex; flex-direction: column; gap: var(--space-4); }
+.nt-card {
+  display: flex; flex-direction: column; gap: var(--space-4); min-width: 0;
+  background: var(--surface-raised); border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg); padding: var(--space-5) var(--space-6);
+}
+.nt-card.converted { opacity: 0.85; }
+.nt-body { min-width: 0; overflow-wrap: anywhere; }
+.nt-foot { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3); }
+.nt-turn {
+  display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3);
+  padding-top: var(--space-4); border-top: 1px solid var(--border-subtle);
+}
+.nt-preview { flex: 1; min-width: 200px; font: var(--type-caption); color: var(--text-secondary); }
+.nt-done summary { display: flex; align-items: center; gap: var(--space-3); cursor: pointer; list-style: none; margin-bottom: var(--space-4); }
+.nt-done summary::-webkit-details-marker { display: none; }
+
 
 .sp-adr {
   background: var(--surface-raised); border: 1px solid var(--border-subtle);

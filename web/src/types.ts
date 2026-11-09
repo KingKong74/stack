@@ -922,7 +922,7 @@ export interface Spaces { areas: SpaceArea[]; workflows: Workflow[]; ideas: Wish
 // #616 — the spine's three: one charter and one architecture doc per project,
 // and any number of ADRs. They have their own tabs (Charter, Architecture);
 // the Artifacts list does not draw them.
-export type ArtifactType = 'doc' | 'plan' | 'design' | 'link' | 'file' | 'charter' | 'architecture' | 'adr';
+export type ArtifactType = 'doc' | 'plan' | 'design' | 'link' | 'file' | 'charter' | 'architecture' | 'adr' | 'note';
 export type AdrStatus = 'proposed' | 'accepted' | 'superseded';
 export interface Artifact {
   id: number;

@@ -685,6 +685,7 @@ export const SCREENS = [
   // for the same reason (its buttons write).
   { id: 'project-milestones', label: 'Project — Milestones', path: '#/p/<slug>/milestones' },
   { id: 'project-architecture', label: 'Project — Architecture', path: '#/p/<slug>/architecture' },
+  { id: 'project-notes', label: 'Project — Notes', path: '#/p/<slug>/notes' },
   {
     id: 'project-artifacts',
     label: 'Project — Artifacts',
