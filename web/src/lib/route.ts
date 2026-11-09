@@ -12,7 +12,6 @@ export type Route =
   | { name: 'dashboard' }
   | { name: 'settings' }
   | { name: 'timeline' }
-  | { name: 'inbox' }
   | { name: 'control' }
   | { name: 'skills' }
   | { name: 'terminal'; cwd?: string; attach?: string; brief?: boolean }
@@ -42,7 +41,6 @@ export function parseHash(hash: string): Route {
   const h = String(hash || '').replace(/^#/, '');
   if (h === '/settings' || h.startsWith('/settings')) return { name: 'settings' };
   if (h === '/timeline' || h.startsWith('/timeline')) return { name: 'timeline' };
-  if (h === '/inbox' || h.startsWith('/inbox')) return { name: 'inbox' };
   if (h === '/control' || h.startsWith('/control')) return { name: 'control' };
   // The skill tree (#228) — the managed Claude skill library.
   if (h === '/skills' || h.startsWith('/skills')) return { name: 'skills' };
@@ -94,7 +92,6 @@ export function useRoute(): Route {
 export const hrefTo = {
   dashboard: '#/',
   timeline: '#/timeline',
-  inbox: '#/inbox',
   control: '#/control',
   settings: '#/settings',
   skills: '#/skills',
@@ -119,7 +116,6 @@ export const go = {
   dashboard: () => { window.location.hash = '#/'; },
   settings: () => { window.location.hash = '#/settings'; },
   timeline: () => { window.location.hash = '#/timeline'; },
-  inbox: () => { window.location.hash = '#/inbox'; },
   control: () => { window.location.hash = '#/control'; },
   skills: () => { window.location.hash = '#/skills'; },
   // attach (a stack-term-* tmux name) jumps straight into that running claude

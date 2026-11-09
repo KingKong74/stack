@@ -32,7 +32,7 @@ test('from the terminal: back to the tab you left, if it is the same project', (
 });
 
 test('from the terminal with no project: back where you came from, else home', () => {
-  assert.equal(flickTarget(term, { termProject: '', lastAway: '#/inbox', termMounted: true }), '#/inbox');
+  assert.equal(flickTarget(term, { termProject: '', lastAway: '#/timeline', termMounted: true }), '#/timeline');
   assert.equal(flickTarget(term, { termProject: '', lastAway: '', termMounted: true }), '#/');
 });
 
@@ -40,7 +40,7 @@ test('to the terminal: bare once mounted, so nothing spawns', () => {
   const board = parseHash('#/p/stack/roadmap');
   assert.equal(flickTarget(board, { termProject: '', lastAway: '', termMounted: true }), '#/terminal');
   assert.equal(flickTarget(board, { termProject: '', lastAway: '', termMounted: false }), '#/terminal?cwd=stack');
-  assert.equal(flickTarget(parseHash('#/inbox'), { termProject: '', lastAway: '', termMounted: false }), '#/terminal');
+  assert.equal(flickTarget(parseHash('#/timeline'), { termProject: '', lastAway: '', termMounted: false }), '#/terminal');
 });
 
 test('the key is ⌃` alone', () => {

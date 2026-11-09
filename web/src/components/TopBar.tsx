@@ -2,7 +2,6 @@ import type { ReactNode } from 'react';
 import { hrefTo } from '../lib/route';
 import { Brandmark } from './Brandmark';
 import { AskingChip } from './Asking';
-import { InboxChip } from './InboxChip';
 
 // THE HEADER, merged (#432). Six screens each drew their own topbar out of the
 // same three or four pieces, in a different order, at a different height — so
@@ -95,7 +94,6 @@ export function TopBar({ crumb, onSearch, searchLabel = 'Search…', actions, da
             draws nothing at all when nothing is waiting (components/Asking.tsx
             says why that silence is not a claim). The showcase has no host and
             no session — `noAvatar` is that reader, and it gets neither. */}
-        {!noAvatar && <InboxChip />}
         {!noAvatar && <AskingChip />}
         {!noAvatar && (
           <a className="avatar" href={hrefTo.settings} aria-label="Settings"><GearMark /></a>

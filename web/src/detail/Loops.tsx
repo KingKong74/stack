@@ -4,7 +4,7 @@
 // rail row wears the Mock chip, and the arm switch here arms nothing.
 //
 // WIRING IT IS A GATE CHANGE, NOT A SCREEN CHANGE. Today there is one loop —
-// the autopilot, whose switches live on #/inbox and whose holds GET
+// the autopilot, whose holds GET
 // /autopilot/loop explains — and everything that may start work answers to
 // the gates in the root CLAUDE.md ("Before you change who or what may run").
 // A loop whose finish is "Merge if green" is an auto-merge path, and a
@@ -49,7 +49,7 @@ const FIN: Record<string, [string, string]> = {
   merge: ['Merge if green', 'Merges only when the guard holds.'],
   pr: ['Open a PR', 'Leaves the merge to you.'],
   board: ['File to the board', 'Results land as cards in the right area.'],
-  inbox: ['Post to the inbox', 'A one-line report waits for you in the morning.'],
+  inbox: ['Post a report', 'A one-line report waits for you in the morning.'],
 };
 // [label, status tone, the mark's fill]
 const OUT: Record<Outcome, [string, string, string]> = {

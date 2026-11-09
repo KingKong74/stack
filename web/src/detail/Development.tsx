@@ -21,7 +21,7 @@
 // dispatcher's report; with no report the tab says Stack cannot see them,
 // never that there are none.
 //
-// NOTHING HERE WRITES. A merge follows a verdict and the Inbox queues it; the
+// NOTHING HERE WRITES. A merge follows a verdict and is queued through the API; the
 // one action is opening an item, which is the board's own item modal.
 //
 // AN `#N` IN A SUMMARY IS LINKED ONLY WHEN THE ROADMAP HAS THAT ID. Items, bugs

@@ -10,6 +10,8 @@ Stack is my self-hosted side-project command centre. Each project has a live
 "where you left off" resume card, an activity feed, a bug tracker, a priority
 roadmap and sticky notes. State is **auto-managed** — you don't have to curate it.
 
+`/api/inbox` is retired.
+
 ## Codex sessions
 
 Stack Terminal launches Claude and Codex natively, with Shell as a utility. New Codex sessions

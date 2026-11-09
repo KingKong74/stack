@@ -342,25 +342,6 @@ export interface LoopStatus {
   queued: number;
 }
 
-// A run as the inbox reads it: the ledger row plus both second-model reads.
-// An empty verdict string is NO REVIEW, never clean.
-export interface InboxRun extends AutopilotRun {
-  autoVerdict: string;
-  reviewVerdict: string;
-  reviewNote: string;
-  reviewFindings: number | null;
-  architectVerdict: string;
-  architectNote: string;
-}
-export interface InboxItem extends RoadmapItem { projectSlug: string; projectName: string }
-export interface InboxData {
-  built: (InboxItem & { run: InboxRun | null })[];
-  plans: (InboxItem & { parentTitle: string })[];
-  ideas: InboxItem[];
-  projects: { slug: string; name: string; automode: boolean; ready: number }[];
-  loop: LoopStatus;
-}
-
 export interface AutopilotRun {
   id: string;
   itemId: string | null;

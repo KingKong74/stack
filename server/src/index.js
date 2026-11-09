@@ -15,7 +15,6 @@ import { board } from './routes/board.js';
 import { sprints } from './routes/sprints.js';
 import { ready } from './routes/ready.js';
 import { milestones, slices } from './routes/spine.js';
-import { inbox } from './routes/inbox.js';
 import { presence } from './routes/presence.js';
 import { checks } from './routes/checks.js';
 import { publicShowcase } from './routes/public.js';
@@ -105,8 +104,6 @@ app.use('/api/projects/:slug/branches', requireToken, branches);
 app.use('/api/projects/:slug/ledger', requireToken, ledger);
 app.use('/api/projects/:slug/previews', requireToken, previews);
 app.use('/api/autopilot', requireToken, autopilotGlobal);
-// Everything waiting on the human, across projects — see routes/inbox.js.
-app.use('/api/inbox', requireToken, inbox);
 app.use('/api/previews', requireToken, previewsGlobal);
 app.use('/api/terminal', requireToken, terminal);
 app.use('/api/triage', requireToken, triage);
