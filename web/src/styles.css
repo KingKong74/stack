@@ -8664,7 +8664,8 @@ button.ar-open:hover { background: var(--surface-hover); }
    give way, so the views and End all can never be pushed off screen. */
 .tv-bar > :not(.tv-tabs):not(.tv-meters) { flex-shrink: 0; }
 .tv-bar { overflow: hidden; }
-@media (max-width: 1280px) { .tv-start .tv-path { display: none; } }
+.tv-bar:has(.tv-newmenu) { overflow: visible; }
+@media (max-width: 1280px) { .tv-start > .tv-directory { display: none; } }
 .tv-tabgroup { flex: none; display: flex; align-items: center; gap: var(--space-1); padding-left: var(--space-3); border-left: 1px solid var(--border-subtle); }
 .tv-tab {
   flex: none; width: 210px; height: 40px; box-sizing: border-box; display: flex; align-items: center; gap: var(--space-2);
@@ -8690,6 +8691,7 @@ button.ar-open:hover { background: var(--surface-hover); }
 .tv-tab { position: relative; }
 .tv-tab.asking, .tv-tab.on.asking, .tv-tab.asking.in-main, .tv-tab.asking.in-mini { border-color: var(--amber-500); border-style: solid; }
 .tv-tab.asking, .tv-tab.on.asking, .tv-tab.on.asking.in-main, .tv-tab.on.asking.in-mini { background: var(--status-warning-bg); }
+.tv-tab.asking .tv-tab-name, .tv-tab.asking .tv-tab-sub { color: var(--text-secondary); }
 .tv-tab.asking::after {
   content: ''; position: absolute; top: 4px; right: 4px; width: 8px; height: 8px; border-radius: 50%;
   background: var(--amber-500); box-shadow: 0 0 0 2px var(--surface-canvas); animation: tv-ask-pulse 1.6s ease-in-out infinite;
@@ -8794,6 +8796,19 @@ button.ar-open:hover { background: var(--surface-hover); }
 }
 .tv-path .pre { font: var(--weight-regular) var(--text-xs)/1 var(--font-mono); color: var(--text-tertiary); }
 .tv-path input { width: 84px; height: 28px; border: 0; outline: none; background: transparent; font: var(--weight-regular) var(--text-xs)/1 var(--font-mono); color: var(--text-primary); }
+.tv-directory { position: relative; min-width: 0; }
+.tv-path:focus-within { border-color: var(--border-focus); }
+.tv-directory-toggle { border: 0; padding: 4px; background: transparent; color: var(--text-primary); cursor: pointer; }
+.tv-directory-menu {
+  position: fixed; z-index: 80; width: 260px; max-width: calc(100vw - 32px);
+  max-height: 260px; overflow-y: auto; padding: 4px; box-sizing: border-box;
+  background: var(--surface-card); border: 1px solid var(--border-default); border-radius: var(--radius-md);
+}
+.tv-directory-menu button { display: flex; flex-direction: column; gap: 4px; width: 100%; padding: 8px; border: 0; border-radius: var(--radius-sm); text-align: left; background: transparent; color: var(--text-primary); font: var(--type-body-sm); cursor: pointer; overflow-wrap: anywhere; }
+.tv-directory-menu button:hover, .tv-directory-menu button.on { background: var(--surface-hover); }
+.tv-directory-menu small, .tv-directory-empty { font: var(--type-body-sm); color: var(--text-secondary); }
+.tv-directory-menu small { font-family: var(--font-mono); }
+.tv-directory-empty { padding: 8px; }
 .tv-select {
   height: 30px; padding: 0 8px; background: var(--surface-card); border: 1px solid var(--border-default); border-radius: var(--radius-md);
   font: var(--type-label); font-size: var(--text-xs); color: var(--text-primary); cursor: pointer; outline: none;
@@ -9068,7 +9083,7 @@ button.ar-open:hover { background: var(--surface-hover); }
 
 /* A phone gets one terminal: Main + 3's small panes would be unreadable. */
 @media (max-width: 900px) {
-  .tv-meters, .tv-start .tv-path, .tv-start .tv-select { display: none; }
+  .tv-meters, .tv-start > .tv-directory, .tv-start .tv-select { display: none; }
   .tv-stage.v-split { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); padding: 0; }
   .tv-stage.v-split .tv-pane.mini, .tv-stage.v-split .tv-newcell { display: none; }
   .tv-head-meta, .tv-destchip { display: none; }

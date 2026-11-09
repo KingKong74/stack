@@ -658,7 +658,16 @@ export const SCREENS = [
     path: '#/control',
     interactions: CONTROL_PANELS,
   },
-  { id: 'terminal', label: 'Terminal', path: '#/terminal' },
+  {
+    id: 'terminal', label: 'Terminal', path: '#/terminal',
+    // View state only: neither press launches or changes a running session.
+    interactions: [
+      { id: 'terminal-defaults', label: 'Terminal — session defaults',
+        click: 'button[aria-label="Session defaults"]', expect: '.tv-newmenu' },
+      { id: 'terminal-directories', label: 'Terminal — project directory choices',
+        click: '.tv-newmenu button[aria-label="Choose project directory"]', expect: '.tv-directory-menu [role="option"]' },
+    ],
+  },
   { id: 'skills', label: 'Skills', path: '#/skills' },
   { id: 'timeline', label: 'Timeline', path: '#/timeline' },
   { id: 'settings', label: 'Settings', path: '#/settings' },

@@ -44,6 +44,7 @@ import { createTermWrites, createTermSizeSender } from '../lib/termStream';
 // `claude · stack` hides the one fact that distinguishes it from the four
 // beside it, so the name is parsed back.
 import { ConfirmModal } from '../components/ConfirmModal';
+import { TerminalDirectoryPicker } from '../components/TerminalDirectoryPicker';
 
 import {
   zoneRect, zoneAt, tileRects, clampRect, tileStatus, agoLabel, orderTiles, moveKey, compactLines, compactRich, paletteColour,
@@ -1506,10 +1507,10 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   const meterOf = (k: 'claude' | 'codex') => meters.find((m) => m.key === k)!;
 
   // Locations for Start's defaults: tracked projects, from the one list read.
-  const [projects, setProjects] = useState<string[]>([]);
+  const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
   useEffect(() => {
     if (!visible || projects.length) return;
-    getProjects().then((ps) => setProjects(ps.map((p) => p.id))).catch(() => { /* the input still takes any path */ });
+    getProjects().then((ps) => setProjects(ps.map(({ id, name }) => ({ id, name })))).catch(() => { /* the input still takes any path */ });
   }, [visible]); // eslint-disable-line react-hooks/exhaustive-deps
   const codexModels = [{ id: '', label: 'Default' }, ...(usage?.codex?.models || [])];
   const modelName = (tool: Sess['cmd']) => (tool === 'claude'
@@ -1684,14 +1685,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
             })}
           </div>
           <div className="tv-start">
-            <div className="tv-path">
-              <span className="pre">~/</span>
-              <input value={cwd} list="tv-projects" spellCheck={false} aria-label="Directory for new sessions"
-                title="A project slug (e.g. stack) opens ~/slug. A sub-path (stack/src) opens ~/stack/src. Blank is home."
-                onChange={(e) => setCwd(e.target.value.replace(/^~\//, ''))}
-                onKeyDown={(e) => { if (e.key === 'Enter') openSession(); }} />
-              <datalist id="tv-projects">{projects.map((p) => <option key={p} value={p} />)}</datalist>
-            </div>
+            <TerminalDirectoryPicker value={cwd} projects={projects} onChange={setCwd} onSubmit={() => openSession()} />
             <select className="tv-select" aria-label="Session type" value={mode}
               onChange={(e) => setMode(e.target.value as Sess['cmd'])}>
               <option value="claude">Claude</option><option value="codex">Codex</option><option value="shell">Shell</option>
@@ -1722,18 +1716,10 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                   <div className="tv-rule" />
                   <div className="tv-defs">
                     <span className="eyebrow">Defaults for new sessions</span>
-                    {projects.length > 0 && (
-                      <div className="grp">
-                        <span className="cap">Location</span>
-                        <div className="opts">
-                          {projects.slice(0, 10).map((p) => (
-                            <button key={p} className={`tv-opt mono${firstSeg(cwd) === p ? ' on' : ''}`} onClick={() => setCwd(p)}>
-                              {projChip(p)}~/{p}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
+                    <div className="grp">
+                      <span className="cap">Location</span>
+                      <TerminalDirectoryPicker value={cwd} projects={projects} onChange={setCwd} />
+                    </div>
                     <div className="grp">
                       <span className="cap">Work goes to</span>
                       <div className="opts col">

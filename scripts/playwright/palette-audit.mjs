@@ -86,6 +86,9 @@ function readStackEnv() {
 const OPEN_BOARD = '?.km-collapseall[data-all-folded="true"]';
 
 const SCREENS = [
+  { slug: 'terminal', hash: '#/terminal' },
+  { slug: 'terminal-defaults', hash: '#/terminal', press: ['button[aria-label="Session defaults"]'] },
+  { slug: 'terminal-directories', hash: '#/terminal', press: ['button[aria-label="Session defaults"]', '.tv-newmenu button[aria-label="Choose project directory"]'] },
   { slug: 'dashboard', hash: '#/' },
   // The Projects page's two tones first paint can't reach: a card's actions
   // menu (--surface-overlay, with Archive in danger) and the new-project modal.
