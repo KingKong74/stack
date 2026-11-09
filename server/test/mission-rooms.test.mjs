@@ -37,6 +37,13 @@ test('gemini ids land on Gemini', () => {
   assert.equal(providerOf('models/gemini-flash-lite-latest'), 'gemini');
 });
 
+test('Codex ids land on Codex, not in Other', () => {
+  assert.equal(providerOf('gpt-5-codex'), 'codex');
+  assert.equal(providerOf('gpt-5-mini'), 'codex');
+  assert.equal(providerOf('openai/gpt-5'), 'codex');
+  assert.equal(providerOf('o4-mini'), 'codex');
+});
+
 test('an unrecognised id is bucketed, NEVER dropped', () => {
   assert.equal(providerOf('qwen3-coder:32b'), 'other');
   assert.equal(providerOf(''), 'other');

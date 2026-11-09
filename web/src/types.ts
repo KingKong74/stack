@@ -793,6 +793,7 @@ export interface ModelRow {
   costUsd: number | null;  // null = UNPRICED — a transcript carries no cost
   sessions: number;        // interactive sessions it appeared in
   runs: number;            // autopilot runs it appeared in
+  autoTokens: number;      // the autopilot's part of `tokens`; the rest is sessions
   share: number;           // 0-100, TOKEN-based
   lastAt: string;
   /** 'executor' / 'advisor' — matched from the policy alias, never stored. */
@@ -800,6 +801,8 @@ export interface ModelRow {
 }
 export interface ModelProvider {
   key: string;
+  /** 'harness' can run a session; 'other' never runs one. */
+  group: 'harness' | 'other';
   name: string;
   kind: string;
   reach: string;    // how Stack gets to it — a subscription, a key, or not at all
@@ -807,7 +810,15 @@ export interface ModelProvider {
   state: string;
   tone: 'success' | 'warning' | 'neutral';
   tokens: number;
+  autoTokens: number;
+  /** Model appearances summed: a session on two models counts under both. */
+  runs: number;
+  sessions: number;
   share: number;
+  /** Not set up yet: no share, no model count, a dash. */
+  planned?: boolean;
+  /** What an empty model list means on this backend, when it isn't "idle". */
+  absent?: string;
   models: ModelRow[];
 }
 export interface ModelsRoom {

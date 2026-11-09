@@ -1,77 +1,53 @@
 // MISSION CONTROL: Agents, Models and Context read and write this installation.
-// Settings retains the console kit's sample rows and wears a
-// Mock chip ON ITS OWN TAB — the #482/#496 rule, because a chip over the whole
-// screen warns about the three panes it is wrong for, and these mockups look
-// exactly like the real thing.
+// Settings is a mockup and wears a Mock chip ON ITS OWN TAB (#482/#496): a chip
+// over the whole screen would warn about the three tabs it is wrong for, and
+// the mock looks exactly like the real thing.
 //
-// It began as `ui_kits/console/mission-control.html` → `MissionControlScreen.jsx`
-// ported to TS on the kit's own sample fleet, the seventh kit port on the same
-// terms as the other six (#443, #444, #447, #450, #451, #453): the kit's screen
-// first, the wiring after. It replaced the CULLED-SKELETON placeholder that
-// stood at `#/control` — the seven rooms (Now, Merge, Nights, Plan, Review,
-// Roles, Agents) and `/api/control`, `/api/review`, `/api/merge` went long
-// before that, and the skeleton was the honest frame drawn over the hole.
+// THE LAYOUT IS THE v5 DESIGN (claude.ai/design, "Mission Control v5"): stat
+// tiles over each tab, the Agents catalogue as a table with a modal editor, the
+// policy as harness-then-model, the backends grouped into harnesses and the
+// rest, and Context as a file tree with a "Seen by" lens. The design assumes
+// three things Stack does not have yet, and each is drawn as ABSENT rather
+// than faked:
 //
-// THE KIT'S SEVEN TABS ARE NOT STACK'S SEVEN ROOMS, and the port's header owed
-// a MAPPING DECISION rather than a rename for each. Here is what the three
-// wired ones decided, and what Settings still owes:
+//  • PROJECT-SCOPED PROFILES. `agent_profiles.key` is globally UNIQUE, so every
+//    profile applies to every project. The design's Scope chips and the
+//    modal's Scope select would be a control that writes nothing, so the table
+//    shows one "Global" group and the modal states the scope read-only.
+//  • A CODEX ADVISOR OR EXECUTOR. The autopilot spawns `claude -p` and nothing
+//    else, so the policy's Codex and Copilot buttons are drawn disabled, each
+//    saying why. Codex is a terminal-only harness (server/src/routes/models.js).
+//  • CODEX USAGE. The transcript hook is Claude Code's, so a Codex session
+//    rarely leaves a model row. An empty Codex row says that, never "idle".
 //
-//  • AGENTS (wired, and RE-AIMED by #520) is `agent_profiles` — the spawn
-//    catalogue the overnight runner hands `claude --agents`. It used to be the
-//    other thing that arrived under the same word: the tab-agent REGISTRY
-//    (`server/src/agents.js` + `agent_configs`), and this header used to warn
-//    that merging the two was the trap. They were never merged — the registry
-//    was CULLED and the tab went to the survivor. What is left is the half that
-//    decides how every night gets built.
-//    THE "CAN DO" LIST IS EDITABLE NOW, and that inversion is the whole
-//    difference between the two: an op was CODE, so a browser could only switch
-//    one off, where a profile's tools are DATA and this screen is where they are
-//    granted. So the kit's New button is back and honest, and `grantLine` exists
-//    because eight checkboxes cannot say what ticking one hands a model.
-//  • MODELS (wired) is the executor/advisor policy (#153, inverted by #285)
-//    plus twelve weeks of measured spend, and the rule the kit's single share
-//    bar could not hold: TWO POPULATIONS THAT MUST NOT BE MIXED. The bar at the
-//    top of the tab is drawn as two tones and named, and every share on the
-//    screen is TOKEN-based because an interactive transcript carries no price.
-//    `server/src/routes/models.js` holds the arithmetic and the mapping from
-//    "provider" to Stack's actual backends — a subscription, a key, and one
-//    gateway the server cannot see at all.
-//  • CONTEXT (wired) — what text actually reaches a model here: the session
-//    defaults, each SPAWN PROFILE's prompt, the ✧ assist steer, and each
-//    project's CLAUDE.md and AGENTS.md files READ LIVE OFF THE HOST. Stack once kept a DB
-//    copy of every CLAUDE.md and wrote it back on a schedule, and a stale copy
-//    silently reverted this repo's own file for days. So a CLAUDE.md here is
-//    never stored, is written only by a human's Save, and that Save is refused
-//    if the file changed on disk since it was opened. The owner's own words
-//    carry the Edit button; what is code has no button at all.
-//    `server/src/routes/context.js`'s header is the long version.
-//  • SETTINGS (mock) duplicates `#/settings`, which is real and wired. Two rows
-//    of it have no counterpart at all (revoke every key, delete 209
-//    transcripts) and both are destructive; the fail-safe rules say an
-//    automation that destroys does nothing when it cannot reach the API, and
-//    neither has been thought through in those terms yet.
+// THE FOUR ANSWERS THE AGENTS TAB OWES (from #520, unchanged by the redesign):
+//  1. Whether anything spawns at all. `--agents` is passed only when an ADVISOR
+//     is set; with none every profile is inert, and the tab leads with that.
+//  2. What a run actually resolves to (`defaultSpawn`, the server's own answer).
+//  3. What a tool grant means, in a sentence (`grantLine`).
+//  4. That a spawn always has a builder: resolveSpawn falls back to the built-in
+//     executor, or the expensive director would silently do the building.
+// A built-in is RESET, never deleted: DELETE drops its stored override.
 //
-// THE HEADER FLAG CHANGED WITH THE TAB. It reported the HOST DAEMON, because
-// that was the frame around every tab-agent switch. The daemon belongs to the
-// terminal and to Models now, and this screen's frame is whether an ADVISOR is
-// set — with none, `--agents` is never passed and every profile on the Agents
-// tab is inert. Same rule one layer in: state the thing that makes the screen
-// below it true or false.
+// MODELS keeps TWO POPULATIONS APART: autopilot runs answer to the policy and a
+// human's own sessions never do. Every share is TOKEN-based, because an
+// interactive transcript carries no price. A number that cannot be measured is
+// a DASH, never a zero.
 //
-// NOTHING ON A MOCK TAB IS A FACT ABOUT THIS INSTALLATION — every tone on one
-// (green pills, an amber bar, a red danger zone) is the kit's sample data, and
-// the switches on it are local state that leaving the page undoes. A
-// wired tab's numbers are this installation's and nothing on one is invented:
-// where a number cannot be measured it is a DASH, never a zero.
+// CONTEXT reads each repo's CLAUDE.md and AGENTS.md LIVE off the host. Nothing
+// is stored; a Save writes the file and is refused if it changed on disk since
+// it was opened (`server/src/routes/context.js`'s header is the long version).
+// The "Seen by" lens is a fact about the harness, not a preference: a Codex
+// terminal gets no SessionStart hook, so no session-defaults block, and reads
+// CLAUDE.md only where the repo's AGENTS.md points at it.
 //
-// The kit's page chrome is NOT ported. Its standalone HTML ships its own top
-// bar with a search box, a New project button and a three-number status strip;
-// this app has one TopBar of its own, and the strip would have been a second
-// copy of numbers the screen already states.
+// NOTHING ON THE MOCK TAB IS A FACT ABOUT THIS INSTALLATION: its switches are
+// local state that leaving the page undoes. `#/settings` is the real screen.
 
 import { Fragment, useCallback, useEffect, useState, type ReactNode } from 'react';
 import type {
-  AgentProfile, AgentProfilesRoom, ClaudeMdFile, ClaudeMdRead, ContextDoc, ContextRoom, ModelsRoom,
+  AgentProfile, AgentProfilesRoom, ClaudeMdFile, ClaudeMdRead, ContextDoc, ContextRoom,
+  ModelProvider, ModelsRoom,
 } from '../types';
 import {
   getAgentProfiles, getContextRoom, getModelsRoom, patchAgentProfile,
@@ -80,75 +56,65 @@ import {
 import { compactTokens } from '../lib/spine';
 import { hrefTo } from '../lib/route';
 import { TopBar } from '../components/TopBar';
-import { KitIcon, type KitIconName } from '../detail/kit/KitIcon';
 
 type Tone = 'info' | 'warning' | 'success' | 'danger' | 'neutral';
 type McTab = 'agents' | 'models' | 'context' | 'settings';
 
-// Settings is the only remaining mockup; its chip belongs on its own tab.
-const TABS: { value: McTab; label: string; icon: KitIconName; mock?: boolean }[] = [
-  { value: 'agents', label: 'Agents', icon: 'users' },
-  { value: 'models', label: 'Models', icon: 'terminal' },
-  { value: 'context', label: 'Context', icon: 'file-text' },
-  { value: 'settings', label: 'Settings', icon: 'settings', mock: true },
+const TABS: { value: McTab; label: string; mock?: boolean }[] = [
+  { value: 'agents', label: 'Agents' },
+  { value: 'models', label: 'Models' },
+  { value: 'context', label: 'Context' },
+  { value: 'settings', label: 'Settings', mock: true },
 ];
 
 /* ---------- the pieces the tabs share ---------- */
 
-// The kit's Panel. `rule` is a NAMED role rather than a colour, so the two
-// places a left rule means something (a live panel, a destructive one) stay
-// re-tonable from styles.css — the #444 rule: a component names the role and
-// styles.css owns the tone.
-function Panel({ title, note, right, rule, children }: {
-  title: string; note?: string; right?: ReactNode;
-  rule?: 'live' | 'danger'; children: ReactNode;
+function Pill({ tone, children }: { tone: Tone; children: ReactNode }) {
+  return <span className={`mc-pill mc-t-${tone}`}>{children}</span>;
+}
+
+// A real `role="switch"` button: a toggle a keyboard cannot reach is not one.
+function Switch({ checked, onChange, label, disabled }: {
+  checked: boolean; onChange: (v: boolean) => void; label: string; disabled?: boolean;
 }) {
   return (
-    <section className={`mcx-panel${rule ? ` rule-${rule}` : ''}`}>
-      <header className="mcx-panelhead">
-        <span className="t">{title}</span>
-        {note ? <span className="note">{note}</span> : null}
-        {right ? <span className="right">{right}</span> : null}
-      </header>
+    <button type="button" role="switch" aria-checked={checked} aria-label={label} disabled={disabled}
+      className={`mc-switch${checked ? ' on' : ''}`}
+      onClick={(e) => { e.stopPropagation(); onChange(!checked); }}>
+      <span className="knob" />
+    </button>
+  );
+}
+
+function Tile({ label, value, line, accent }: { label: string; value: string; line: ReactNode; accent?: boolean }) {
+  return (
+    <div className="mc-tile">
+      <span className="eyebrow">{label}</span>
+      <code className={`v${accent ? ' accent' : ''}`}>{value}</code>
+      <span className="line">{line}</span>
+    </div>
+  );
+}
+
+function Card({ title, note, children, className }: {
+  title: string; note?: string; children: ReactNode; className?: string;
+}) {
+  return (
+    <section className={`mc-card${className ? ` ${className}` : ''}`}>
+      <header className="mc-cardhead"><span className="t">{title}</span>{note ? <span className="note">{note}</span> : null}</header>
       {children}
     </section>
   );
 }
 
-function Pill({ tone, children }: { tone: Tone; children: ReactNode }) {
-  return (
-    <span className={`mcx-pill mcx-t-${tone}`}>
-      <span className="dot" />{children}
-    </span>
-  );
-}
-
-// The kit's Switch, as a real `role="switch"` button rather than a clickable
-// span: a toggle a keyboard cannot reach is not a toggle.
-function Switch({ checked, onChange, label, disabled }: {
-  checked: boolean; onChange: (v: boolean) => void; label?: string; disabled?: boolean;
-}) {
-  return (
-    <span className="k-switch">
-      <button type="button" role="switch" aria-checked={checked} aria-label={label} disabled={disabled}
-        className={`k-switch-track${checked ? ' on' : ''}`} onClick={() => onChange(!checked)}>
-        <span className="k-switch-knob" />
-      </button>
-      {label ? <span className="k-switch-label">{label}</span> : null}
-    </span>
-  );
-}
-
-// THE THREE STATES A WIRED TAB HAS, and the middle one is the one that matters:
-// a read that FAILED says so, because an empty screen where a fetch died reads
-// as "nothing here" — the same absent-is-not-zero rule every payload on this
-// screen is built around.
+// A read that FAILED says so: an empty screen where a fetch died reads as
+// "nothing here".
 function Loading({ what }: { what: string }) {
-  return <div className="mcx-state">Reading {what}…</div>;
+  return <div className="mc-state">Reading {what}…</div>;
 }
 function Failed({ err, onRetry }: { err: string; onRetry: () => void }) {
   return (
-    <div className="mcx-state bad">
+    <div className="mc-state bad">
       <span>Stack could not read this: {err}</span>
       <button className="k-btn sm secondary" onClick={onRetry}>Try again</button>
     </div>
@@ -174,593 +140,433 @@ function useRoom<T>(read: () => Promise<T>): [T | null, string, boolean, () => v
   return [data, err, busy, load];
 }
 
-/** Dollars, to the cent. NEVER used for a null — see `money` below. */
 const usd = (n: number) => `$${(Math.round(n * 100) / 100).toFixed(2)}`;
 /** null = UNPRICED. A dash, never $0.00: a transcript carries no cost. */
 const money = (n: number | null) => (n === null ? '—' : usd(n));
+const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`;
 
-// `ago()` LIVED HERE and went with the Agents room's ledger (#520). The tab
-// agents carried `runs` / `last_run_at` / `last_outcome` in `agent_configs` and
-// the fold drew all three; a spawn profile has no such ledger, because
-// `autopilot_runs` records the RUN and not which subagents it spawned. So the
-// room reports how many open items would spawn a profile — a real number — and
-// says out loud that it cannot report how often one actually has. An invented
-// "last run" would have been the easier thing to draw.
+// Each harness's tone, by ROLE: styles.css maps `h-<key>` to a token.
+const HARNESS_KEYS = ['anthropic', 'codex', 'copilot'] as const;
 
 export function MissionControl() {
   const [tab, setTab] = useState<McTab>('agents');
-  // The Agents room rides at screen level because the HEADER reads it too, and
-  // since #520 it reads a different fact: not "is the host daemon up" (the tab
-  // agents' frame, and they are culled) but WHETHER A RUN SPAWNS SUBAGENTS AT
-  // ALL. A page saying "2 agents on" over an installation with no advisor set —
-  // where `--agents` is never passed and every profile is inert — is the same
-  // sample-data lie the kit port's header was written about, one layer in.
+  // The profile modal rides at screen level, because Context's "Edit in Agents"
+  // opens it from another tab.
+  const [modal, setModal] = useState<string | null>(null);
+  // The Agents room rides here too, because the HEADER reads it: the one fact
+  // worth stating on every tab is whether a run spawns subagents at all.
   const [agents, agentsErr, agentsBusy, reloadAgents] = useRoom<AgentProfilesRoom>(getAgentProfiles);
 
   const live = agents?.profiles.filter((p) => p.enabled).length ?? 0;
   const spawns = agents?.policy.spawnsAgents ?? false;
 
   return (
-    <div className="mcx-ground">
+    <div className="mc-ground">
       <TopBar
         crumb={[{ label: 'Projects', href: hrefTo.dashboard }, { label: 'Mission Control', href: hrefTo.control }]}
-        actions={
-          // BACK TO THE TERMINAL. The terminal's own topbar has carried a
-          // Mission Control button since it was built and the return trip was a
-          // browser Back away, which is not a trip a bookmark or a fresh tab
-          // has. Same button, same class, pointing the other way.
-          <a className="btn-repo" href={hrefTo.terminal()} title="Back to the terminal">Terminal</a>
-        } />
+        actions={<a className="btn-repo" href={hrefTo.terminal()} title="Back to the terminal">Terminal</a>} />
 
-      <div className="page detail mcx">
-        <div className="mcx-head">
-          <div className="mcx-title">
+      <div className="page detail mc">
+        <div className="mc-head">
+          <div className="mc-title">
             <span className="eyebrow">Machine room</span>
             <h1>Mission Control</h1>
           </div>
-          <span className="mcx-headacts">
-            {/* The one fact worth stating on every tab: does the fleet this
-                screen configures actually exist. `--agents` is passed only when
-                an advisor model is set, so with none there is no subagent on
-                this installation and no switch on the Agents tab does anything.
-                (The host daemon, which this flag used to report, belongs to the
-                terminal and to Models — it stopped being this screen's frame
-                when the tab agents went.) */}
+          <span className="mc-headacts">
             {agents && (
-              <span className={`mcx-liveflag${spawns ? '' : ' off'}`}>
+              <span className={`mc-flag${spawns ? '' : ' off'}`}>
                 <span className="dot" />
                 {spawns
-                  ? `Director ${agents?.policy.advisorModel} · ${live} profile${live === 1 ? '' : 's'} on`
-                  : 'No advisor set — a run spawns no subagents at all'}
+                  ? <>Director · Claude Code <code>{agents.policy.advisorModel}</code> · {plural(live, 'profile')} on</>
+                  : <>No advisor set: <code>no subagents spawn</code></>}
               </span>
             )}
-            <a className="k-btn sm secondary" href={hrefTo.settings}>
-              <KitIcon name="settings" size={13} />Settings
-            </a>
+            <a className="k-btn sm secondary" href={hrefTo.settings}>Settings</a>
           </span>
         </div>
 
-        <div className="k-tabs mcx-tabs">
+        <nav className="mc-tabs" role="tablist">
           {TABS.map((t) => (
-            <button key={t.value} className={`k-tab${tab === t.value ? ' on' : ''}`} onClick={() => setTab(t.value)}>
-              <KitIcon name={t.icon} size={14} />{t.label}
-              {/* THE CHIP RIDES ON THE TAB (#482, #496). Three of these tabs
-                  read this installation; Settings is a mockup, and they look exactly
-                  alike — one chip over the screen would warn about the wrong
-                  three. */}
+            <button key={t.value} role="tab" aria-selected={tab === t.value}
+              className={`mc-tab${tab === t.value ? ' on' : ''}`} onClick={() => setTab(t.value)}>
+              {t.label}
               {t.mock && (
                 <span className="con-navsoon mock"
-                  title="A mockup — the console kit's own sample rows. It reads and writes nothing.">Mock</span>
+                  title="A mockup. It reads and writes nothing.">Mock</span>
               )}
             </button>
           ))}
-        </div>
+        </nav>
 
         {tab === 'agents' && (
           agentsBusy && !agents ? <Loading what="the agents" />
             : agentsErr ? <Failed err={agentsErr} onRetry={reloadAgents} />
-              : agents ? <Agents room={agents} onChanged={reloadAgents} /> : null
+              : agents ? <Agents room={agents} onChanged={reloadAgents} onOpen={setModal} /> : null
         )}
         {tab === 'models' && <Models />}
-        {tab === 'context' && <Context />}
+        {tab === 'context' && <Context onEditProfile={(key) => { setTab('agents'); setModal(key); }} />}
         {tab === 'settings' && <SettingsTab />}
       </div>
-    </div>
-  );
-}
 
-/** The sentence a mock tab owes, above the sample rows rather than after them. */
-function MockNote({ children }: { children: ReactNode }) {
-  return (
-    <div className="mcx-mocknote">
-      <span className="con-navsoon mock">Mock</span>
-      <span className="t">{children}</span>
+      {modal && agents && (
+        <ProfileModal key={modal} room={agents} profileKey={modal === '+new' ? null : modal}
+          onClose={() => setModal(null)} onChanged={reloadAgents} />
+      )}
     </div>
   );
 }
 
 /* ---------- Agents (WIRED) ---------- */
 
-// THE AGENTS ARE THE SPAWN PROFILES (#520). This room drew the tab-agent
-// REGISTRY until the cull that finally reached it; what it draws now is the
-// catalogue the overnight runner hands `claude --agents` — the subagents a
-// build actually spawns, on the models they run on, with the tools they are
-// granted. That is the other thing two branches called "agents", and it is the
-// one with teeth: the registry governed two ✧ buttons at the end, this decides
-// how every night gets built.
-//
-// THE KIT'S "NEW AGENT" BUTTON IS BACK, and its return is the clearest marker
-// of what changed. It was removed rather than left inert because an agent used
-// to be a registry entry in code and there was no write a browser could make
-// that would create one. A profile is DATA — a row in `agent_profiles` — so the
-// button is honest now.
-//
-// FOUR THINGS THIS SCREEN HAS TO SAY THAT THE CATALOGUE ALONE CANNOT:
-//
-//  1. WHETHER ANY OF IT SPAWNS AT ALL. `--agents` is passed only when an
-//     ADVISOR model is set; with none, the runner resolves a spawn and throws
-//     the answer away. Every switch below would then be decoration, so the
-//     warning goes at the TOP of the room rather than in a footnote.
-//  2. WHAT A RUN ACTUALLY RESOLVES TO, not what is in the catalogue. A profile
-//     nothing requests never spawns, and a catalogue of those is this feature's
-//     failure mode — `defaultSpawn` is the server resolving one for real,
-//     `reason` and all.
-//  3. WHAT A TOOL GRANT MEANS, in a sentence, per profile. `tools` is eight
-//     checkboxes and a reader cannot see the difference between a reviewer that
-//     cannot write and one that can. `grantLine` says it in words.
-//  4. THAT THE EXECUTOR CANNOT BE LOST. resolveSpawn falls back to the built-in
-//     executor when nothing survives filtering, because a spawn with no builder
-//     silently makes the expensive director do all the building itself. The
-//     room states the invariant rather than letting the fallback be a surprise.
-//
-// A BUILT-IN IS RESET, NEVER DELETED, and the button says which — DELETE on a
-// builtin drops its stored override and hands the factory profile back, so a
-// "Delete" label there would promise something the server will not do.
-
 /** '' = inherit the spawn's executor model. The rest are the CLI's own aliases. */
 const PROFILE_MODELS: { model: string; label: string }[] = [
-  { model: '', label: 'Inherit the executor model' },
-  { model: 'haiku', label: 'Haiku' },
-  { model: 'sonnet', label: 'Sonnet' },
-  { model: 'opus', label: 'Opus' },
+  { model: '', label: 'Inherit (executor model)' },
+  { model: 'haiku', label: 'haiku' },
+  { model: 'sonnet', label: 'sonnet' },
+  { model: 'opus', label: 'opus' },
 ];
 
-// The tool ladder. `tools` arrives as eight flat names and a flat list of eight
-// checkboxes reads as eight equal preferences — they are not: three of them
-// change what a subagent can DO to a checkout, and the rest only change how
-// much it can see. Grouped, worst-last, so the grant is legible before it is
-// made.
-//
-// KEYED OFF THE SERVER'S `knownTools`, never off this list: a tool the server
-// knows and this file does not lands in "Other" rather than vanishing, which is
-// the same rule the Models room's `providerOf` follows for an unrecognised
-// model id. A grant that disappears from a screen is a grant nobody revokes.
+// The tool ladder, worst-last: three tools change what a subagent can DO to a
+// checkout, the rest only how much it can see. KEYED OFF THE SERVER'S
+// `knownTools`: a tool the server knows and this list does not lands in
+// "Other" rather than vanishing, because a grant nobody can see is a grant
+// nobody revokes.
 const TOOL_TIERS: { id: string; label: string; note: string; tools: string[] }[] = [
   { id: 'read', label: 'Read', note: 'Look at the checkout. Cannot change it.', tools: ['Read', 'Grep', 'Glob'] },
-  { id: 'run', label: 'Run', note: 'Shell commands — builds, tests, git. Can change the tree.', tools: ['Bash'] },
-  { id: 'write', label: 'Write', note: 'Edit and create files directly.', tools: ['Edit', 'Write'] },
-  { id: 'reach', label: 'Reach out', note: 'Leaves the machine — fetches URLs and searches.', tools: ['WebFetch', 'WebSearch'] },
+  { id: 'run', label: 'Run', note: 'Builds, tests, git. Can change the tree.', tools: ['Bash'] },
+  { id: 'write', label: 'Write', note: 'Edit and create files.', tools: ['Edit', 'Write'] },
+  { id: 'reach', label: 'Reach out', note: 'Fetch URLs, search the web.', tools: ['WebFetch', 'WebSearch'] },
 ];
 
-const WRITING_TOOLS = ['Edit', 'Write'];
-
 /**
- * What this grant MEANS, as one sentence. Derived, never stored — the whole
- * point is that it cannot drift from the checkboxes above it.
- *
- * The no-write case is the one worth spelling out: the built-in Reviewer's own
- * description promises "it never writes: no Edit or Write tool, so nothing it
- * says can land without a human or the executor acting on it", and a screen
- * that let you tick Edit while leaving that sentence on the card would have
- * broken a documented promise in silence.
+ * What a grant MEANS, as one sentence. Derived, never stored, so it cannot
+ * drift from the toggles. The no-write case matters most: the built-in
+ * Reviewer's description promises it never writes, and ticking Edit must not
+ * leave that promise standing in silence.
  */
 function grantLine(tools: string[]): { text: string; tone: Tone } {
-  const writes = tools.some((t) => WRITING_TOOLS.includes(t));
+  const writes = tools.some((t) => t === 'Edit' || t === 'Write');
   const runs = tools.includes('Bash');
   const reaches = tools.some((t) => t === 'WebFetch' || t === 'WebSearch');
-  const out = tools.some((t) => t === 'WebFetch' || t === 'WebSearch') ? ', and can reach the network' : '';
+  const out = reaches ? ', and can reach the network' : '';
   if (writes) return { text: `Writes files${runs ? ' and runs commands' : ''}${out}. Anything it does lands in the worktree.`, tone: 'warning' };
   if (runs) return { text: `Runs commands but cannot edit a file${out}. A build or a test can still change the tree.`, tone: 'info' };
-  if (reaches) return { text: 'Reads only, and can reach the network. Nothing it says can land on its own.', tone: 'neutral' };
-  return { text: 'Reads only. Nothing it says can land without something else acting on it.', tone: 'neutral' };
+  if (reaches) return { text: 'Reads only, and can reach the network. Nothing it says lands on its own.', tone: 'neutral' };
+  return { text: 'Reads only. Nothing it says lands without something else acting on it.', tone: 'neutral' };
 }
 
-function Agents({ room, onChanged }: { room: AgentProfilesRoom; onChanged: () => void }) {
-  const [open, setOpen] = useState<string | null>(room.profiles[0]?.key ?? null);
+/** "On" and "would actually spawn" are different questions. */
+function profileState(p: AgentProfile, room: AgentProfilesRoom): { label: string; tone: Tone } {
+  if (!room.policy.spawnsAgents) return { label: 'Inert: no advisor', tone: 'warning' };
+  if (!p.enabled) return { label: 'Switched off', tone: 'neutral' };
+  if (room.defaultSpawn.keys.includes(p.key)) return { label: 'Spawns by default', tone: 'success' };
+  const named = room.usage[p.key] ?? 0;
+  if (named > 0) return { label: `${plural(named, 'item')} ask for it`, tone: 'info' };
+  // On, spawnable, and nothing asks for it: the state this feature fails in.
+  return { label: 'Nothing requests it', tone: 'neutral' };
+}
+
+function Agents({ room, onChanged, onOpen }: {
+  room: AgentProfilesRoom; onChanged: () => void; onOpen: (key: string) => void;
+}) {
   const [busy, setBusy] = useState('');
   const [err, setErr] = useState('');
-  const [adding, setAdding] = useState(false);
+  const on = room.profiles.filter((p) => p.enabled).length;
+  const builtins = room.profiles.filter((p) => p.builtin).length;
+  const { policy, defaultSpawn } = room;
 
-  const run = async (token: string, fn: () => Promise<unknown>) => {
-    setBusy(token); setErr('');
-    try { await fn(); onChanged(); }
+  const toggle = async (p: AgentProfile, v: boolean) => {
+    setBusy(p.key); setErr('');
+    try { await patchAgentProfile(p.key, { enabled: v }); onChanged(); }
     catch (e) { setErr((e as Error)?.message || 'That did not save.'); }
     finally { setBusy(''); }
   };
 
-  const on = room.profiles.filter((p) => p.enabled).length;
-
   return (
-    <div className="mcx-stack tight">
-      <div className="mcx-intro">
-        <span className="lede">
-          {room.profiles.length === 1 ? 'One profile' : `${room.profiles.length} profiles`} · {on} on.
-          A profile is a SUBAGENT an overnight run spawns: its own prompt, its own model and its own
-          tools, with a context isolated from the director's. What you set here is what
-          `claude --agents` is handed.
-        </span>
-        <span className="mcx-backends">
-          {/* The kit's New button, and it is honest again — a profile is a row,
-              not a registry entry in code. */}
-          <button className="k-btn sm" onClick={() => setAdding(true)}>New profile</button>
-        </span>
+    <div className="mc-stack">
+      <div className="mc-tiles">
+        <Tile label="Director" value={policy.advisorModel || 'off'} line="plans, delegates, commits" />
+        <Tile label="Executor model" value={policy.executorModel || 'CLI default'} line="what every profile inherits" />
+        <Tile label="Default spawn" value={defaultSpawn.keys.join(', ') || '—'} line={defaultSpawn.reason} accent />
+        <Tile label="Profiles on" value={`${on} of ${room.profiles.length}`}
+          line={`${builtins} built-in · ${room.profiles.length - builtins} added`} />
       </div>
 
-      {/* THE FRAME, FIRST. Not a footnote: with no advisor nothing below spawns
-          at all, and a screen of live-looking switches over that is the most
-          expensive lie this room could tell. */}
-      {!room.policy.spawnsAgents ? (
-        <div className="mcx-framewarn">
-          <Pill tone="warning">No advisor</Pill>
-          <span className="t">
-            Nothing on this screen spawns. A run only passes <code>--agents</code> when an ADVISOR
-            model is set; with none, it is a single-model session on the executor and the director
-            does its own building. Set one in <a href={hrefTo.settings}>Settings → Autopilot models</a>.
-          </span>
-        </div>
-      ) : (
-        <div className="mcx-frame">
-          <span className="mcx-framebit">
-            <span className="l">Director</span>
-            <span className="v">{room.policy.advisorModel}</span>
-          </span>
-          <span className="mcx-framebit">
-            <span className="l">Executor</span>
-            <span className="v">{room.policy.executorModel || 'CLI default'}</span>
-            <span className="note">what a profile inherits</span>
-          </span>
-          <span className="mcx-framebit grow">
-            <span className="l">A run naming no profile spawns</span>
-            <span className="v">{room.defaultSpawn.keys.join(', ') || '—'}</span>
-            <span className="note">{room.defaultSpawn.reason}</span>
-          </span>
-          {/* The fallback is not an error and must not be drawn as one — it is
-              the invariant working. It is still worth saying out loud, because
-              the profile that spawned is not the one the catalogue implies. */}
-          {room.defaultSpawn.fallback && (
-            <Pill tone="info">Fell back to the built-in executor</Pill>
-          )}
+      {/* THE FRAME, FIRST: with no advisor nothing below spawns at all. */}
+      {!policy.spawnsAgents && (
+        <div className="mc-banner warning">
+          Nothing on this tab spawns. A run passes <code>--agents</code> only when an advisor model is
+          set; with none, it is one model on the executor and the director does its own building. Set
+          one on the Models tab.
         </div>
       )}
+      {defaultSpawn.fallback && (
+        <div className="mc-banner info">A run naming no profile fell back to the built-in executor: {defaultSpawn.reason}</div>
+      )}
+
+      <div className="mc-sechead">
+        <div>
+          <h2>Subagent profiles</h2>
+          <p>
+            Each profile is a subagent an autopilot run can spawn: its own prompt, model and tools, with
+            a context isolated from the director's. Every profile applies to every project; project
+            profiles aren't wired yet.
+          </p>
+        </div>
+        <button className="k-btn" onClick={() => onOpen('+new')}>New profile</button>
+      </div>
 
       {err && <div className="action-error">{err}</div>}
 
-      {adding && (
-        <NewProfile knownTools={room.knownTools} busy={busy === 'new'}
-          onCancel={() => setAdding(false)}
-          onCreate={async (p) => {
-            await run('new', () => createAgentProfile(p));
-            setAdding(false);
-            setOpen(p.key);
-          }} />
-      )}
+      <div className="mc-table mc-agents">
+        <div className="mc-tr head">
+          <span className="who">Profile</span><span>Model</span>
+          {TOOL_TIERS.map((t) => <span key={t.id} className="tier">{t.label}</span>)}
+          <span>Items</span><span>Status</span><span className="end">On</span>
+        </div>
+        <div className="mc-group"><span className="t">Global</span><span className="note">every project</span></div>
+        {room.profiles.map((p) => {
+          const st = profileState(p, room);
+          return (
+            <div key={p.key} className={`mc-tr row${p.enabled ? '' : ' dim'}`} role="button" tabIndex={0}
+              onClick={() => onOpen(p.key)}
+              onKeyDown={(e) => { if (e.key === 'Enter') onOpen(p.key); }}>
+              <div className="who">
+                <span className="nameline">
+                  <span className="name">{p.name}</span>
+                  <span className="key">{p.key}</span>
+                  {p.builtin && <span className="chip">built-in</span>}
+                </span>
+                <span className="desc">{p.description || 'No description, so the director has nothing to decide by.'}</span>
+              </div>
+              <span className="model">{p.model || 'inherit'}</span>
+              {TOOL_TIERS.map((t) => {
+                const known = t.tools.filter((x) => room.knownTools.includes(x));
+                const n = known.filter((x) => p.tools.includes(x)).length;
+                return (
+                  <span key={t.id} className={`tier n${n ? ' lit' : ''}${n && t.id === 'write' ? ' w' : ''}`}
+                    title={n ? known.filter((x) => p.tools.includes(x)).join(', ') : 'none granted'}>
+                    {n}/{known.length}
+                  </span>
+                );
+              })}
+              <span className="items">{room.usage[p.key] ?? 0}</span>
+              <span><Pill tone={st.tone}>{st.label}</Pill></span>
+              <span className="end">
+                <Switch checked={p.enabled} label={`${p.name} on`} disabled={busy === p.key}
+                  onChange={(v) => toggle(p, v)} />
+              </span>
+            </div>
+          );
+        })}
+      </div>
 
-      {room.profiles.map((p) => (
-        <ProfileFold key={p.key} p={p} room={room} open={open === p.key}
-          onToggle={() => setOpen(open === p.key ? null : p.key)}
-          busy={busy} run={run} />
-      ))}
-
-      <p className="mcx-capnote">
-        Nothing here reports how often a profile has actually spawned. `autopilot_runs` records the
-        RUN, not which subagents it used, so the counts above are open items that WOULD spawn one —
-        the honest number this installation can answer. A "last run" column would have been
-        invented.
-      </p>
-
-      <p className="mcx-capnote">
-        A spawn ALWAYS gets at least one building agent. If nothing survives — every profile off, or
-        a run naming one that no longer exists — the runner falls back to the built-in executor and
-        logs why. That is deliberate: a spawn with no builder does not fail loudly, it quietly makes
-        the expensive director model do all the building itself.
-      </p>
+      <div className="mc-footnotes">
+        <div>
+          <span className="t">Open items, not spawn history</span>
+          <span className="b">Counts are open items that would spawn a profile. Stack doesn't record which subagents a run actually used, so a "last run" here would be invented.</span>
+        </div>
+        <div>
+          <span className="t">There's always a builder</span>
+          <span className="b">If no profile survives (all off, or a requested one is gone), the run falls back to the built-in executor and logs why. Otherwise the director would do the building itself.</span>
+        </div>
+      </div>
     </div>
   );
 }
 
-/** A profile's state in one word, on the same four-answer principle the room has
- *  always used: "on" and "would actually spawn" are different questions. */
-function profileState(p: AgentProfile, room: AgentProfilesRoom): { label: string; tone: Tone } {
-  if (!room.policy.spawnsAgents) return { label: 'Inert — no advisor', tone: 'warning' };
-  if (!p.enabled) return { label: 'Switched off', tone: 'neutral' };
-  if (room.defaultSpawn.keys.includes(p.key)) return { label: 'Spawns by default', tone: 'success' };
-  const named = room.usage[p.key] ?? 0;
-  if (named > 0) return { label: `${named} item${named === 1 ? '' : 's'} ask for it`, tone: 'info' };
-  // On, spawnable, and nothing asks for it. Not an error — but it is the state
-  // this feature fails in, so it is named rather than drawn as ready.
-  return { label: 'Nothing requests it', tone: 'neutral' };
-}
+const KEY_RE = /^[a-z][a-z0-9-]{1,39}$/;
 
-function ProfileFold({ p, room, open, onToggle, busy, run }: {
-  p: AgentProfile; room: AgentProfilesRoom; open: boolean; onToggle: () => void; busy: string;
-  run: (token: string, fn: () => Promise<unknown>) => Promise<void>;
+/** The profile editor, for an existing profile or (profileKey null) a new one. */
+function ProfileModal({ room, profileKey, onClose, onChanged }: {
+  room: AgentProfilesRoom; profileKey: string | null; onClose: () => void; onChanged: () => void;
 }) {
-  const [prompt, setPrompt] = useState(p.prompt);
-  const [desc, setDesc] = useState(p.description);
-  // The server is the source of truth: a reload after somebody else's write has
-  // to win over a draft nobody has touched.
-  useEffect(() => { setPrompt(p.prompt); setDesc(p.description); }, [p.prompt, p.description]);
+  const p = profileKey ? room.profiles.find((x) => x.key === profileKey) ?? null : null;
+  const isNew = !profileKey;
+  const [key, setKey] = useState('');
+  const [name, setName] = useState(p?.name ?? '');
+  const [desc, setDesc] = useState(p?.description ?? '');
+  const [prompt, setPrompt] = useState(p?.prompt ?? '');
+  const [model, setModel] = useState(p?.model ?? '');
+  // A new profile opens READ-ONLY: anything more is a grant made on purpose.
+  const [tools, setTools] = useState<string[]>(p?.tools ?? room.knownTools.filter((t) => ['Read', 'Grep', 'Glob'].includes(t)));
+  const [busy, setBusy] = useState('');
+  const [err, setErr] = useState('');
 
-  const state = profileState(p, room);
-  const grant = grantLine(p.tools);
-  const used = room.usage[p.key] ?? 0;
-  const dirty = prompt !== p.prompt || desc !== p.description;
+  useEffect(() => {
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', esc);
+    return () => window.removeEventListener('keydown', esc);
+  }, [onClose]);
 
-  const toggleTool = (tool: string, want: boolean) => {
-    const next = want ? [...p.tools, tool] : p.tools.filter((t) => t !== tool);
-    // The engine refuses an empty grant (a profile that can do nothing is a
-    // silent no-op, not a customisation) — say so here rather than letting the
-    // 400 be the first anyone hears of it.
-    if (!next.length) return;
-    void run(`${p.key}:tools`, () => patchAgentProfile(p.key, { tools: next }));
+  if (!isNew && !p) return null;
+
+  const clash = isNew && room.profiles.some((x) => x.key === key);
+  const valid = (isNew ? KEY_RE.test(key) && !clash : true) && prompt.trim().length > 0 && tools.length > 0;
+  const dirty = isNew || !p ? true
+    : name !== p.name || desc !== p.description || prompt !== p.prompt || model !== p.model
+      || tools.length !== p.tools.length || tools.some((t) => !p.tools.includes(t));
+  const grant = grantLine(tools);
+  const st = p ? profileState(p, room) : null;
+
+  const act = async (token: string, fn: () => Promise<unknown>, close = true) => {
+    setBusy(token); setErr('');
+    try { await fn(); onChanged(); if (close) onClose(); }
+    catch (e) { setErr((e as Error)?.message || 'That did not save.'); }
+    finally { setBusy(''); }
   };
 
-  // Keyed off the SERVER's vocabulary — anything it knows that TOOL_TIERS does
-  // not still gets a row (see the ladder's comment).
+  const save = () => {
+    if (!valid) return;
+    if (isNew) {
+      void act('save', () => createAgentProfile({ key, name: name || key, description: desc, prompt, model, tools }));
+    } else if (p) {
+      void act('save', () => patchAgentProfile(p.key, { name, description: desc, prompt, model, tools }));
+    }
+  };
+
+  // The engine refuses an empty grant, so the last tool cannot be removed here.
+  const toggleTool = (t: string) => {
+    const has = tools.includes(t);
+    const next = has ? tools.filter((x) => x !== t) : room.knownTools.filter((x) => x === t || tools.includes(x));
+    if (next.length) setTools(next);
+  };
   const tiered = new Set(TOOL_TIERS.flatMap((t) => t.tools));
   const others = room.knownTools.filter((t) => !tiered.has(t));
+  const tiers = [
+    ...TOOL_TIERS.map((t) => ({ ...t, tools: t.tools.filter((x) => room.knownTools.includes(x)) })),
+    ...(others.length ? [{ id: 'other', label: 'Other', note: 'The server knows these and this screen does not group them.', tools: others }] : []),
+  ].filter((t) => t.tools.length);
+
+  const models = PROFILE_MODELS.some((m) => m.model === model)
+    ? PROFILE_MODELS : [...PROFILE_MODELS, { model, label: `${model} (set elsewhere)` }];
 
   return (
-    <section className={`mcx-fold${open ? ' on' : ''}`}>
-      <header className="mcx-foldhead mcx-agenthead" onClick={onToggle}>
-        <span className="caret">{open ? '▾' : '▸'}</span>
-        <div className="body">
-          <span className="name">
-            {p.name}
-            {p.builtin && <span className="chip">built-in</span>}
-          </span>
-          <span className="role">{p.description || <em>no description</em>}</span>
-        </div>
-        <span className="model">{p.model || room.policy.executorModel || 'CLI default'}</span>
-        <span className="autonomy">{p.tools.length} tools</span>
-        <span className="spend">{used} item{used === 1 ? '' : 's'}</span>
-        <span className="end"><Pill tone={state.tone}>{state.label}</Pill></span>
-      </header>
+    <>
+      <div className="mc-scrim" onClick={onClose} />
+      <div className="mc-modal" role="dialog" aria-modal="true" aria-label={isNew ? 'New profile' : p?.name}>
+        <header className="mc-modalhead">
+          <div className="titles">
+            <span className="titleline">
+              <span className="t">{isNew ? 'New profile' : p?.name}</span>
+              <span className="scope">Global</span>
+            </span>
+            <span className="sub">{isNew ? 'opens read-only: grant more on the right' : p?.key}</span>
+          </div>
+          {p && st && (
+            <span className="status">
+              <Pill tone={st.tone}>{st.label}</Pill>
+              <Switch checked={p.enabled} label="Profile on" disabled={busy === 'on'}
+                onChange={(v) => act('on', () => patchAgentProfile(p.key, { enabled: v }), false)} />
+            </span>
+          )}
+          <button className="mc-x" onClick={onClose} aria-label="Close">×</button>
+        </header>
 
-      {open && (
-        <div className="mcx-foldbody">
-          <div className="mcx-facts">
-            {([
-              ['Key', p.key],
-              ['Model', p.model ? `pinned to ${p.model}` : `inherits ${room.policy.executorModel || 'the CLI default'}`],
-              ['Open items asking for it', String(used)],
-              ['Context', 'isolated from the director'],
-            ] as [string, string][]).map(([l, v]) => (
-              <div className="fact" key={l}>
-                <span className="l">{l}</span>
-                <span className="v">{v}</span>
+        <div className="mc-modalbody">
+          <div className="left">
+            {isNew && (
+              <div className="pair">
+                <label className="mc-field">
+                  <span className="eyebrow">Key</span>
+                  <input value={key} placeholder="reviewer-strict" autoFocus
+                    onChange={(e) => setKey(e.target.value.toLowerCase())} />
+                  <span className={`hint${clash ? ' bad' : ''}`}>
+                    {clash ? 'A profile already has this key.' : 'Permanent: an item names it. Lowercase, digits, hyphens.'}
+                  </span>
+                </label>
+                <label className="mc-field">
+                  <span className="eyebrow">Name</span>
+                  <input className="prose" value={name} placeholder="Strict reviewer" onChange={(e) => setName(e.target.value)} />
+                </label>
+              </div>
+            )}
+            <div className="pair">
+              <label className="mc-field">
+                <span className="eyebrow">Scope</span>
+                <select value="global" disabled title="Project profiles aren't wired yet">
+                  <option value="global">Global: every project</option>
+                </select>
+                <span className="hint">Project profiles aren't wired yet.</span>
+              </label>
+              <label className="mc-field">
+                <span className="eyebrow">Model</span>
+                <select value={model} onChange={(e) => setModel(e.target.value)}>
+                  {models.map((m) => <option key={m.model} value={m.model}>{m.label}</option>)}
+                </select>
+                <span className="hint">Inherit = {room.policy.executorModel || 'the CLI default'}.</span>
+              </label>
+            </div>
+            {!isNew && (
+              <label className="mc-field">
+                <span className="eyebrow">Name</span>
+                <input className="prose" value={name} onChange={(e) => setName(e.target.value)} />
+              </label>
+            )}
+            <label className="mc-field">
+              <span className="eyebrow">Description</span>
+              <textarea className="prose" rows={3} value={desc} onChange={(e) => setDesc(e.target.value)}
+                placeholder="What the director reads when deciding whether to delegate…" />
+              <span className="hint">The director reads this to decide whether to delegate.</span>
+            </label>
+            <label className="mc-field">
+              <span className="eyebrow">System prompt</span>
+              <textarea rows={9} value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="You are…" />
+              <span className="hint">Exactly what the subagent reads before it starts. No code is wrapped around it.</span>
+            </label>
+          </div>
+
+          <div className="right">
+            <div className="toolhead">
+              <span className="eyebrow">Tools</span>
+              <span className="count">{tools.length} of {room.knownTools.length} granted</span>
+            </div>
+            <span className={`mc-grant mc-t-${grant.tone}`}>{grant.text}</span>
+            {tiers.map((t) => (
+              <div className="mc-tiergroup" key={t.id}>
+                <span className="head"><span className="l">{t.label}</span><span className="n">{t.note}</span></span>
+                <span className="tools">
+                  {t.tools.map((x) => {
+                    const has = tools.includes(x);
+                    return (
+                      <button key={x} type="button" aria-pressed={has}
+                        className={`mc-tool${has ? ' on' : ''}${has && t.id === 'write' ? ' w' : ''}`}
+                        onClick={() => toggleTool(x)}>
+                        {has ? '✓' : '+'} {x}
+                      </button>
+                    );
+                  })}
+                </span>
               </div>
             ))}
           </div>
+        </div>
 
-          <div className="mcx-caps">
-            <span className="eyebrow">Tools · {p.tools.length} of {room.knownTools.length} granted</span>
-            {/* WHAT THE GRANT MEANS, IN WORDS. The checkboxes below are the
-                control; this is the only thing on the screen that says what
-                ticking one actually hands a model. */}
-            <span className={`mcx-grant t-${grant.tone}`}>{grant.text}</span>
-            <span className="mcx-tiers">
-              {TOOL_TIERS.map((tier) => {
-                const tools = tier.tools.filter((t) => room.knownTools.includes(t));
-                if (!tools.length) return null;
-                return (
-                  <span className="mcx-tier" key={tier.id}>
-                    <span className="head">
-                      <span className="l">{tier.label}</span>
-                      <span className="n">{tier.note}</span>
-                    </span>
-                    {tools.map((t) => (
-                      <span className="mcx-oprow" key={t}>
-                        <Switch checked={p.tools.includes(t)} label={t}
-                          disabled={busy === `${p.key}:tools`}
-                          onChange={(v) => toggleTool(t, v)} />
-                        <span className="body">
-                          <span className="line"><span className={`name${p.tools.includes(t) ? '' : ' off'}`}>{t}</span></span>
-                        </span>
-                      </span>
-                    ))}
-                  </span>
-                );
-              })}
-              {others.length > 0 && (
-                <span className="mcx-tier" key="other">
-                  <span className="head">
-                    <span className="l">Other</span>
-                    <span className="n">This server knows these and this screen does not group them.</span>
-                  </span>
-                  {others.map((t) => (
-                    <span className="mcx-oprow" key={t}>
-                      <Switch checked={p.tools.includes(t)} label={t}
-                        disabled={busy === `${p.key}:tools`}
-                        onChange={(v) => toggleTool(t, v)} />
-                      <span className="body">
-                        <span className="line"><span className={`name${p.tools.includes(t) ? '' : ' off'}`}>{t}</span></span>
-                      </span>
-                    </span>
-                  ))}
-                </span>
-              )}
-            </span>
-            <span className="mcx-capnote">
-              A grant is validated server-side against its own list — an unknown tool is a 400, never
-              a silent drop. The last tool cannot be removed: a profile with none can do nothing, and
-              an empty grant is a no-op rather than a customisation.
-            </span>
-          </div>
+        {err && <div className="action-error mc-modalerr">{err}</div>}
 
-          <label className="mcx-promptfield">
-            <span className="eyebrow">System prompt</span>
-            <textarea className="field-input" rows={7} value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              placeholder="What this subagent is told before it starts…" />
-            <span className="hint">
-              The whole of what this subagent reads before it starts. No code is wrapped around it —
-              unlike the session defaults, what you write here is exactly what the model sees.
-            </span>
-          </label>
-
-          {/* A TEXTAREA AND NOT AN INPUT, because this field holds PROSE — the
-              built-in executor's own description is 120 characters of it. In a
-              single-line input all but the first few words scroll out of sight,
-              so the field the director actually reads is the one field nobody
-              editing it can see. (The UI smoke caught this as an overflow-x
-              finding, which is the shape that bug takes from the outside.) */}
-          <label className="mcx-promptfield">
-            <span className="eyebrow">Description</span>
-            <textarea className="field-input" rows={2} value={desc}
-              onChange={(e) => setDesc(e.target.value)}
-              placeholder="What the director reads when deciding whether to delegate to it…" />
-            <span className="hint">
-              This is what the DIRECTOR sees in its agent list — it is how the model decides whether
-              to delegate at all, so it is a working field and not a label.
-            </span>
-          </label>
-
-          <div className="mcx-foldacts">
-            <label className="k-field inline">
-              <span className="k-field-label">Model</span>
-              <select className="k-select" value={p.model} disabled={busy === `${p.key}:model`}
-                onChange={(e) => run(`${p.key}:model`, () => patchAgentProfile(p.key, { model: e.target.value }))}>
-                {/* A model set through the API that this catalogue does not list
-                    still shows, rather than being silently rewritten on the next
-                    save — same rule as the tool ladder's "Other". */}
-                {(PROFILE_MODELS.some((m) => m.model === p.model)
-                  ? PROFILE_MODELS
-                  : [...PROFILE_MODELS, { model: p.model, label: `${p.model} (set elsewhere)` }]
-                ).map((m) => <option key={m.model} value={m.model}>{m.label}</option>)}
-              </select>
-            </label>
-
-            <button className="k-btn sm" disabled={!dirty || busy === `${p.key}:text`}
-              onClick={() => run(`${p.key}:text`, () => patchAgentProfile(p.key, { prompt, description: desc }))}>
-              {busy === `${p.key}:text` ? 'Saving…' : 'Save text'}
-            </button>
-
-            {/* RESET, NOT DELETE, on a built-in — DELETE drops its stored
-                override and hands the factory profile back, because the spawn
-                path always needs 'executor' to exist. A "Delete" label would
-                promise something the server will not do. */}
-            <button className="k-btn sm secondary" disabled={busy === `${p.key}:del`}
-              onClick={() => run(`${p.key}:del`, () => deleteAgentProfile(p.key))}>
+        <footer className="mc-modalfoot">
+          {isNew ? (
+            <button className="k-btn sm secondary" onClick={onClose}>Discard</button>
+          ) : p && (
+            // RESET, NOT DELETE, on a built-in: DELETE drops the stored override
+            // and the factory profile comes back.
+            <button className="k-btn sm secondary" disabled={busy === 'del'}
+              onClick={() => act('del', () => deleteAgentProfile(p.key), !p.builtin)}>
               {p.builtin ? 'Reset to factory' : 'Delete profile'}
             </button>
-
-            <span className="mcx-spacer" />
-            <Switch checked={p.enabled} label={p.enabled ? 'On' : 'Off'} disabled={busy === `${p.key}:enabled`}
-              onChange={(v) => run(`${p.key}:enabled`, () => patchAgentProfile(p.key, { enabled: v }))} />
-          </div>
-        </div>
-      )}
-    </section>
-  );
-}
-
-/** The New-profile form. A key is permanent (it is what a roadmap item names),
- *  so it is only ever set here and never edited on a fold. */
-function NewProfile({ knownTools, busy, onCancel, onCreate }: {
-  knownTools: string[]; busy: boolean; onCancel: () => void;
-  onCreate: (p: { key: string; name: string; description: string; prompt: string; model: string; tools: string[] }) => void;
-}) {
-  const [key, setKey] = useState('');
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
-  const [prompt, setPrompt] = useState('');
-  // A NEW PROFILE OPENS READ-ONLY, deliberately. The engine's own default for an
-  // unspecified `tools` is the full building set, which is the right default for
-  // the executor it was written for and the wrong one for a form: a screen that
-  // opens with write access ticked grants it to everybody who never looked.
-  const [tools, setTools] = useState<string[]>(['Read', 'Grep', 'Glob']);
-  const grant = grantLine(tools);
-
-  const ok = /^[a-z][a-z0-9-]{1,39}$/.test(key) && prompt.trim().length > 0 && tools.length > 0;
-
-  return (
-    <section className="mcx-fold on">
-      <header className="mcx-foldhead mcx-agenthead">
-        <span className="caret">＋</span>
-        <div className="body"><span className="name">New profile</span>
-          <span className="role">A subagent an overnight run can be told to spawn.</span></div>
-      </header>
-      <div className="mcx-foldbody">
-        <div className="mcx-newgrid">
-          <label className="k-field">
-            <span className="k-field-label">Key</span>
-            <input className="field-input sm" value={key} placeholder="reviewer-strict"
-              onChange={(e) => setKey(e.target.value.toLowerCase())} />
-            <span className="hint">Permanent — it is what a roadmap item names. Lowercase, digits and hyphens.</span>
-          </label>
-          <label className="k-field">
-            <span className="k-field-label">Name</span>
-            <input className="field-input sm" value={name} placeholder="Strict reviewer"
-              onChange={(e) => setName(e.target.value)} />
-            <span className="hint">Blank falls back to the key.</span>
-          </label>
-        </div>
-        <label className="mcx-promptfield">
-          <span className="eyebrow">Description</span>
-          <textarea className="field-input" rows={2} value={description}
-            placeholder="What the director reads when deciding whether to delegate to it…"
-            onChange={(e) => setDescription(e.target.value)} />
-        </label>
-        <label className="mcx-promptfield">
-          <span className="eyebrow">System prompt</span>
-          <textarea className="field-input" rows={6} value={prompt}
-            placeholder="You are…"
-            onChange={(e) => setPrompt(e.target.value)} />
-          <span className="hint">Required. A profile with no prompt is a blank, not a customisation.</span>
-        </label>
-        <div className="mcx-caps">
-          <span className="eyebrow">Tools · {tools.length} of {knownTools.length} granted</span>
-          <span className={`mcx-grant t-${grant.tone}`}>{grant.text}</span>
-          <span className="mcx-tiers">
-            {TOOL_TIERS.map((tier) => {
-              const ts = tier.tools.filter((t) => knownTools.includes(t));
-              if (!ts.length) return null;
-              return (
-                <span className="mcx-tier" key={tier.id}>
-                  <span className="head"><span className="l">{tier.label}</span><span className="n">{tier.note}</span></span>
-                  {ts.map((t) => (
-                    <span className="mcx-oprow" key={t}>
-                      <Switch checked={tools.includes(t)} label={t}
-                        onChange={(v) => setTools(v ? [...tools, t] : tools.filter((x) => x !== t))} />
-                      <span className="body"><span className="line">
-                        <span className={`name${tools.includes(t) ? '' : ' off'}`}>{t}</span></span></span>
-                    </span>
-                  ))}
-                </span>
-              );
-            })}
-          </span>
-        </div>
-        <div className="mcx-foldacts">
-          <button className="k-btn sm" disabled={!ok || busy}
-            onClick={() => onCreate({ key, name, description, prompt, model: '', tools })}>
-            {busy ? 'Creating…' : 'Create profile'}
+          )}
+          <span className="grow" />
+          <button className="k-btn sm ghost" onClick={onClose}>Cancel</button>
+          <button className="k-btn sm" disabled={!valid || !dirty || busy === 'save'} onClick={save}>
+            {busy === 'save' ? 'Saving…' : isNew ? 'Create profile' : 'Save'}
           </button>
-          <button className="k-btn sm secondary" onClick={onCancel}>Cancel</button>
-        </div>
+        </footer>
       </div>
-    </section>
+    </>
   );
 }
-
 
 /* ---------- Models (WIRED) ---------- */
-
-const MODEL_COLS: [string, string][] = [
-  ['Model', 'c-id'], ['Seen in', 'c-ctx'], ['Tokens', 'c-use'],
-  ['Cost', 'c-cost'], ['Share', 'c-p'], ['Policy', 'c-pick'],
-];
 
 function Models() {
   const [room, err, busy, reload] = useRoom<ModelsRoom>(getModelsRoom);
@@ -780,218 +586,278 @@ function Models() {
   if (!room) return null;
 
   const t = room.totals;
+  // `group` arrived with the v5 room; an older server sends none, so fall back
+  // to "Claude Code is the harness" rather than drawing every row as Other.
+  const isHarness = (p: ModelProvider) => (p.group ? p.group === 'harness' : p.key === 'anthropic');
+  const harnesses = room.providers.filter(isHarness);
+  const others = room.providers.filter((p) => !isHarness(p));
+  const measuredH = harnesses.filter((p) => p.models.length);
   const modelCount = room.providers.reduce((n, p) => n + p.models.length, 0);
-  const autoPct = t.tokens > 0 ? (t.autoTokens / t.tokens) * 100 : 0;
+  const maxH = Math.max(1, ...harnesses.map((p) => p.tokens));
+  const share = (n: number) => (t.tokens > 0 ? (n / t.tokens) * 100 : 0);
 
   return (
-    <div className="mcx-stack tight">
-      <div className="mcx-intro">
-        <span className="lede">
-          {room.providers.length} backends · {modelCount} model{modelCount === 1 ? '' : 's'} measured
-          over the last {room.windowDays} days. Every share on this screen is TOKEN-based: an
-          interactive transcript carries no price, so cost-weighting one would describe the autopilot alone.
-        </span>
+    <div className="mc-stack">
+      <p className="mc-lede">
+        {harnesses.filter((h) => !h.planned).length} harness{harnesses.filter((h) => !h.planned).length === 1 ? '' : 'es'}, {harnesses.filter((h) => h.planned).length} planned
+        · {plural(modelCount, 'model')} measured over the last {room.windowDays} days. Shares are by
+        tokens: an interactive session carries no price, so a cost share would describe the autopilot alone.
+      </p>
+
+      <div className="mc-tiles">
+        <Tile label="Tokens" value={t.measured ? compactTokens(t.tokens) : '—'}
+          line={t.measured ? measuredH.map((h) => `${h.name} ${compactTokens(h.tokens)}`).join(' · ') || 'none on a harness' : 'nothing in the window'} />
+        {/* Priced runs ONLY: `n of m` stops this reading as the whole bill. */}
+        <Tile label="Cost" value={t.pricedRuns ? usd(t.costUsd) : '—'}
+          line={`${t.pricedRuns} of ${plural(t.runs, 'run')} priced · sessions never are`} />
+        <Tile label="Delegations" value={t.measured ? String(t.delegations.calls) : '—'}
+          line={`${t.delegations.recorded} with a transcript`} />
+        <Tile label="Models seen" value={String(modelCount)}
+          line={room.providers.filter((p) => p.models.length).map((p) => `${p.name} ${p.models.length}`).join(' · ') || 'none'} />
       </div>
 
       {saveErr && <div className="action-error">{saveErr}</div>}
 
-      {/* THE POLICY — and it governs ONE of the two populations below. #285
-          inverted the pair: the ADVISOR runs the session and the EXECUTOR is
-          the subagent it hands the write tools to. */}
-      <Panel title="Autopilot policy" note="what an unattended run is spawned on">
-        <div className="mcx-panelbody pairs">
-          <label className="k-field">
-            <span className="k-field-label">Advisor — runs the session</span>
-            <select className="k-select" value={room.policy.advisor} disabled={saving === 'advisor'}
-              onChange={(e) => setPolicy({ autopilotAdvisorModel: e.target.value }, 'advisor')}>
-              {room.policy.advisorCatalogue.map((m) => <option key={m.model} value={m.model}>{m.label}</option>)}
-            </select>
-            <span className="k-field-hint">Main loop: plans, delegates, verifies, commits. Off = single-model on the executor.</span>
-          </label>
-          <label className="k-field">
-            <span className="k-field-label">Executor — the subagent with the write tools</span>
-            <select className="k-select" value={room.policy.executor} disabled={saving === 'executor'}
-              onChange={(e) => setPolicy({ autopilotExecutorModel: e.target.value }, 'executor')}>
-              {room.policy.executorCatalogue.map((m) => <option key={m.model} value={m.model}>{m.label}</option>)}
-            </select>
-            <span className="k-field-hint">Cheap hands. Default = whatever the CLI itself picks.</span>
-          </label>
+      {/* THE POLICY governs ONE of the two populations below. #285: the ADVISOR
+          runs the session and the EXECUTOR is the subagent it hands the write
+          tools to. Only Claude Code can hold either role today. */}
+      <Card title="Autopilot policy" note="which harness and model an unattended run uses for each role">
+        <div className="mc-policy">
+          <PolicyRole role="Advisor" note="runs the session: plans, delegates, verifies, commits"
+            value={room.policy.advisor} catalogue={room.policy.advisorCatalogue} busy={saving === 'advisor'}
+            onChange={(v) => setPolicy({ autopilotAdvisorModel: v }, 'advisor')} />
+          <span className="arrow">delegates to →</span>
+          <PolicyRole role="Executor" note="the subagent with the write tools"
+            value={room.policy.executor} catalogue={room.policy.executorCatalogue} busy={saving === 'executor'}
+            onChange={(v) => setPolicy({ autopilotExecutorModel: v }, 'executor')} />
         </div>
-      </Panel>
+        {!room.policy.advisor && (
+          <div className="mc-banner warning">No advisor: a run is one model on the executor, and no profile on Agents spawns.</div>
+        )}
+      </Card>
 
-      {/* TWO POPULATIONS, NEVER ONE BAR. They answer to different policies —
-          the autopilot's spend is what the picks above govern, and a model the
-          owner chose by hand in a session is NOT drift. */}
-      <Panel title="Where the tokens went" note={`${room.windowDays} days`}>
+      {/* TWO POPULATIONS, NEVER ONE BAR: the autopilot's spend answers to the
+          policy, and a model the owner picked by hand in a session is not drift. */}
+      <section className="mc-card">
+        <header className="mc-cardhead">
+          <span className="t">Where the tokens went</span>
+          <span className="note mono">{room.windowDays} days</span>
+          <span className="grow" />
+          <span className="mc-key"><span className="sw solid" />Autopilot runs · governed by the policy</span>
+          <span className="mc-key"><span className="sw faint" />Your own sessions · picked by hand, not drift</span>
+        </header>
         {t.measured ? (
-          <div className="mcx-panelbody rows">
-            <span className="mcx-split">
-              <span className="mcx-track wide two">
-                <span className="fill auto" style={{ width: `${autoPct}%` }} />
-              </span>
-            </span>
-            <div className="mcx-splitkeys">
-              <span className="key auto">
-                <span className="sw" />Autopilot runs — {compactTokens(t.autoTokens)} over {t.runs} run{t.runs === 1 ? '' : 's'}
-              </span>
-              <span className="key inter">
-                <span className="sw" />Your own sessions — {compactTokens(t.interactiveTokens)} over {t.sessions} session{t.sessions === 1 ? '' : 's'}
-              </span>
+          <div className="mc-table mc-usage flat">
+            <div className="mc-tr head">
+              <span>Harness</span><span>Tokens · runs vs sessions</span>
+              <span className="r">Tokens</span><span className="r">Share</span><span className="r">Runs · sessions</span>
             </div>
-            <div className="mcx-facts">
-              {([
-                ['Tokens', compactTokens(t.tokens)],
-                // Priced runs ONLY. `n of m` is what stops this reading as the
-                // whole bill: an interactive session has no price at all.
-                ['Cost', `${usd(t.costUsd)} · ${t.pricedRuns} of ${t.runs} runs priced`],
-                // A delegation whose transcript was lost is UNPRICED, not free,
-                // and neither source counts every one — so `calls` is the max of
-                // the two and `recorded` is how many left evidence.
-                ['Delegations', `${t.delegations.calls} · ${t.delegations.recorded} with a transcript`],
-                ['Models seen', String(modelCount)],
-              ] as [string, string][]).map(([l, v]) => (
-                <div className="fact" key={l}>
-                  <span className="l">{l}</span>
-                  <span className="v">{v}</span>
+            {harnesses.map((h) => {
+              const none = h.planned || !h.models.length;
+              return (
+                <div className={`mc-tr h-${h.key}${none ? ' quiet' : ''}`} key={h.key}>
+                  <span className="hname"><span className="hdot" />{h.name}</span>
+                  <span className="mc-bar">
+                    <span className="auto" style={{ width: `${((h.autoTokens ?? 0) / maxH) * 100}%` }} />
+                    <span className="inter" style={{ width: `${((h.tokens - (h.autoTokens ?? 0)) / maxH) * 100}%` }} />
+                  </span>
+                  <span className="r mono">{none ? '—' : compactTokens(h.tokens)}</span>
+                  <span className="r mono">{none ? '—' : `${share(h.tokens).toFixed(1)}%`}</span>
+                  <span className="r mono sec" title="Model appearances: a session on two models counts under both.">
+                    {h.planned ? 'not connected' : none ? 'not measured' : h.runs === undefined ? '—' : `${plural(h.runs, 'run')} · ${plural(h.sessions, 'session')}`}
+                  </span>
+                </div>
+              );
+            })}
+            {others.some((o) => o.models.length) && (
+              <span className="mc-caption">
+                Plus {others.filter((o) => o.models.length).map((o) => `${o.name} ${compactTokens(o.tokens)}`).join(' · ')} on backends that never run a session.
+              </span>
+            )}
+          </div>
+        ) : (
+          // NOT a row of zeroes: nothing in the window carried a model.
+          <span className="mc-absent">Nothing in the last {room.windowDays} days carried a model. No sessions, no runs: not a bill of $0.</span>
+        )}
+      </section>
+
+      <div className="mc-sechead"><div><h2>Harnesses &amp; backends</h2></div></div>
+      <div className="mc-table mc-backends">
+        <div className="mc-tr head">
+          <span>Name</span><span>Reached via</span><span>Token share</span><span>Models</span><span>Status</span>
+        </div>
+        {([
+          ['Coding harnesses', 'can run a session', harnesses],
+          ['Other backends', 'never run a session', others],
+        ] as [string, string, ModelProvider[]][]).map(([title, note, rows]) => (
+          <Fragment key={title}>
+            <div className="mc-group"><span className="t">{title}</span><span className="note">{note}</span></div>
+            {rows.map((p) => (
+              <Backend key={p.key} p={p} room={room} open={open === p.key}
+                onToggle={() => setOpen(open === p.key ? null : p.key)} />
+            ))}
+          </Fragment>
+        ))}
+      </div>
+      <span className="mc-caption">
+        A policy role tags a model by alias ("sonnet" matches every Sonnet the window saw). "Default" matches nothing.
+      </span>
+    </div>
+  );
+}
+
+function PolicyRole({ role, note, value, catalogue, busy, onChange }: {
+  role: string; note: string; value: string; catalogue: { model: string; label: string }[];
+  busy: boolean; onChange: (v: string) => void;
+}) {
+  const known = catalogue.some((m) => m.model === value);
+  return (
+    <div className="mc-role">
+      <span className="rolehead"><span className="eyebrow">{role}</span><span className="note">{note}</span></span>
+      <span className="mc-seg">
+        <button type="button" className="on" aria-pressed="true">Claude Code</button>
+        <button type="button" disabled title="The autopilot runs Claude Code only. Codex is terminal-only for now.">Codex</button>
+        <button type="button" disabled title="Not connected">GitHub Copilot</button>
+      </span>
+      <select className="k-select" value={value} disabled={busy} onChange={(e) => onChange(e.target.value)} aria-label={`${role} model`}>
+        {(known ? catalogue : [...catalogue, { model: value, label: `${value} (set elsewhere)` }])
+          .map((m) => <option key={m.model} value={m.model}>{m.label}</option>)}
+      </select>
+    </div>
+  );
+}
+
+function Backend({ p, room, open, onToggle }: { p: ModelProvider; room: ModelsRoom; open: boolean; onToggle: () => void }) {
+  const isH = (HARNESS_KEYS as readonly string[]).includes(p.key);
+  return (
+    <div className={`mc-backend h-${p.key}${open ? ' open' : ''}`}>
+      <div className="mc-tr row" role="button" tabIndex={0} aria-expanded={open} onClick={onToggle}
+        onKeyDown={(e) => { if (e.key === 'Enter') onToggle(); }}>
+        <span className="hname">
+          <span className="chev">{open ? '▾' : '▸'}</span>
+          <span className="hdot" />
+          <span className="names"><span className="n">{p.name}</span><span className="k">{p.kind}</span></span>
+        </span>
+        <span className="mono sec">{p.reach}</span>
+        <span className="sharecell">
+          <span className="mc-bar thin"><span className="auto" style={{ width: `${p.planned ? 0 : p.share}%` }} /></span>
+          <span className="mono pct">{p.planned ? '—' : `${Math.round(p.share)}%`}</span>
+        </span>
+        <span className="mono">{p.planned ? '—' : p.models.length}</span>
+        <span><Pill tone={p.tone}>{p.state}</Pill></span>
+      </div>
+      {open && (
+        <div className="mc-backenddetail">
+          <span className="detail">{p.detail}</span>
+          {p.models.length ? (
+            <div className="mc-table mc-models">
+              <div className="mc-tr head">
+                <span>Model</span><span>Runs · sessions</span><span>Tokens</span><span>Cost</span><span>Share of all</span><span>Policy role</span>
+              </div>
+              {p.models.map((m) => (
+                <div className="mc-tr" key={m.model}>
+                  <span className="names"><span className="n">{m.label}</span><span className="k mono">{m.model}</span></span>
+                  <span className="mono sec">{m.runs}r · {m.sessions}s</span>
+                  <span className="mono">{compactTokens(m.tokens)}</span>
+                  <span className="mono sec">{money(m.costUsd)}</span>
+                  <span className="sharecell">
+                    <span className="mc-bar thin"><span className="auto" style={{ width: `${m.share}%` }} /></span>
+                    <span className="mono pct">{m.share.toFixed(1)}%</span>
+                  </span>
+                  <span className="roles"
+                    title={m.roles.length
+                      ? m.roles.map((r) => `${r} = "${r === 'executor' ? room.policy.executor : room.policy.advisor}"`).join(' · ')
+                      : 'Neither policy alias matches this id'}>
+                    {m.roles.length ? m.roles.map((r) => <Pill key={r} tone="info">{r}</Pill>) : <span className="sec">unassigned</span>}
+                  </span>
                 </div>
               ))}
             </div>
-          </div>
-        ) : (
-          // NOT a row of zeroes. Nothing in the window carried a model, which is
-          // a different statement from "the models did nothing".
-          <div className="mcx-panelbody rows">
-            <span className="mcx-absent">Nothing in the last {room.windowDays} days carried a model. No sessions, no runs — not a bill of $0.</span>
-          </div>
-        )}
-      </Panel>
-
-      {room.providers.map((p) => {
-        const on = open === p.key;
-        return (
-          <section className={`mcx-fold${on ? ' on' : ''}`} key={p.key}>
-            <header className="mcx-foldhead mcx-provhead" onClick={() => setOpen(on ? null : p.key)}>
-              <span className="caret">{on ? '▾' : '▸'}</span>
-              <span className="name">{p.name}</span>
-              <span className="key">{p.reach}</span>
-              <span className="share">
-                <span className="mcx-track wide"><span className="fill viz" style={{ width: `${p.share}%` }} /></span>
-                <span className="pct">{Math.round(p.share)}%</span>
-              </span>
-              <span className="latency">{p.models.length} model{p.models.length === 1 ? '' : 's'}</span>
-              <span className="end"><Pill tone={p.tone}>{p.state}</Pill></span>
-            </header>
-
-            {on && (
-              <>
-                <div className="mcx-provdetail">{p.detail}</div>
-                {p.models.length ? (
-                  <>
-                    <div className="mcx-row mcx-modelrow head">
-                      {MODEL_COLS.map(([l, c]) => <span className={c} key={c}>{l}</span>)}
-                    </div>
-                    {p.models.map((m) => (
-                      <div className="mcx-row mcx-modelrow hoverable" key={m.model}>
-                        <span className="c-id" title={m.model}>{m.label}</span>
-                        {/* The POPULATION SPLIT, per row. Two numbers rather
-                            than one total, because a model that appears in both
-                            is the case the merged bar would have hidden. */}
-                        <span className="c-ctx">{m.runs}r · {m.sessions}s</span>
-                        <span className="c-use">{compactTokens(m.tokens)}</span>
-                        <span className="c-cost">{money(m.costUsd)}</span>
-                        <span className="c-p">{m.share.toFixed(1)}%</span>
-                        {/* "unassigned" is an ANSWER, not decoration, so it does
-                            not take the kit's --text-disabled: that tone
-                            measures under AA, and the Plans dash refused it for
-                            the same reason.
-                            THE MATCH IS BY ALIAS AND THE TOOLTIP SAYS SO. The
-                            policy holds 'sonnet' and a transcript records the id
-                            the CLI resolved it to, so a role lands on every
-                            sonnet the window saw — which is the truth about what
-                            the setting covers, and misreads as a claim about one
-                            model unless the alias is named. */}
-                        <span className={`c-pick${m.roles.length ? ' picked' : ''}`}
-                          title={m.roles.length
-                            ? m.roles.map((r) => `${r} = "${r === 'executor' ? room.policy.executor : room.policy.advisor}"`).join(' · ')
-                            : 'Neither policy alias matches this id'}>
-                          {m.roles.length ? m.roles.join(' + ') : 'unassigned'}
-                        </span>
-                      </div>
-                    ))}
-                  </>
-                ) : (
-                  <div className="mcx-provempty">
-                    Nothing measured on this backend in the window.
-                    {p.key === 'omniroute' ? ' Stack cannot see it from here either way — this is not a claim that it is idle.' : ''}
-                  </div>
-                )}
-              </>
-            )}
-          </section>
-        );
-      })}
+          ) : !p.planned ? (
+            <span className="mc-absent">{p.absent || 'Nothing measured on this backend in the window.'}</span>
+          ) : null}
+          {isH && !p.planned && p.key !== 'anthropic' && p.models.length > 0 && (
+            <span className="mc-caption">Measured from the transcripts that reached Stack. Codex has no role in the policy yet.</span>
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
 /* ---------- Context (WIRED) ----------
 
-   Read this file's header and server/src/routes/context.js's before changing
-   anything here. The Edit button writes three things: a spawn profile's prompt,
-   the ✧ assist steer, and a repo's CLAUDE.md. The last goes to the file on the
-   host, carrying the sha256 the editor opened, and the host refuses it if the
-   file has changed since; that refusal is shown verbatim and the draft is kept.
-   A doc with no `edit` has no button at all. */
+   The Edit button writes three things: a spawn profile's prompt (on the Agents
+   tab now), the ✧ assist steer, and a repo's CLAUDE.md or AGENTS.md. The last
+   goes to the file on the host, carrying the sha256 the editor opened, and the
+   host refuses it if the file changed since; that refusal is shown verbatim
+   and the draft is kept. A doc with no `edit` has no button at all. */
 
-const DOC_KIND: Record<string, { icon: KitIconName; label: string }> = {
-  root: { icon: 'terminal', label: 'Root' },
-  agent: { icon: 'users', label: 'Agent' },
-  assist: { icon: 'file-text', label: 'Assist' },
-  repo: { icon: 'git-branch', label: 'Repo' },
+type Reader = 'claude' | 'codex' | 'codex-via' | 'assist';
+type Lens = 'all' | 'claude' | 'codex';
+
+const READER_LABEL: Record<Reader, string> = {
+  claude: 'Claude Code', codex: 'Codex', 'codex-via': 'Codex, via AGENTS.md', assist: '✧ assist',
 };
 
 const kb = (n: number) => (n < 1000 ? `${n} B` : `${(n / 1000).toFixed(1)} KB`);
 
-// A repo's CLAUDE.md as a doc on this screen. Built here, not on the server,
-// because it comes from a different read (the host, live) with its own failure
-// states, and the room must not wait on the host to draw the rest.
+interface CtxFile { doc: ContextDoc; readers: Reader[]; size: string; off: boolean; group: string }
+
+// A repo's instruction file as a doc. Built here, not on the server, because it
+// comes from a different read (the host, live) with its own failure states.
 function claudeMdDoc(slug: string, name: string, f: ClaudeMdFile): ContextDoc {
   const fileName = f.path.split('/').pop() || 'CLAUDE.md';
-  const isCodexEntry = fileName === 'AGENTS.md';
-  const agent = isCodexEntry ? 'Codex' : 'Claude Code and agents directed here';
-  const dir = f.path.includes('/') ? f.path.slice(0, f.path.lastIndexOf('/') + 1) : '';
   const pct = f.budget ? Math.round((f.bytes / f.budget) * 100) : null;
   return {
     id: `md:${slug}:${f.path}`,
     path: `${slug}/${f.path}`,
     kind: 'repo',
-    scope: dir
-      ? `${agent} sessions in ${name}, when they work under ${dir}`
-      : `Every ${agent} session opened in ${name}`,
+    scope: name,
     inherits: true,
-    summary: `${isCodexEntry
-      ? 'Codex’s instruction entry point. It can direct Codex to the shared CLAUDE.md rules so they only need to be maintained once.'
-      : 'Claude Code reads this file directly. Codex also reads it when AGENTS.md directs it here, as it does in Stack. Maintain shared rules here once for both agents.'} Read live from the host. Saving writes the file on disk and does not commit it.`,
-    meta: [
-      f.budget ? `${kb(f.bytes)} of ${kb(f.budget)} budget (${pct}%)` : kb(f.bytes),
-      f.truncated ? 'shown in part' : null,
-    ].filter(Boolean).join(' · '),
+    summary: '',
+    meta: [f.budget ? `${kb(f.bytes)} of ${kb(f.budget)} budget (${pct}%)` : kb(f.bytes), f.truncated ? 'shown in part' : null]
+      .filter(Boolean).join(' · '),
     body: f.body,
     words: f.body.trim() ? f.body.trim().split(/\s+/).length : 0,
     reads: null,
     readsLabel: '',
     edit: f.truncated ? null : {
       kind: 'claude-md', slug, path: f.path, sha: f.sha, value: f.body, label: fileName,
-      hint: 'Saves straight to the file on the host. If a session or a pull changed it since you opened it, the save is refused and nothing is overwritten. Saving does not commit.',
+      hint: 'Saving writes the file on disk and does not commit. It is refused if the file changed since you opened it.',
     },
-    note: f.truncated ? 'This file is over the host\'s read cap, so only the start is shown, and it cannot be edited here.' : '',
+    note: f.truncated ? 'This file is over the host’s read cap, so only the start is shown, and it cannot be edited here.' : '',
   };
 }
 
-function Context() {
+/** Who reads a repo file. Codex reads CLAUDE.md only where AGENTS.md sends it. */
+function repoReaders(f: ClaudeMdFile, files: ClaudeMdFile[]): Reader[] {
+  const base = f.path.split('/').pop();
+  if (base === 'AGENTS.md') return ['codex'];
+  const dir = f.path.includes('/') ? f.path.slice(0, f.path.lastIndexOf('/') + 1) : '';
+  const agents = files.find((x) => x.path === `${dir}AGENTS.md`);
+  return agents && /CLAUDE\.md/.test(agents.body) ? ['claude', 'codex-via'] : ['claude'];
+}
+
+function noteFor(file: CtxFile): string {
+  const { doc, readers } = file;
+  if (doc.kind === 'root') return `Every Claude Code session starts with this block: the SessionStart hook injects it. Codex terminals get no hook, so they never see it. ${doc.note}`;
+  if (doc.kind === 'agent') return 'Handed to Claude Code through --agents when an autopilot run spawns this profile. Codex never sees it. Edit it on the Agents tab.';
+  if (doc.kind === 'assist') return `Prepended to the requests the ✧ Fill-from-note button makes. ${doc.summary}`;
+  const proj = doc.scope;
+  const nested = doc.path.split('/').length > 2;
+  if (readers.includes('codex')) return `Codex reads this file directly in ${proj}. Claude Code does not. Read live from the host.`;
+  return `${nested ? `Claude Code reads this when it works under ${doc.path.slice(doc.path.indexOf('/') + 1, doc.path.lastIndexOf('/') + 1)} in ${proj}` : `Every Claude Code session opened in ${proj} reads this file`}${readers.includes('codex-via')
+    ? '. Codex reads it too, because AGENTS.md points here, so shared rules live here once for both.'
+    : '. Codex does not.'} Read live from the host.${doc.note ? ` ${doc.note}` : ''}`;
+}
+
+function Context({ onEditProfile }: { onEditProfile: (key: string) => void }) {
   const [room, err, busy, reload] = useRoom<ContextRoom>(getContextRoom);
   const [md, mdErr, mdBusy, reloadMd] = useRoom<ClaudeMdRead>(getClaudeMd);
   const [sel, setSel] = useState('');
+  const [lens, setLens] = useState<Lens>('all');
+  const [folded, setFolded] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
   const [saving, setSaving] = useState(false);
@@ -1001,20 +867,36 @@ function Context() {
   if (err) return <Failed err={err} onRetry={reload} />;
   if (!room) return null;
 
+  const built: CtxFile[] = room.docs.map((d) => ({
+    doc: d,
+    readers: d.kind === 'assist' ? ['assist'] : ['claude'],
+    size: `${d.words} w`,
+    off: d.kind === 'agent' && d.meta.startsWith('switched off'),
+    group: 'Stack-built',
+  }));
   const repos = (md?.projects ?? []).filter((p) => p.checkout && p.files.length);
-  const repoDocs = repos.flatMap((p) => p.files.map((f) => claudeMdDoc(p.slug, p.name, f)));
+  const repoFiles: CtxFile[] = repos.flatMap((p) => [...p.files]
+    .sort((a, b) => a.path.localeCompare(b.path))
+    .map((f) => ({ doc: claudeMdDoc(p.slug, p.name, f), readers: repoReaders(f, p.files), size: kb(f.bytes), off: false, group: p.name })));
+  const all = [...built, ...repoFiles];
+  const groups: { title: string; note: string; files: CtxFile[] }[] = [
+    { title: 'Stack-built', note: 'every project', files: built },
+    ...repos.map((p) => ({ title: p.name, note: p.more ? `${p.more} more not listed` : 'read live', files: repoFiles.filter((f) => f.group === p.name) })),
+  ];
   const noCheckout = (md?.projects ?? []).filter((p) => !p.checkout);
   const noFiles = (md?.projects ?? []).filter((p) => p.checkout && !p.files.length);
-  const all = [...room.docs, ...repoDocs];
-  const doc = all.find((d) => d.id === sel) ?? all[0];
-  const words = all.reduce((n, d) => n + d.words, 0);
-  const sizeOf = new Map<string, ClaudeMdFile>(repos.flatMap((p) => p.files.map((f) => [`md:${p.slug}:${f.path}`, f] as [string, ClaudeMdFile])));
+
+  const sees = (f: CtxFile, l: Lens) => l === 'all' || f.readers.some((r) => r === l || (l === 'codex' && r === 'codex-via'));
+  const seen = all.filter((f) => sees(f, lens) && !f.off);
+  const words = seen.reduce((n, f) => n + f.doc.words, 0);
+  const file = all.find((f) => f.doc.id === sel) ?? all[0];
+  const doc = file?.doc;
 
   const pick = (id: string) => { setSel(id); setEditing(false); setSaveErr(''); };
-  const startEdit = () => { setDraft(doc.edit?.value ?? ''); setEditing(true); setSaveErr(''); };
+  const startEdit = () => { setDraft(doc?.edit?.value ?? ''); setEditing(true); setSaveErr(''); };
 
   const save = async () => {
-    if (!doc.edit) return;
+    if (!doc?.edit) return;
     setSaving(true); setSaveErr('');
     try {
       if (doc.edit.kind === 'claude-md' && doc.edit.slug && doc.edit.path && doc.edit.sha) {
@@ -1022,11 +904,8 @@ function Context() {
         setEditing(false);
         reloadMd();
         return;
-      } else if (doc.edit.kind === 'profile-prompt' && doc.edit.agentKey) {
-        await patchAgentProfile(doc.edit.agentKey, { prompt: draft });
-      } else {
-        await patchSettings({ assistGuidance: draft });
       }
+      await patchSettings({ assistGuidance: draft });
       setEditing(false);
       reload();
     } catch (e) {
@@ -1036,213 +915,371 @@ function Context() {
     }
   };
 
+  // FAIL SILENT: no daemon means Stack cannot see the files, which must never
+  // be drawn as "no instruction files anywhere".
+  const hostLine = mdBusy && !md ? 'Reading the repos’ CLAUDE.md and AGENTS.md files off the host…'
+    : mdErr ? `Could not ask the host for the repos’ files: ${mdErr}`
+      : md && !md.connected ? 'Stack cannot see the host (the terminal daemon is not connected), so no repo files are shown. That is not the same as having none.'
+        : md && !md.ok ? `The host could not read the repos’ files: ${md.reason}`
+          : [
+            noFiles.length ? `No CLAUDE.md or AGENTS.md in ${noFiles.map((p) => p.name).join(', ')}.` : '',
+            noCheckout.length ? `No checkout on this host for ${noCheckout.map((p) => p.name).join(', ')}.` : '',
+          ].filter(Boolean).join(' ') || 'Each file is read live; Stack keeps no copy.';
+
+  const isProfile = doc?.kind === 'agent';
+  const profileKey = isProfile ? doc.id.replace(/^agent:/, '') : '';
+
   return (
-    <div className="mcx-stack tight">
-      <div className="mcx-intro">
-        <span className="lede">
-          {all.length} pieces of prompt text · {words.toLocaleString()} words. What Stack itself puts
-          in front of a model — the session block every session starts with, each spawn profile's
-          prompt and the ✧ steer — then each project's CLAUDE.md and AGENTS.md files, read live off the host.
-        </span>
+    <div className="mc-stack">
+      <div className="mc-ctxtop">
+        <p className="mc-lede">
+          Everything Stack puts in front of a model: the session block, each spawn profile's prompt, the
+          ✧ steer, and each project's CLAUDE.md and AGENTS.md, read live off the host.
+        </p>
+        <div className="lens">
+          <span className="chips">
+            <span className="l">Seen by</span>
+            {(['all', 'claude', 'codex'] as Lens[]).map((l) => (
+              <button key={l} type="button" aria-pressed={lens === l}
+                className={`mc-chip lens-${l}${lens === l ? ' on' : ''}`} onClick={() => setLens(l)}>
+                <span className="dot" />{l === 'all' ? 'Everything' : READER_LABEL[l]}
+              </button>
+            ))}
+          </span>
+          <span className="sum">{lens === 'all' ? '' : `${READER_LABEL[lens]} sees `}{plural(seen.length, 'piece')} · {words.toLocaleString('en-AU')} words</span>
+        </div>
       </div>
 
-      <div className="mcx-ctx">
-        <section className="mcx-doctree">
-          {all.map((d, i) => {
-            const k = DOC_KIND[d.kind] ?? DOC_KIND.assist;
-            const f = sizeOf.get(d.id);
-            const firstOfRepo = d.kind === 'repo' && (i === 0 || !all[i - 1].id.startsWith(`md:${d.path.split('/')[0]}:`));
-            const project = firstOfRepo ? repos.find((p) => d.id.startsWith(`md:${p.slug}:`)) : undefined;
-            const root = d.kind === 'root';
-            return (
-              <Fragment key={d.id}>
-              {project ? <div className="mcx-docgroup">{project.name}</div> : null}
-              <button type="button"
-                className={`mcx-docrow kind-${d.kind}${root ? ' root' : ''}${doc.id === d.id ? ' on' : ''}`}
-                onClick={() => pick(d.id)}>
-                {!root ? <span className="tick" /> : null}
-                <span className="ic" aria-label={k.label}><KitIcon name={k.icon} size={root ? 14 : 12} /></span>
-                <span className="path">{d.path}</span>
-                {/* A null read count is a DASH. Nothing counts how often the ✧
-                    steer is read, and a 0 there would be a claim nobody made. */}
-                <span className="reads">{f ? kb(f.bytes) : d.reads === null ? '—' : d.reads}</span>
-              </button>
-              </Fragment>
-            );
-          })}
-          {/* FAIL SILENT: no daemon means Stack cannot see the files, which
-              must never be drawn as "no instruction files anywhere". */}
-          <div className="mcx-docfoot">
-            {mdBusy && !md ? 'Reading the repos’ CLAUDE.md and AGENTS.md files off the host…'
-              : mdErr ? `Could not ask for the repos’ CLAUDE.md and AGENTS.md files: ${mdErr}`
-              : md && !md.connected ? 'Stack cannot see the host (the terminal daemon is not connected), so the repos’ CLAUDE.md and AGENTS.md files are not shown. That is not the same as having none.'
-              : md && !md.ok ? `The host could not read the CLAUDE.md and AGENTS.md files: ${md.reason}`
-              : <>
-                  Each instruction file is read live, and Stack keeps no copy. A Save writes the file and is
-                  refused if it changed on disk since you opened it.
-                  {repos.filter((p) => p.more).map((p) => ` ${p.name} has ${p.more} more CLAUDE.md and AGENTS.md files than the ${p.files.length} listed.`).join('')}
-                  {noFiles.length ? ` No CLAUDE.md or AGENTS.md in: ${noFiles.map((p) => p.name).join(', ')}.` : ''}
-                  {noCheckout.length ? ` No checkout on this host for: ${noCheckout.map((p) => p.name).join(', ')}.` : ''}
-                </>}
-            {md && !mdBusy ? <> <button type="button" className="k-btn sm ghost" onClick={reloadMd}>Re-read</button></> : null}
-          </div>
-        </section>
-
-        <section className={`mcx-docview kind-${doc.kind}`}>
-          <header className="mcx-docviewhead">
-            <span className="path">{doc.path}</span>
-            <Pill tone={doc.reads ? 'success' : 'neutral'}>
-              {doc.reads === null ? 'not counted' : doc.reads ? `${doc.reads} ${doc.readsLabel}` : `no ${doc.readsLabel || 'reads'} yet`}
-            </Pill>
-            <span className="meta">{doc.words} words · {doc.meta}</span>
-            <span className="acts">
-              {/* NO `edit`, NO BUTTON. The session-defaults block is rendered
-                  from a code catalogue and switched in Settings; offering an
-                  Edit here would be a second place to set one truth. */}
-              {doc.edit ? (
-                editing ? (
-                  <>
-                    <button className="k-btn sm ghost" onClick={() => setEditing(false)} disabled={saving}>Cancel</button>
-                    <button className="k-btn sm accent" onClick={save} disabled={saving}>
-                      <KitIcon name="check" size={13} />{saving ? 'Saving…' : 'Save'}
-                    </button>
-                  </>
-                ) : (
-                  <button className="k-btn sm secondary" onClick={startEdit}>
-                    <KitIcon name="pencil" size={13} />Edit {doc.edit.label.toLowerCase()}
-                  </button>
-                )
-              ) : doc.kind === 'repo' ? null : (
-                <a className="k-btn sm ghost" href={hrefTo.settings}>
-                  <KitIcon name="settings" size={13} />Settings
-                </a>
-              )}
-            </span>
-          </header>
-
-          <div className="mcx-docscope">
-            <span className="line">
-              <span className="eyebrow">Read by</span>
-              <span className="who">{doc.scope}</span>
-              {doc.inherits ? <span className="inherits">plus the session block</span> : null}
-            </span>
-            <span className="summary">{doc.summary}</span>
-            {doc.note ? <span className="summary quiet">{doc.note}</span> : null}
-          </div>
-
-          {saveErr && <div className="action-error">{saveErr}</div>}
-
-          {editing && doc.edit ? (
-            <>
-              <div className="mcx-edithint">{doc.edit.hint}</div>
-              <textarea className="mcx-doceditor" value={draft} spellCheck={false}
-                aria-label={doc.edit.label} onChange={(e) => setDraft(e.target.value)} />
-            </>
-          ) : doc.body ? (
-            <div className="mcx-docbody">
-              {doc.body.split('\n').map((line, i) => <MdLine key={i} line={line} n={i + 1} />)}
+      <div className={`mc-ctx${folded ? ' folded' : ''}`}>
+        <aside className="mc-files">
+          {folded ? (
+            <div className="foldedbar">
+              <button className="mc-sq" onClick={() => setFolded(false)} title="Show files" aria-label="Show files">»</button>
+              <span className="vert">{plural(all.length, 'file')}</span>
             </div>
           ) : (
-            <div className="mcx-docempty">
-              <span className="t">
-                {doc.edit ? 'Nothing written yet.' : 'Every line of this block is switched off, so nothing is injected.'}
-              </span>
-              {doc.edit
-                ? <button className="k-btn sm accent" onClick={startEdit}><KitIcon name="pencil" size={13} />Write it</button>
-                : <a className="k-btn sm secondary" href={hrefTo.settings}>Turn some on</a>}
-            </div>
+            <>
+              <div className="fhead">
+                <span className="t">Files <span className="mono">{all.length}</span></span>
+                <button className="mc-sq" onClick={() => setFolded(true)} title="Collapse" aria-label="Collapse files">«</button>
+              </div>
+              <div className="flist">
+                {groups.map((g) => (
+                  <Fragment key={g.title}>
+                    <div className="fgroup"><span className="t">{g.title}</span><span className="note">{g.note}</span></div>
+                    {g.files.map((f) => (
+                      <button key={f.doc.id} type="button"
+                        className={`mc-file${f.doc.id === doc?.id ? ' on' : ''}${!sees(f, lens) ? ' unseen' : f.off ? ' off' : ''}`}
+                        onClick={() => pick(f.doc.id)}>
+                        <span className="path">{f.doc.path}</span>
+                        <span className="dots">{f.readers.map((r) => <span key={r} className={`rdot r-${r}`} title={READER_LABEL[r]} />)}</span>
+                        <span className="size">{f.size}</span>
+                      </button>
+                    ))}
+                  </Fragment>
+                ))}
+              </div>
+              <div className="ffoot">
+                <span className="legend">
+                  <span><span className="rdot r-claude" />Claude Code</span>
+                  <span><span className="rdot r-codex" />Codex</span>
+                  <span><span className="rdot r-codex-via" />Codex, via AGENTS.md</span>
+                </span>
+                <span className="host">{hostLine}</span>
+                {md && !mdBusy ? <button className="k-btn sm secondary" onClick={reloadMd}>Re-read from host</button> : null}
+              </div>
+            </>
           )}
-        </section>
+        </aside>
+
+        {doc && file ? (
+          <section className={`mc-viewer kind-${doc.kind}`}>
+            <header className="vhead">
+              <div className="titles">
+                <span className="pathline"><span className="path">{doc.path}</span><span className="meta">{[doc.words ? `${doc.words.toLocaleString('en-AU')} words` : '', doc.meta].filter(Boolean).join(' · ')}</span></span>
+                <span className="readby">
+                  <span className="l">Read by</span>
+                  {file.readers.map((r) => <span key={r} className="mc-chip static"><span className={`rdot r-${r}`} />{READER_LABEL[r]}</span>)}
+                </span>
+              </div>
+              {isProfile ? (
+                <button className="k-btn sm secondary" onClick={() => onEditProfile(profileKey)}>Edit in Agents</button>
+              ) : doc.edit ? (
+                !editing && <button className="k-btn sm secondary" onClick={startEdit}>Edit {doc.edit.label}</button>
+              ) : (
+                <span className="locked">{doc.kind === 'root' ? 'Switched in Settings' : 'Read-only here'}</span>
+              )}
+            </header>
+            <div className="vnote">{noteFor(file)}</div>
+            {saveErr && <div className="action-error">{saveErr}</div>}
+            {editing && doc.edit ? (
+              <div className="veditor">
+                <textarea value={draft} spellCheck={false} aria-label={doc.edit.label} onChange={(e) => setDraft(e.target.value)} />
+                <div className="vacts">
+                  <span className="hint">{doc.edit.hint}</span>
+                  <button className="k-btn sm ghost" onClick={() => setEditing(false)} disabled={saving}>Cancel</button>
+                  <button className="k-btn sm" onClick={save} disabled={saving}>
+                    {saving ? 'Saving…' : doc.edit.kind === 'claude-md' ? 'Save to disk' : 'Save'}
+                  </button>
+                </div>
+              </div>
+            ) : doc.body ? (
+              <div className="vbody">
+                {doc.body.split('\n').map((line, i) => <MdLine key={i} line={line} n={i + 1} />)}
+              </div>
+            ) : (
+              <div className="vempty">
+                {doc.edit ? <>Nothing written yet. <button className="k-btn sm" onClick={startEdit}>Write it</button></>
+                  : <>Every line of this block is switched off, so nothing is injected. <a href={hrefTo.settings}>Turn some on</a></>}
+              </div>
+            )}
+          </section>
+        ) : (
+          <section className="mc-viewer"><div className="vempty">Nothing to show yet.</div></section>
+        )}
       </div>
     </div>
   );
 }
 
 function MdLine({ line, n }: { line: string; n: number }) {
-  const heading = line.startsWith('#');
-  const level = heading ? (line.match(/^#+/) || [''])[0].length : 0;
-  const bullet = /^\s*[-\d]/.test(line) && !heading;
-  const text = heading ? line.replace(/^#+\s*/, '') : line;
-  const cls = heading ? `h h${level > 1 ? 2 : 1}` : bullet ? 'bullet' : 'plain';
+  const level = line.startsWith('# ') ? 1 : /^#{2,}\s/.test(line) ? 2 : 0;
+  const text = level ? line.replace(/^#+\s*/, '') : line;
   return (
-    <div className="mcx-mdline">
+    <div className={`mc-mdline${level ? ` h${level}` : ''}`}>
       <span className="n">{n}</span>
-      <span className={cls}>{text || ' '}</span>
+      <span className="text">{text || ' '}</span>
     </div>
   );
 }
 
-/* ---------- Settings (MOCK) ---------- */
+/* ---------- Settings (MOCK) ----------
+
+   The v5 design's sections, as local state. Every switch below is undone by
+   leaving the page, and none of these rows is wired: `#/settings` is the real
+   screen. Two rows (revoke every key, delete transcripts) have no counterpart
+   at all, and both destroy: the fail-safe rules have a direction for that
+   nobody has applied to them yet. */
+
+type SetSec = 'term' | 'ai' | 'access' | 'budget' | 'danger';
+const SET_SECS: [SetSec, string, string][] = [
+  ['term', 'Terminals', 'How each harness behaves in a terminal: whether it keeps going on its own, when it checkpoints, and whether it asks before running commands.'],
+  ['ai', 'AI & API keys', 'How each harness signs in on the host, and the keys Stack reads.'],
+  ['access', 'Access', 'What agents may do without asking, where they run, and who can open this console.'],
+  ['budget', 'Budgets', 'Token caps for unattended runs.'],
+  ['danger', 'Danger zone', 'Destructive actions. Each asks twice.'],
+];
+
+function SetRow({ label, desc, children }: { label: string; desc: string; children: ReactNode }) {
+  return (
+    <div className="mc-setrow">
+      <span className="txt"><span className="l">{label}</span><span className="d">{desc}</span></span>
+      {children}
+    </div>
+  );
+}
 
 function SettingsTab() {
-  const [approve, setApprove] = useState(true);
-  const [cap, setCap] = useState(true);
-  const [local, setLocal] = useState(false);
-  const [log, setLog] = useState(true);
+  const [sec, setSec] = useState<SetSec>('term');
+  const [term, setTerm] = useState({ claude: { auto: true, ckpt: true, skip: false }, codex: { auto: false, ckpt: false, skip: false } });
+  const [contLimit, setContLimit] = useState('5');
+  const [ckpt, setCkpt] = useState('compact');
+  const [defH, setDefH] = useState<'claude' | 'codex'>('claude');
+  const [keepAlive, setKeepAlive] = useState(true);
+  const [guards, setGuards] = useState({ plan: true, budget: true, worktree: true, network: false, transcripts: true });
+  const [devices, setDevices] = useState([
+    { id: 1, name: 'MacBook Pro · Chrome', meta: 'Melbourne · active now', current: true },
+    { id: 2, name: 'iPhone · Safari', meta: 'Melbourne · 2 days ago', current: false },
+    { id: 3, name: 'Work PC · Edge', meta: 'Sydney · 3 weeks ago', current: false },
+  ]);
+  const [runCap, setRunCap] = useState('40M');
+  const [dayCap, setDayCap] = useState('200M');
+  const [onCap, setOnCap] = useState('pause');
+  const [armed, setArmed] = useState('');
+  const cur = SET_SECS.find((s) => s[0] === sec)!;
+
+  const ROWS: ['auto' | 'ckpt' | 'skip', string, string][] = [
+    ['auto', 'Auto-continue', 'Answers the model’s “continue?” pauses so long tasks keep going, up to the limit below.'],
+    ['ckpt', 'Run /checkpoint automatically', 'Saves a checkpoint on the trigger below, so a crash or compaction loses little.'],
+    ['skip', 'Skip permission prompts', 'Runs commands and edits without asking each time. Only inside a worktree.'],
+  ];
+  const GUARDS: [keyof typeof guards, string, string][] = [
+    ['plan', 'Every plan needs my approval before it runs', 'An autopilot run stops after planning until you approve.'],
+    ['budget', 'Stop a run when it passes its token budget', 'Uses the caps under Budgets.'],
+    ['worktree', 'Agents work only in a git worktree', 'Never in the checkout you have open.'],
+    ['network', 'Allow network tools in autopilot runs', 'WebFetch and WebSearch. Off means a profile’s grant of them is ignored.'],
+    ['transcripts', 'Keep full session transcripts', 'Needed for the token and delegation counts on Models.'],
+  ];
+  const DANGER: [string, string, string, string][] = [
+    ['keys', 'Revoke every provider key and stop all loops', 'Agents keep their settings. You will need to re-add each key.', 'Revoke keys'],
+    ['tx', 'Delete 209 session transcripts', 'Usage totals stay; per-model drill-downs on Models will empty.', 'Delete transcripts'],
+    ['host', 'Unpair the host daemon', 'Every terminal and run stops until you pair again.', 'Unpair host'],
+  ];
 
   return (
-    <div className="mcx-stack tight narrow">
-      <MockNote>
-        The kit's sample guardrails. `#/settings` is the real, wired screen; two rows below have no
-        counterpart at all (revoke every key, delete 209 transcripts) and both destroy, which the
-        fail-safe rules have a direction for that nobody has applied to them yet.
-      </MockNote>
-
-      <Panel title="Guardrails" note="applies to every agent and loop">
-        <div className="mcx-panelbody rows">
-          <Switch checked={approve} onChange={setApprove} label="Every plan needs my approval before it runs" />
-          <Switch checked={cap} onChange={setCap} label="Stop a run when it passes its token budget" />
-          <Switch checked={log} onChange={setLog} label="Keep full session transcripts" />
-          <Switch checked={local} onChange={setLocal} label="Prefer the local model when it is reachable" />
-        </div>
-      </Panel>
-
-      <Panel title="Budgets">
-        <div className="mcx-panelbody pairs">
-          <label className="k-field">
-            <span className="k-field-label">Daily spend cap</span>
-            <input className="k-input" defaultValue="$60" />
-            <span className="k-field-hint">Runs queue rather than fail</span>
-          </label>
-          <label className="k-field">
-            <span className="k-field-label">Per-run token cap</span>
-            <input className="k-input" defaultValue="40M" />
-          </label>
-          <label className="k-field">
-            <span className="k-field-label">On cap</span>
-            <select className="k-select" defaultValue="Pause and ask me">
-              {['Pause and ask me', 'Fall back to a cheaper model', 'Stop the run'].map((o) => <option key={o}>{o}</option>)}
-            </select>
-          </label>
-          <label className="k-field">
-            <span className="k-field-label">Default model</span>
-            <select className="k-select" defaultValue="claude-sonnet-5">
-              {['claude-sonnet-5', 'claude-opus-5', 'gpt-5.2', 'kimi-k3'].map((o) => <option key={o}>{o}</option>)}
-            </select>
-          </label>
-        </div>
-      </Panel>
-
-      <div className="k-banner warning">
-        <div className="k-banner-text">
-          <span className="k-banner-title">Sentry has seen no events in 30 days</span>
-          <span className="k-banner-body">Telemetry looks disconnected, so runtime errors may not be reaching you.</span>
-        </div>
-        <button className="k-btn sm secondary">Check the DSN</button>
+    <div className="mc-stack">
+      <div className="mc-mocknote">
+        <span className="con-navsoon mock">Mock</span>
+        <span>Sample rows from the design. Nothing here reads or writes this installation; <a href={hrefTo.settings}>Settings</a> is the real screen.</span>
       </div>
+      <div className="mc-settings">
+        <nav className="mc-setnav">
+          {SET_SECS.map(([id, label]) => (
+            <button key={id} type="button" className={`${sec === id ? 'on' : ''}${id === 'danger' ? ' danger' : ''}`}
+              onClick={() => { setSec(id); setArmed(''); }}>{label}</button>
+          ))}
+        </nav>
+        <div className="mc-setbody">
+          <div className="sethead"><h2>{cur[1]}</h2><p>{cur[2]}</p></div>
 
-      <Panel title="Danger zone" rule="danger">
-        <div className="mcx-panelbody rows">
-          <div className="mcx-dangerrow">
-            <span className="t">Revoke every provider key and stop all loops. Agents keep their settings.</span>
-            <button className="k-btn sm danger">Revoke keys</button>
-          </div>
-          <div className="mcx-dangerrow">
-            <span className="t">Delete 209 session transcripts. Usage totals stay.</span>
-            <button className="k-btn sm danger">Delete transcripts</button>
-          </div>
+          {sec === 'term' && (
+            <>
+              <Card title="Behaviour by harness" note="each CLI is set separately">
+                <div className="mc-matrix">
+                  <div className="mrow head">
+                    <span />
+                    <span className="h h-anthropic"><span className="hdot" />Claude Code</span>
+                    <span className="h h-codex"><span className="hdot" />Codex</span>
+                  </div>
+                  {ROWS.map(([k, label, desc]) => (
+                    <div className="mrow" key={k}>
+                      <span className="txt"><span className="l">{label}</span><span className="d">{desc}</span></span>
+                      {(['claude', 'codex'] as const).map((h) => (
+                        <span className="cell" key={h}>
+                          <Switch checked={term[h][k]} label={`${label}, ${h}`}
+                            onChange={(v) => setTerm((t) => ({ ...t, [h]: { ...t[h], [k]: v } }))} />
+                          {k === 'skip' && term[h][k] && <Pill tone="warning">no prompts</Pill>}
+                        </span>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              </Card>
+              <Card title="Limits and triggers" note="apply to every terminal">
+                <SetRow label="Auto-continue limit" desc="Continues in a row before it stops and waits for you.">
+                  <input className="k-input mc-num" value={contLimit} onChange={(e) => setContLimit(e.target.value)} aria-label="Auto-continue limit" />
+                </SetRow>
+                <SetRow label="When /checkpoint runs" desc="Only for harnesses with auto /checkpoint on.">
+                  <select className="k-select mc-wide" value={ckpt} onChange={(e) => setCkpt(e.target.value)} aria-label="When /checkpoint runs">
+                    <option value="compact">Before the context is compacted</option>
+                    <option value="turns">Every 20 turns</option>
+                    <option value="idle">After 10 minutes idle</option>
+                    <option value="commit">After each commit</option>
+                  </select>
+                </SetRow>
+                <SetRow label="Default harness for new terminals" desc="You can still pick another when you open one.">
+                  <span className="mc-seg">
+                    <button type="button" className={defH === 'claude' ? 'on' : ''} onClick={() => setDefH('claude')}>Claude Code</button>
+                    <button type="button" className={defH === 'codex' ? 'on' : ''} onClick={() => setDefH('codex')}>Codex</button>
+                    <button type="button" disabled title="Not connected">GitHub Copilot</button>
+                  </span>
+                </SetRow>
+                <SetRow label="Keep terminals running when the tab closes" desc="The session stays on the host and reattaches when you come back.">
+                  <Switch checked={keepAlive} onChange={setKeepAlive} label="Keep terminals running" />
+                </SetRow>
+              </Card>
+            </>
+          )}
+
+          {sec === 'ai' && (
+            <>
+              <Card title="Harness sign-in" note="how each CLI authenticates on the host">
+                {([
+                  ['anthropic', 'Claude Code', 'Owner’s subscription, signed in on the host', 'Signed in', 'success', 'Re-authenticate'],
+                  ['codex', 'Codex', 'ChatGPT plan, signed in on the host', 'Signed in', 'success', 'Re-authenticate'],
+                  ['copilot', 'GitHub Copilot', 'Not set up', 'Not connected', 'neutral', 'Connect'],
+                ] as [string, string, string, string, Tone, string][]).map(([k, name, how, state, tone, action]) => (
+                  <div className={`mc-setrow h-${k}`} key={k}>
+                    <span className="hdot" />
+                    <span className="txt"><span className="l strong">{name}</span><span className="d">{how}</span></span>
+                    <Pill tone={tone}>{state}</Pill>
+                    <button className="k-btn sm secondary">{action}</button>
+                  </div>
+                ))}
+              </Card>
+              <Card title="API keys" note="values are never shown in full">
+                <div className="mc-keys">
+                  <div className="krow head"><span>Name</span><span>Used by</span><span>Value</span><span>Source</span><span /></div>
+                  {([
+                    ['GEMINI_API_KEY', 'Gemini second opinion', 'AIza••••••3fQk', 'environment', 'Replace'],
+                    ['OPENAI_API_KEY', 'Not needed while Codex uses the ChatGPT sign-in', 'unset', '—', 'Add'],
+                    ['OMNIROUTE_MODEL', 'OmniRoute gateway', 'free default', 'environment', 'Change'],
+                    ['SENTRY_DSN', 'Runtime error reporting', 'https://••••@o4…', 'stored', 'Replace'],
+                  ]).map(([n, by, v, src, act]) => (
+                    <div className="krow" key={n}>
+                      <span className="mono">{n}</span><span className="d">{by}</span>
+                      <span className={`mono${v === 'unset' ? ' sec' : ''}`}>{v}</span><span className="d">{src}</span>
+                      <span className="end"><button className="k-btn sm secondary">{act}</button></span>
+                    </div>
+                  ))}
+                </div>
+                <div className="mc-banner warning flush">
+                  <span className="txt"><strong>Sentry has seen no events in 30 days</strong> Telemetry looks disconnected, so runtime errors may not be reaching you.</span>
+                  <button className="k-btn sm secondary">Check the DSN</button>
+                </div>
+              </Card>
+            </>
+          )}
+
+          {sec === 'access' && (
+            <>
+              <Card title="Guardrails" note="every agent and every run">
+                {GUARDS.map(([k, label, desc]) => (
+                  <SetRow key={k} label={label} desc={desc}>
+                    <Switch checked={guards[k]} label={label} onChange={(v) => setGuards((g) => ({ ...g, [k]: v }))} />
+                  </SetRow>
+                ))}
+              </Card>
+              <Card title="Host daemon" note="where every terminal and run executes">
+                <SetRow label="stack-host" desc="paired 2026-10-02 · last seen just now">
+                  <Pill tone="success">Connected</Pill>
+                  <button className="k-btn sm secondary">Re-pair</button>
+                </SetRow>
+              </Card>
+              <Card title="Signed-in devices" note="who can open this console">
+                {devices.map((d) => (
+                  <SetRow key={d.id} label={d.name} desc={d.meta}>
+                    {d.current ? <span className="mc-caption">this device</span>
+                      : <button className="k-btn sm secondary" onClick={() => setDevices((ds) => ds.filter((x) => x.id !== d.id))}>Sign out</button>}
+                  </SetRow>
+                ))}
+              </Card>
+            </>
+          )}
+
+          {sec === 'budget' && (
+            <Card title="Token caps" note="subscriptions carry no price, so caps are in tokens">
+              <div className="mc-capgrid">
+                <label className="mc-field"><span className="eyebrow">Per-run token cap</span>
+                  <input value={runCap} onChange={(e) => setRunCap(e.target.value)} />
+                  <span className="hint">One autopilot run, director and subagents together.</span></label>
+                <label className="mc-field"><span className="eyebrow">Daily token cap</span>
+                  <input value={dayCap} onChange={(e) => setDayCap(e.target.value)} />
+                  <span className="hint">Autopilot only. Your own sessions are never capped.</span></label>
+                <label className="mc-field"><span className="eyebrow">On cap</span>
+                  <select value={onCap} onChange={(e) => setOnCap(e.target.value)}>
+                    <option value="pause">Pause and ask me</option>
+                    <option value="queue">Queue until tomorrow</option>
+                    <option value="stop">Stop the run</option>
+                  </select></label>
+              </div>
+            </Card>
+          )}
+
+          {sec === 'danger' && (
+            <Card title="Danger zone" note="these cannot be undone" className="danger">
+              {DANGER.map(([id, label, desc, btn]) => (
+                <SetRow key={id} label={label} desc={desc}>
+                  <button className={`k-btn sm ${armed === id ? 'mc-armed' : 'danger'}`}
+                    onClick={() => setArmed(armed === id ? '' : id)}>
+                    {armed === id ? 'Click again to confirm' : btn}
+                  </button>
+                </SetRow>
+              ))}
+            </Card>
+          )}
         </div>
-      </Panel>
+      </div>
     </div>
   );
 }

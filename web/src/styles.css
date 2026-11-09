@@ -7150,668 +7150,440 @@ body[data-mc-full] .totop { display: none; }
 }
 
 /* ==========================================================================
-   MISSION CONTROL — ui_kits/console mission-control.html, ported.
-   (#/control renders screens/ControlMock.tsx; that file's header carries what
-   each tab would have to be wired to, and the trap in each.)
+   MISSION CONTROL (screens/MissionControl.tsx), the v5 design.
 
-   THE GROUND IS DARKER THAN THE APP'S AND THAT IS THE KIT'S POINT: every other
-   screen sits on --surface-canvas (grey-900), and the machine room sits on
-   grey-1000 so it reads as infrastructure rather than as work. It is painted on
-   a FULL-BLEED wrapper outside `.page`, because `.page` is a centred column and
-   a darker ground inside it would read as a stripe down the middle of the app.
+   THE #450 CONTRAST RULE: `--surface-hover` lifts a row enough to drop
+   `--text-tertiary` under AA, so any text INSIDE A ROW THAT LIGHTENS on hover
+   is `--text-secondary`, with hierarchy carried by the mono face and size.
+   Tertiary is kept for grounds that cannot move: eyebrows, column heads, card
+   notes, ledes. `--text-disabled` is refused for any word that is an answer
+   ("unassigned", a dash).
 
-   THE #450 CONTRAST RULE DECIDES NEARLY EVERY TONE HERE. `--surface-hover` is
-   +5.5% white, which lifts a card from #242528 to #303134 and drops
-   `--text-tertiary` from 4.9:1 to 4.15:1 — so every elapsed time, token count,
-   duration, cost, guard line and "last ran" INSIDE A ROW THAT LIGHTENS is
-   `--text-secondary`, and the hierarchy is carried by the mono face and the
-   smaller size instead. Tertiary is kept only where the ground cannot move: the
-   eyebrows, the column headers, the panel notes, the intro ledes and the doc
-   tree's footnote. The kit's `--text-disabled` is refused outright for text
-   ("unassigned", a dash): WCAG exempts an INACTIVE CONTROL, not a word that is
-   an answer, and none of these sit in a disabled control.
-
-   FIVE TONES, ONE VOCABULARY. `.mcx-t-*` sets two local custom properties
-   (--t-fg, --t-bg) and everything downstream reads them by ROLE — a pill, a run
-   icon, a progress fill, a card's left rule — so no row, chip or bar below
-   spells a colour, and the whole screen is re-tonable from those five lines.
+   TONES BY ROLE: `.mc-t-*` sets --t-fg/--t-bg, and `.h-<backend>` sets --hc,
+   the harness's own colour. Nothing below spells a colour of its own.
    ========================================================================== */
 
-.mcx-ground { min-height: 100vh; background: var(--grey-1000); }
-.mcx { display: flex; flex-direction: column; gap: var(--space-6); }
+.mc-ground { min-height: 100vh; background: var(--surface-canvas); }
+.mc { display: flex; flex-direction: column; gap: var(--space-6); }
 
-/* ---- the five tones, as roles ---- */
-.mcx-t-info { --t-fg: var(--status-info-fg); --t-bg: var(--status-info-bg); }
-.mcx-t-warning { --t-fg: var(--status-warning-fg); --t-bg: var(--status-warning-bg); }
-.mcx-t-success { --t-fg: var(--status-success-fg); --t-bg: var(--status-success-bg); }
-.mcx-t-danger { --t-fg: var(--status-danger-fg); --t-bg: var(--status-danger-bg); }
-/* Neutral is a grey ON PURPOSE — it is the absence of a state (idle, offline,
-   no commits), and giving it a hue would make "nothing happened" look like
-   something did. */
-.mcx-t-neutral { --t-fg: var(--status-neutral-fg); --t-bg: var(--status-neutral-bg); }
+.mc-t-info { --t-fg: var(--status-info-fg); --t-bg: var(--status-info-bg); }
+.mc-t-warning { --t-fg: var(--status-warning-fg); --t-bg: var(--status-warning-bg); }
+.mc-t-success { --t-fg: var(--status-success-fg); --t-bg: var(--status-success-bg); }
+.mc-t-danger { --t-fg: var(--status-danger-fg); --t-bg: var(--status-danger-bg); }
+.mc-t-neutral { --t-fg: var(--text-secondary); --t-bg: var(--surface-raised); }
 
-/* ---- the head ---- */
-.mcx-head { display: flex; align-items: flex-end; gap: var(--space-5); flex-wrap: wrap; }
-.mcx-title { display: flex; flex-direction: column; gap: var(--space-2); }
-.mcx-title .eyebrow {
-  font: var(--type-eyebrow); letter-spacing: var(--tracking-caps);
-  text-transform: uppercase; color: var(--text-tertiary);
-}
-.mcx-title h1 {
-  margin: 0; font: var(--type-title); letter-spacing: var(--tracking-tight);
-  color: var(--text-primary); display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
-}
-/* The one label on the page that is about the page rather than about a fleet.
-   Neutral on purpose: a mockup badge in a status tone would be the very
-   confusion it exists to prevent. */
-.mcx-badge {
-  padding: 3px 9px; border-radius: var(--radius-pill);
-  font: var(--weight-medium) var(--text-2xs)/1 var(--font-mono);
-  letter-spacing: 0.06em; color: var(--text-secondary);
-  background: var(--status-neutral-bg);
-}
-.mcx-headacts { margin-left: auto; display: flex; align-items: center; gap: var(--space-4); }
-.mcx-liveflag { display: inline-flex; align-items: center; gap: 7px; font: var(--type-body-sm); color: var(--text-secondary); }
-.mcx-liveflag .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--lime-500); }
+.h-anthropic { --hc: var(--amber-500); }
+.h-codex { --hc: var(--viz-1); }
+.h-copilot { --hc: var(--viz-3); }
+.h-gemini { --hc: var(--viz-4); }
+.h-omniroute, .h-other { --hc: var(--viz-5); }
+.hdot { width: 8px; height: 8px; border-radius: 50%; background: var(--hc, var(--viz-5)); flex: none; }
 
-.mcx-tabs { flex-wrap: wrap; }
+.mc-ground .eyebrow { font: var(--type-eyebrow); letter-spacing: var(--tracking-caps); text-transform: uppercase; color: var(--text-tertiary); }
+.mc-ground .mono { font: var(--type-code); }
+.mc-ground .sec { color: var(--text-secondary); }
+.mc-ground .r { text-align: right; }
+.mc-ground .grow { flex: 1; }
 
-/* ---- the body rhythm ---- */
-.mcx-stack { display: flex; flex-direction: column; gap: var(--space-6); }
-.mcx-stack.tight { gap: var(--space-5); }
-.mcx-stack.narrow { max-width: 760px; }
-.mcx-intro { display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap; }
-.mcx-intro .lede { flex: 1; min-width: 260px; font: var(--type-body-sm); color: var(--text-tertiary); text-wrap: pretty; }
+/* ---- header + tabs ---- */
+.mc-head { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--space-5); flex-wrap: wrap; }
+.mc-title { display: flex; flex-direction: column; gap: var(--space-2); }
+.mc-title h1 { margin: 0; font: var(--type-title); color: var(--text-primary); }
+.mc-headacts { display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap; }
+.mc-flag { display: inline-flex; align-items: center; gap: var(--space-3); font: var(--type-body-sm); color: var(--text-secondary); }
+.mc-flag .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--action-accent); }
+.mc-flag.off .dot { background: var(--amber-500); }
+.mc-flag code { font: var(--type-code); color: var(--text-primary); }
+.mc-tabs { display: flex; gap: var(--space-6); border-bottom: 1px solid var(--border-subtle); overflow-x: auto; }
+.mc-tab {
+  display: inline-flex; align-items: center; gap: var(--space-2); flex: none;
+  background: none; border: 0; padding: 0 0 10px; margin-bottom: -1px; cursor: pointer;
+  font: var(--type-label); color: var(--text-tertiary); border-bottom: 2px solid transparent;
+}
+.mc-tab:hover { color: var(--text-secondary); }
+.mc-tab.on { color: var(--text-primary); border-bottom-color: var(--border-focus); }
 
-/* ---- pills ---- */
-.mcx-pill {
-  display: inline-flex; align-items: center; gap: 5px; flex: 0 0 auto;
-  height: 19px; padding: 0 8px; border-radius: var(--radius-pill);
-  background: var(--t-bg); color: var(--t-fg); font: var(--type-label); white-space: nowrap;
-}
-.mcx-pill .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--t-fg); }
+/* ---- shared blocks ---- */
+.mc-stack { display: flex; flex-direction: column; gap: var(--space-6); }
+.mc-lede { margin: 0; font: var(--type-body-sm); color: var(--text-secondary); max-width: 820px; text-wrap: pretty; }
+.mc-caption { font: var(--type-caption); color: var(--text-tertiary); }
+.mc-absent { font: var(--type-body-sm); color: var(--text-tertiary); }
+.mc-card > .mc-absent { padding: var(--space-4) var(--space-5); }
+.mc-state { padding: var(--space-8) 0; text-align: center; font: var(--type-body-sm); color: var(--text-tertiary); }
+.mc-state.bad { display: flex; flex-direction: column; align-items: center; gap: var(--space-3); color: var(--status-danger-fg); }
 
-/* ---- panels and rows ---- */
-.mcx-panel {
-  background: var(--surface-card); border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg); display: flex; flex-direction: column;
+.mc-tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-4); }
+.mc-tile {
+  background: var(--surface-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg);
+  padding: var(--space-5); display: flex; flex-direction: column; gap: var(--space-2); min-width: 0;
 }
-.mcx-panel.rule-live { border-left: 2px solid var(--lime-500); }
-.mcx-panel.rule-danger { border-left: 2px solid var(--red-500); }
-.mcx-panelhead {
-  display: flex; align-items: baseline; gap: var(--space-4);
-  padding: var(--space-5) var(--space-6); flex-wrap: wrap;
-}
-.mcx-panelhead .t { font: var(--weight-semibold) var(--text-md)/1 var(--font-sans); color: var(--text-primary); }
-.mcx-panelhead .note { font: var(--type-caption); color: var(--text-tertiary); }
-.mcx-panelhead .right { margin-left: auto; display: flex; align-items: center; gap: var(--space-4); }
-.mcx-panelbody { padding: var(--space-6); border-top: 1px solid var(--border-subtle); }
-.mcx-panelbody.rows { display: flex; flex-direction: column; gap: var(--space-5); }
-.mcx-panelbody.pairs { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-5); align-items: start; }
+.mc-tile .v { font: var(--weight-medium) var(--text-lg)/1.2 var(--font-mono); color: var(--text-primary); overflow-wrap: anywhere; }
+.mc-tile .v.accent { color: var(--text-accent); }
+.mc-tile .line { font: var(--type-caption); color: var(--text-tertiary); text-wrap: pretty; }
 
-.mcx-row {
-  display: flex; align-items: center; gap: var(--space-5);
-  padding: var(--space-4) var(--space-6);
-  border-top: 1px solid var(--border-subtle);
-  transition: var(--transition-control);
+.mc-card {
+  background: var(--surface-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg);
+  display: flex; flex-direction: column; overflow: hidden;
 }
-.mcx-row.hoverable:hover { background: var(--surface-hover); }
-/* A text button inside a row, at the row's own weight. Never a --k-btn: these
-   sit in a column of numbers and a filled control there reads as the row's
-   subject rather than as its verb. */
-.mcx-link {
-  border: 0; background: transparent; padding: 0; cursor: pointer;
-  font: var(--weight-regular) var(--text-xs)/1.5 var(--font-mono); color: var(--text-link);
+.mc-card.danger { border-color: var(--status-danger-bg); }
+.mc-cardhead {
+  display: flex; align-items: baseline; gap: var(--space-3); flex-wrap: wrap;
+  padding: var(--space-4) var(--space-5); border-bottom: 1px solid var(--border-subtle);
 }
-.mcx-link:hover { color: var(--text-link-hover); }
-.mcx-link.danger { color: var(--status-danger-fg); }
+.mc-cardhead .t { font: var(--type-label); color: var(--text-primary); }
+.mc-cardhead .note { font: var(--type-caption); color: var(--text-tertiary); }
+.mc-cardhead .note.mono { font: var(--type-code); }
 
-/* The shared bar. `--t-fg` when a run owns it, --viz-2 when it is a share of a
-   total — a distinction worth keeping: one is a STATE, the other a QUANTITY. */
-.mcx-track {
-  display: flex; height: 4px; border-radius: var(--radius-pill);
-  background: var(--grey-850); overflow: hidden;
-}
-.mcx-track.wide { flex: 1; height: 5px; }
-.mcx-track .fill { background: var(--t-fg); transition: width var(--dur-slow) var(--ease-out); }
-.mcx-track .fill.viz { background: var(--viz-2); }
+.mc-banner { font: var(--type-body-sm); padding: var(--space-3) var(--space-4); border-radius: var(--radius-md); text-wrap: pretty; }
+.mc-banner code { font: var(--type-code); color: inherit; }
+.mc-banner.warning { background: var(--status-warning-bg); color: var(--status-warning-fg); }
+.mc-banner.info { background: var(--status-info-bg); color: var(--status-info-fg); }
+.mc-card > .mc-banner { margin: 0 var(--space-5) var(--space-5); }
+.mc-banner.flush { margin: 0; border-radius: 0; display: flex; align-items: center; gap: var(--space-4); }
+.mc-banner.flush .txt { flex: 1; }
+.mc-banner.flush strong { display: block; font: var(--type-label); }
 
-/* ---- Overview: the pulse strip ---- */
-.mcx-pulse {
-  display: flex; align-items: center; gap: var(--space-9); flex-wrap: wrap;
-  background: var(--surface-card); border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg); padding: var(--space-6);
-}
-.mcx-pulseitem { display: flex; flex-direction: column; gap: var(--space-3); }
-.mcx-pulseitem .l {
-  font: var(--type-eyebrow); letter-spacing: var(--tracking-caps);
-  text-transform: uppercase; color: var(--text-tertiary);
-}
-.mcx-pulseitem .v {
-  font: var(--weight-semibold) var(--text-2xl)/1 var(--font-sans);
-  letter-spacing: var(--tracking-tight); color: var(--text-primary);
-}
-.mcx-pulseitem .v.accent { color: var(--text-accent); }
-.mcx-pulseitem .note { font: var(--weight-regular) var(--text-2xs)/1.5 var(--font-mono); color: var(--text-tertiary); }
-
-/* ---- Overview: running now ---- */
-.mcx-liverow .mcx-liveicon {
-  width: 26px; height: 26px; flex: 0 0 auto; border-radius: var(--radius-sm);
+.mc-pill {
+  display: inline-flex; align-items: center; white-space: nowrap;
+  font: var(--type-label); padding: 3px 10px; border-radius: var(--radius-pill);
   background: var(--t-bg); color: var(--t-fg);
-  display: inline-flex; align-items: center; justify-content: center;
-}
-.mcx-liverow .body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
-.mcx-liverow .line { display: flex; align-items: baseline; gap: var(--space-4); flex-wrap: wrap; }
-.mcx-liverow .who { font: var(--type-body-sm); color: var(--text-primary); }
-.mcx-liverow .model, .mcx-runrow .model { font: var(--weight-regular) var(--text-2xs)/1.5 var(--font-mono); color: var(--text-link); }
-.mcx-liverow .what { font: var(--weight-regular) var(--text-2xs)/1.5 var(--font-mono); color: var(--text-secondary); }
-.mcx-liverow .num, .mcx-runrow .num, .mcx-looprow .num {
-  font: var(--weight-regular) var(--text-xs)/1 var(--font-mono);
-  color: var(--text-secondary); text-align: right; flex: 0 0 auto;
-}
-.mcx-liverow .num.strong, .mcx-runrow .num.strong { font-weight: var(--weight-medium); color: var(--text-primary); }
-.mcx-liverow .el { flex: 0 0 60px; }
-.mcx-liverow .tok { flex: 0 0 56px; }
-.mcx-liverow .cost { flex: 0 0 46px; }
-.mcx-liverow .mcx-link { flex: 0 0 54px; text-align: right; }
-.mcx-liverow .mcx-link.danger { flex: 0 0 40px; }
-
-/* ---- Overview: last runs ---- */
-.mcx-runrow .who { flex: 0 0 96px; font: var(--type-body-sm); color: var(--text-secondary); }
-.mcx-runrow .what {
-  flex: 1; min-width: 0; font: var(--type-body-sm); color: var(--text-primary);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.mcx-runrow .model { flex: 0 0 130px; }
-.mcx-runrow .commits { flex: 0 0 66px; }
-.mcx-runrow .dur { flex: 0 0 44px; }
-.mcx-runrow .cost { flex: 0 0 46px; }
-.mcx-runrow .end, .mcx-agenthead .end, .mcx-provhead .end {
-  flex: 0 0 96px; display: flex; justify-content: flex-end;
 }
 
-/* ---- the folds (Agents, Models) ---- */
-.mcx-fold {
-  background: var(--surface-card); border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg); display: flex; flex-direction: column;
-}
-.mcx-fold.on { border-color: var(--border-default); }
-.mcx-foldhead {
-  display: flex; align-items: center; gap: var(--space-5);
-  padding: var(--space-5) var(--space-6); cursor: pointer;
+.mc-switch {
+  flex: none; width: 32px; height: 18px; border-radius: var(--radius-pill); border: 0; padding: 2px;
+  cursor: pointer; background: var(--border-strong); display: inline-flex; justify-content: flex-start;
   transition: var(--transition-control);
 }
-.mcx-foldhead:hover { background: var(--surface-hover); border-radius: var(--radius-lg) var(--radius-lg) 0 0; }
-/* The caret is a CONTROL's affordance on a row that lightens, which is exactly
-   where tertiary went sub-AA on the Plans port. Secondary, and it stays. */
-.mcx-foldhead .caret { flex: 0 0 10px; font: var(--type-caption); color: var(--text-secondary); }
-.mcx-agenthead .body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
-.mcx-agenthead .name, .mcx-provhead .name { font: var(--weight-medium) var(--text-md)/1 var(--font-sans); color: var(--text-primary); }
-.mcx-agenthead .role { font: var(--type-caption); color: var(--text-secondary); text-wrap: pretty; }
-.mcx-agenthead .model { flex: 0 0 140px; font: var(--weight-regular) var(--text-2xs)/1.5 var(--font-mono); color: var(--text-link); }
-.mcx-agenthead .autonomy {
-  flex: 0 0 104px; white-space: nowrap;
-  font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-secondary);
-}
-.mcx-agenthead .spend { flex: 0 0 46px; text-align: right; font: var(--weight-medium) var(--text-xs)/1 var(--font-mono); color: var(--text-primary); }
+.mc-switch.on { background: var(--action-primary); justify-content: flex-end; }
+.mc-switch .knob { width: 14px; height: 14px; border-radius: 50%; background: var(--text-primary); }
+.mc-switch:disabled { opacity: .5; cursor: progress; }
+.mc-switch:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 2px; }
 
-.mcx-provhead .name { flex: 0 0 150px; }
-.mcx-provhead .key { flex: 0 0 150px; font: var(--weight-regular) var(--text-2xs)/1.5 var(--font-mono); color: var(--text-secondary); }
-.mcx-provhead .share { flex: 1; min-width: 90px; display: flex; align-items: center; gap: var(--space-4); }
-.mcx-provhead .pct { width: 30px; font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-secondary); }
-.mcx-provhead .latency { flex: 0 0 56px; text-align: right; font: var(--weight-regular) var(--text-xs)/1 var(--font-mono); color: var(--text-secondary); }
+.mc-sechead { display: flex; justify-content: space-between; align-items: flex-end; gap: var(--space-6); }
+.mc-sechead > div { display: flex; flex-direction: column; gap: var(--space-2); }
+.mc-sechead h2 { margin: 0; font: var(--type-heading); color: var(--text-primary); }
+.mc-sechead p { margin: 0; font: var(--type-body-sm); color: var(--text-secondary); max-width: 760px; text-wrap: pretty; }
+.mc-sechead .k-btn { flex: none; }
 
-.mcx-foldbody {
-  padding: 0 var(--space-6) var(--space-6) 40px;
-  display: flex; flex-direction: column; gap: var(--space-5);
+/* ---- tables ---- */
+.mc-table {
+  border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); overflow: hidden;
+  background: var(--surface-card); display: flex; flex-direction: column;
 }
-.mcx-facts {
-  display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--space-5);
-  padding-top: var(--space-4); border-top: 1px solid var(--border-subtle);
+.mc-table.flat { border: 0; border-radius: 0; padding: 0 var(--space-5) var(--space-4); background: none; }
+.mc-tr {
+  display: grid; gap: var(--space-4); align-items: center;
+  padding: var(--space-4) var(--space-5); border-bottom: 1px solid var(--border-subtle);
 }
-.mcx-facts .fact { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
-.mcx-facts .l { font: var(--type-caption); color: var(--text-tertiary); }
-.mcx-facts .v { font: var(--weight-medium) var(--text-sm)/1 var(--font-mono); color: var(--text-primary); }
-.mcx-caps { display: flex; flex-direction: column; gap: var(--space-3); }
-.mcx-caps .eyebrow {
-  font: var(--type-eyebrow); letter-spacing: var(--tracking-caps);
-  text-transform: uppercase; color: var(--text-tertiary);
+.mc-tr:last-child { border-bottom: 0; }
+.mc-tr.head { padding-top: 10px; padding-bottom: 10px; font: var(--type-eyebrow); letter-spacing: var(--tracking-caps); text-transform: uppercase; color: var(--text-tertiary); }
+.mc-tr.row { cursor: pointer; transition: var(--transition-control); }
+.mc-tr.row:hover { background: var(--surface-hover); }
+.mc-tr.row:focus-visible { outline: 2px solid var(--border-focus); outline-offset: -2px; }
+.mc-tr .end { justify-self: end; }
+.mc-group {
+  display: flex; align-items: baseline; gap: var(--space-3);
+  padding: var(--space-3) var(--space-5); background: var(--surface-sunken); border-bottom: 1px solid var(--border-subtle);
 }
-.mcx-caps .chips { display: flex; gap: var(--space-2); flex-wrap: wrap; }
-/* A capability is a STATEMENT of what the code allows, not a control — no
-   hover, no cursor, no press. See the note in ControlMock.tsx. */
-.mcx-caps .chip {
-  height: 20px; padding: 0 8px; border-radius: var(--radius-sm);
-  box-shadow: inset 0 0 0 1px var(--border-default);
-  font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-secondary);
-  display: inline-flex; align-items: center;
-}
-.mcx-foldacts { display: flex; gap: var(--space-3); flex-wrap: wrap; }
+.mc-group .t { font: var(--type-label); color: var(--text-primary); }
+.mc-group .note { font: var(--type-caption); color: var(--text-tertiary); }
 
-/* ---- the model table ---- */
-.mcx-modelrow { padding-left: 44px; gap: var(--space-5); }
-.mcx-modelrow.head { padding-top: var(--space-3); padding-bottom: var(--space-3); }
-.mcx-modelrow.head > span {
-  font: var(--type-eyebrow); letter-spacing: var(--tracking-caps);
-  text-transform: uppercase; color: var(--text-tertiary);
+/* Agents */
+.mc-agents .mc-tr { grid-template-columns: minmax(0, 1fr) 90px repeat(4, 52px) 52px 176px 40px; }
+.mc-agents .mc-tr.dim .who, .mc-agents .mc-tr.dim .model, .mc-agents .mc-tr.dim .tier { opacity: .55; }
+.mc-agents .who { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
+.mc-agents .nameline { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
+.mc-agents .name { font: var(--type-label); color: var(--text-primary); }
+.mc-agents .key { font: var(--type-code); color: var(--text-secondary); }
+.mc-agents .chip { font: var(--type-caption); font-family: var(--font-mono); color: var(--text-secondary); border: 1px solid var(--border-default); border-radius: var(--radius-sm); padding: 0 6px; }
+.mc-agents .desc {
+  font: var(--type-body-sm); color: var(--text-secondary); text-wrap: pretty;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
-.mcx-modelrow .c-id { flex: 1 1 auto; min-width: 0; font: var(--weight-medium) var(--text-xs)/1 var(--font-mono); color: var(--text-primary); }
-.mcx-modelrow .c-ctx { flex: 0 0 66px; font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-secondary); }
-.mcx-modelrow .c-use { flex: 0 0 74px; font: var(--weight-regular) var(--text-xs)/1 var(--font-mono); color: var(--text-secondary); }
-.mcx-modelrow .c-cost { flex: 0 0 54px; font: var(--weight-medium) var(--text-xs)/1 var(--font-mono); color: var(--text-primary); }
-.mcx-modelrow .c-p { flex: 0 0 116px; font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-secondary); }
-.mcx-modelrow .c-pick { flex: 0 0 108px; font: var(--type-caption); color: var(--text-secondary); }
-.mcx-modelrow .c-pick.picked { color: var(--text-link); }
-
-/* ---- Loops ---- */
-.mcx-looprow .body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
-.mcx-looprow .line { display: flex; align-items: baseline; gap: var(--space-4); flex-wrap: wrap; }
-.mcx-looprow .name { font: var(--type-body-sm); color: var(--text-primary); }
-/* An off loop is dimmer, not unreadable: it is still the thing you are about to
-   switch back on. Secondary, which is the floor for a row that lightens. */
-.mcx-looprow .name.off { color: var(--text-secondary); }
-.mcx-looprow .when { font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-secondary); }
-.mcx-looprow .who { font: var(--type-caption); color: var(--text-link); }
-.mcx-looprow .guard { font: var(--weight-regular) var(--text-2xs)/1.5 var(--font-mono); color: var(--text-secondary); }
-.mcx-looprow .num { flex: 0 0 46px; }
-.mcx-looprow .last {
-  flex: 0 0 190px; text-align: right;
-  font: var(--weight-regular) var(--text-2xs)/1.5 var(--font-mono); color: var(--text-secondary);
+.mc-agents .model { font: var(--type-code); color: var(--text-link); }
+.mc-agents .tier.n {
+  justify-self: start; font: var(--type-code); padding: 2px 8px; border-radius: var(--radius-sm);
+  color: var(--text-secondary); border: 1px solid var(--border-subtle);
 }
-/* The switch's own label is the loop name, which the row already draws. */
-.mcx-looprow .k-switch-label { display: none; }
+.mc-agents .tier.n.lit { background: var(--surface-raised); color: var(--text-primary); border-color: transparent; }
+.mc-agents .tier.n.w { background: var(--status-warning-bg); color: var(--status-warning-fg); }
+.mc-agents .items { font: var(--weight-medium) var(--text-sm)/1 var(--font-mono); color: var(--text-primary); }
 
-/* ---- Connections ---- */
-.mcx-conns { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: var(--space-5); }
-.mcx-conn {
-  background: var(--surface-card); border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg); padding: var(--space-5);
+.mc-footnotes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-6); padding-top: var(--space-5); border-top: 1px solid var(--border-subtle); }
+.mc-footnotes > div { display: flex; flex-direction: column; gap: var(--space-2); }
+.mc-footnotes .t { font: var(--type-label); color: var(--text-primary); }
+.mc-footnotes .b { font: var(--type-body-sm); color: var(--text-secondary); text-wrap: pretty; }
+
+/* ---- the profile modal ---- */
+.mc-scrim { position: fixed; inset: 0; background: var(--scrim); z-index: 80; }
+.mc-modal {
+  position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 81;
+  width: min(920px, calc(100vw - 32px)); max-height: min(840px, calc(100vh - 32px));
+  background: var(--surface-overlay); border: 1px solid var(--border-default); border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-lg); display: flex; flex-direction: column; overflow: hidden;
+}
+.mc-modalhead { padding: var(--space-5) var(--space-6); border-bottom: 1px solid var(--border-subtle); display: flex; align-items: center; gap: var(--space-4); }
+.mc-modalhead .titles { display: flex; flex-direction: column; gap: var(--space-1); flex: 1; min-width: 0; }
+.mc-modalhead .titleline { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
+.mc-modalhead .t { font: var(--type-heading); color: var(--text-primary); }
+.mc-modalhead .scope { font: var(--type-caption); padding: 1px 8px; border-radius: var(--radius-pill); background: var(--surface-raised); color: var(--text-secondary); border: 1px solid var(--border-default); }
+.mc-modalhead .sub { font: var(--type-code); color: var(--text-tertiary); }
+.mc-modalhead .status { display: flex; align-items: center; gap: var(--space-3); }
+.mc-x { flex: none; width: 32px; height: 32px; font: var(--type-body); color: var(--text-secondary); background: none; border: 1px solid var(--border-subtle); border-radius: var(--radius-md); cursor: pointer; }
+.mc-x:hover { background: var(--surface-hover); }
+.mc-modalbody { flex: 1; overflow: auto; display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); }
+.mc-modalbody .left { padding: var(--space-6); display: flex; flex-direction: column; gap: var(--space-5); border-right: 1px solid var(--border-subtle); }
+.mc-modalbody .right { padding: var(--space-6); display: flex; flex-direction: column; gap: var(--space-5); background: var(--surface-card); }
+.mc-modalbody .pair { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4); }
+.mc-modalbody .toolhead { display: flex; justify-content: space-between; align-items: baseline; }
+.mc-modalbody .count { font: var(--type-code); color: var(--text-tertiary); }
+.mc-modalerr { margin: 0 var(--space-6) var(--space-3); }
+.mc-modalfoot { padding: var(--space-4) var(--space-6); border-top: 1px solid var(--border-subtle); display: flex; gap: var(--space-3); align-items: center; }
+
+.mc-field { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+.mc-field input, .mc-field select, .mc-field textarea {
+  font: var(--type-code); color: var(--text-primary); background: var(--surface-canvas);
+  border: 1px solid var(--border-default); border-radius: var(--radius-md); padding: 8px 10px;
+  outline: none; box-sizing: border-box; width: 100%;
+}
+.mc-field .prose { font: var(--type-body-sm); }
+.mc-field textarea { resize: vertical; line-height: 1.5; }
+.mc-field :is(input, select, textarea):focus { border-color: var(--border-focus); }
+.mc-field select:disabled { color: var(--text-secondary); cursor: not-allowed; }
+.mc-field .hint { font: var(--type-caption); color: var(--text-tertiary); }
+.mc-field .hint.bad { color: var(--status-danger-fg); }
+
+.mc-grant { font: var(--type-body-sm); padding: var(--space-3) var(--space-4); border-radius: var(--radius-md); background: var(--t-bg); color: var(--t-fg); text-wrap: pretty; }
+.mc-tiergroup { display: flex; flex-direction: column; gap: var(--space-2); padding-top: var(--space-4); border-top: 1px solid var(--border-subtle); }
+.mc-tiergroup .head { display: flex; align-items: baseline; gap: var(--space-3); flex-wrap: wrap; }
+.mc-tiergroup .l { font: var(--type-label); color: var(--text-primary); }
+.mc-tiergroup .n { font: var(--type-caption); color: var(--text-tertiary); }
+.mc-tiergroup .tools { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.mc-tool {
+  font: var(--type-code); padding: 4px 10px; border-radius: var(--radius-sm); cursor: pointer;
+  background: transparent; color: var(--text-secondary); border: 1px solid var(--border-default);
+}
+.mc-tool:hover { background: var(--surface-hover); }
+.mc-tool.on { background: var(--surface-selected); color: var(--text-primary); border-color: transparent; }
+.mc-tool.on.w { background: var(--status-warning-bg); color: var(--status-warning-fg); }
+
+/* ---- Models ---- */
+.mc-policy { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: var(--space-5); align-items: start; padding: var(--space-5); }
+.mc-policy .arrow { font: var(--type-caption); color: var(--text-tertiary); padding-top: 30px; white-space: nowrap; }
+.mc-role { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
+.mc-role .rolehead { display: flex; align-items: baseline; gap: var(--space-3); flex-wrap: wrap; }
+.mc-role .note { font: var(--type-caption); color: var(--text-tertiary); }
+.mc-seg { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+.mc-seg button {
+  flex: 1; font: var(--type-label); padding: 6px 10px; border-radius: var(--radius-md); cursor: pointer; white-space: nowrap;
+  background: transparent; color: var(--text-secondary); border: 1px solid var(--border-default);
+}
+.mc-seg button:hover:not(:disabled) { background: var(--surface-hover); }
+.mc-seg button.on { background: var(--surface-selected); color: var(--text-primary); border-color: var(--border-focus); }
+.mc-seg button:disabled { cursor: not-allowed; color: var(--text-disabled); border-color: var(--border-subtle); }
+
+.mc-key { display: inline-flex; align-items: center; gap: var(--space-2); font: var(--type-caption); color: var(--text-secondary); }
+.mc-key .sw { width: 10px; height: 10px; border-radius: 2px; background: var(--text-secondary); }
+.mc-key .sw.faint { opacity: .35; }
+.mc-usage .mc-tr { grid-template-columns: 150px minmax(0, 1fr) 90px 60px 190px; padding: var(--space-3) 0; }
+.mc-usage .mc-tr.head { padding: var(--space-3) 0 var(--space-2); }
+.mc-usage .mc-tr.quiet .hname { color: var(--text-secondary); }
+.mc-usage > .mc-caption { padding-top: var(--space-3); }
+.mc-ground .hname { display: flex; align-items: center; gap: var(--space-3); font: var(--type-label); color: var(--text-primary); min-width: 0; }
+.mc-bar { height: 10px; border-radius: var(--radius-pill); background: var(--surface-sunken); overflow: hidden; display: flex; flex: 1; min-width: 0; }
+.mc-bar.thin { height: 6px; }
+.mc-bar .auto { background: var(--hc, var(--viz-5)); }
+.mc-bar .inter { background: var(--hc, var(--viz-5)); opacity: .35; }
+
+.mc-backends > .mc-tr, .mc-backend > .mc-tr { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.2fr) 70px 170px; }
+.mc-backend { display: flex; flex-direction: column; border-bottom: 1px solid var(--border-subtle); }
+.mc-backend:last-child { border-bottom: 0; }
+.mc-backend > .mc-tr { border-bottom: 0; }
+.mc-backend.open > .mc-tr { background: var(--surface-raised); }
+.mc-backend .chev { font: var(--type-code); color: var(--text-secondary); width: 10px; }
+.mc-ground .names { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.mc-ground .names .n { font: var(--type-label); color: var(--text-primary); }
+.mc-ground .names .k { font: var(--type-caption); color: var(--text-secondary); overflow-wrap: anywhere; }
+.mc-ground .names .k.mono { font: var(--type-code); font-size: var(--text-2xs); }
+.mc-ground .sharecell { display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
+.mc-ground .sharecell .pct { width: 44px; text-align: right; flex: none; }
+.mc-backenddetail {
   display: flex; flex-direction: column; gap: var(--space-4);
-  cursor: pointer; transition: var(--transition-control);
+  padding: var(--space-4) var(--space-5) var(--space-5) 42px; background: var(--surface-sunken); border-top: 1px solid var(--border-subtle);
 }
-.mcx-conn:hover { background: var(--surface-overlay); }
-/* Only a card that is NOT plainly connected takes a rule. A left edge on every
-   card would be decoration; on two of seven it is the answer to "what needs
-   me?" — and it is the tone the pill already states, never a second claim. */
-.mcx-conn.off { border-left: 2px solid var(--t-fg); }
-.mcx-conn .top { display: flex; align-items: center; gap: var(--space-4); }
-.mcx-conn .kind {
-  font: var(--type-eyebrow); letter-spacing: var(--tracking-caps);
-  text-transform: uppercase; color: var(--text-tertiary);
-}
-.mcx-conn .end { margin-left: auto; }
-.mcx-conn .name { font: var(--weight-medium) var(--text-md)/1 var(--font-sans); color: var(--text-primary); }
-.mcx-conn .detail { font: var(--weight-regular) var(--text-2xs)/1.5 var(--font-mono); color: var(--text-secondary); text-wrap: pretty; }
-.mcx-conn .foot {
-  display: flex; align-items: center; gap: var(--space-4);
-  padding-top: var(--space-2); border-top: 1px solid var(--border-subtle);
-}
-.mcx-conn .last { font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-secondary); }
-.mcx-conn .act {
-  margin-left: auto; font: var(--weight-regular) var(--text-xs)/1.5 var(--font-mono);
-  color: var(--text-link); opacity: .8; transition: var(--transition-control);
-}
-.mcx-conn.off .act { color: var(--text-accent); }
-.mcx-conn:hover .act { opacity: 1; }
+.mc-backenddetail .detail { font: var(--type-body-sm); color: var(--text-secondary); max-width: 820px; text-wrap: pretty; }
+.mc-models { background: var(--surface-canvas); border-radius: var(--radius-md); }
+.mc-models .mc-tr { grid-template-columns: minmax(0, 1fr) 110px 90px 70px minmax(0, 150px) 150px; padding: 10px var(--space-4); }
+.mc-models .roles { display: flex; gap: var(--space-2); flex-wrap: wrap; font: var(--type-caption); }
+.mc-models .roles .mc-pill { font: var(--type-caption); padding: 1px 8px; }
 
 /* ---- Context ---- */
-.mcx-ctx { display: grid; grid-template-columns: 312px minmax(0, 1fr); gap: var(--space-5); align-items: start; }
-.mcx-doctree {
-  background: var(--surface-card); border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg); display: flex; flex-direction: column; overflow: hidden;
+.mc-ctxtop { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--space-6); flex-wrap: wrap; }
+.mc-ctxtop .mc-lede { max-width: 680px; }
+.mc-ctxtop .lens { display: flex; flex-direction: column; align-items: flex-end; gap: var(--space-2); }
+.mc-ctxtop .chips { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+.mc-ctxtop .chips .l { font: var(--type-caption); color: var(--text-tertiary); margin-right: var(--space-2); }
+.mc-ctxtop .sum { font: var(--type-code); color: var(--text-tertiary); }
+.mc-chip {
+  display: inline-flex; align-items: center; gap: var(--space-2); font: var(--type-label);
+  padding: 5px 12px; border-radius: var(--radius-pill); cursor: pointer;
+  background: transparent; color: var(--text-secondary); border: 1px solid var(--border-default);
 }
-/* Each doc kind carries its own accent, and the row reads it by role — so the
-   tree, the selection stripe and the viewer's left rule can never disagree. */
-.mcx-docrow.kind-root, .mcx-docview.kind-root { --k-fg: var(--lime-500); }
-.mcx-docrow.kind-agent, .mcx-docview.kind-agent { --k-fg: var(--blue-400); }
-.mcx-docrow.kind-provider, .mcx-docview.kind-provider { --k-fg: var(--text-secondary); }
-.mcx-docrow.kind-repo, .mcx-docview.kind-repo { --k-fg: var(--viz-4); }
-/* A project's name above its CLAUDE.md rows, in the repo section of the tree. */
-.mcx-docgroup {
-  padding: var(--space-4) var(--space-5) var(--space-2); border-top: 1px solid var(--border-subtle);
-  font: var(--weight-medium) var(--text-2xs)/1.4 var(--font-mono); color: var(--text-secondary);
-  text-transform: uppercase; letter-spacing: 0.04em;
-}
-.mcx-docrow {
-  display: flex; align-items: center; gap: var(--space-4); text-align: left;
-  padding: var(--space-3) var(--space-5) var(--space-3) 30px;
-  border: 0; border-top: 1px solid var(--border-subtle); background: transparent;
-  cursor: pointer; transition: var(--transition-control);
-}
-.mcx-docrow.root { padding: var(--space-4) var(--space-5); }
-.mcx-docrow:first-child { border-top: 0; }
-.mcx-docrow:hover { background: var(--surface-hover); }
-.mcx-docrow.on { background: var(--surface-selected); box-shadow: inset 2px 0 0 var(--k-fg); }
-.mcx-docrow .tick { flex: 0 0 8px; height: 1px; background: var(--border-default); }
-.mcx-docrow .ic { color: var(--k-fg); display: flex; flex: 0 0 auto; }
-/* THE LINE-HEIGHT IS PART OF THE TRUNCATION, not decoration — the third time
-   this has been paid for (#444's branch row, #453's branch chip, this). A mono
-   font set at `/1` inside an `overflow: hidden` ellipsis box gives a 12px clip
-   box over a 14px glyph box, so the truncation arrives and takes every
-   descender in the path with it. 1.4 is the headroom; the row's own flex
-   centring is unaffected. */
-.mcx-docrow .path {
-  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  font: var(--weight-regular) var(--text-xs)/1.4 var(--font-mono); color: var(--text-secondary);
-}
-.mcx-docrow.root .path { font: var(--weight-medium) var(--text-sm)/1.4 var(--font-mono); color: var(--text-primary); }
-.mcx-docrow.on .path { color: var(--blue-300); }
-/* A dash IS an answer — never read, in this case — so it takes the same tone as
-   a count rather than the kit's sub-AA --text-disabled. */
-.mcx-docrow .reads { flex: 0 0 auto; font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-secondary); }
-.mcx-docfoot {
-  padding: var(--space-4) var(--space-5); border-top: 1px solid var(--border-subtle);
-  font: var(--weight-regular) var(--text-2xs)/1.5 var(--font-mono); color: var(--text-tertiary); text-wrap: pretty;
-}
+.mc-chip:hover { background: var(--surface-hover); }
+.mc-chip.on { background: var(--surface-selected); color: var(--text-primary); border-color: var(--border-focus); }
+.mc-chip .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-tertiary); }
+.mc-chip.lens-claude .dot { background: var(--amber-500); }
+.mc-chip.lens-codex .dot { background: var(--viz-1); }
+.mc-chip.static { cursor: default; font: var(--type-caption); padding: 2px 8px; }
+.mc-chip.static:hover { background: transparent; }
 
-.mcx-docview {
-  background: var(--surface-card); border: 1px solid var(--border-subtle);
-  border-left: 2px solid var(--k-fg); border-radius: var(--radius-lg);
-  display: flex; flex-direction: column; min-width: 0;
-}
-.mcx-docviewhead {
-  display: flex; align-items: center; gap: var(--space-5);
-  padding: var(--space-5) var(--space-6); flex-wrap: wrap;
-}
-.mcx-docviewhead .path { font: var(--weight-medium) var(--text-sm)/1 var(--font-mono); color: var(--text-primary); }
-.mcx-docviewhead .meta { font: var(--weight-regular) var(--text-2xs)/1.5 var(--font-mono); color: var(--text-tertiary); }
-.mcx-docviewhead .acts { margin-left: auto; display: flex; gap: var(--space-3); }
-.mcx-docscope {
-  padding: var(--space-5) var(--space-6); border-top: 1px solid var(--border-subtle);
-  display: flex; flex-direction: column; gap: var(--space-4);
-}
-.mcx-docscope .line { display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap; }
-.mcx-docscope .eyebrow {
-  font: var(--type-eyebrow); letter-spacing: var(--tracking-caps);
-  text-transform: uppercase; color: var(--text-tertiary);
-}
-.mcx-docscope .who { font: var(--type-body-sm); color: var(--text-secondary); }
-.mcx-docscope .inherits { font: var(--weight-regular) var(--text-2xs)/1.5 var(--font-mono); color: var(--text-tertiary); }
-.mcx-docscope .summary { font: var(--type-body-sm); color: var(--text-secondary); text-wrap: pretty; }
+.rdot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; box-sizing: border-box; flex: none; }
+.rdot.r-claude { background: var(--amber-500); }
+.rdot.r-codex { background: var(--viz-1); }
+.rdot.r-codex-via { border: 1px solid var(--viz-1); }
+.rdot.r-assist { background: var(--text-tertiary); }
 
-/* The source pane sits on --surface-sunken so a file reads as a file, not as
-   another panel — and it is the one ground on this screen that never lightens,
-   so tertiary is safe on it. */
-.mcx-docbody {
-  padding: var(--space-6); border-top: 1px solid var(--border-subtle);
-  background: var(--surface-sunken); display: flex; flex-direction: column;
-  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+.mc-ctx { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: var(--space-4); min-height: 620px; transition: grid-template-columns var(--dur-normal) var(--ease-standard); }
+.mc-ctx.folded { grid-template-columns: 48px minmax(0, 1fr); }
+.mc-files, .mc-viewer {
+  background: var(--surface-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg);
+  display: flex; flex-direction: column; min-height: 0; min-width: 0; overflow: hidden;
 }
-.mcx-doceditor {
-  display: block; width: 100%; box-sizing: border-box; min-height: 420px;
-  padding: var(--space-6); border: 0; border-top: 1px solid var(--border-subtle);
-  background: var(--surface-sunken); resize: vertical; outline: none;
-  font: var(--weight-regular) var(--text-sm)/1.5 var(--font-mono);
-  color: var(--text-primary); caret-color: var(--blue-500); white-space: pre-wrap;
-  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+.mc-files .foldedbar { display: flex; flex-direction: column; align-items: center; gap: var(--space-4); padding: var(--space-3) 0; }
+.mc-files .vert { writing-mode: vertical-rl; font: var(--type-eyebrow); letter-spacing: .08em; text-transform: uppercase; color: var(--text-tertiary); }
+.mc-sq { width: 30px; height: 30px; font: var(--type-code); color: var(--text-secondary); background: var(--surface-raised); border: 1px solid var(--border-default); border-radius: var(--radius-md); cursor: pointer; }
+.mc-sq:hover { background: var(--surface-hover); }
+.mc-files .fhead { display: flex; align-items: center; justify-content: space-between; padding: var(--space-3) var(--space-3) var(--space-3) var(--space-4); border-bottom: 1px solid var(--border-subtle); }
+.mc-files .fhead .t { font: var(--type-label); color: var(--text-primary); }
+.mc-files .fhead .mono { color: var(--text-tertiary); }
+.mc-files .flist { flex: 1; overflow: auto; padding: var(--space-2) 0; max-height: 640px; }
+.mc-files .fgroup { display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-3); padding: var(--space-4) var(--space-4) var(--space-2); }
+.mc-files .fgroup .t { font: var(--type-eyebrow); letter-spacing: var(--tracking-caps); text-transform: uppercase; color: var(--text-tertiary); }
+.mc-files .fgroup .note { font: var(--type-caption); color: var(--text-tertiary); }
+.mc-file {
+  width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto 56px; gap: var(--space-3); align-items: center;
+  padding: 7px var(--space-4) 7px 13px; border: 0; border-left: 3px solid transparent; background: transparent;
+  cursor: pointer; text-align: left; transition: var(--transition-control);
 }
-.mcx-docempty {
-  padding: var(--space-9); border-top: 1px solid var(--border-subtle);
-  display: flex; flex-direction: column; gap: var(--space-4); align-items: center;
-  background: var(--surface-sunken); border-radius: 0 0 var(--radius-lg) var(--radius-lg);
-}
-.mcx-docempty .t { font: var(--type-body-sm); color: var(--text-secondary); }
+.mc-file:hover { background: var(--surface-hover); }
+.mc-file.on { background: var(--surface-selected); border-left-color: var(--border-focus); }
+.mc-file.unseen { opacity: .3; }
+.mc-file.off { opacity: .55; }
+.mc-file .path { font: var(--type-code); color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mc-file.on .path { color: var(--text-primary); }
+.mc-file .dots { display: flex; gap: 3px; }
+.mc-file .size { font: var(--type-code); color: var(--text-secondary); text-align: right; }
+.mc-files .ffoot { padding: var(--space-4); border-top: 1px solid var(--border-subtle); display: flex; flex-direction: column; gap: var(--space-3); align-items: flex-start; }
+.mc-files .legend { display: flex; gap: var(--space-4); flex-wrap: wrap; font: var(--type-caption); color: var(--text-tertiary); }
+.mc-files .legend > span { display: inline-flex; align-items: center; gap: var(--space-2); }
+.mc-files .host { font: var(--type-caption); color: var(--text-tertiary); text-wrap: pretty; }
 
-.mcx-mdline { display: flex; gap: var(--space-5); }
-/* A LINE NUMBER IS A COORDINATE, NOT DECORATION — it is what you say out loud
-   to point at a line, so it has to be readable. The kit's --grey-700 measures
-   1.66:1 on this ground and --grey-600 only 2.05:1 (the audit caught the second
-   one; a screenshot would have caught neither). --text-tertiary is the quietest
-   tone that clears AA here at 6.1:1, and the ground under it never lightens.
-   It stays unselectable, so copying the file copies the file. */
-.mcx-mdline .n {
-  flex: 0 0 22px; text-align: right; user-select: none;
-  font: var(--weight-regular) var(--text-2xs)/1.5 var(--font-mono); color: var(--text-tertiary);
+.mc-viewer .vhead { padding: var(--space-4) var(--space-5); border-bottom: 1px solid var(--border-subtle); display: flex; align-items: center; gap: var(--space-4); }
+.mc-viewer .titles { display: flex; flex-direction: column; gap: var(--space-2); flex: 1; min-width: 0; }
+.mc-viewer .pathline { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
+.mc-viewer .path { font: var(--weight-medium) var(--text-sm)/1.2 var(--font-mono); color: var(--text-primary); overflow-wrap: anywhere; }
+.mc-viewer .meta { font: var(--type-code); color: var(--text-tertiary); }
+.mc-viewer .readby { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+.mc-viewer .readby .l { font: var(--type-caption); color: var(--text-tertiary); margin-right: var(--space-1); }
+.mc-viewer .vhead .k-btn { flex: none; }
+.mc-viewer .locked { flex: none; font: var(--type-caption); color: var(--text-tertiary); border: 1px dashed var(--border-default); border-radius: var(--radius-md); padding: 6px 10px; }
+.mc-viewer .vnote { padding: var(--space-3) var(--space-5); background: var(--surface-sunken); border-bottom: 1px solid var(--border-subtle); font: var(--type-body-sm); color: var(--text-secondary); text-wrap: pretty; }
+.mc-viewer > .action-error { margin: var(--space-3) var(--space-5) 0; }
+.mc-viewer .vbody { flex: 1; overflow: auto; padding: var(--space-4) 0; max-height: 640px; }
+.mc-viewer .veditor { flex: 1; display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-5); }
+.mc-viewer .veditor textarea {
+  flex: 1; min-height: 440px; resize: vertical; font: var(--type-code); line-height: 1.5; color: var(--text-primary);
+  background: var(--surface-canvas); border: 1px solid var(--border-default); border-radius: var(--radius-md); padding: 8px 10px; outline: none;
 }
-.mcx-mdline > span:not(.n) { flex: 1; min-width: 0; white-space: pre-wrap; }
-.mcx-mdline .h { font: var(--weight-semibold) var(--text-md)/1.6 var(--font-sans); color: var(--text-primary); padding-top: 6px; }
-.mcx-mdline .h.h1 { font-size: var(--text-lg); }
-/* The kit separates a bullet from a prose line by tone alone (secondary vs
-   tertiary), which would now put prose at the GUTTER's tone. Both take
-   secondary instead: a bullet already announces itself with its own "-" or
-   "1.", and the source pane keeps three levels — heading, text, gutter. */
-.mcx-mdline .bullet, .mcx-mdline .plain { font: var(--weight-regular) var(--text-sm)/1.5 var(--font-mono); color: var(--text-secondary); }
+.mc-viewer .veditor textarea:focus { border-color: var(--border-focus); }
+.mc-viewer .vacts { display: flex; align-items: center; gap: var(--space-3); }
+.mc-viewer .vacts .hint { flex: 1; font: var(--type-caption); color: var(--text-tertiary); }
+.mc-viewer .vempty { padding: var(--space-8) var(--space-5); font: var(--type-body-sm); color: var(--text-secondary); display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
+.mc-mdline { display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: var(--space-4); padding: 1px 0; }
+.mc-mdline .n { font: var(--type-code); color: var(--text-tertiary); text-align: right; }
+.mc-mdline .text { font: var(--type-code); color: var(--text-secondary); white-space: pre-wrap; overflow-wrap: anywhere; padding-right: var(--space-5); }
+.mc-mdline.h1 { padding: 6px 0 4px; }
+.mc-mdline.h1 .text { font: var(--type-heading); color: var(--text-primary); }
+.mc-mdline.h2 { padding: 10px 0 2px; }
+.mc-mdline.h2 .text { font: var(--type-label); color: var(--text-primary); }
 
-/* ---- Settings ---- */
-.mcx-dangerrow { display: flex; align-items: center; gap: var(--space-5); flex-wrap: wrap; }
-.mcx-dangerrow .t { flex: 1; min-width: 220px; font: var(--type-body-sm); color: var(--text-secondary); text-wrap: pretty; }
+/* ---- Settings (mock) ---- */
+.mc-mocknote { display: flex; align-items: center; gap: var(--space-3); font: var(--type-body-sm); color: var(--text-secondary); }
+.mc-settings { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: var(--space-7); }
+.mc-setnav { display: flex; flex-direction: column; gap: 2px; }
+.mc-setnav button {
+  text-align: left; padding: 9px 12px; border: 0; border-radius: var(--radius-md); cursor: pointer;
+  font: var(--type-label); background: transparent; color: var(--text-secondary); transition: var(--transition-control);
+}
+.mc-setnav button:hover { background: var(--surface-hover); }
+.mc-setnav button.on { background: var(--surface-selected); color: var(--text-primary); }
+.mc-setnav button.danger { color: var(--status-danger-fg); }
+.mc-setbody { display: flex; flex-direction: column; gap: var(--space-5); max-width: 900px; min-width: 0; }
+.mc-setbody .sethead { display: flex; flex-direction: column; gap: var(--space-2); }
+.mc-setbody .sethead h2 { margin: 0; font: var(--type-heading); color: var(--text-primary); }
+.mc-setbody .sethead p { margin: 0; font: var(--type-body-sm); color: var(--text-secondary); text-wrap: pretty; }
+.mc-setrow { display: flex; align-items: center; gap: var(--space-4); padding: var(--space-4) var(--space-5); border-bottom: 1px solid var(--border-subtle); flex-wrap: wrap; }
+.mc-setrow:last-child { border-bottom: 0; }
+.mc-setrow .txt { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 200px; }
+.mc-ground .txt .l { font: var(--type-body-sm); color: var(--text-primary); }
+.mc-ground .txt .l.strong { font: var(--type-label); }
+.mc-ground .txt .d { font: var(--type-caption); color: var(--text-tertiary); text-wrap: pretty; }
+.mc-num { width: 90px; text-align: right; }
+.mc-wide { width: min(280px, 100%); }
+.mc-matrix .mrow { display: grid; grid-template-columns: minmax(0, 1fr) 120px 120px; gap: var(--space-4); align-items: center; padding: var(--space-4) var(--space-5); border-bottom: 1px solid var(--border-subtle); }
+.mc-matrix .mrow:last-child { border-bottom: 0; }
+.mc-matrix .mrow.head { padding: 10px var(--space-5); font: var(--type-eyebrow); letter-spacing: var(--tracking-caps); text-transform: uppercase; color: var(--text-tertiary); }
+.mc-matrix .h { display: flex; align-items: center; justify-content: center; gap: var(--space-2); }
+.mc-matrix .h .hdot { width: 7px; height: 7px; }
+.mc-matrix .txt { display: flex; flex-direction: column; gap: 2px; }
+.mc-matrix .cell { display: flex; flex-direction: column; align-items: center; gap: var(--space-2); }
+.mc-matrix .cell .mc-pill { font: var(--type-caption); padding: 0 6px; border-radius: var(--radius-sm); }
+.mc-keys .krow { display: grid; grid-template-columns: 170px minmax(0, 1fr) 150px 100px 120px; gap: var(--space-4); align-items: center; padding: var(--space-4) var(--space-5); border-bottom: 1px solid var(--border-subtle); }
+.mc-keys .krow.head { padding: 10px var(--space-5); font: var(--type-eyebrow); letter-spacing: var(--tracking-caps); text-transform: uppercase; color: var(--text-tertiary); }
+.mc-keys .krow .mono { color: var(--text-primary); overflow-wrap: anywhere; }
+.mc-keys .krow .mono.sec { color: var(--text-secondary); }
+.mc-keys .d { font: var(--type-caption); color: var(--text-tertiary); }
+.mc-keys .end { display: flex; justify-content: flex-end; }
+.mc-capgrid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-5); padding: var(--space-5); }
+.k-btn.mc-armed { background: var(--action-danger); color: var(--text-inverse); border-color: var(--action-danger); }
 
-/* ---- the wired rooms (#514) ----
-   Agents, Models and Context read this installation; the other four tabs are
-   still the kit's sample rows and each wears a Mock chip on its own tab. Every
-   piece below exists to draw a REAL answer, including the answers that are
-   "nobody measures this" and "Stack cannot see" — which is why none of them
-   reuses a tone that already means something else. */
-
-/* A read in flight, and a read that FAILED. The second one is the load-bearing
-   half: an empty panel where a fetch died reads as "nothing here", which is the
-   absent-is-not-zero lie this whole screen is built to avoid. */
-.mcx-state {
-  padding: var(--space-7) var(--space-6); border: 1px dashed var(--border-subtle);
-  border-radius: var(--radius-lg); background: var(--surface-card);
-  display: flex; align-items: center; gap: var(--space-5); flex-wrap: wrap;
-  font: var(--type-body-sm); color: var(--text-secondary);
-}
-.mcx-state.bad { border-style: solid; border-color: var(--critical-line); color: var(--critical-text); }
-
-/* A mock tab says so ABOVE its sample rows, not after them — the chip on the
-   tab is the warning, this is the reason. */
-.mcx-mocknote {
-  display: flex; align-items: flex-start; gap: var(--space-4);
-  padding: var(--space-5); border: 1px solid var(--border-subtle);
-  border-left: 2px solid var(--accent-text); border-radius: var(--radius-lg);
-  background: var(--surface-card);
-}
-.mcx-mocknote .t { font: var(--type-body-sm); color: var(--text-secondary); text-wrap: pretty; }
-.mcx-mocknote .con-navsoon { flex: 0 0 auto; }
-
-/* The header flag is a FACT now, so it has a second state: the dot is the lime
-   "live" only when the host is actually on the line. */
-.mcx-liveflag.off .dot { background: var(--status-warning-fg); }
-
-.mcx-backends { display: flex; gap: var(--space-3); flex-wrap: wrap; }
-
-/* ---- Agents ----
-   THE ROOM IS THE SPAWN PROFILES NOW (#520). It drew the tab-agent registry
-   until that was culled, and most of these rules survive the swap unchanged
-   because the two screens are the same shape: a fold per agent, a row per
-   switchable thing, a note saying what the switches cannot do. What changed is
-   which way that last note points — an OP was code and the switch could only
-   turn one off; a TOOL is data and this screen is where it is granted. The
-   rules added below are the ones that inversion needed. */
-
-/* A tool row: a switch and a name. Same geometry the op rows had, because a
-   grant and an op switch are read the same way — the difference is in what the
-   note above them says, not in how they look. */
-.mcx-oprows { display: flex; flex-direction: column; gap: var(--space-4); }
-.mcx-oprow { display: flex; align-items: flex-start; gap: var(--space-4); }
-.mcx-oprow .k-switch-label { display: none; }
-.mcx-oprow > .body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
-.mcx-oprow .line { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
-.mcx-oprow .name { font: var(--type-body-sm); color: var(--text-primary); }
-/* Switched off is dimmer, not unreadable: it is still the thing you are about
-   to switch back on. Secondary is the floor for a row that lightens. */
-.mcx-oprow .name.off { color: var(--text-secondary); }
-.mcx-oprow .hint { font: var(--weight-regular) var(--text-2xs)/1.5 var(--font-mono); color: var(--text-secondary); text-wrap: pretty; }
-.mcx-oprow .chip {
-  height: 20px; padding: 0 8px; border-radius: var(--radius-sm);
-  box-shadow: inset 0 0 0 1px var(--border-default);
-  font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-secondary);
-  display: inline-flex; align-items: center;
-}
-/* A DOWN BACKEND IS THE WARNING TONE, never a danger one: nothing has failed,
-   the op simply cannot run until the daemon or the key comes back. */
-.mcx-oprow .chip.backend.down { color: var(--status-warning-fg); box-shadow: inset 0 0 0 1px var(--status-warning-fg); }
-
-/* THE TOOL LADDER. Grouped, worst-last, with the group's meaning beside its
-   name — eight flat checkboxes read as eight equal preferences and three of
-   these change what a subagent can DO to a checkout. */
-.mcx-tiers { display: flex; flex-direction: column; gap: var(--space-5); }
-.mcx-tier { display: flex; flex-direction: column; gap: var(--space-3); }
-.mcx-tier > .head { display: flex; align-items: baseline; gap: var(--space-3); flex-wrap: wrap; }
-.mcx-tier > .head .l {
-  font: var(--type-eyebrow); letter-spacing: var(--tracking-caps);
-  text-transform: uppercase; color: var(--text-secondary);
-}
-.mcx-tier > .head .n {
-  font: var(--weight-regular) var(--text-2xs)/1.5 var(--font-mono);
-  color: var(--text-tertiary); text-wrap: pretty;
-}
-/* WHAT THE GRANT MEANS, in words, above the checkboxes that make it. Three
-   tones and none of them is danger: granting write access is a decision, not a
-   fault, and spending the danger tone here leaves nothing louder for a run that
-   actually failed (the same call the asking rail makes). */
-.mcx-grant {
-  padding: var(--space-3) var(--space-4); border-radius: var(--radius-md);
-  font: var(--weight-regular) var(--text-2xs)/1.5 var(--font-mono); text-wrap: pretty;
-  background: var(--surface-raised); color: var(--text-secondary);
-}
-.mcx-grant.t-warning { background: var(--status-warning-bg); color: var(--status-warning-fg); }
-.mcx-grant.t-info { background: var(--status-info-bg); color: var(--status-info-fg); }
-
-/* THE FRAME STRIP — the policy a profile is read against, above the folds. Not
-   a panel: it is one line of facts the catalogue below is meaningless without. */
-.mcx-frame {
-  display: flex; align-items: center; gap: var(--space-6); flex-wrap: wrap;
-  padding: var(--space-4) var(--space-5); border-radius: var(--radius-lg);
-  background: var(--surface-sunken); box-shadow: inset 0 0 0 1px var(--border-subtle);
-}
-.mcx-framebit { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.mcx-framebit.grow { flex: 1; min-width: 180px; }
-.mcx-framebit .l {
-  font: var(--type-eyebrow); letter-spacing: var(--tracking-caps);
-  text-transform: uppercase; color: var(--text-tertiary);
-}
-.mcx-framebit .v { font: var(--weight-medium) var(--text-sm)/1.2 var(--font-mono); color: var(--text-primary); }
-.mcx-framebit .note {
-  font: var(--weight-regular) var(--text-2xs)/1.4 var(--font-mono);
-  color: var(--text-tertiary); text-wrap: pretty;
-}
-/* NO ADVISOR = NOTHING BELOW SPAWNS, and it takes the whole width rather than a
-   pill in the strip: every switch under it is inert, so this is not one fact
-   among four. Warning and not danger — the installation is not broken, it is
-   configured single-model. */
-.mcx-framewarn {
-  display: flex; align-items: flex-start; gap: var(--space-4);
-  padding: var(--space-4) var(--space-5); border-radius: var(--radius-lg);
-  background: var(--status-warning-bg);
-}
-.mcx-framewarn .t {
-  font: var(--weight-regular) var(--text-2xs)/1.6 var(--font-mono);
-  color: var(--status-warning-fg); text-wrap: pretty;
-}
-.mcx-framewarn a { color: inherit; }
-.mcx-framewarn code {
-  font: var(--weight-medium) var(--text-2xs)/1 var(--font-mono);
-  padding: 1px 4px; border-radius: var(--radius-xs); background: var(--surface-raised);
-}
-
-/* An editable prompt. The textarea is the one place on this screen where what
-   you type is verbatim what a model reads, so it gets room rather than a row. */
-.mcx-promptfield { display: flex; flex-direction: column; gap: var(--space-3); }
-.mcx-promptfield .eyebrow {
-  font: var(--type-eyebrow); letter-spacing: var(--tracking-caps);
-  text-transform: uppercase; color: var(--text-tertiary);
-}
-.mcx-promptfield textarea.field-input { resize: vertical; height: auto; padding: var(--space-3) 13px; line-height: 1.6; }
-/* The prompt gets room; the description is two rows of prose and should not be
-   dragged up to the prompt's floor. */
-.mcx-promptfield textarea.field-input[rows="7"] { min-height: 96px; }
-.mcx-promptfield .hint {
-  font: var(--weight-regular) var(--text-2xs)/1.5 var(--font-mono);
-  color: var(--text-tertiary); text-wrap: pretty;
-}
-.mcx-newgrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-5); }
-.mcx-newgrid .hint {
-  font: var(--weight-regular) var(--text-2xs)/1.5 var(--font-mono);
-  color: var(--text-tertiary); text-wrap: pretty;
-}
-/* The head's two derived columns. `nowrap` because "0 items" broke across two
-   lines in the kit's narrow spend column, and a count that wraps reads as two
-   numbers. */
-.mcx-agenthead .autonomy, .mcx-agenthead .spend { white-space: nowrap; }
-
-/* A built-in's marker, on the fold head beside its name. */
-.mcx-agenthead .name .chip {
-  margin-left: var(--space-3); height: 18px; padding: 0 6px; border-radius: var(--radius-sm);
-  box-shadow: inset 0 0 0 1px var(--border-default);
-  font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-tertiary);
-  display: inline-flex; align-items: center; vertical-align: middle;
-}
-.mcx-capnote, .mcx-modelnote {
-  font: var(--weight-regular) var(--text-2xs)/1.5 var(--font-mono);
-  color: var(--text-tertiary); text-wrap: pretty;
-}
-.mcx-lastfail {
-  padding: var(--space-4) var(--space-5); border-radius: var(--radius-md);
-  background: var(--status-warning-bg); color: var(--status-warning-fg);
-  font: var(--weight-regular) var(--text-2xs)/1.5 var(--font-mono); text-wrap: pretty;
-}
-.mcx-foldacts .k-field.inline { flex-direction: row; align-items: center; gap: var(--space-4); }
-.mcx-foldacts .mcx-spacer { flex: 1; min-width: var(--space-4); }
-.mcx-foldacts { align-items: center; }
-.mcx-remit { display: flex; flex-direction: column; gap: var(--space-3); }
-.mcx-remit .eyebrow {
-  font: var(--type-eyebrow); letter-spacing: var(--tracking-caps);
-  text-transform: uppercase; color: var(--text-tertiary);
-}
-.mcx-remit .t { font: var(--type-body-sm); color: var(--text-secondary); text-wrap: pretty; }
-
-/* ---- Models ----
-   TWO POPULATIONS, ONE BAR, AND BOTH NAMED. The autopilot answers to the policy
-   above the bar; an interactive session does not, so a model somebody picked by
-   hand there is not drift. The split is drawn as two tones with a key rather
-   than as one share, which is the thing the kit's single bar could not say. */
-.mcx-split { display: block; }
-.mcx-track.wide.two { height: 8px; border-radius: var(--radius-sm); background: var(--viz-3); overflow: hidden; }
-.mcx-track.wide.two .fill.auto { background: var(--viz-2); height: 100%; }
-.mcx-splitkeys { display: flex; gap: var(--space-6); flex-wrap: wrap; }
-.mcx-splitkeys .key {
-  display: inline-flex; align-items: center; gap: var(--space-3);
-  font: var(--weight-regular) var(--text-2xs)/1.5 var(--font-mono); color: var(--text-secondary);
-}
-.mcx-splitkeys .sw { width: 10px; height: 10px; border-radius: 3px; }
-.mcx-splitkeys .key.auto .sw { background: var(--viz-2); }
-.mcx-splitkeys .key.inter .sw { background: var(--viz-3); }
-/* NOTHING IN THE WINDOW CARRIED THIS is not a bill of $0 — it takes the plain
-   reading tone rather than a status one, because it is not a status. */
-.mcx-absent, .mcx-provempty {
-  font: var(--type-body-sm); color: var(--text-secondary); text-wrap: pretty;
-}
-.mcx-provdetail, .mcx-provempty {
-  padding: var(--space-4) var(--space-6) var(--space-4) 44px;
-  border-top: 1px solid var(--border-subtle);
-  font: var(--weight-regular) var(--text-2xs)/1.6 var(--font-mono);
-  color: var(--text-secondary); text-wrap: pretty;
-}
-
-/* ---- Context ----
-   A third doc kind. `provider` was the kit's and named a file library Stack does
-   not have; `assist` is the ✧ steer, which it does. */
-.mcx-docrow.kind-assist, .mcx-docview.kind-assist { --k-fg: var(--viz-2); }
-.mcx-docscope .summary.quiet { color: var(--text-tertiary); }
-.mcx-edithint {
-  padding: var(--space-4) var(--space-6); border-top: 1px solid var(--border-subtle);
-  font: var(--weight-regular) var(--text-2xs)/1.6 var(--font-mono);
-  color: var(--text-tertiary); text-wrap: pretty;
-}
-.mcx-docview .action-error { margin: var(--space-5) var(--space-6) 0; }
-
-/* ---- narrow ----
-   The two-column Context grid and the four-up fact grid are the only things
-   here that cannot survive a phone; everything else already wraps. */
-@media (max-width: 1040px) {
-  .mcx-ctx { grid-template-columns: minmax(0, 1fr); }
-  .mcx-runrow .model, .mcx-agenthead .autonomy, .mcx-provhead .key { display: none; }
+/* ---- narrow ---- */
+@media (max-width: 1100px) {
+  .mc-agents .mc-tr { grid-template-columns: minmax(0, 1fr) 80px 52px 160px 40px; }
+  .mc-agents .tier { display: none; }
+  .mc-backends > .mc-tr, .mc-backend > .mc-tr { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 60px 150px; }
+  :is(.mc-backends, .mc-backend) > .mc-tr > :nth-child(2) { display: none; }
+  .mc-models .mc-tr { grid-template-columns: minmax(0, 1fr) 90px 80px 120px; }
+  .mc-models .mc-tr > :nth-child(4), .mc-models .mc-tr > :nth-child(5) { display: none; }
+  .mc-ctx, .mc-ctx.folded { grid-template-columns: minmax(0, 1fr); }
+  .mc-files .flist { max-height: 320px; }
 }
 @media (max-width: 720px) {
-  .mcx-facts { grid-template-columns: repeat(2, 1fr); }
-  .mcx-provdetail, .mcx-provempty { padding-left: var(--space-6); }
-  .mcx-panelbody.pairs { grid-template-columns: minmax(0, 1fr); }
-  .mcx-pulse { gap: var(--space-6); }
-  .mcx-looprow .last, .mcx-provhead .latency { display: none; }
-  .mcx-foldbody { padding-left: var(--space-6); }
-  .mcx-modelrow { padding-left: var(--space-6); }
+  .mc-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .mc-sechead { flex-direction: column; align-items: stretch; }
+  .mc-agents .mc-tr { grid-template-columns: minmax(0, 1fr) 40px; }
+  .mc-agents .mc-tr > :not(.who):not(.end) { display: none; }
+  .mc-footnotes { grid-template-columns: minmax(0, 1fr); }
+  .mc-policy { grid-template-columns: minmax(0, 1fr); }
+  .mc-policy .arrow { padding-top: 0; }
+  .mc-usage .mc-tr { grid-template-columns: 110px minmax(0, 1fr) 60px; }
+  .mc-usage .mc-tr > :nth-child(4), .mc-usage .mc-tr > :nth-child(5) { display: none; }
+  .mc-cardhead .mc-key { display: none; }
+  .mc-backends > .mc-tr, .mc-backend > .mc-tr { grid-template-columns: minmax(0, 1fr) 130px; }
+  :is(.mc-backends, .mc-backend) > .mc-tr > :is(:nth-child(3), :nth-child(4)) { display: none; }
+  .mc-backenddetail { padding-left: var(--space-5); }
+  .mc-models .mc-tr { grid-template-columns: minmax(0, 1fr) 80px; }
+  .mc-models .mc-tr > :nth-child(2), .mc-models .mc-tr > :nth-child(6) { display: none; }
+  .mc-modalbody { grid-template-columns: minmax(0, 1fr); }
+  .mc-modalbody .left { border-right: 0; border-bottom: 1px solid var(--border-subtle); }
+  .mc-modalbody .pair, .mc-capgrid { grid-template-columns: minmax(0, 1fr); }
+  .mc-settings { grid-template-columns: minmax(0, 1fr); gap: var(--space-4); }
+  .mc-setnav { flex-direction: row; overflow-x: auto; }
+  .mc-setnav button { flex: none; }
+  .mc-matrix .mrow { grid-template-columns: minmax(0, 1fr) 64px 64px; }
+  .mc-keys .krow { grid-template-columns: minmax(0, 1fr) auto; }
+  .mc-keys .krow > :nth-child(2), .mc-keys .krow > :nth-child(3), .mc-keys .krow > :nth-child(4) { display: none; }
+  .mc-ctxtop .lens { align-items: flex-start; }
 }
 
 /* ============================================================

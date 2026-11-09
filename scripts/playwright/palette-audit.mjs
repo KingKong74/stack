@@ -91,31 +91,23 @@ const SCREENS = [
   // menu (--surface-overlay, with Archive in danger) and the new-project modal.
   { slug: 'dashboard-cardmenu', hash: '#/', press: ['.sp-card .sp-corner'] },
   { slug: 'dashboard-new', hash: '#/', press: ['.topbar .btn-accent'] },
-  // MISSION CONTROL IS SEVEN TABS OF TONE AND FIRST PAINT REACHES ONE, so each
-  // of the other six is walked as its own row. #514 wired three of them, which
-  // changed which grounds are reachable and how: the Agents fold and the first
-  // provider fold now open at FIRST PAINT (so pressing one would SHUT the body
-  // this exists to measure — the same trap #497 left a note about on Quality),
-  // and the Context tree is three real docs rather than the kit's six.
-  //
-  // Two presses still go a layer deeper for grounds a shut screen never shows:
-  // the AGENT doc, which is the only one carrying an Edit button, and that
-  // button pressed into its ACCENT state — the kit's lime with a DARK label,
-  // which is the --ink trap #432 sprang twice and the one button on this screen
-  // that could re-spring it. `control-context` at rest is the session-defaults
-  // doc, which is the read-only shape (no Edit button at all) plus the source
-  // pane's own gutter tones.
-  // First paint is AGENTS, not Overview: the screen opens on a wired tab rather
-  // than on four tabs' worth of the kit's sample rows.
+  // MISSION CONTROL, the v5 design: four tabs, first paint on Agents. The
+  // presses reach the grounds a tab at rest never shows: the profile MODAL
+  // (overlay ground, the tool chips' warning tone on Write), a shut backend
+  // folded open (the sunken detail ground), the Context editor, and the mock
+  // Settings sections whose tones differ (the key table's warning band, the
+  // danger card). The Edit press is on the assist steer, the one Stack-built
+  // doc that edits in place; nothing here ever saves.
   { slug: 'control', hash: '#/control' },
-  { slug: 'control-overview', hash: '#/control', press: ['.mcx-tabs .k-tab:nth-child(1)'] },
-  { slug: 'control-models', hash: '#/control', press: ['.mcx-tabs .k-tab:nth-child(3)'] },
-  { slug: 'control-context', hash: '#/control', press: ['.mcx-tabs .k-tab:nth-child(4)'] },
-  { slug: 'control-context-agent', hash: '#/control', press: ['.mcx-tabs .k-tab:nth-child(4)', '.mcx-docrow:nth-of-type(2)'] },
-  { slug: 'control-context-edit', hash: '#/control', press: ['.mcx-tabs .k-tab:nth-child(4)', '.mcx-docrow:nth-of-type(2)', '.mcx-docviewhead .acts .k-btn'] },
-  { slug: 'control-loops', hash: '#/control', press: ['.mcx-tabs .k-tab:nth-child(5)'] },
-  { slug: 'control-connections', hash: '#/control', press: ['.mcx-tabs .k-tab:nth-child(6)'] },
-  { slug: 'control-settings', hash: '#/control', press: ['.mcx-tabs .k-tab:nth-child(7)'] },
+  { slug: 'control-agents-modal', hash: '#/control', press: ['.mc-agents .mc-tr.row .who'] },
+  { slug: 'control-models', hash: '#/control', press: ['.mc-tabs .mc-tab:nth-child(2)'] },
+  { slug: 'control-models-fold', hash: '#/control', press: ['.mc-tabs .mc-tab:nth-child(2)', '.mc-backend:last-child > .mc-tr'] },
+  { slug: 'control-context', hash: '#/control', press: ['.mc-tabs .mc-tab:nth-child(3)'] },
+  { slug: 'control-context-agent', hash: '#/control', press: ['.mc-tabs .mc-tab:nth-child(3)', '.mc-file:nth-of-type(2)'] },
+  { slug: 'control-context-edit', hash: '#/control', press: ['.mc-tabs .mc-tab:nth-child(3)', '.mc-file:has-text("assist-guidance")', '.mc-viewer .vhead .k-btn'] },
+  { slug: 'control-settings', hash: '#/control', press: ['.mc-tabs .mc-tab:nth-child(4)'] },
+  { slug: 'control-settings-keys', hash: '#/control', press: ['.mc-tabs .mc-tab:nth-child(4)', '.mc-setnav button:nth-child(2)'] },
+  { slug: 'control-settings-danger', hash: '#/control', press: ['.mc-tabs .mc-tab:nth-child(4)', '.mc-setnav button:nth-child(5)'] },
   { slug: 'overview', hash: '#/p/{slug}' },
   { slug: 'quality', hash: '#/p/{slug}/quality' },
   { slug: 'quality-open', hash: '#/p/{slug}/quality', press: ['.ql-frow'] },

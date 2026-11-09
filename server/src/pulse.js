@@ -131,11 +131,14 @@ export function readUsage({ sessions = [], runs = [], now = Date.now() } = {}) {
     if (!models.has(model)) {
       models.set(model, {
         model, label: shortModelName(model), tokens: 0,
-        costUsd: 0, priced: false, sessions: 0, runs: 0, lastAt: 0,
+        costUsd: 0, priced: false, sessions: 0, runs: 0, lastAt: 0, autoTokens: 0,
       });
     }
     const m = models.get(model);
     m.tokens += tokens;
+    // The autopilot's share of this model, so a surface can draw the two
+    // populations apart per model and per harness, never merged.
+    if (population === 'runs') m.autoTokens += tokens;
     if (costUsd !== null) { m.costUsd += costUsd; m.priced = true; }
     m[population] += 1;
     return m;
@@ -210,7 +213,7 @@ export function readUsage({ sessions = [], runs = [], now = Date.now() } = {}) {
     .map((m) => ({
       model: m.model, label: m.label, tokens: m.tokens,
       costUsd: m.priced ? Math.round(m.costUsd * 100) / 100 : null,
-      sessions: m.sessions, runs: m.runs,
+      sessions: m.sessions, runs: m.runs, autoTokens: m.autoTokens,
       share: tokens > 0 ? (m.tokens / tokens) * 100 : 0,
       lastAt: new Date(m.lastAt).toISOString(),
     }))

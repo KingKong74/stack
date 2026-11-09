@@ -55,6 +55,8 @@ export function providerOf(model) {
   const s = String(model || '').toLowerCase();
   if (s.includes('claude') || s.includes('anthropic')) return 'anthropic';
   if (s.includes('gemini')) return 'gemini';
+  // Codex's ids: gpt-5-codex, gpt-5-mini, openai/…, and the o-series (o3, o4-mini).
+  if (s.includes('codex') || s.includes('gpt') || s.includes('openai') || /^o\d/.test(s)) return 'codex';
   return 'other';
 }
 
@@ -86,28 +88,59 @@ export function rolesFor(model, executor, advisor) {
 // The three backends Stack actually has, in the order they matter. `models` is
 // filled from the measured usage below; a provider with none still gets a card,
 // because "configured and unused" and "not configured" are different answers.
+// `group` splits the room the way the owner reads it: a HARNESS can run a
+// session (and so could hold a policy role), an OTHER backend never runs one.
+// Only Claude Code holds a role today: the autopilot spawns `claude -p` and
+// nothing else, so Codex is a terminal-only harness and Copilot is planned.
 function backends({ hostReady, geminiReady }) {
   return [
     {
       key: 'anthropic',
-      name: 'Anthropic (Claude)',
-      kind: 'Model backend',
-      reach: 'the owner’s own subscription',
-      detail: 'Reached by the host daemon’s uplink to `claude -p`, not by an API key — the autopilot, the terminal and the tab agents all run through it.',
+      group: 'harness',
+      name: 'Claude Code',
+      kind: 'Coding harness',
+      reach: 'owner’s subscription · host daemon',
+      detail: 'Reached by the host daemon’s uplink to `claude -p`, not by an API key. The autopilot and the terminal both run through it. Reads CLAUDE.md; spawn profiles reach it through --agents.',
       state: hostReady ? 'Host connected' : 'Host offline',
       tone: hostReady ? 'success' : 'warning',
     },
     {
+      key: 'codex',
+      group: 'harness',
+      name: 'Codex',
+      kind: 'Coding harness · terminal only',
+      reach: 'codex CLI · host daemon',
+      // Measured only where a transcript reached Stack, and the transcript hook
+      // is Claude Code's, so an empty Codex row is not a claim that it is idle.
+      detail: 'Runs in Stack’s terminal through the host daemon. Reads AGENTS.md, and CLAUDE.md wherever AGENTS.md points to it. The autopilot does not run Codex yet, so it cannot hold the advisor or executor role.',
+      state: hostReady ? 'Terminal only' : 'Host offline',
+      tone: hostReady ? 'neutral' : 'warning',
+      absent: 'Nothing measured. Stack’s transcript hook is Claude Code’s, so a Codex session usually leaves no usage here. This is not a claim that it is idle.',
+    },
+    {
+      key: 'copilot',
+      group: 'harness',
+      name: 'GitHub Copilot',
+      kind: 'Coding harness · planned',
+      reach: '—',
+      detail: 'Not set up. Once connected it could become an advisor or executor option, and its usage would be measured here alongside the others.',
+      state: 'Not connected',
+      tone: 'neutral',
+      planned: true,
+    },
+    {
       key: 'gemini',
+      group: 'other',
       name: 'Gemini',
       kind: 'Read-only second opinion',
       reach: geminiReady ? 'GEMINI_API_KEY is set' : 'GEMINI_API_KEY is unset',
-      detail: 'Free tier. It annotates and the human disposes — the per-push review note, check assertions, labelling and triage, and the Curator’s two board reads.',
+      detail: 'Free tier. It annotates and the human disposes: the per-push review note, check assertions, labelling and triage, and the Curator’s two board reads.',
       state: geminiReady ? 'Key configured' : 'Absent',
       tone: geminiReady ? 'success' : 'neutral',
     },
     {
       key: 'omniroute',
+      group: 'other',
       name: 'OmniRoute (local)',
       kind: 'Local gateway',
       reach: 'localhost:20128, host-side only',
@@ -115,12 +148,14 @@ function backends({ hostReady, geminiReady }) {
       // gateway is bound loopback-only on the host, so no answer here is
       // measurable — and "Stack cannot see" is the answer, never a green card
       // and never an empty one that reads as "nothing is running".
-      detail: 'Loopback-only on the host, and the server is in a container — Stack cannot see it from here. Free by default; only OMNIROUTE_MODEL naming a paid model spends anything.',
+      detail: 'Loopback-only on the host, and the server is in a container, so Stack cannot see it from here. Free by default; only OMNIROUTE_MODEL naming a paid model spends anything.',
       state: 'Not visible from here',
       tone: 'neutral',
+      absent: 'Nothing measured. Stack can’t see this backend either way, so this isn’t a claim that it’s idle.',
     },
     {
       key: 'other',
+      group: 'other',
       name: 'Other',
       kind: 'Unrecognised',
       reach: '—',
@@ -131,12 +166,6 @@ function backends({ hostReady, geminiReady }) {
   ];
 }
 
-// GET /api/models — the policy, the two backends' readiness, and twelve weeks
-// of measured spend grouped by provider.
-//
-// Two aggregate queries and nothing per-project: this is a READ LAYER. The
-// window is `PULSE_DAYS`, the same twelve weeks the Overview tab's pulse uses,
-// so the two screens can never quote different totals for the same night.
 models.get('/', async (_req, res) => {
   const since = `now() - interval '${PULSE_DAYS} days'`;
   const [settings, sessions, runs] = await Promise.all([
@@ -172,12 +201,15 @@ models.get('/', async (_req, res) => {
       return {
         ...b,
         tokens,
+        autoTokens: rows.reduce((n, r) => n + (r.autoTokens || 0), 0),
+        runs: rows.reduce((n, r) => n + r.runs, 0),
+        sessions: rows.reduce((n, r) => n + r.sessions, 0),
         share: usage.tokens > 0 ? (tokens / usage.tokens) * 100 : 0,
         models: rows,
       };
     })
     // 'other' is a bucket, not a backend: it appears only when something landed
-    // in it. The three real ones always appear, measured or not.
+    // in it. The real ones always appear, measured or not.
     .filter((b) => b.key !== 'other' || b.models.length > 0);
 
   res.json({

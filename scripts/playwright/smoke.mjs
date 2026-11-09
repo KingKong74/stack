@@ -551,92 +551,98 @@ const PLANS_PANELS = [
   },
 ];
 
-// Mission Control's seven tabs, plus the presses that prove a tab did more than
-// paint. They run in sequence on one page, so each entry assumes the state the
-// one before it left.
+// Mission Control's four tabs (the v5 design), plus the presses that prove a
+// tab did more than paint. They run in sequence on one page, so each entry
+// assumes the state the one before it left. First paint is Agents.
 //
-// #514 WIRED THREE OF THE SEVEN, and that changed what is reachable here twice
-// over. FIRST PAINT IS AGENTS now, not Overview, so Overview is a press like
-// every other tab. And the first card of a fold list OPENS at first paint on
-// both wired tabs — one agent and the backend carrying 98% of the tokens are
-// the things you came to read — so a press on either would prove only that
-// something can be CLOSED, which no `expect` selector can witness.
-//
-// So the Agents tab is proved by its own rows appearing rather than by a fold,
-// and the fold press moved to the LAST provider, which is shut. This harness is
-// READ-ONLY and the wired tabs are full of controls that write — every op
-// switch, both policy selects, the Context Save — so not one of them is pressed
-// here. The Context Edit button is, because it only OPENS the editor; nothing
-// below ever submits one.
+// This harness is READ-ONLY and the wired tabs are full of controls that write
+// (each profile switch, both policy selects, every Save), so not one of them
+// is pressed here. A press that only OPENS an editor (a profile row, Context's
+// Edit in Agents) is fine, and each modal is closed by its × before moving on,
+// because its scrim covers the tabs.
 const CONTROL_PANELS = [
-  // THE AGENTS TAB IS THE SPAWN PROFILES NOW (#520) and both selectors survived
-  // the swap, which is worth stating rather than leaving to look like luck: the
-  // tool rows reuse `.mcx-oprow` because a grant and an op switch are read the
-  // same way. What they PROVE changed completely — it was the config row and
-  // two backends, and it is now that a profile's `tools` array arrived.
+  // THE AGENTS TAB IS THE SPAWN PROFILES (#520), drawn as the v5 table: a row
+  // per profile proves the catalogue arrived.
   {
     id: 'control-agents',
     label: 'Mission Control — Agents tab',
-    click: '.mcx-tabs .k-tab:has-text("Agents")',
-    expect: '.mcx-oprow',
+    click: '.mc-tabs .mc-tab:has-text("Agents")',
+    expect: '.mc-agents .mc-tr.row',
   },
-  // THE FRAME, SEPARATELY, because its absence is the silent expensive one. The
-  // room is meaningless without the spawn policy: a profile's `model: ''`
-  // inherits the executor, and `--agents` is passed only when an advisor is
-  // set — with none, every switch on that screen is inert. Exactly one of these
-  // two is always present (the strip when an advisor is set, the warning when
-  // not), so `.mcx-frame, .mcx-framewarn` witnesses the payload either way and
-  // pins neither state: which one shows is the owner's setting, not a contract.
+  // THE FRAME, SEPARATELY, because its absence is the silent expensive one: a
+  // profile's `model: ''` inherits the executor, and `--agents` is passed only
+  // when an advisor is set. The Default spawn tile is drawn either way (a dash
+  // when nothing resolves), so it witnesses the payload and pins neither state.
   {
     id: 'control-agents-frame',
     label: 'Mission Control — the Agents tab states its spawn policy',
-    click: '.mcx-tabs .k-tab:has-text("Agents")',
-    expect: '.mcx-frame, .mcx-framewarn',
+    click: '.mc-tabs .mc-tab:has-text("Agents")',
+    expect: '.mc-tile:has-text("Default spawn")',
   },
-  // Likewise the model TABLE, not the provider head — a head with no rows under
+  // The profile editor is a MODAL now. Opening it is read-only; nothing here
+  // ever presses Save, Reset or the switch in its header.
+  {
+    id: 'control-profile-modal',
+    label: 'Mission Control — a profile opens its editor',
+    click: '.mc-agents .mc-tr.row .who',
+    expect: '.mc-modal',
+  },
+  {
+    id: 'control-profile-close',
+    label: 'Mission Control — the profile editor closes',
+    click: '.mc-modal .mc-x',
+    expect: '.mc-agents .mc-tr.row',
+  },
+  // Likewise the model TABLE, not the backend head: a head with no rows under
   // it is what an unmeasured window looks like.
   {
     id: 'control-models',
     label: 'Mission Control — Models tab',
-    click: '.mcx-tabs .k-tab:has-text("Models")',
-    expect: '.mcx-modelrow',
+    click: '.mc-tabs .mc-tab:has-text("Models")',
+    expect: '.mc-models .mc-tr',
   },
-  // The last provider is OmniRoute, which is shut at first paint and whose body
-  // is the one card on this screen that says "Stack cannot see this from here".
+  // The last backend (OmniRoute, or Other when something landed there) is shut
+  // at first paint; Claude Code is the one that opens.
   {
     id: 'control-provider-fold',
-    label: 'Models — a shut provider folds open',
-    click: '.mcx-fold:last-child .mcx-provhead',
-    expect: '.mcx-fold:last-child .mcx-provdetail',
+    label: 'Models — a shut backend folds open',
+    click: '.mc-backend:last-child > .mc-tr',
+    expect: '.mc-backend:last-child .mc-backenddetail',
   },
   {
     id: 'control-context',
     label: 'Mission Control — Context tab',
-    click: '.mcx-tabs .k-tab:has-text("Context")',
-    expect: '.mcx-doctree',
+    click: '.mc-tabs .mc-tab:has-text("Context")',
+    expect: '.mc-files',
   },
-  // The second row is an AGENT doc, and the viewer carries the doc's kind as a
-  // class — so the selection landing is witnessable without depending on
-  // whether this installation happens to have written that file.
+  // The second file is an AGENT doc (session-defaults, then the profiles), and
+  // the viewer carries the doc's kind as a class, so the selection landing is
+  // witnessable whatever this installation has written.
   {
     id: 'control-doc-select',
     label: 'Context — picking an agent’s preamble',
-    click: '.mcx-docrow:nth-of-type(2)',
-    expect: '.mcx-docview.kind-agent',
+    click: '.mc-file:nth-of-type(2)',
+    expect: '.mc-viewer.kind-agent',
   },
-  // The one editable doc's Edit button. It OPENS the editor and nothing here
-  // ever presses Save — see the read-only note above.
+  // A profile prompt is edited on the Agents tab: its button switches tab and
+  // OPENS the editor. Nothing here ever saves.
   {
     id: 'control-doc-edit',
-    label: 'Context — the editor opens on an editable doc',
-    click: '.mcx-docviewhead .acts .k-btn',
-    expect: '.mcx-doceditor',
+    label: 'Context — Edit in Agents opens the profile editor',
+    click: '.mc-viewer .vhead .k-btn',
+    expect: '.mc-modal',
+  },
+  {
+    id: 'control-doc-edit-close',
+    label: 'Mission Control — the editor closes back onto Agents',
+    click: '.mc-modal .mc-x',
+    expect: '.mc-agents',
   },
   {
     id: 'control-settings',
     label: 'Mission Control — Settings tab',
-    click: '.mcx-tabs .k-tab:has-text("Settings")',
-    expect: '.mcx-dangerrow',
+    click: '.mc-tabs .mc-tab:has-text("Settings")',
+    expect: '.mc-setnav',
   },
 ];
 
