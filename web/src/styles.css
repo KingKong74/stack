@@ -4419,6 +4419,8 @@ body[data-mc-full] .totop { display: none; }
 .km-scopemenu { width: 320px; max-width: calc(100vw - 16px); padding: var(--space-2); }
 .km-scopelist { display: flex; flex-direction: column; gap: 1px; max-height: min(60vh, 440px); overflow-y: auto; }
 .km-scopelist .km-menulbl { padding-top: 8px; }
+.km-scopehead { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border-subtle); padding-bottom: 4px; margin-bottom: 2px; }
+.km-scopehead .km-menulbl { padding-top: 4px; }
 .km-scopelist .km-menulbl:first-child { padding-top: 4px; }
 .km-scopeopt { display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
 .km-scopeopt.on { color: var(--text-primary); }

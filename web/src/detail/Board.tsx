@@ -1460,6 +1460,14 @@ function GroupFilter({ noun, options, picked, multi, onToggle, onClear }: {
       {open && (
         <Popover anchor={anchor.current} className="km-menu km-scopemenu" align="left">
           <div ref={menu} className="km-scopelist">
+            {/* Clear inside the menu too: on a narrow screen the menu opens
+                over the Clear beside the button. */}
+            {picked.length > 0 && (
+              <div className="km-scopehead">
+                <span className="km-menulbl">{picked.length} picked</span>
+                <button className="km-clearpick" onClick={() => { onClear(); setOpen(false); }}>Clear</button>
+              </div>
+            )}
             {options.length === 0 && <span className="km-menulbl">Nothing to filter yet.</span>}
             {options.map((o) => {
               const head = o.section !== undefined && o.section !== section;

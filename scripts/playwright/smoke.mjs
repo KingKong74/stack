@@ -272,10 +272,12 @@ const ROADMAP_PANELS = [
   },
   {
     // …and Clear, which exists only while a filter is on, takes it off again —
-    // which every press after this one needs. Pressing it also closes the menu.
+    // which every press after this one needs. The menu's own Clear, because
+    // on a narrow screen the open menu covers the one beside the button.
+    // Pressing it also closes the menu.
     id: 'board-clear',
     label: 'Board — Clear removes the group filter',
-    click: '.km-clearpick',
+    click: '.km-scopemenu .km-clearpick',
     expect: '.km-scope:not(:has(.km-scopebtn.on))',
   },
   // THE FOLDS (#510, #511), AND THEY COME IN PAIRS ON PURPOSE. This harness is
