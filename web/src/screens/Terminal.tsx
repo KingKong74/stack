@@ -37,6 +37,7 @@ import { b64encode, b64decode, TERM_OPTIONS } from '../lib/termWire';
 // How the box is painted (WebGL, with the DOM renderer as the fallback the
 // browser can force on us at any moment) — lib/termRenderer says why.
 import { attachRenderer } from '../lib/termRenderer';
+import { createTermWrites, createTermSizeSender } from '../lib/termStream';
 // #380 — a tab agent's console is an ordinary session on this screen in every
 // way except its name, which is the only evidence here of what it is: this
 // screen has no project payload and no agent state to read. Titling one
@@ -2293,6 +2294,8 @@ function TermSession({ sess, visible, focused, fontSize, onStatus, onUsage, onTm
   const wsRef = useRef<WebSocket | null>(null);
   const termRef = useRef<XTerm | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
+  const beforeFitRef = useRef<((apply: () => void) => void) | null>(null);
+  const fitQueuedRef = useRef(false);
   // Tmux session name for claude tabs (shell never uses tmux): seeded from the
   // parent (a detached-session chip or the device-local cwd map, #188), then
   // confirmed/assigned by the daemon's first ready frame. Passed in the start
@@ -2324,8 +2327,15 @@ function TermSession({ sess, visible, focused, fontSize, onStatus, onUsage, onTm
     const el = holderRef.current;
     const fit = fitRef.current;
     if (!el || !fit) return;
-    if (el.clientWidth < 2 || el.clientHeight < 2) return;
-    try { fit.fit(); } catch { /* mid-teardown; the next observation refits */ }
+    if (el.clientWidth < 2 || el.clientHeight < 2 || fitQueuedRef.current) return;
+    fitQueuedRef.current = true;
+    const apply = () => {
+      fitQueuedRef.current = false;
+      if (fitRef.current !== fit || holderRef.current !== el || el.clientWidth < 2 || el.clientHeight < 2) return;
+      try { fit.fit(); } catch { /* mid-teardown; the next observation refits */ }
+    };
+    if (beforeFitRef.current) beforeFitRef.current(apply);
+    else apply();
   };
 
   useEffect(() => {
@@ -2445,11 +2455,34 @@ function TermSession({ sess, visible, focused, fontSize, onStatus, onUsage, onTm
     let retries = 0;
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
     const reattachable = () => sess.cmd !== 'shell' && !!tmuxRef.current;
+    let writes: ReturnType<typeof createTermWrites> | undefined;
+    // Parse bytes drawn for the old grid before changing it. xterm.write is
+    // asynchronous, so flushing our frame queue alone is not a parser barrier.
+    beforeFitRef.current = (apply) => {
+      writes?.flush();
+      term.write('', () => { if (!disposed) apply(); });
+    };
+    const sizes = createTermSizeSender((cols, rows) => {
+      const ws = wsRef.current;
+      if (disposed || ws?.readyState !== WebSocket.OPEN) return false;
+      ws.send(JSON.stringify({ t: 'resize', cols, rows }));
+      return true;
+    });
+    // Fit and host resize happen in the same turn. A TUI's cursor movements
+    // cannot be interpreted reliably against two different grids for 80ms.
+    const gridResize = term.onResize(({ cols, rows }) => sizes.update(cols, rows));
 
     const connect = () => {
       clearTimeout(retryTimer);
       ended = false;
+      writes?.dispose();
       wsRef.current?.close();
+      wsRef.current = null;
+      // Queue the reset behind any writes xterm already accepted, and ahead
+      // of the new tmux redraw. A synchronous reset can be overtaken by its
+      // asynchronous parser; leaving old modes alive corrupts a fresh attach.
+      if (reattachable()) term.write('\x1bc');
+      sidRef.current = null;
       onStatus('connecting', retries ? `connection lost — re-attaching (${retries})` : '');
       safeFit();
       const ws = openTerminal({
@@ -2463,28 +2496,12 @@ function TermSession({ sess, visible, focused, fontSize, onStatus, onUsage, onTm
         brief: sess.cmd !== 'shell' && tmuxRef.current ? peekTermLaunch(tmuxRef.current) : undefined,
       });
       wsRef.current = ws;
-      // #135 — write-batching: coalesce rapid incoming frames into one
-      // requestAnimationFrame flush instead of calling term.write() per frame.
-      // High-throughput output (builds, log tails) can arrive in dozens of tiny
-      // frames per ms; merging them into one Uint8Array per rAF cuts xterm's
-      // internal dispatch overhead and eliminates intermediate layout thrashing.
-      let rafPending = false;
-      const writeBuf: Uint8Array[] = [];
-      const flushWrites = () => {
-        rafPending = false;
-        if (!writeBuf.length) return;
-        let total = 0;
-        for (const b of writeBuf) total += b.length;
-        const merged = new Uint8Array(total);
-        let off = 0;
-        for (const b of writeBuf) { merged.set(b, off); off += b.length; }
-        writeBuf.length = 0;
-        term.write(merged);
-      };
-      const scheduleWrite = (data: Uint8Array) => {
-        writeBuf.push(data);
-        if (!rafPending) { rafPending = true; requestAnimationFrame(flushWrites); }
-      };
+      sizes.seed(term.cols, term.rows); // the start frame carries these
+      ws.addEventListener('open', () => {
+        if (!disposed && ws === wsRef.current) sizes.update(term.cols, term.rows);
+      });
+      const output = createTermWrites((data) => term.write(data), () => !disposed && ws === wsRef.current);
+      writes = output;
 
       ws.addEventListener('message', (ev) => {
         if (disposed || ws !== wsRef.current) return;
@@ -2507,7 +2524,7 @@ function TermSession({ sess, visible, focused, fontSize, onStatus, onUsage, onTm
         // for the labeller — including shells, which have no tmux name.
         if (typeof m.sid === 'string' && m.sid && !sidRef.current) { sidRef.current = m.sid; onSid(m.sid); }
         if (m.t === 'out' && m.data) {
-          scheduleWrite(b64decode(m.data));
+          output.push(b64decode(m.data));
           onOutput(m.data.length);
         }
         else if (m.t === 'usage' && typeof m.tokens === 'number') {
@@ -2533,6 +2550,7 @@ function TermSession({ sess, visible, focused, fontSize, onStatus, onUsage, onTm
           // An exit while attached = the underlying process really ended (a
           // detach kills only the shim and no frame reaches us) — let the
           // parent forget the tmux mapping so the next open starts fresh.
+          output.flush();
           ended = true;
           onExit(tmuxRef.current);
           tmuxRef.current = null;
@@ -2560,12 +2578,15 @@ function TermSession({ sess, visible, focused, fontSize, onStatus, onUsage, onTm
             onNotice(`📎 ${asked}: ${m.error || 'the host refused that drop'}`, 5000);
           }
         }
-        else if (m.t === 'err') { onStatus('error', m.msg || 'terminal error'); term.write(`\r\n\x1b[91m${m.msg || 'terminal error'}\x1b[0m\r\n`); }
+        else if (m.t === 'err') { output.flush(); onStatus('error', m.msg || 'terminal error'); term.write(`\r\n\x1b[91m${m.msg || 'terminal error'}\x1b[0m\r\n`); }
       });
-      ws.addEventListener('error', () => onStatus('error', 'Could not reach the terminal relay.'));
+      ws.addEventListener('error', () => {
+        if (!disposed && ws === wsRef.current) onStatus('error', 'Could not reach the terminal relay.');
+      });
       ws.addEventListener('close', () => {
         // Ours (a reconnect replaced it, or the pane is going) or a real end.
         if (disposed || ended || ws !== wsRef.current) return;
+        output.flush();
         if (!reattachable()) {
           onStatus('closed', 'connection lost');
           term.write('\r\n\x1b[90m[connection lost — this shell ended with it; ↻ Reconnect starts a new one]\x1b[0m\r\n');
@@ -2600,7 +2621,6 @@ function TermSession({ sess, visible, focused, fontSize, onStatus, onUsage, onTm
       retries = 0;
       const open = wsRef.current?.readyState === WebSocket.OPEN;
       if (reattachable()) {
-        term.reset();
         repaint();
         connect();
       } else if (open) {
@@ -2653,40 +2673,18 @@ function TermSession({ sess, visible, focused, fontSize, onStatus, onUsage, onTm
       const ws = wsRef.current;
       if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ t: 'in', data: b64encode(d) }));
     });
-    // #135 — debounced resize: the window.resize event fires on every animation
-    // frame while the user drags; debouncing 80 ms sends only the settled size.
+    // Debounce the FIT itself, so xterm and the host keep the same grid
+    // throughout a drag. Defer out of ResizeObserver before mutating layout.
     let resizeTimer: ReturnType<typeof setTimeout> | undefined;
-    // What the daemon was last told. The observer below fires on any pixel
-    // change, but the pty only cares about CELLS — so a resize frame goes out
-    // only when the grid actually changed, and a few stray pixels of layout
-    // never chatter at the host.
-    let sentCols = 0;
-    let sentRows = 0;
-    // The fit is deferred to the next animation frame rather than run inside
-    // the observer callback. Fitting mutates the very element being observed,
-    // and a synchronous mutation there is what produces the browser's
-    // "ResizeObserver loop completed with undelivered notifications" — which
-    // is not cosmetic: the loop is dropped notifications, i.e. a resize that
-    // silently never happened. One frame of delay costs nothing and the
-    // observer sees a settled box.
-    let fitPending = false;
+    let fitFrame: number | undefined;
     const onResize = () => {
-      if (!fitPending) {
-        fitPending = true;
-        requestAnimationFrame(() => { fitPending = false; safeFit(); });
-      }
       clearTimeout(resizeTimer);
+      if (fitFrame !== undefined) cancelAnimationFrame(fitFrame);
       resizeTimer = setTimeout(() => {
-        const ws = wsRef.current;
-        // A hidden pane measures nothing and fits to nothing — telling the pty
-        // about that grid is how a backgrounded session reflows to 2 columns.
-        if (term.cols < 2 || term.rows < 2) return;
-        if (term.cols === sentCols && term.rows === sentRows) return;
-        if (ws?.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ t: 'resize', cols: term.cols, rows: term.rows }));
-          sentCols = term.cols;
-          sentRows = term.rows;
-        }
+        fitFrame = requestAnimationFrame(() => {
+          fitFrame = undefined;
+          if (!disposed) safeFit();
+        });
       }, 80);
     };
     window.addEventListener('resize', onResize);
@@ -2761,6 +2759,13 @@ function TermSession({ sess, visible, focused, fontSize, onStatus, onUsage, onTm
       window.removeEventListener('online', onOnline);
       register(null);
       clearTimeout(resizeTimer);
+      if (fitFrame !== undefined) cancelAnimationFrame(fitFrame);
+      writes?.dispose();
+      beforeFitRef.current = null;
+      fitQueuedRef.current = false;
+      fitRef.current = null;
+      termRef.current = null;
+      gridResize.dispose();
       window.removeEventListener('resize', onResize);
       holderEl?.removeEventListener('dragenter', onDragEnter);
       holderEl?.removeEventListener('dragover', onDragOver);
@@ -2789,10 +2794,6 @@ function TermSession({ sess, visible, focused, fontSize, onStatus, onUsage, onTm
     if (term.options.fontSize === want) return;
     term.options.fontSize = want;
     safeFit();
-    const ws = wsRef.current;
-    if (ws?.readyState === WebSocket.OPEN && term.cols >= 2 && term.rows >= 2) {
-      ws.send(JSON.stringify({ t: 'resize', cols: term.cols, rows: term.rows }));
-    }
   }, [fontSize]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Refit when this pane becomes visible (it may have been hidden at 0×0).
@@ -2802,10 +2803,6 @@ function TermSession({ sess, visible, focused, fontSize, onStatus, onUsage, onTm
     const fit = fitRef.current;
     if (!term || !fit) return;
     safeFit();
-    const ws = wsRef.current;
-    if (ws?.readyState === WebSocket.OPEN && term.cols >= 2 && term.rows >= 2) {
-      ws.send(JSON.stringify({ t: 'resize', cols: term.cols, rows: term.rows }));
-    }
     if (focused) term.focus();
   }, [visible, focused]);
 
