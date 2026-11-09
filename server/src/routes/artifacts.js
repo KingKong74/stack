@@ -21,7 +21,7 @@
 //    naming the first) and `adr` (with `status`). They have their own tabs,
 //    so the plain list leaves them out; `?types=` asks for them by name.
 //  • NOTES (2026-11-09): `note` is the owner's loose idea, kept on the
-//    Charter screen's Notes view until it is turned into a milestone, slice or
+//    Notes tab until it is turned into a milestone, slice or
 //    task. A note is a scratchpad, not work, so the plain list leaves it out
 //    too. A converted note is kept, tagged `converted` and `became:<kind>:<id>`.
 //  • `links` ARE roadmap_items IDS IN THIS PROJECT. A write keeps only the ids

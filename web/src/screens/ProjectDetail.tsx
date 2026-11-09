@@ -49,7 +49,7 @@ const isForYou = (t: Tab) => FORYOU_TABS.includes(t);
  *  charter, the milestones and the architecture are ONE rail row with a strip,
  *  the same shape as For you. Each keeps its route key, so every deep link,
  *  the SessionStart pointer and the smoke's paths land where they always did. */
-const SPINE_TABS: Tab[] = ['charter', 'milestones', 'architecture', 'notes'];
+const SPINE_TABS: Tab[] = ['charter', 'milestones', 'architecture'];
 const isSpine = (t: Tab) => SPINE_TABS.includes(t);
 /** The two tabs that bring their OWN heading block — the console kit's screens
  *  open with a breadcrumb and their own title, so this screen's `detail-head`
@@ -472,6 +472,13 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
           menuLabel: `${project.name} board`,
           menu: placeMenu(hrefTo.detail(slug, 'roadmap'), 'board'), onClick: () => setTab('roadmap'),
         },
+        // NOTES, a row of its own under the board (owner's call, 2026-11-09):
+        // loose ideas, not work, turned into milestones, slices or tasks when
+        // ready (detail/Notes.tsx). No count: the notes are not in the payload.
+        {
+          key: 'notes', label: 'Notes', icon: NavIcons.note,
+          menu: placeMenu(hrefTo.detail(slug, 'notes'), 'notes'), onClick: () => setTab('notes'),
+        },
         // #616 — THE SPINE, right under the board it explains: what the
         // project is for, where it is going next and how it is built, as ONE
         // row (SPINE_TABS) whose strip picks the view. No count on the row:
@@ -717,7 +724,6 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
               { key: 'charter', label: 'Charter' },
               { key: 'milestones', label: 'Milestones', count: data.milestones.filter((m) => m.status !== 'done').length || undefined },
               { key: 'architecture', label: 'Architecture' },
-              { key: 'notes', label: 'Notes' },
             ]}
             active={tab} onPick={setTab} />
         )}

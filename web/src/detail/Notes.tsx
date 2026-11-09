@@ -1,4 +1,4 @@
-// NOTES — the owner's loose ideas, on the Charter screen beside Milestones
+// NOTES — the owner's loose ideas, a rail row of their own under the board
 // (owner's call, 2026-11-09). A note is not work: nothing counts it, nothing
 // runs it, and no agent reads it. It is where an idea waits until it is ready
 // to become a MILESTONE, a SLICE or a TASK.
@@ -100,6 +100,7 @@ export function Notes({ slug, milestones, slices, onRefresh }: {
   return (
     <div className="sp nt">
       <div className="sp-lede">
+        <h2 className="sp-h">Notes</h2>
         <span>Loose ideas and notes. Nothing here is work yet: when one is ready, turn it into a milestone, a slice or a task. Its first line becomes the name.</span>
       </div>
       {err && <div className="km-err" role="alert">{err}</div>}
