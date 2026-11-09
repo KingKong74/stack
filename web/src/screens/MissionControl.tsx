@@ -957,7 +957,8 @@ const kb = (n: number) => (n < 1000 ? `${n} B` : `${(n / 1000).toFixed(1)} KB`);
 // states, and the room must not wait on the host to draw the rest.
 function claudeMdDoc(slug: string, name: string, f: ClaudeMdFile): ContextDoc {
   const fileName = f.path.split('/').pop() || 'CLAUDE.md';
-  const agent = fileName === 'AGENTS.md' ? 'Codex' : 'Claude Code';
+  const isCodexEntry = fileName === 'AGENTS.md';
+  const agent = isCodexEntry ? 'Codex' : 'Claude Code and agents directed here';
   const dir = f.path.includes('/') ? f.path.slice(0, f.path.lastIndexOf('/') + 1) : '';
   const pct = f.budget ? Math.round((f.bytes / f.budget) * 100) : null;
   return {
@@ -968,7 +969,9 @@ function claudeMdDoc(slug: string, name: string, f: ClaudeMdFile): ContextDoc {
       ? `${agent} sessions in ${name}, when they work under ${dir}`
       : `Every ${agent} session opened in ${name}`,
     inherits: true,
-    summary: 'Read off the host just now. Stack keeps no copy. Saving writes the file on disk and does not commit it.',
+    summary: `${isCodexEntry
+      ? 'Codex’s instruction entry point. It can direct Codex to the shared CLAUDE.md rules so they only need to be maintained once.'
+      : 'Claude Code reads this file directly. Codex also reads it when AGENTS.md directs it here, as it does in Stack. Maintain shared rules here once for both agents.'} Read live from the host. Saving writes the file on disk and does not commit it.`,
     meta: [
       f.budget ? `${kb(f.bytes)} of ${kb(f.budget)} budget (${pct}%)` : kb(f.bytes),
       f.truncated ? 'shown in part' : null,
