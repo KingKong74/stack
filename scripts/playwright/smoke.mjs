@@ -256,20 +256,27 @@ const ROADMAP_PANELS = [
     dismiss: '.km-scrim',
   },
   {
-    // Board v5 — the filter row lists every area, each a toggle. The press
-    // lands on the first one and proves it turns on.
+    // The group filter is one toolbar button (2026-11-09, it replaced a row
+    // of chips that wrapped to three lines); its menu lists every group.
+    id: 'board-scope-open',
+    label: 'Board — the group filter opens its menu',
+    click: '.km-scopebtn',
+    expect: '.km-scopemenu .km-scopeopt',
+  },
+  {
+    // A pick turns the button on and the menu stays open (several can be on).
     id: 'board-scope',
-    label: 'Board — a group chip filters to its group',
-    click: '.km-scope .im-chip[data-area]',
-    expect: '.km-scope .im-chip.on',
+    label: 'Board — picking a group filters to it',
+    click: '.km-scopemenu .km-scopeopt[data-area]',
+    expect: '.km-scopebtn.on',
   },
   {
     // …and Clear, which exists only while a filter is on, takes it off again —
-    // which every press after this one needs.
+    // which every press after this one needs. Pressing it also closes the menu.
     id: 'board-clear',
     label: 'Board — Clear removes the group filter',
     click: '.km-clearpick',
-    expect: '.km-scope:not(:has(.im-chip.on))',
+    expect: '.km-scope:not(:has(.km-scopebtn.on))',
   },
   // THE FOLDS (#510, #511), AND THEY COME IN PAIRS ON PURPOSE. This harness is
   // read-only, and a fold is the one press on this screen that persists

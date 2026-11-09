@@ -562,11 +562,28 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
   // THE FILTER ROW, AS THE DESIGN HAS IT: every area on the board, each with
   // the number of its cards the search box still matches — zero included, so
   // a chip says what pressing it would show rather than disappearing.
-  const chips = useMemo(() => {
+  const chips = useMemo((): GroupOption[] => {
     const counts = new Map<string, number>();
     for (const it of visible) counts.set(groupKey(it), (counts.get(groupKey(it)) || 0) + 1);
-    return groupOrder.map((k) => ({ ...groupMeta(k), n: counts.get(k) || 0 }));
-  }, [visible, areas, groupOrder, holders, sl, ms]);
+    const opts = groupOrder.map((k) => {
+      const m = groupMeta(k);
+      if (!bySlice) return { key: k, name: m.name, dot: m.dot, n: counts.get(k) || 0 };
+      // Under a milestone heading, the slice's own title: sliceLabel's
+      // " · milestone" suffix would say the heading twice.
+      const mile = m.slice ? ms.find((x) => x.id === m.slice!.milestoneId) : undefined;
+      return { key: k, name: m.slice ? m.slice.title : 'No slice', n: counts.get(k) || 0, section: mile ? mile.name : '' };
+    });
+    // Grouped under their milestone, the current one first, the rest in
+    // milestone order, and "No slice" last; stable within a milestone.
+    if (!bySlice) return opts;
+    const rank = (o: GroupOption) => {
+      if (!o.section) return 1e9;
+      const i = ms.findIndex((x) => x.name === o.section);
+      const mm = ms[i];
+      return (mm?.status === 'active' ? -1e6 : mm?.status === 'done' ? 1e6 : 0) + i;
+    };
+    return opts.map((o, i) => ({ o, i })).sort((x, y) => rank(x.o) - rank(y.o) || x.i - y.i).map((x) => x.o);
+  }, [visible, areas, groupOrder, holders, sl, ms, bySlice]);
   // What an area's ⋯ says it would untag on delete: every card in it, not the
   // searched few.
   const areaTotal = (k: string) => rows.filter((it) => !it.archived && isBoardWork(it) && areaKey(it) === k).length;
@@ -1080,6 +1097,13 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
             </select>
           </>}
 
+          {/* THE GROUP FILTER — slices or areas, whichever the board groups
+              by. Gone in the list and when nothing is grouped. */}
+          {!listMode && grouped && (
+            <GroupFilter noun={bySlice ? 'slices' : 'areas'} options={chips} picked={picked} multi
+              onToggle={pickArea} onClear={clearPicked} />
+          )}
+
           {/* Parked is a FILTER and never the default — see `hideParked`. */}
           <button className={`k-btn sm secondary km-parked${hideParked ? ' on' : ''}`}
             onClick={() => setHideParked(!hideParked)}
@@ -1131,22 +1155,6 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
         )}
 
         {!listMode && <>
-
-        {/* THE AREA FILTER (Board v5) — every area on the board, each a toggle;
-            several can be on at once. While any is, the rest dim and Clear
-            appears; nothing picked is every area. The chips are `AreaChip`,
-            on this project's stored colours. */}
-        <div className="im-bar km-scope">
-          {chips.map((c) => (
-            <AreaChip key={c.key} areaKey={c.key} label={c.name} dot={c.dot} count={c.n}
-              active={picked.includes(c.key)}
-              dim={picked.length > 0 && !picked.includes(c.key)}
-              onClick={() => pickArea(c.key)} />
-          ))}
-          {picked.length > 0 && (
-            <button className="km-clearpick" onClick={clearPicked}>Clear</button>
-          )}
-        </div>
 
         {shown === 0 && (
           <div className="km-colempty">
@@ -1405,21 +1413,76 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
   );
 }
 
-// The area chip (`.im-chip`), with one substitution: the kit
-// gives each of its six invented areas an ICON, and a real area has no icon —
-// it has a `dot`, chosen by the owner from the board's closed palette. So the
-// dot is what identifies it, and "All areas" and untagged carry none. `dim` is
-// an area a live filter leaves out.
-function AreaChip({ label, areaKey, dot, count, active, dim = false, onClick }: {
-  label: string; areaKey?: string; dot?: string; count: number; active: boolean; dim?: boolean; onClick: () => void;
+// THE GROUP FILTER (2026-11-09): ONE BUTTON, NOT A ROW OF CHIPS. The chips
+// wrapped to three lines once a board had a score of slices, which is every
+// board with a real spine. The button says what is showing ("All slices", the
+// one picked, or "3 slices"); its menu lists every group with its dot and
+// count, under its milestone when the groups are slices, and Clear sits beside
+// the button while a filter is on.
+//
+// It owns its own open state and closes on a press anywhere outside it, so the
+// Backlog (which has no board-wide closeAll) can use it too. `multi` keeps the
+// menu open across picks; single-pick closes it on the press.
+export type GroupOption = { key: string; name: string; dot?: string; n: number; section?: string };
+function GroupFilter({ noun, options, picked, multi, onToggle, onClear }: {
+  noun: string; options: GroupOption[]; picked: string[]; multi: boolean;
+  onToggle: (key: string) => void; onClear: () => void;
 }) {
+  const anchor = useRef<HTMLSpanElement | null>(null);
+  const menu = useRef<HTMLDivElement | null>(null);
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: PointerEvent) => {
+      const t = e.target as Node;
+      if (anchor.current?.contains(t) || menu.current?.contains(t)) return;
+      setOpen(false);
+    };
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('pointerdown', away);
+    document.addEventListener('keydown', esc);
+    return () => { document.removeEventListener('pointerdown', away); document.removeEventListener('keydown', esc); };
+  }, [open]);
+  const one = picked.length === 1 ? options.find((o) => o.key === picked[0]) : undefined;
+  const label = picked.length === 0 ? `All ${noun}` : one ? one.name : `${picked.length} ${noun}`;
+  let section: string | undefined;
   return (
-    <button className={`im-chip${active ? ' on' : ''}${dim ? ' km-chipdim' : ''}`} onClick={onClick}
-      aria-pressed={active} data-area={areaKey}>
-      {dot && <span className="km-dot" style={{ background: dot }} />}
-      {label}
-      <span className="n">{count}</span>
-    </button>
+    <span className="km-scope" ref={anchor}>
+      <button className={`k-btn sm secondary km-scopebtn${picked.length ? ' on' : ''}`}
+        aria-haspopup="menu" aria-expanded={open} title={`Show only some ${noun}`}
+        onClick={() => setOpen(!open)}>
+        <KitIcon name="list-filter" size={14} />
+        {one?.dot && <span className="km-dot" style={{ background: one.dot }} />}
+        <span className="km-scopelbl">{label}</span>
+        <KitIcon name="chevron-down" size={12} />
+      </button>
+      {picked.length > 0 && <button className="km-clearpick" onClick={onClear}>Clear</button>}
+      {open && (
+        <Popover anchor={anchor.current} className="km-menu km-scopemenu" align="left">
+          <div ref={menu} className="km-scopelist">
+            {options.length === 0 && <span className="km-menulbl">Nothing to filter yet.</span>}
+            {options.map((o) => {
+              const head = o.section !== undefined && o.section !== section;
+              section = o.section;
+              const on = picked.includes(o.key);
+              return (
+                <Fragment key={o.key}>
+                  {head && <span className="km-menulbl">{o.section || 'Not in a slice'}</span>}
+                  <button role="menuitemcheckbox" aria-checked={on} data-area={o.key}
+                    className={`km-menuitem km-scopeopt${on ? ' on' : ''}`}
+                    onClick={() => { onToggle(o.key); if (!multi) setOpen(false); }}>
+                    <span className="km-scopecheck" aria-hidden="true">{on && <KitIcon name="check" size={11} />}</span>
+                    {o.dot && <span className="km-dot" style={{ background: o.dot }} />}
+                    <span className="km-scopename">{o.name}</span>
+                    <span className="n">{o.n}</span>
+                  </button>
+                </Fragment>
+              );
+            })}
+          </div>
+        </Popover>
+      )}
+    </span>
   );
 }
 
@@ -1454,10 +1517,13 @@ function AreaChip({ label, areaKey, dot, count, active, dim = false, onClick }: 
  * `inset` is the gap the stylesheet used to spell as `right: var(--space-5)` —
  * the menu's right edge sits that far inside the anchor's.
  */
-export function Popover({ anchor, className, inset = 0, children }: {
+export function Popover({ anchor, className, inset = 0, align = 'right', children }: {
   anchor: HTMLElement | null;
   className: string;
   inset?: number;
+  /** Which anchor edge the menu lines up with. Right (the default) suits a ⋯
+   *  at the end of a row; left suits a control at the start of a toolbar. */
+  align?: 'left' | 'right';
   children: React.ReactNode;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
@@ -1478,7 +1544,8 @@ export function Popover({ anchor, className, inset = 0, children }: {
         const above = a.top + gap - h;
         top = above >= 8 ? above : Math.max(8, window.innerHeight - 8 - h);
       }
-      const left = Math.min(Math.max(8, a.right - inset - w), Math.max(8, window.innerWidth - 8 - w));
+      const want = align === 'left' ? a.left + inset : a.right - inset - w;
+      const left = Math.min(Math.max(8, want), Math.max(8, window.innerWidth - 8 - w));
       setAt({ top, left });
     };
     place();
@@ -1488,7 +1555,7 @@ export function Popover({ anchor, className, inset = 0, children }: {
       window.removeEventListener('resize', place);
       window.removeEventListener('scroll', place, true);
     };
-  }, [anchor, inset]);
+  }, [anchor, inset, align]);
 
   return createPortal(
     <div ref={ref} className={className} role="menu"
@@ -3107,13 +3174,10 @@ function BacklogView({
         )}
       </div>
 
-      <div className="im-bar km-scope">
-        <AreaChip label="All areas" count={pool.length} active={scope === ''} onClick={() => setScope('')} />
-        {chips.length > 0 && <span className="im-chipsep" />}
-        {chips.map((c) => (
-          <AreaChip key={c.key} label={c.name} dot={c.dot} count={c.n}
-            active={scope === c.key} onClick={() => setScope(scope === c.key ? '' : c.key)} />
-        ))}
+      <div className="im-bar">
+        <GroupFilter noun="areas" options={chips} picked={scope ? [scope] : []} multi={false}
+          onToggle={(k) => setScope(scope === k ? '' : k)} onClear={() => setScope('')} />
+        <span className="km-count">{pool.length} in the backlog</span>
       </div>
 
       {/* THE PROPOSAL SITS ABOVE THE BOXES, not inside the one it is about: it

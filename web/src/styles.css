@@ -4409,8 +4409,26 @@ body[data-mc-full] .totop { display: none; }
 .km-search svg { color: var(--text-tertiary); }
 .km-views { margin-left: auto; display: inline-flex; align-items: center; gap: var(--space-2); flex: none; }
 .km-filter { position: relative; display: inline-flex; }
-/* The scope chips are the shared `.im-bar` / `.im-chip`. */
-.km-scope { margin-bottom: calc(var(--space-2) * -1); }
+/* THE GROUP FILTER — one toolbar button and its menu (Board.tsx GroupFilter).
+   The button is capped so one long slice title can't push the toolbar
+   around; the menu scrolls rather than run off a short window. */
+.km-scope { display: inline-flex; align-items: center; gap: var(--space-1); flex: none; min-width: 0; }
+.km-scopebtn { max-width: 260px; }
+.km-scopebtn .km-scopelbl { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.km-scopebtn.on { background: var(--surface-selected); color: var(--blue-300); box-shadow: inset 0 0 0 1px var(--border-focus); }
+.km-scopemenu { width: 320px; max-width: calc(100vw - 16px); padding: var(--space-2); }
+.km-scopelist { display: flex; flex-direction: column; gap: 1px; max-height: min(60vh, 440px); overflow-y: auto; }
+.km-scopelist .km-menulbl { padding-top: 8px; }
+.km-scopelist .km-menulbl:first-child { padding-top: 4px; }
+.km-scopeopt { display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
+.km-scopeopt.on { color: var(--text-primary); }
+.km-scopename { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.km-scopeopt .n { flex: none; font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-tertiary); }
+.km-scopecheck {
+  width: 14px; height: 14px; flex: none; display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid var(--border-default); border-radius: var(--radius-sm); color: var(--white);
+}
+.km-scopeopt.on .km-scopecheck { background: var(--action-primary); border-color: transparent; }
 /* An area's identity is its stored DOT, not an invented icon. */
 .km-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
 /* The inline title editor. It sits exactly where the title it replaces sits, so
@@ -4610,9 +4628,6 @@ body[data-mc-full] .totop { display: none; }
 .km-grouphead .k-tag { flex: none; }
 .km-grouphead .rule { flex: 1; min-width: var(--space-4); height: 1px; background: var(--border-subtle); }
 .km-grouphead .n { font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-tertiary); }
-/* A chip a live filter leaves out — still pressable, visibly not in view. */
-.im-chip.km-chipdim { opacity: 0.55; }
-.im-chip.km-chipdim:hover { opacity: 1; }
 /* Clear — only while a filter is on, as a link rather than a chip, so it is
    never read as one more area. */
 .km-clearpick {

@@ -168,10 +168,10 @@ const SCREENS = [
   // (--surface-overlay, status tags, the tree) only when a tile exists.
   { slug: 'board-proposition', hash: '#/p/{slug}/roadmap', press: ['?.pp-tile'] },
   { slug: 'architecture', hash: '#/p/{slug}/architecture' },
-  // #469 — a filtered board (one area picked, the rest of the row dimmed)
+  // #469 — a filtered board (the group filter open, its last group picked)
   // and an open inline title editor, which paints its own text over a card in
   // the focus state. Neither exists at first paint.
-  { slug: 'board-scoped', hash: '#/p/{slug}/roadmap', press: ['.km-scope .im-chip:last-of-type'] },
+  { slug: 'board-scoped', hash: '#/p/{slug}/roadmap', press: ['.km-scopebtn', '.km-scopemenu .km-scopeopt:last-of-type'] },
   // #453 — THE DRAG PAINTS TONE NO PRESS CAN REACH. A card in flight, the
   // column under it and the drop preview inside that column exist only while a
   // pointer is down, and the preview is a whole small surface of its own: two
