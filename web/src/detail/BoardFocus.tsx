@@ -23,11 +23,18 @@
 //     the board; taking a related node off only forgets the link.
 //  5. REDUCED MOTION GETS NO FLIGHT. Every duration goes through `ms`, which
 //     collapses to zero, so the canvas simply appears.
+//  6. A SLICE OPENS HERE TOO (owner's call, 2026-11-09). `open.sliceId` puts
+//     the SLICE in the middle with its tasks drawn in as its parts, on the same
+//     flight. A task in a slice is never zoomed on its own: double-clicking
+//     one on the board opens its slice with that task in the editor. In slice
+//     mode "Part" means filed into the slice (`sliceId`), a part is never
+//     unfiled from here (that would ice it), and ✎ on the slice opens the
+//     slice's own dialog.
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { KitIcon } from './kit/KitIcon';
-import type { ItemKind, Priority, RoadmapItem, Sprint } from '../types';
-import { listKeyOf, isBoardWork } from '../lib/plan';
+import type { ItemKind, Priority, RoadmapItem, Slice, Sprint } from '../types';
+import { listKeyOf, isBoardWork, isBuilt } from '../lib/plan';
 import { isHeld } from '../lib/approval';
 import { PRIORITY_META, priorityMeta, dueRead, ITEM_KIND_LABEL } from '../lib/ui';
 import { getFocusCanvas, setFocusCanvas, type FocusCanvas } from '../store';
@@ -44,11 +51,16 @@ export interface FocusOpen {
   editId?: number;
   /** Where the canvas starts: the console's main column, so the rail stays. */
   canvasLeft: number;
+  /** Slice mode (decision 6): the slice in the middle. `id` is then -sliceId,
+   *  a key for this device's canvas state and never a row. */
+  sliceId?: number;
+  /** Where to fly home to when `[data-hl=id]` finds nothing (a slice head). */
+  home?: string;
 }
 export type FocusPhase = 'measure' | 'from' | 'to' | 'back';
 type Patch = Partial<{
   title: string; note: string; bucket: Priority; points: number | null; kind: ItemKind;
-  dueOn: string | null; area: string; parentId: number | null;
+  dueOn: string | null; area: string; parentId: number | null; sliceId: number | null;
 }>;
 
 const DUR = 620;            // the card's flight, in ms (the design's default)
@@ -73,9 +85,12 @@ const topbarH = () => {
 
 export function BoardFocus({
   slug, open, rows, columns, colOf, areas, sprintOf, phase, onPhase, onClosed,
-  onPatch, onMove, onCreateChild,
+  onPatch, onMove, onCreateChild, slices = [], onEditSlice, onCreateInSlice,
 }: {
   slug: string;
+  slices?: Slice[];
+  onEditSlice?: (s: Slice) => void;
+  onCreateInSlice?: (s: Slice, title: string) => Promise<RoadmapItem | undefined>;
   open: FocusOpen;
   rows: RoadmapItem[];
   /** The board's columns, in order (catch-all excluded). */
@@ -96,7 +111,14 @@ export function BoardFocus({
   const ms = (n: number) => (still ? 0 : Math.round(n));
   const D = ms(DUR);
 
-  const focusItem = rows.find((x) => x.id === open.id) || null;
+  // Decision 6: in slice mode the focus is a stand-in row for the slice, so
+  // the flight, the lane and the tray run unchanged around it.
+  const slice = open.sliceId != null ? slices.find((x) => x.id === open.sliceId) || null : null;
+  const sliceRow = useMemo(() => (slice ? ({
+    id: open.id, title: slice.title, note: slice.spec, area: '', parentId: null, archived: false, done: false,
+    bucket: 'medium', points: null, kind: '', dueOn: null, claimedBy: '', skipped: false, sliceId: slice.id,
+  } as unknown as RoadmapItem) : null), [slice, open.id]);
+  const focusItem = slice ? sliceRow : rows.find((x) => x.id === open.id) || null;
   const areaKey = (it: RoadmapItem) => it.area.trim() || UNTAGGED;
   const dotOf = (k: string) => areas.find((a) => a.name === k)?.dot || '';
   const colName = (k: string) => columns.find((c) => c.key === k)?.name || 'No column';
@@ -120,12 +142,13 @@ export function BoardFocus({
   // ---- canvas state ----
   const [canvas, setCanvas] = useState<FocusCanvas>(() => getFocusCanvas(slug, open.id));
   const writeCanvas = (next: FocusCanvas) => { setCanvas(next); setFocusCanvas(slug, open.id, next); };
-  const [editOpen, setEditOpen] = useState(open.edit);
+  const [editOpen, setEditOpen] = useState(open.edit && !(open.sliceId != null && open.editId == null));
   // #601 — WHICH ROW THE EDITOR IS ON. The focused card by default; a part
   // (clicked on the board's cluster card, or double-clicked here) takes it
   // over, so a part gets every field a card has without a card of its own.
   const [editId, setEditId] = useState(open.editId ?? open.id);
   const editOn = (id: number) => {
+    if (slice && id === open.id) { onEditSlice?.(slice); return; }
     if (editOpen && editId === id) { setEditOpen(false); setEditId(open.id); return; }
     setEditId(id); setEditOpen(true);
   };
@@ -166,7 +189,8 @@ export function BoardFocus({
     if (phase === 'back' || phase === 'measure') return;
     // Home is wherever the board card is NOW — the editor may have moved it.
     // A part has no card of its own, so it flies home into its cluster.
-    const el = document.querySelector(`.km-cols [data-hl="${open.id}"]`)
+    const el = (open.home ? document.querySelector(open.home) : null)
+      || document.querySelector(`.km-cols [data-hl="${open.id}"]`)
       || (focusItem?.parentId != null ? document.querySelector(`.km-cols [data-hl="${focusItem.parentId}"]`) : null);
     if (el) { const r = el.getBoundingClientRect(); setFrom({ l: r.left, t: r.top, w: r.width }); }
     setComposing(false); setDraft('');
@@ -181,6 +205,8 @@ export function BoardFocus({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
+      // A dialog over the canvas (the slice's ✎) takes its own Escape.
+      if (document.querySelector('.km-scrim')) return;
       if (composing) { setComposing(false); setDraft(''); return; }
       if (editOpen) { setEditOpen(false); setEditId(open.id); return; }
       close();
@@ -202,7 +228,12 @@ export function BoardFocus({
   const ed = rows.find((x) => x.id === editId) || f;
   const live = phase === 'to';
   const kidsOf = (id: number) => rows.filter((x) => x.parentId === id && !x.archived);
-  const kids = kidsOf(f.id);
+  // A slice's parts are its top-level tasks; a cluster inside it keeps its
+  // own parts, which draw inside it on the board.
+  const kids = slice
+    ? rows.filter((x) => x.sliceId === slice.id && !x.archived
+      && (x.parentId === null || !rows.some((p) => p.id === x.parentId && p.sliceId === slice.id)))
+    : kidsOf(f.id);
   const parent = f.parentId !== null ? rows.find((x) => x.id === f.parentId) || null : null;
   const related = canvas.related
     .map((id) => rows.find((x) => x.id === id))
@@ -214,7 +245,7 @@ export function BoardFocus({
     if (rel === 'child') {
       writeCanvas({ ...canvas, related: canvas.related.filter((r) => r !== x.id) });
       enter(x.id);
-      await onPatch(x, { parentId: f.id });
+      await onPatch(x, slice ? { sliceId: slice.id } : { parentId: f.id });
     } else {
       writeCanvas({ ...canvas, related: [...canvas.related.filter((r) => r !== x.id), x.id] });
       enter(x.id);
@@ -230,7 +261,7 @@ export function BoardFocus({
     const t = title.trim();
     if (!t) { setComposing(false); setDraft(''); return; }
     setDraft('');
-    const made = await onCreateChild(f, t);
+    const made = slice ? await onCreateInSlice?.(slice, t) : await onCreateChild(f, t);
     if (made) enter(made.id);
   };
   const startNodeDrag = (e: React.PointerEvent, id: number, x: number, y: number) => {
@@ -325,8 +356,11 @@ export function BoardFocus({
   const onCanvas = new Map(nodes.map((n) => [n.it.id, n.rel]));
   const fArea = areaKey(f);
   const order = (x: RoadmapItem) => { const i = columns.findIndex((c) => c.key === colOf(x)); return i < 0 ? 99 : i; };
+  // Slice mode: the near scope is work in no slice yet, the work you would file.
+  const near = (x: RoadmapItem) => (slice ? x.sliceId === null : areaKey(x) === fArea);
   const scoped = rows
-    .filter((x) => x.id !== f.id && !x.archived && isBoardWork(x) && (trayScope === 'all' || areaKey(x) === fArea))
+    .filter((x) => x.id !== f.id && !x.archived && isBoardWork(x) && (!slice || x.sliceId !== slice.id)
+      && (trayScope === 'all' || near(x)))
     .sort((a, b) => order(a) - order(b) || b.id - a.id);
   const trayOn = live && (!geo.narrow || trayOpen);
   const edOn = live && editOpen;
@@ -351,7 +385,7 @@ export function BoardFocus({
           </button>
           <span className="bf-crumb">
             <span>{slug} /</span>
-            <span className="id">#{f.id}</span>
+            <span className="id">{slice ? 'Slice' : `#${f.id}`}</span>
           </span>
           {geo.narrow && (
             <button className={`k-btn sm secondary${trayOpen ? ' on' : ''}`} onClick={() => setTrayOpen(!trayOpen)}>
@@ -384,7 +418,7 @@ export function BoardFocus({
             <div key={`${n.rel}-${it.id}`} className={`bf-node${dragging ? ' dragging' : ''}${editOpen && editId === it.id ? ' editing' : ''}`}
               onPointerDown={(e) => startNodeDrag(e, it.id, n.x, n.y)} onClick={stop}
               onDoubleClick={(e) => { e.stopPropagation(); if (live && n.rel === 'child') editOn(it.id); }}
-              title={n.rel === 'child' ? 'Double-click to edit this part' : undefined}
+              title={n.rel === 'child' ? `Double-click to edit this ${slice ? 'task' : 'part'}` : undefined}
               style={{
                 left: n.x, top: n.y, width: n.w, pointerEvents: n.shown ? 'auto' : 'none',
                 ...(tint ? { borderTopColor: `color-mix(in oklch, ${tint} 70%, var(--surface-card))`, borderTopWidth: 2 } : {}),
@@ -396,14 +430,14 @@ export function BoardFocus({
               }}>
               <div className="row">
                 <span className={`rel${n.rel === 'related' ? '' : ' strong'}`}>
-                  {n.rel === 'child' ? 'Part' : n.rel === 'parent' ? 'Cluster' : 'Related'}
+                  {n.rel === 'child' ? (slice ? 'Task' : 'Part') : n.rel === 'parent' ? 'Cluster' : 'Related'}
                 </span>
                 <span className="col" style={{ color: COL_TONE[ck] || 'var(--status-neutral-fg)' }}>{colName(ck)}</span>
-                <button className="bf-x" onClick={(e) => { e.stopPropagation(); unlink(it, n.rel); }}
+                {!(slice && n.rel === 'child') && <button className="bf-x" onClick={(e) => { e.stopPropagation(); unlink(it, n.rel); }}
                   aria-label={n.rel === 'child' ? `Unfile #${it.id} — it stays on the board` : n.rel === 'parent' ? `Detach from #${it.id}` : `Take #${it.id} off the canvas`}
                   title={n.rel === 'child' ? `Unfile #${it.id} — it stays on the board` : n.rel === 'parent' ? `Detach from #${it.id}` : `Take #${it.id} off the canvas`}>
                   <KitIcon name="x" size={12} />
-                </button>
+                </button>}
               </div>
               <span className="t">{it.title}</span>
               <div className="row">
@@ -411,8 +445,8 @@ export function BoardFocus({
                 <span className={`bf-pts${pts === null ? ' none' : ''}`}>{pts === null ? '–' : pts}</span>
                 {kind && <span className={`k-tag km-kind ${kind}`}>{ITEM_KIND_LABEL[kind]}</span>}
                 <span className="right">
-                  {n.rel === 'related' && canParent && kidsOf(it.id).length === 0 && (
-                    <button className="bf-mini" title="File this under the focused item as a child"
+                  {n.rel === 'related' && canParent && (slice ? it.parentId === null : kidsOf(it.id).length === 0) && (
+                    <button className="bf-mini" title={slice ? 'File this into the slice' : 'File this under the focused item as a child'}
                       onClick={(e) => { e.stopPropagation(); bringIn(it, 'child'); }}>Make part</button>
                   )}
                   <span className="bf-pri" style={{ color: pri.color }}>{pri.glyph}</span>
@@ -434,9 +468,9 @@ export function BoardFocus({
           </span>
         )}
 
-        {editOpen && (
-          <FocusEditor key={ed.id} item={ed} isPart={ed.id !== f.id}
-            family={kids.length ? [f, ...kids] : []} onSwitch={(id) => setEditId(id)}
+        {editOpen && !(slice && ed === f) && (
+          <FocusEditor key={ed.id} item={ed} isPart={ed.id !== f.id} leadless={!!slice}
+            family={slice ? kids : kids.length ? [f, ...kids] : []} onSwitch={(id) => setEditId(id)}
             x={fxE + fw + 16} y={Math.max(84, fy - 8)} w={PW} on={edOn} ms={ms}
             columns={columns} colKey={colOf(ed)} areas={areas}
             rolled={rows.some((x) => x.parentId === ed.id && !x.archived)}
@@ -454,7 +488,7 @@ export function BoardFocus({
           }}>
             {composing ? (
               <div className="bf-compose">
-                <span className="eyebrow">New part</span>
+                <span className="eyebrow">{slice ? 'New task in this slice' : 'New part'}</span>
                 <input autoFocus value={draft} onChange={(e) => setDraft(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addChild(draft); } }}
                   placeholder="What needs doing?" aria-label="New part title" />
@@ -462,7 +496,7 @@ export function BoardFocus({
               </div>
             ) : (
               <button className="bf-addchild" onClick={() => { setComposing(true); setDraft(''); }}>
-                <KitIcon name="plus" size={14} />Add part
+                <KitIcon name="plus" size={14} />{slice ? 'Add task' : 'Add part'}
               </button>
             )}
           </div>
@@ -484,7 +518,7 @@ export function BoardFocus({
               <button role="tab" aria-selected={trayScope === 'area'} className={trayScope === 'area' ? 'on' : ''}
                 onClick={() => setTrayScope('area')}>
                 {dotOf(fArea) && <span className="km-dot" style={{ background: dotOf(fArea) }} />}
-                {fArea === UNTAGGED ? 'No area' : `Same area · ${fArea}`}
+                {slice ? 'Not in a slice' : fArea === UNTAGGED ? 'No area' : `Same area · ${fArea}`}
               </button>
               <button role="tab" aria-selected={trayScope === 'all'} className={`all${trayScope === 'all' ? ' on' : ''}`}
                 onClick={() => setTrayScope('all')}>Whole board</button>
@@ -496,7 +530,7 @@ export function BoardFocus({
               const ck = colOf(x);
               const kind = (x.kind ?? '') as ItemKind;
               const dot = trayScope === 'all' ? dotOf(areaKey(x)) : '';
-              const canChild = canParent && x.id !== f.parentId && kidsOf(x.id).length === 0;
+              const canChild = slice ? x.parentId === null : canParent && x.id !== f.parentId && kidsOf(x.id).length === 0;
               return (
                 <div key={x.id} className={`bf-trayrow${on ? ' on' : ''}`}>
                   <div className="row">
@@ -507,12 +541,12 @@ export function BoardFocus({
                   </div>
                   <span className="t">{x.title}</span>
                   {on ? (
-                    <span className="hint">On the canvas · {on === 'child' ? 'Part' : on === 'parent' ? 'Cluster' : 'Related'}</span>
+                    <span className="hint">On the canvas · {on === 'child' ? (slice ? 'Task' : 'Part') : on === 'parent' ? 'Cluster' : 'Related'}</span>
                   ) : (
                     <div className="acts">
                       {canChild && (
-                        <button className="bf-mini" title="File it under the focused item" onClick={() => bringIn(x, 'child')}>
-                          <KitIcon name="plus" size={12} />Part
+                        <button className="bf-mini" title={slice ? 'File it into this slice' : 'File it under the focused item'} onClick={() => bringIn(x, 'child')}>
+                          <KitIcon name="plus" size={12} />{slice ? 'Task' : 'Part'}
                         </button>
                       )}
                       <button className="bf-mini" title="Put it on the canvas as related work, without filing it"
@@ -535,7 +569,7 @@ export function BoardFocus({
         ))}
       </svg>
 
-      <div ref={floatRef} className="km-card bf-float" title="Double-click to edit"
+      <div ref={floatRef} className={`km-card bf-float${slice ? ' bf-slice' : ''}`} title={slice ? 'Double-click to edit the slice' : 'Double-click to edit'}
         onDoubleClick={(e) => { e.stopPropagation(); if (live) editOn(f.id); }}
         style={{
           left: geo.l, top: targetT, width: geo.w,
@@ -545,8 +579,38 @@ export function BoardFocus({
           boxShadow: phase === 'to' ? 'var(--shadow-md)' : 'var(--shadow-lg)',
           ...(dotOf(fArea) ? { borderTopColor: `color-mix(in oklch, ${dotOf(fArea)} 70%, var(--surface-card))`, borderTopWidth: 2 } : {}),
         }}>
-        <CardFace item={f} kids={kids} parent={parent} sprint={sprintOf(f)}
-          onEdit={() => { if (live) editOn(f.id); }} />
+        {slice
+          ? <SliceFace slice={slice} kids={kids} onEdit={() => { if (live) editOn(f.id); }} />
+          : <CardFace item={f} kids={kids} parent={parent} sprint={sprintOf(f)}
+            onEdit={() => { if (live) editOn(f.id); }} />}
+      </div>
+    </>
+  );
+}
+
+/** A slice in the middle of the canvas (decision 6): its title, how far its
+ *  tasks have got, and the opening of its spec. ✎ opens the slice dialog. */
+function SliceFace({ slice, kids, onEdit }: { slice: Slice; kids: RoadmapItem[]; onEdit: () => void }) {
+  const built = kids.filter(isBuilt).length;
+  const pct = kids.length ? Math.round((built / kids.length) * 100) : 0;
+  const lede = slice.spec.split('\n').map((l) => l.replace(/^#+\s*/, '').trim()).find(Boolean) || '';
+  return (
+    <>
+      <span className="t">{slice.title}</span>
+      {lede && <span className="bf-slicespec">{lede}</span>}
+      <div className="km-cardmeta">
+        <span className="kind" style={{ color: 'var(--accent)' }}><KitIcon name="layers" size={13} /></span>
+        <span className="id">Slice</span>
+        <span className="right">
+          <button className="km-colbtn" aria-label="Edit slice" title="Edit slice"
+            onClick={(e) => { e.stopPropagation(); onEdit(); }}>
+            <KitIcon name="pencil" size={13} />
+          </button>
+        </span>
+      </div>
+      <div className="bf-sliceprog" title={`${built} of ${kids.length} built`}>
+        <span className="bar"><span style={{ width: `${pct}%` }} /></span>
+        <span className="n">{built}/{kids.length} built</span>
       </div>
     </>
   );
@@ -603,8 +667,10 @@ function CardFace({ item, kids, parent, sprint, onEdit }: {
  * The inline editor. Title and notes save themselves, debounced, and flush
  * when the editor closes; every chip is one write, the same the card sends.
  */
-function FocusEditor({ item, isPart, family, onSwitch, x, y, w, on, ms, columns, colKey, areas, rolled, onClose, onPatch, onMove }: {
+function FocusEditor({ item, isPart, leadless = false, family, onSwitch, x, y, w, on, ms, columns, colKey, areas, rolled, onClose, onPatch, onMove }: {
   item: RoadmapItem; isPart: boolean;
+  /** Slice mode: every member of `family` is a task, none of them the lead. */
+  leadless?: boolean;
   /** #601 — the cluster and its parts, so the editor can move between them at
    *  any width (a narrow canvas hides the linked nodes while editing). [] for
    *  a plain card. */
@@ -643,24 +709,27 @@ function FocusEditor({ item, isPart, family, onSwitch, x, y, w, on, ms, columns,
           : `opacity ${ms(140)}ms var(--ease-standard), transform ${ms(140)}ms var(--ease-standard)`,
       }}>
       <div className="head">
-        <span className="eyebrow">{isPart ? 'Edit part' : 'Edit item'}</span>
+        <span className="eyebrow">{leadless ? 'Edit task' : isPart ? 'Edit part' : 'Edit item'}</span>
         <span className="id">#{item.id}</span>
         <button className="bf-x" onClick={() => { flush(); onClose(); }} aria-label="Close editor" title="Close (Esc)">
           <KitIcon name="x" size={13} />
         </button>
       </div>
       {family.length > 0 && (
-        <div className="bf-family" role="tablist" aria-label="Cluster and its parts">
-          {family.map((m, i) => (
+        <div className="bf-family" role="tablist" aria-label={leadless ? 'The slice’s tasks' : 'Cluster and its parts'}>
+          {family.map((m, i) => {
+            const lead = i === 0 && !leadless;
+            return (
             <button key={m.id} role="tab" aria-selected={m.id === item.id}
-              className={`${m.id === item.id ? 'on' : ''}${i === 0 ? ' lead' : ''}`}
-              title={i === 0 ? `Edit the cluster #${m.id}` : `Edit part #${m.id}`}
+              className={`${m.id === item.id ? 'on' : ''}${lead ? ' lead' : ''}`}
+              title={lead ? `Edit the cluster #${m.id}` : `Edit ${leadless ? 'task' : 'part'} #${m.id}`}
               onClick={() => { if (m.id !== item.id) { flush(); onSwitch(m.id); } }}>
-              <KitIcon name={i === 0 ? 'layers' : 'circle-check'} size={12} />
+              <KitIcon name={lead ? 'layers' : 'circle-check'} size={12} />
               <span className="ft">{m.title}</span>
-              {i > 0 && <span className="fp">{m.points == null ? '–' : m.points}</span>}
+              {!lead && <span className="fp">{m.points == null ? '–' : m.points}</span>}
             </button>
-          ))}
+            );
+          })}
         </div>
       )}
       <label className="fld">

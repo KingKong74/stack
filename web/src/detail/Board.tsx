@@ -102,7 +102,6 @@ import { go, hrefTo } from '../lib/route';
 import { newTermName, termClaim, launchBrief } from '../lib/termLaunch';
 import type { BoardFolds, BoardView, BoardSort, BoardShow, BoardGroup } from '../store';
 import { BoardListView, SORT_LABEL, SHOW_LABEL } from './BoardList';
-import { SliceFocus } from './SliceFocus';
 import { BoardFocus, type FocusOpen, type FocusPhase } from './BoardFocus';
 import { PropositionsColumn } from './Propositions';
 
@@ -387,6 +386,33 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
   const isPart = (it: RoadmapItem) => it.parentId !== null && partsOf.has(it.parentId);
   const placeOf = (it: RoadmapItem) => clusterKeyOf(it, partsOf.get(it.id) || []);
 
+  // THE MILESTONE BEING VIEWED (owner's call, 2026-11-09): the strip's ‹ ›
+  // flick through every milestone, in order, and the board shows that one's
+  // slices. It starts on the current one; a row in no slice is shown only
+  // there, since it belongs to no milestone. Screen state, never stored: the
+  // board should always open on what is current.
+  const [viewMsId, setViewMsId] = useState<number | null>(null);
+  const msOrdered = useMemo(() => [...ms].sort((a, b) => a.position - b.position || a.id - b.id), [ms]);
+  const curMs = currentMilestone(ms);
+  const shownMs = ms.find((m) => m.id === viewMsId) || curMs || msOrdered[0] || null;
+  const msOfRow = (it: RoadmapItem) => {
+    const s = it.sliceId !== null ? sl.find((x) => x.id === it.sliceId) : undefined;
+    return s ? s.milestoneId : null;
+  };
+  const inView = (it: RoadmapItem) => {
+    if (!shownMs) return true;
+    const m = msOfRow(it);
+    return m === null ? shownMs.id === (curMs?.id ?? shownMs.id) : m === shownMs.id;
+  };
+  const stepMilestone = (dir: -1 | 1) => {
+    if (!shownMs) return;
+    const i = msOrdered.findIndex((m) => m.id === shownMs.id);
+    const next = msOrdered[i + dir];
+    if (!next) return;
+    closeAll(); setPicked([]);
+    setViewMsId(next.id);
+  };
+
   // Search and the parked filter, but NOT the area filter: the chips count off
   // this, so a chip says what pressing it would show under the current search
   // (the counts follow the search box, and a picked chip does not zero the rest).
@@ -402,13 +428,14 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
       .filter((it) => isBoardWork(it))
       .filter((it) => !isPart(it))
       .filter((it) => (hideParked ? !it.skipped : true))
+      .filter(inView)
       // A cluster matches when it or any of its parts does: a part is found
       // by finding the card it is drawn inside.
       .filter((it) => !needle
         || [it, ...(partsOf.get(it.id) || [])].some((x) => x.title.toLowerCase().includes(needle)
           || x.note.toLowerCase().includes(needle)
           || String(x.id) === needle.replace(/^#/, '')));
-  }, [rows, query, hideParked, partsOf]);
+  }, [rows, query, hideParked, partsOf, sl, shownMs?.id, curMs?.id]);
 
   // The List view's rows: the same search and parked filters, but NOT
   // `isBoardWork` — it is a finder across every screen (BoardList.tsx's header).
@@ -451,7 +478,7 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
     if (bySlice && picked.length === 1 && picked[0] !== NO_SLICE) {
       return sl.find((s) => sliceKeyOf(s.id) === picked[0]) || null;
     }
-    const inCur = liveSlices(sl, ms).filter((s) => s.milestoneId === cur?.id);
+    const inCur = liveSlices(sl, ms).filter((s) => s.milestoneId === (shownMs ?? cur)?.id);
     return inCur.length === 1 ? inCur[0] : null;
   })();
   const icedCount = rows.filter((it) => !it.archived && isIced(it)).length;
@@ -480,17 +507,17 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
   // a board row is in, then "No slice" for worked rows that have none.
   const groupOrder = useMemo(() => {
     if (!bySlice) return areaOrder;
-    const order = liveSlices(sl, ms).map((s) => sliceKeyOf(s.id));
+    const order = liveSlices(sl, ms).filter((s) => !shownMs || s.milestoneId === shownMs.id).map((s) => sliceKeyOf(s.id));
     let loose = false;
     for (const it of rows) {
-      if (it.archived || !isBoardWork(it)) continue;
+      if (it.archived || !isBoardWork(it) || !inView(it)) continue;
       const k = sliceGroup(it);
       if (k === NO_SLICE) loose = true;
       else if (!order.includes(k)) order.push(k);
     }
     if (loose) order.push(NO_SLICE);
     return order;
-  }, [bySlice, areaOrder, rows, sl, ms]);
+  }, [bySlice, areaOrder, rows, sl, ms, shownMs?.id]);
 
   // The lane holder per area: an OPEN item with a branch on it. Same predicate
   // as the server's holders query — not done, claim non-empty — and read off
@@ -835,7 +862,7 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
   const startMilestone = (v: { name: string; goal: string; targetOn: string | null }) =>
     guard(async () => { setMsEdit(false); msWrote(await createMilestone(slug, { ...v, status: 'active' })); });
   const makeCurrent = (id: number) =>
-    guard(async () => { setMsEdit(false); msWrote(await patchMilestone(slug, id, { status: 'active' })); });
+    guard(async () => { setMsEdit(false); setViewMsId(null); msWrote(await patchMilestone(slug, id, { status: 'active' })); });
 
   // A card born in a column that is not its derived one carries the override
   // from the start; one born in To Do does not, because it would derive there
@@ -953,11 +980,30 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
   // A double-click on a card (or its ✎) flies it onto the canvas. The phase is
   // lifted here because the board itself animates with it: it steps back while
   // the card is out (`fx-out`) and comes back as it lands (`fx-in`).
-  const [sliceFocus, setSliceFocus] = useState<{ slice: Slice; left: number } | null>(null);
   const [focus, setFocus] = useState<FocusOpen | null>(null);
   const [focusPhase, setFocusPhase] = useState<FocusPhase>('measure');
+  // A SLICE ZOOMS ON THE FOCUS CANVAS (BoardFocus decision 6): the slice flies
+  // out of its group head with its tasks drawn in around it. `editId` opens
+  // one of them in the editor straight away.
+  const openSlice = (slice: Slice, el: HTMLElement | null, editId?: number) => {
+    if (focus || !el) return;
+    closeAll(); setInlineId(null); setDragId(null); setOver(null);
+    const head = el.closest('.km-group')?.querySelector('.km-grouphead') as HTMLElement | null;
+    const r = (head || el).getBoundingClientRect();
+    const main = el.closest('.con-main') || el.closest('.km');
+    if (editId != null) setSelected(editId);
+    setFocusPhase('measure');
+    setFocus({ id: -slice.id, sliceId: slice.id, from: { l: r.left, t: r.top, w: r.width },
+      edit: editId != null, editId,
+      home: `.km-cols .km-group[data-area="${sliceKeyOf(slice.id)}"] .km-grouphead`,
+      canvasLeft: Math.round(main?.getBoundingClientRect().left ?? 0) });
+  };
   const openFocus = (it: RoadmapItem, el: HTMLElement | null, edit: boolean, editId?: number) => {
     if (focus || !el) return;
+    // A task in a slice is not a thing of its own (owner's call, 2026-11-09):
+    // it opens its slice, with the task in the editor.
+    const home = it.sliceId !== null ? sl.find((x) => x.id === it.sliceId) : undefined;
+    if (home) { openSlice(home, el, editId ?? it.id); return; }
     closeAll(); setInlineId(null); setDragId(null); setOver(null);
     const r = el.getBoundingClientRect();
     const main = el.closest('.con-main') || el.closest('.km');
@@ -986,6 +1032,16 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
     await guard(async () => {
       made = await createRoadmapItem(slug, { title, note: '', bucket: PRIORITY_DEFAULT, kind: 'task',
         parentId: parent.id, ...(parent.area.trim() ? { area: parent.area } : {}) });
+      setRows((r) => [...r, made!]);
+      onRefresh();
+    });
+    return made;
+  };
+  // A task made on a slice's canvas: born in the slice, as a task.
+  const createInSlice = async (slice: Slice, title: string): Promise<RoadmapItem | undefined> => {
+    let made: RoadmapItem | undefined;
+    await guard(async () => {
+      made = await createRoadmapItem(slug, { title, note: '', bucket: PRIORITY_DEFAULT, kind: 'task', sliceId: slice.id });
       setRows((r) => [...r, made!]);
       onRefresh();
     });
@@ -1063,6 +1119,8 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
 
         {view === 'board' && <>
         <SpineStrip milestones={ms} slices={sl} iced={icedCount}
+          viewing={shownMs} position={shownMs ? msOrdered.findIndex((m) => m.id === shownMs.id) : -1} total={msOrdered.length}
+          onStep={stepMilestone} onCurrent={curMs && shownMs?.id !== curMs.id ? () => { closeAll(); setPicked([]); setViewMsId(null); } : undefined}
           onMilestone={() => { closeAll(); setMsEdit(true); }}
           onNewSlice={() => { closeAll(); setSliceEdit({ slice: null }); }}
           onIcebox={() => go.detail(slug, 'auto')} milestonesHref={hrefTo.detail(slug, 'milestones')} />
@@ -1282,12 +1340,12 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
                       <div className="km-grouphead"
                         onDoubleClick={(e) => {
                           if (!meta.slice || (e.target as HTMLElement).closest('button, input')) return;
-                          e.stopPropagation(); closeAll();
-                          setSliceFocus({ slice: meta.slice, left: Math.round(e.currentTarget.closest('.con-main')?.getBoundingClientRect().left ?? 0) });
+                          e.stopPropagation();
+                          openSlice(meta.slice, e.currentTarget);
                         }}>
                         {meta.slice && <button className="km-colbtn" aria-label={`Zoom into slice ${meta.name}`}
                           title="Zoom into this slice (or double-click its header)"
-                          onClick={(e) => { e.stopPropagation(); closeAll(); setSliceFocus({ slice: meta.slice!, left: Math.round(e.currentTarget.closest('.con-main')?.getBoundingClientRect().left ?? 0) }); }}>
+                          onClick={(e) => { e.stopPropagation(); openSlice(meta.slice!, e.currentTarget); }}>
                           <KitIcon name="layers" size={13} />
                         </button>}
                         {!searching && (
@@ -1375,14 +1433,14 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
       </div>
 
       {sliceEdit && (
-        <SliceDialog slice={sliceEdit.slice} milestones={ms}
+        <SliceDialog slice={sliceEdit.slice} milestones={ms} defaultMilestoneId={shownMs?.id ?? null}
           areaNames={areaOrder.filter((k) => k !== UNTAGGED)}
           count={sliceEdit.slice ? rows.filter((it) => it.sliceId === sliceEdit.slice!.id && !it.archived).length : 0}
           onClose={() => setSliceEdit(null)} onSave={saveSlice}
           onDelete={sliceEdit.slice ? () => dropSlice(sliceEdit.slice!) : undefined} />
       )}
       {msEdit && (
-        <MilestoneDialog milestones={ms} onClose={() => setMsEdit(false)}
+        <MilestoneDialog milestones={ms} editing={shownMs} onClose={() => setMsEdit(false)}
           onSave={saveMilestone} onCreate={startMilestone} onMakeCurrent={makeCurrent} />
       )}
 
@@ -1391,12 +1449,6 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
           onCreate={(title, bucket, extra) => { setDialog(false); add(title, bucket, '', homeArea, extra); }} />
       )}
 
-      {sliceFocus && (
-        <SliceFocus slice={sliceFocus.slice} rows={rows} left={sliceFocus.left}
-          columns={(lists || []).map((l) => ({ key: l.key, name: l.name }))} colOf={colOf}
-          onClose={() => setSliceFocus(null)}
-          onOpen={(it, el) => { setSliceFocus(null); openFocus(it, el, false); }} />
-      )}
       {focus && (
         <BoardFocus slug={slug} open={focus} rows={rows}
           columns={(lists || []).map((l) => ({ key: l.key, name: l.name }))}
@@ -1407,7 +1459,8 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
           onClosed={() => { setFocus(null); setFocusPhase('measure'); }}
           onPatch={focusPatch}
           onMove={(it, key) => moveTo(it, key)}
-          onCreateChild={createChild} />
+          onCreateChild={createChild}
+          slices={sl} onEditSlice={(x) => setSliceEdit({ slice: x })} onCreateInSlice={createInSlice} />
       )}
     </>
   );

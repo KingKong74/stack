@@ -135,18 +135,22 @@ const ROADMAP_PANELS = [
   // press below finds the board drawn again. No tray press: at the narrow
   // viewport the tray hides behind its Bring in toggle (the design's), so the
   // palette audit measures it at desktop width instead.
+  // A TASK IN A SLICE OPENS ITS SLICE (BoardFocus decision 6, 2026-11-09):
+  // the slice flies out with its tasks around it and the pressed task already
+  // in the editor. Its ✎ is the slice's own dialog, dismissed on the backdrop.
   {
     id: 'board-focus',
-    label: 'Board — a double-clicked card opens on the focus canvas',
-    click: '.km-col:has(.km-card) .km-card .km-cardmeta .id',
+    label: 'Board — a double-clicked task opens its slice, task in the editor',
+    click: '.km-slicegroup .km-card .km-cardmeta .id',
     dblclick: true,
-    expect: '.bf .bf-tray',
+    expect: '.bf .bf-editor',
   },
   {
     id: 'board-focus-edit',
-    label: 'Board — the focused card’s ✎ opens its editor',
-    click: '.bf-float [aria-label="Edit item"]',
-    expect: '.bf .bf-editor',
+    label: 'Board — the zoomed slice’s ✎ opens the slice dialog',
+    click: '.bf-float [aria-label="Edit slice"]',
+    expect: '.km-dialog .km-textarea',
+    dismiss: '.km-scrim',
   },
   {
     id: 'board-focus-close',
@@ -233,13 +237,13 @@ const ROADMAP_PANELS = [
     label: 'Board — double-click a slice header to zoom',
     click: '.km-slicegroup .km-grouphead .nm',
     dblclick: true,
-    expect: '.sf .sf-content',
+    expect: '.bf-float.bf-slice',
   },
   {
     id: 'board-slicezoom-back',
     label: 'Board — return from slice zoom',
-    click: '.sf .bf-back',
-    expect: 'body:not(:has(.sf)) .km-grouphead',
+    click: '.bf .bf-back',
+    expect: 'body:not(:has(.bf)) .km-grouphead',
   },
   {
     id: 'board-sliceedit',
@@ -254,6 +258,21 @@ const ROADMAP_PANELS = [
     click: '.km-spine-ms',
     expect: '.km-dialog .km-textarea',
     dismiss: '.km-scrim',
+  },
+  // The strip flicks through milestones (2026-11-09). Next is pressed from the
+  // current one, so it needs a milestone after it; Back to current returns the
+  // board to what every press below expects.
+  {
+    id: 'board-ms-next',
+    label: 'Board — › views the next milestone',
+    click: '.km-spine [aria-label="Next milestone"]',
+    expect: '.km-spine .km-spine-back',
+  },
+  {
+    id: 'board-ms-back',
+    label: 'Board — Back to current returns to the current milestone',
+    click: '.km-spine-back',
+    expect: '.km-spine:not(:has(.km-spine-back))',
   },
   {
     // The group filter is one toolbar button (2026-11-09, it replaced a row

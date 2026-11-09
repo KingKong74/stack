@@ -68,22 +68,47 @@ export function SlicePicker({ value, slices, milestones, onPick, iceboxLabel = '
  * the Icebox. The Icebox count is what explains a low progress number right
  * after the spine landed: most of a board was iced for triage.
  */
-export function SpineStrip({ milestones, slices, iced, onMilestone, onNewSlice, onIcebox, milestonesHref }: {
+// THE STRIP FLICKS (owner's call, 2026-11-09): ‹ › step through every
+// milestone in order and the board shows the one being viewed. `viewing` is
+// the board's; without it the strip shows the current milestone, as before.
+const MS_STATUS: Record<Milestone['status'], { label: string; tone: string }> = {
+  active: { label: 'Current', tone: 'success' },
+  planned: { label: 'Upcoming', tone: 'info' },
+  done: { label: 'Completed', tone: '' },
+};
+export function SpineStrip({ milestones, slices, iced, onMilestone, onNewSlice, onIcebox, milestonesHref,
+  viewing, position = -1, total = 0, onStep, onCurrent }: {
   milestones: Milestone[]; slices: Slice[]; iced: number;
   onMilestone: () => void; onNewSlice: () => void; onIcebox: () => void;
   /** The Milestones tab, where every milestone (not just the current) lives. */
   milestonesHref?: string;
+  viewing?: Milestone | null; position?: number; total?: number;
+  onStep?: (dir: -1 | 1) => void;
+  /** Present while viewing another milestone: back to the current one. */
+  onCurrent?: () => void;
 }) {
-  const cur = currentMilestone(milestones);
+  const cur = viewing === undefined ? currentMilestone(milestones) : viewing;
   const inCur = cur ? slices.filter((s) => s.milestoneId === cur.id && !s.archived).length : 0;
+  const st = cur ? MS_STATUS[cur.status] : null;
   return (
     <div className="km-spine">
       <span className="km-spine-eyebrow">Milestone</span>
+      {onStep && total > 1 && (
+        <span className="km-spine-flick">
+          <button className="km-colbtn" aria-label="Previous milestone" title="Previous milestone"
+            disabled={position <= 0} onClick={() => onStep(-1)}><KitIcon name="chevron-left" size={14} /></button>
+          <span className="km-spine-pos">{position + 1}/{total}</span>
+          <button className="km-colbtn" aria-label="Next milestone" title="Next milestone"
+            disabled={position >= total - 1} onClick={() => onStep(1)}><KitIcon name="chevron-right" size={14} /></button>
+        </span>
+      )}
       <button className="km-spine-ms" onClick={onMilestone}
         title={cur?.goal.trim() || 'Name the milestone and say what it is for'}>
         {cur ? cur.name : 'None current'}
         <KitIcon name="chevron-down" size={12} />
       </button>
+      {st && <span className={`k-tag ${st.tone}`.trim()}>{st.label}</span>}
+      {onCurrent && <button className="k-btn sm ghost km-spine-back" onClick={onCurrent}>Back to current</button>}
       {cur?.goal.trim() && <span className="km-spine-goal">{cur.goal.trim().split('\n')[0]}</span>}
       {cur?.targetOn && <span className="k-tag" title="A target you set. It gates nothing.">by {cur.targetOn}</span>}
       {milestonesHref && <a className="k-btn sm ghost" href={milestonesHref}>All milestones</a>}
@@ -102,8 +127,10 @@ export function SpineStrip({ milestones, slices, iced, onMilestone, onNewSlice, 
 }
 
 /** New or edit. `slice` null creates one in the current milestone. */
-export function SliceDialog({ slice, milestones, areaNames, count, onClose, onSave, onDelete }: {
+export function SliceDialog({ slice, milestones, areaNames, count, onClose, onSave, onDelete, defaultMilestoneId = null }: {
   slice: Slice | null; milestones: Milestone[]; areaNames: string[];
+  /** A new slice's milestone: the one the board is viewing, else the current. */
+  defaultMilestoneId?: number | null;
   /** Rows in it now, so the delete can say how many go to the Icebox. */
   count: number;
   onClose: () => void;
@@ -114,7 +141,7 @@ export function SliceDialog({ slice, milestones, areaNames, count, onClose, onSa
   const [title, setTitle] = useState(slice?.title ?? '');
   const [spec, setSpec] = useState(slice?.spec ?? '');
   const [areas, setAreas] = useState<string[]>(slice?.areas ?? []);
-  const [mid, setMid] = useState<number | null>(slice?.milestoneId ?? cur?.id ?? null);
+  const [mid, setMid] = useState<number | null>(slice?.milestoneId ?? defaultMilestoneId ?? cur?.id ?? null);
   const [confirming, setConfirming] = useState(false);
   // An area the slice names that nothing has registered yet is still offered,
   // so editing a slice never silently drops one of its own.
@@ -187,30 +214,36 @@ export function SliceDialog({ slice, milestones, areaNames, count, onClose, onSa
  * start a new one, or make an existing one current. Either FINISHES the one in
  * progress, and the line under the buttons says so before the press.
  */
-export function MilestoneDialog({ milestones, onClose, onSave, onCreate, onMakeCurrent }: {
+export function MilestoneDialog({ milestones, onClose, onSave, onCreate, onMakeCurrent, editing }: {
   milestones: Milestone[];
+  /** The milestone to edit: the one the board is viewing. Default, the current. */
+  editing?: Milestone | null;
   onClose: () => void;
   onSave: (id: number, v: { name: string; goal: string; targetOn: string | null }) => void;
   onCreate: (v: { name: string; goal: string; targetOn: string | null }) => void;
   onMakeCurrent: (id: number) => void;
 }) {
-  const cur = currentMilestone(milestones);
-  const [name, setName] = useState(cur?.name ?? '');
-  const [goal, setGoal] = useState(cur?.goal ?? '');
-  const [targetOn, setTargetOn] = useState(cur?.targetOn ?? '');
+  const current = currentMilestone(milestones);
+  const target = editing ?? current;
+  // "Move on" belongs to the current milestone only; another one offers to
+  // become current instead.
+  const cur = target && target.id === current?.id ? current : null;
+  const [name, setName] = useState(target?.name ?? '');
+  const [goal, setGoal] = useState(target?.goal ?? '');
+  const [targetOn, setTargetOn] = useState(target?.targetOn ?? '');
   const [fresh, setFresh] = useState('');
   const others = milestones.filter((m) => m.id !== cur?.id && m.status !== 'done');
   const save = () => {
     const n = name.trim();
     if (!n) return;
-    if (cur) onSave(cur.id, { name: n, goal, targetOn: targetOn || null });
+    if (target) onSave(target.id, { name: n, goal, targetOn: targetOn || null });
     else onCreate({ name: n, goal, targetOn: targetOn || null });
   };
   return (
     <div className="km-scrim" onClick={onClose}>
       <div className="km-dialog km-dialog-wide" onClick={(e) => e.stopPropagation()}>
         <div className="km-dialog-head">
-          <span className="t">{cur ? 'Current milestone' : 'Set a milestone'}</span>
+          <span className="t">{cur ? 'Current milestone' : target ? `${target.status === 'done' ? 'Completed' : 'Upcoming'} milestone` : 'Set a milestone'}</span>
           <span className="d">Where this project is going next. Slices belong to a milestone; the target date gates nothing.</span>
         </div>
         <label className="km-field">
@@ -247,6 +280,14 @@ export function MilestoneDialog({ milestones, onClose, onSave, onCreate, onMakeC
               </button>
             ))}
             <span className="km-menunote">Starting or switching finishes “{cur.name}”. Its slices stay where they are.</span>
+          </div>
+        )}
+        {target && !cur && (
+          <div className="km-field">
+            <button className="k-btn secondary sm km-dialog-left" onClick={() => onMakeCurrent(target.id)}>
+              Make “{target.name}” current
+            </button>
+            {current && <span className="km-menunote">That finishes “{current.name}”. Its slices stay where they are.</span>}
           </div>
         )}
         <div className="km-dialog-foot">

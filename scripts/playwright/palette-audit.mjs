@@ -151,7 +151,9 @@ const SCREENS = [
   // The focus canvas: the flown card, its linked nodes and connectors, the
   // Bring-in tray, and (second screen) the editor's chips over the canvas.
   { slug: 'board-focus', hash: '#/p/{slug}/roadmap', press: [OPEN_BOARD, '2:.km-card .km-cardmeta .id'] },
-  { slug: 'board-focus-edit', hash: '#/p/{slug}/roadmap', press: [OPEN_BOARD, '2:.km-card .km-cardmeta .id', '.bf-float [aria-label="Edit item"]'] },
+  // A task in a slice opens its slice with the task in the editor (BoardFocus
+  // decision 6), so the editor is measured by the double press alone.
+  { slug: 'board-focus-edit', hash: '#/p/{slug}/roadmap', press: [OPEN_BOARD, '2:.km-slicegroup .km-card .km-cardmeta .id'] },
   { slug: 'board-colmenu', hash: '#/p/{slug}/roadmap', press: ['[aria-label^="Column actions"]'] },
   // #608 — the spine's tone: the milestone strip (first paint, on `roadmap`),
   // a slice head's editor and the milestone dialog (both --surface-overlay
