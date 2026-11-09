@@ -1,4 +1,4 @@
-// claude-md.mjs — the host half of Mission Control → Context's CLAUDE.md rows.
+// claude-md.mjs — the host half of Mission Control → Context's CLAUDE.md and AGENTS.md rows.
 //
 // Pure file work, no uplink: stack-term.mjs answers the server's 'claudeMd' and
 // 'claudeMdWrite' frames with these, and server/test/claude-md.test.mjs pins
@@ -18,7 +18,7 @@
 //   • A TRUNCATED READ CANNOT BE SAVED. Its hash covers the whole file, so a
 //     save built from the visible part would be refused anyway; `truncated`
 //     lets the browser say why before anyone types.
-//   • ONLY A FILE NAMED CLAUDE.md, ALREADY THERE, INSIDE THE CHECKOUT. No
+//   • ONLY CLAUDE.md OR AGENTS.md, ALREADY THERE, INSIDE THE CHECKOUT. No
 //     creating, no renaming, no path that resolves (through `..` or a symlink)
 //     outside $root/<slug>.
 import { createHash } from 'node:crypto';
@@ -26,6 +26,7 @@ import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync, renameS
 import { basename, join, relative, sep } from 'node:path';
 
 export const FILE_NAME = 'CLAUDE.md';
+export const FILE_NAMES = new Set([FILE_NAME, 'AGENTS.md']);
 // Caps, stated to the reader by the fields that carry them (`truncated`,
 // `more`), never silently.
 export const MAX_READ_BYTES = 200_000;
@@ -38,7 +39,7 @@ const SKIP = new Set(['node_modules', '.git', 'dist', 'build', '.next', 'vendor'
 export const sha = (buf) => createHash('sha256').update(buf).digest('hex');
 export const cleanSlug = (s) => String(s || '').replace(/[^A-Za-z0-9._-]/g, '').replace(/^\.+/, '');
 
-// Every CLAUDE.md under `dir`, root first, then shallowest and alphabetical.
+// Every CLAUDE.md and AGENTS.md under `dir`, root first, then shallowest and alphabetical.
 // Symlinked directories are not followed.
 function findFiles(dir) {
   const out = [];
@@ -47,7 +48,7 @@ function findFiles(dir) {
     try { entries = readdirSync(d, { withFileTypes: true }); } catch { return; }
     entries.sort((a, b) => a.name.localeCompare(b.name));
     for (const e of entries) {
-      if (e.isFile() && e.name === FILE_NAME) out.push(relative(dir, join(d, e.name)));
+      if (e.isFile() && FILE_NAMES.has(e.name)) out.push(relative(dir, join(d, e.name)));
     }
     if (depth >= MAX_DEPTH) return;
     for (const e of entries) {
@@ -70,7 +71,7 @@ function readBudgets(dir) {
   return out;
 }
 
-// Every live project's CLAUDE.md files. A slug with no checkout on this host is
+// Every live project's CLAUDE.md and AGENTS.md files. A slug with no checkout on this host is
 // reported as such (`checkout:false`), never dropped: "not here" and "has none"
 // are different answers.
 export function listClaudeMd({ root, slugs }) {
@@ -105,8 +106,8 @@ export function writeClaudeMd({ root, slug: rawSlug, path, sha: expected, body }
   if (typeof body !== 'string') return fail('Nothing to save.');
   if (typeof expected !== 'string' || !/^[0-9a-f]{64}$/.test(expected)) return fail('The save carried no version of the file to check against. Reload and try again.');
   const rel = String(path || '');
-  if (basename(rel) !== FILE_NAME || rel.startsWith('/') || rel.split('/').some((p) => p === '..' || p === '')) {
-    return fail('Only a file named CLAUDE.md inside the project can be saved here.');
+  if (!FILE_NAMES.has(basename(rel)) || rel.startsWith('/') || rel.split('/').some((p) => p === '..' || p === '')) {
+    return fail('Only a file named CLAUDE.md or AGENTS.md inside the project can be saved here.');
   }
   const bytes = Buffer.byteLength(body, 'utf8');
   if (bytes > MAX_WRITE_BYTES) return fail(`That is ${bytes.toLocaleString()} bytes; the cap is ${MAX_WRITE_BYTES.toLocaleString()}.`);
@@ -116,7 +117,7 @@ export function writeClaudeMd({ root, slug: rawSlug, path, sha: expected, body }
   let realDir, realFile;
   try {
     realDir = realpathSync(dir);
-    if (lstatSync(file).isSymbolicLink()) return fail('That CLAUDE.md is a symlink, which this does not write through.');
+    if (lstatSync(file).isSymbolicLink()) return fail('That instruction file is a symlink, which this does not write through.');
     realFile = realpathSync(file);
   } catch {
     return fail(`${rel} is not on disk in ${slug}'s checkout. This edits files that exist; it never creates one.`);

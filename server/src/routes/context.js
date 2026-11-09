@@ -11,7 +11,7 @@ import { readClaudeMdFiles, writeClaudeMdFile } from '../term.js';
 // LIBRARY: a copy of each repo's file in its database, written back to disk
 // every five minutes. A stale DB copy silently reverted a project's own
 // CLAUDE.md for several sessions running, each filed as a mystery blocker.
-// The CLAUDE.md rows below (GET/PUT /claude-md) are shaped so that cannot
+// The CLAUDE.md and AGENTS.md rows below (GET/PUT /claude-md) are shaped so that cannot
 // recur, and each rule is load-bearing:
 //
 //   • STACK HOLDS NO COPY. The host daemon reads the file on disk when the
@@ -178,7 +178,7 @@ context.get('/', async (_req, res) => {
   res.json({ windowDays: PULSE_DAYS, docs });
 });
 
-// Every live project's CLAUDE.md files, read fresh off the host. Only live
+// Every live project's CLAUDE.md and AGENTS.md files, read fresh off the host. Only live
 // projects' slugs are sent, so the daemon reads only their checkouts.
 context.get('/claude-md', async (_req, res) => {
   const { rows } = await q('SELECT slug, name FROM projects WHERE deleted_at IS NULL ORDER BY name');

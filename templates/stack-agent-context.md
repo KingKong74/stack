@@ -89,10 +89,9 @@ The block is a snapshot. For the current state at any moment, read the API:
 - `GET /api/spaces` — areas, hubs' workflows, the wishlist. **Report each run
   of a hub workflow you run**: `POST /api/spaces/workflows/<id>/runs {"ok":bool}`.
 
-**A repo's CLAUDE.md is the repo's.** Stack used to manage a tree of them and
-write each one from its own copy on a five-minute sync; that surface is culled,
-so a CLAUDE.md is now edited in the repo like any other file and nothing
-overwrites it behind you.
+**Repo instructions belong to the repo.** Mission Control → Context reads
+CLAUDE.md and AGENTS.md live from disk. Only a human Save writes them, guarded
+by the opened hash. Stack stores no copy and never syncs one back on a schedule.
 
 The base URL and slug for the project you're in are stamped at the bottom of this
 file when it was exported (or are blank in the generic template).
