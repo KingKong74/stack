@@ -4425,7 +4425,7 @@ body[data-mc-full] .totop { display: none; }
 .km-scopeopt { display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
 .km-scopeopt.on { color: var(--text-primary); }
 .km-scopename { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.km-scopeopt .n { flex: none; font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-tertiary); }
+.km-scopeopt .n { flex: none; font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-secondary); }
 .km-scopecheck {
   width: 14px; height: 14px; flex: none; display: inline-flex; align-items: center; justify-content: center;
   border: 1px solid var(--border-default); border-radius: var(--radius-sm); color: var(--white);
