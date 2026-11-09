@@ -102,6 +102,7 @@ import { go, hrefTo } from '../lib/route';
 import { newTermName, termClaim, launchBrief } from '../lib/termLaunch';
 import type { BoardFolds, BoardView, BoardSort, BoardShow, BoardGroup } from '../store';
 import { BoardListView, SORT_LABEL, SHOW_LABEL } from './BoardList';
+import { SliceFocus } from './SliceFocus';
 import { BoardFocus, type FocusOpen, type FocusPhase } from './BoardFocus';
 import { PropositionsColumn } from './Propositions';
 
@@ -935,6 +936,7 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
   // A double-click on a card (or its ✎) flies it onto the canvas. The phase is
   // lifted here because the board itself animates with it: it steps back while
   // the card is out (`fx-out`) and comes back as it lands (`fx-in`).
+  const [sliceFocus, setSliceFocus] = useState<{ slice: Slice; left: number } | null>(null);
   const [focus, setFocus] = useState<FocusOpen | null>(null);
   const [focusPhase, setFocusPhase] = useState<FocusPhase>('measure');
   const openFocus = (it: RoadmapItem, el: HTMLElement | null, edit: boolean, editId?: number) => {
@@ -1269,7 +1271,17 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
                   const st = meta.slice ? sliceStateOf(meta.slice.id, rows) : null;
                   return (
                     <div className={`km-group${gFolded ? ' folded' : ''}${meta.slice ? ' km-slicegroup' : ''}`} key={g.key} data-area={g.key}>
-                      <div className="km-grouphead">
+                      <div className="km-grouphead"
+                        onDoubleClick={(e) => {
+                          if (!meta.slice || (e.target as HTMLElement).closest('button, input')) return;
+                          e.stopPropagation(); closeAll();
+                          setSliceFocus({ slice: meta.slice, left: Math.round(e.currentTarget.closest('.con-main')?.getBoundingClientRect().left ?? 0) });
+                        }}>
+                        {meta.slice && <button className="km-colbtn" aria-label={`Zoom into slice ${meta.name}`}
+                          title="Zoom into this slice (or double-click its header)"
+                          onClick={(e) => { e.stopPropagation(); closeAll(); setSliceFocus({ slice: meta.slice!, left: Math.round(e.currentTarget.closest('.con-main')?.getBoundingClientRect().left ?? 0) }); }}>
+                          <KitIcon name="layers" size={13} />
+                        </button>}
                         {!searching && (
                           <button className="km-foldbtn"
                             aria-expanded={!gFolded}
@@ -1371,6 +1383,12 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
           onCreate={(title, bucket, extra) => { setDialog(false); add(title, bucket, '', homeArea, extra); }} />
       )}
 
+      {sliceFocus && (
+        <SliceFocus slice={sliceFocus.slice} rows={rows} left={sliceFocus.left}
+          columns={(lists || []).map((l) => ({ key: l.key, name: l.name }))} colOf={colOf}
+          onClose={() => setSliceFocus(null)}
+          onOpen={(it, el) => { setSliceFocus(null); openFocus(it, el, false); }} />
+      )}
       {focus && (
         <BoardFocus slug={slug} open={focus} rows={rows}
           columns={(lists || []).map((l) => ({ key: l.key, name: l.name }))}

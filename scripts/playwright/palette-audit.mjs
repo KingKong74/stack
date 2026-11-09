@@ -156,6 +156,7 @@ const SCREENS = [
   // #608 — the spine's tone: the milestone strip (first paint, on `roadmap`),
   // a slice head's editor and the milestone dialog (both --surface-overlay
   // modals over a dimmed board).
+  { slug: 'board-slicezoom', hash: '#/p/{slug}/roadmap', press: ['.km-grouphead [aria-label^="Zoom into slice"]'] },
   { slug: 'board-sliceedit', hash: '#/p/{slug}/roadmap', press: ['.km-grouphead [aria-label^="Edit slice"]'] },
   { slug: 'board-milestone', hash: '#/p/{slug}/roadmap', press: ['.km-spine-ms'] },
   // #616 — Charter and Architecture: docs, component cards, ADR rows and
