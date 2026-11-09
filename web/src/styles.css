@@ -4413,7 +4413,7 @@ body[data-mc-full] .totop { display: none; }
    The button is capped so one long slice title can't push the toolbar
    around; the menu scrolls rather than run off a short window. */
 .km-scope { display: inline-flex; align-items: center; gap: var(--space-1); flex: none; min-width: 0; }
-.km-scopebtn { max-width: 260px; }
+.km-scopebtn { max-width: 220px; }
 .km-scopebtn .km-scopelbl { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .km-scopebtn.on { background: var(--surface-selected); color: var(--blue-300); box-shadow: inset 0 0 0 1px var(--border-focus); }
 .km-scopemenu { width: 320px; max-width: calc(100vw - 16px); padding: var(--space-2); }
@@ -4848,9 +4848,12 @@ body[data-mc-full] .totop { display: none; }
    ＋ New area on the scope bar, and a ⋯ on each section head. The create
    control is an `.im-chip` wearing a dashed ring, so it sits in the chip row as
    one of them rather than as a button bolted on the end. */
-.km-addarea { box-shadow: inset 0 0 0 1px var(--border-default); border-style: dashed; }
+/* ONE WIDTH OPEN OR SHUT. The toolbar wraps, and a name field wider than its
+   button reflowed the row under it on every open and blur, so the board jumped
+   a line between the two halves of a double-click. */
+.km-addarea { box-shadow: inset 0 0 0 1px var(--border-default); border-style: dashed; width: 124px; flex: none; justify-content: center; }
 .km-addarea:not(.open) { color: var(--text-tertiary); }
-.km-addarea.open { display: inline-flex; align-items: center; width: 160px; flex: none; }
+.km-addarea.open { display: inline-flex; align-items: center; }
 .km-addarea.open .km-colname { height: 28px; }
 
 /* The area head's own tools, after the count. */
