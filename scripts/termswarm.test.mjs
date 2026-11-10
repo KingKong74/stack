@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 
 const {
   zoneRect, zoneAt, tileRects, clampRect, tileStatus, agoLabel, orderTiles, moveKey, compactLines,
-  WORKING_MS,
+  WORKING_MS, advanceRun, runLabel, spanLabel, RUN_GRACE_MS,
 } = await import(new URL('../web/src/lib/termSwarm.ts', import.meta.url).href);
 
 const A = { x: 0, y: 100, w: 1000, h: 600 };
@@ -81,4 +81,31 @@ test('a coloured peek narrows like the plain one and keeps its colours', async (
   assert.equal(paletteColour(1, { red: '#bf0000' }), '#bf0000');
   assert.equal(paletteColour(196, {}), '#ff0000');
   assert.equal(paletteColour(232, {}), '#080808');
+});
+
+test('a run of work: starts on work, spans short pauses, ends on a long stop', () => {
+  let r = advanceRun(undefined, false, 0, 1000);
+  assert.equal(r, undefined);
+  r = advanceRun(r, true, 10_000, 10_000);
+  assert.deepEqual(r, { start: 10_000, last: 10_000 });
+  r = advanceRun(r, true, 30_000, 31_000);
+  assert.deepEqual(r, { start: 10_000, last: 30_000 });
+  // stopped: the run is kept as it was
+  assert.deepEqual(advanceRun(r, false, 30_000, 200_000), r);
+  // a pause inside the grace stays the same run
+  r = advanceRun(r, true, 30_000 + RUN_GRACE_MS, 30_000 + RUN_GRACE_MS);
+  assert.equal(r.start, 10_000);
+  // a longer stop starts a new run
+  const n = advanceRun(r, true, r.last + RUN_GRACE_MS + 1, r.last + RUN_GRACE_MS + 1);
+  assert.equal(n.start, r.last + RUN_GRACE_MS + 1);
+});
+
+test('the timer reads elapsed while working, and the last run once stopped', () => {
+  const r = { start: 0, last: 185_000 };
+  assert.equal(runLabel(r, true, 200_000), '3m');
+  assert.equal(runLabel(r, false, 999_000), 'worked 3m');
+  assert.equal(runLabel({ start: 0, last: 2_000 }, false, 9_000), '');
+  assert.equal(runLabel(undefined, true, 9_000), '');
+  assert.equal(spanLabel(42_000), '42s');
+  assert.equal(spanLabel(3_840_000), '1h 4m');
 });

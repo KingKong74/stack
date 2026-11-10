@@ -82,6 +82,37 @@ export function tileStatus(o: { asking: boolean; failed: boolean; activeAt: numb
   return 'idle';
 }
 
+/** A session's current or last RUN OF WORK: from the first output that counted
+ *  as working to the latest. Pauses shorter than RUN_GRACE_MS (claude thinking
+ *  without redrawing, a slow tool) stay inside the run; a longer stop ends it,
+ *  and the next work starts a new one. A run is never cleared, so an idle
+ *  session still says how long it last worked. */
+export type WorkRun = { start: number; last: number };
+export const RUN_GRACE_MS = 30_000;
+export function advanceRun(run: WorkRun | undefined, working: boolean, activeAt: number, now: number): WorkRun | undefined {
+  if (!working) return run;
+  const at = activeAt > 0 ? Math.min(activeAt, now) : now;
+  if (run && at - run.last <= RUN_GRACE_MS) return at > run.last ? { start: run.start, last: at } : run;
+  return { start: at, last: at };
+}
+/** "42s", "3m", "1h 4m". */
+export function spanLabel(ms: number): string {
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m`;
+  return `${Math.floor(m / 60)}h ${m % 60}m`;
+}
+/** The timer a session wears: while working, how long so far (to now); once
+ *  stopped, how long the last run took. '' when it has not worked here, or the
+ *  last run was too short to be worth a label. */
+export function runLabel(run: WorkRun | undefined, working: boolean, now: number): string {
+  if (!run) return '';
+  if (working) return spanLabel(now - run.start);
+  const took = run.last - run.start;
+  return took >= 5_000 ? `worked ${spanLabel(took)}` : '';
+}
+
 /** "now", "4m", "2h", "3d"; '' when the time is unknown. */
 export function agoLabel(at: number, now: number): string {
   if (!at) return '';

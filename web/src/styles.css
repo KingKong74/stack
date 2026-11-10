@@ -9154,6 +9154,32 @@ button.ar-open:hover { background: var(--surface-hover); }
 .tv-tile.flash { border-color: var(--border-focus); box-shadow: 0 0 0 3px var(--blue-500); }
 .tv-tile.drop { border-color: var(--border-focus); box-shadow: var(--ring-focus); }
 .tv-tile.dragging { opacity: 0.35; }
+/* ASKING, in Swarm: the tile, window or pane that waits on you is the loudest
+   thing on the screen. An amber frame with a slow breathing ring, a warm face,
+   a full-strength top bar and its question in place of the last line. */
+.tv-tile.asking, .tv-pane.asking, .tv-pane.win.asking, .tv-pane.win.front.asking {
+  border-color: var(--amber-500); animation: tv-ask-ring 2s ease-in-out infinite;
+}
+.tv-tile.asking::after { background: linear-gradient(to top, var(--status-warning-bg) 45%, transparent); }
+.tv-tile.asking .tv-tile-top { background: var(--amber-500); opacity: 1; height: 4px; }
+.tv-tile.asking .tv-dot.asking, .tv-pane.asking .tv-dot.asking { animation: tv-ask-pulse 1.6s ease-in-out infinite; }
+.tv-pane.asking .tv-win-head, .tv-pane.asking .tv-mini-head, .tv-pane.asking .tv-head { background: var(--status-warning-bg); border-bottom-color: var(--amber-500); }
+@keyframes tv-ask-ring {
+  0%, 100% { box-shadow: 0 0 0 1px var(--amber-500); }
+  50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--amber-500) 35%, transparent); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tv-tile.asking, .tv-pane.asking, .tv-tile.asking .tv-dot.asking, .tv-pane.asking .tv-dot.asking { animation: none; }
+  .tv-tile.asking, .tv-pane.asking { box-shadow: 0 0 0 2px var(--amber-500); }
+}
+.tv-tile-ask {
+  flex: none; font: var(--weight-medium) var(--text-xs)/1.4 var(--font-sans); color: var(--status-warning-fg);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.tv-tile.compact .tv-tile-ask { -webkit-line-clamp: 1; font-size: var(--text-2xs); }
+/* The work timer: how long so far while working, how long it took once stopped. */
+.tv-run { flex: none; font: var(--weight-medium) var(--text-2xs)/1 var(--font-mono); color: var(--text-tertiary); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.tv-run.working { color: var(--status-success-fg); }
 .tv-tile-top { position: absolute; left: 0; right: 0; top: 0; height: 3px; opacity: 0.7; z-index: 1; }
 .tv-tile .tv-tile-top { background: var(--pc, var(--border-default)); }
 .tv-tile-face {
