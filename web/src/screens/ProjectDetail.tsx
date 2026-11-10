@@ -553,14 +553,13 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
         onSearch={onOpenSearch}
         actions={
           <>
-            {/* #472 — a mockup, and this button is the only way in, so the
-                chip goes on the button rather than only in the tooltip. */}
-            <button className="btn-repo" onClick={go.control}
-              title="Mission Control — the console kit's mockup; it reads and writes nothing">
-              Mission Control <span className="con-navsoon mock">Mock</span>
-            </button>
-            <a className="btn-repo" href={hrefTo.terminal(slug)} title={`Open a terminal in ~/${slug} (${FLICK_HINT} flicks back to the one you left)`} aria-label="Terminal">
-              ⌨ <span className="kbd-hint">{FLICK_HINT}</span>
+            {/* Same order and shape as the terminal's topbar: the other place
+                first (here the terminal, there the board), then Mission Control. */}
+            <a className="btn-repo btn-ico" href={hrefTo.terminal(slug)} title={`Open a terminal in ~/${slug} (${FLICK_HINT} flicks back to the one you left)`} aria-label="Terminal">
+              {NavIcons.terminal}
+            </a>
+            <a className="btn-repo btn-ico" href={hrefTo.control} title="Mission Control" aria-label="Mission Control">
+              {NavIcons.gauge}
             </a>
           </>
         } />

@@ -1592,7 +1592,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
               {board ? NavIcons.board : <span aria-hidden="true">←</span>}
             </a>
           )}
-          <a className="btn-repo" href={hrefTo.control} title="Mission Control">Mission Control</a>
+          <a className="btn-repo btn-ico" href={hrefTo.control} title="Mission Control" aria-label="Mission Control">{NavIcons.gauge}</a>
         </>} />
 
       <div className="page term-page tv-page">
