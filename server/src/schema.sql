@@ -1806,6 +1806,11 @@ ALTER TABLE artifacts ADD COLUMN IF NOT EXISTS status   TEXT NOT NULL DEFAULT ''
 ALTER TABLE artifacts ADD COLUMN IF NOT EXISTS slice_id INTEGER REFERENCES slices(id) ON DELETE SET NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS artifacts_one_spine_doc_idx
   ON artifacts (project_id, type) WHERE type IN ('charter', 'architecture');
+-- The DESIGN DOC (the Charter screen's Design view): colours, type, UI and UX
+-- considerations. One per project, like the two above; its own index because
+-- the one above has shipped and an IF NOT EXISTS would never widen it.
+CREATE UNIQUE INDEX IF NOT EXISTS artifacts_one_design_doc_idx
+  ON artifacts (project_id) WHERE type = 'design_doc';
 ALTER TABLE project_areas ADD COLUMN IF NOT EXISTS description TEXT  NOT NULL DEFAULT '';
 ALTER TABLE project_areas ADD COLUMN IF NOT EXISTS paths       JSONB NOT NULL DEFAULT '[]'::jsonb;
 

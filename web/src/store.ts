@@ -1913,12 +1913,12 @@ type ArtifactFields = Partial<{
   type: ArtifactType; title: string; body: string; url: string; tags: string[]; links: number[];
   status: AdrStatus; sliceId: number | null;
 }>;
-// #616 — the spine's docs (charter, architecture, ADRs), oldest first so an
+// #616 — the spine's docs (charter, architecture, design, ADRs), oldest first so an
 // ADR's number is its place. The plain list above leaves them out.
 // The Notes view's loose ideas (detail/Notes.tsx), oldest first like the rest.
 export const getNotes = (slug: string) => request<Artifact[]>(`${artifactsBase(slug)}?types=note`);
 export const getSpineDocs = (slug: string) =>
-  request<Artifact[]>(`${artifactsBase(slug)}?types=charter,architecture,adr`);
+  request<Artifact[]>(`${artifactsBase(slug)}?types=charter,architecture,design_doc,adr`);
 export const getArtifacts = (slug: string) => request<Artifact[]>(artifactsBase(slug));
 export const createArtifact = (slug: string, input: ArtifactFields) =>
   request<Artifact>(artifactsBase(slug), { method: 'POST', body: input });

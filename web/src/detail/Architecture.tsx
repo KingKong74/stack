@@ -17,6 +17,11 @@
 //        the slice it was decided for. A human gives the status; phase 4 lets
 //        /checkpoint PROPOSE one, never accept it.
 //
+//  • THE DESIGN TAB is one `design_doc` artifact (unique per project, like
+//    the other two): colours, type, UI and UX considerations. It reads through
+//    the same conventions as the architecture doc, so a `## Colours` section
+//    with a list of swatches draws as any other section does.
+//
 // Everything here is a human's write, through routes/artifacts.js.
 // The board's areas are NOT drawn here (owner's call, 2026-11-09): they are
 // the board's grouping and the automation's lane, not the system's components. Nothing is fetched into the project payload except the
@@ -49,6 +54,30 @@ const ARCH_TEMPLATE = `# Architecture
 ## Data model
 
 ## How a change flows through it
+`;
+const DESIGN_TEMPLATE = `# Design
+
+The look and feel in one paragraph: who it is for, the mood, and the one rule every screen keeps.
+
+## Colours
+
+- **Background** — hex value, and where it is used
+- **Surface** — hex value, and where it is used
+- **Text** — hex value, and where it is used
+- **Accent** — hex value, and where it is used
+- **Success / warning / danger** — hex value, and where it is used
+
+## Typography
+
+## Layout and spacing
+
+## Components
+
+## UX principles
+
+## Accessibility
+
+## Don'ts
 `;
 const ADR_TEMPLATE = `## Context
 
@@ -136,7 +165,7 @@ function DocEditor({ doc, template, emptyLine, footnote, onSave, view }: {
 }
 
 /** Create the one doc of a type, or patch it. */
-async function upsertDoc(slug: string, doc: Artifact | null, type: 'charter' | 'architecture', title: string, body: string) {
+async function upsertDoc(slug: string, doc: Artifact | null, type: 'charter' | 'architecture' | 'design_doc', title: string, body: string) {
   return doc ? patchArtifact(slug, doc.id, { body }) : createArtifact(slug, { type, title, body });
 }
 
@@ -356,6 +385,45 @@ function Adr({ n, adr, slices, milestones, onPatch, onDelete }: {
             <div className="ar-md"><Markdown text={adr.body} /></div>
           )}
         </div>
+      )}
+    </div>
+  );
+}
+
+/** The Design view: one `design_doc`, read as the architecture doc reads. */
+export function Design({ slug }: { slug: string }) {
+  const { docs, err, setErr, put } = useSpineDocs(slug);
+  const design = docs?.find((d) => d.type === 'design_doc') ?? null;
+  const parsed = useMemo(() => parseArchDoc(design?.body || ''), [design?.body]);
+  return (
+    <div className="sp ad">
+      {err && <div className="km-err" role="alert">{err}</div>}
+      {docs === null && !err && <span className="sp-empty">Reading…</span>}
+      {docs !== null && (
+        <DocEditor doc={design} template={DESIGN_TEMPLATE}
+          emptyLine="No design doc yet: the colours, the type, and the UI and UX calls every screen should keep."
+          onSave={async (body) => {
+            try { setErr(''); put(await upsertDoc(slug, design, 'design_doc', 'Design', body)); }
+            catch (e) { setErr((e as Error)?.message || 'Could not save it.'); throw e; }
+          }}
+          view={(doc, edit) => (
+            <>
+              <div className="ad-head">
+                <div className="ad-lede">
+                  <div className="ad-meta">
+                    <span className="ad-eyebrow">Design doc</span>
+                    <span className="ad-dot" />
+                    <span className="sp-when">edited {timeAgo(doc.updatedAt)}</span>
+                  </div>
+                  {parsed.lede.map((b, i) => b.k === 'p'
+                    ? <p key={i} className="ad-ledep">{inline(b.text)}</p>
+                    : <div key={i} className="md ad-md">{block(b, i)}</div>)}
+                </div>
+                <button className="k-btn ghost sm ad-edit" onClick={edit}><KitIcon name="pencil" size={13} />Edit</button>
+              </div>
+              <ArchSections sections={parsed.sections} />
+            </>
+          )} />
       )}
     </div>
   );

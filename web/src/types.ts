@@ -930,10 +930,11 @@ export interface Spaces { areas: SpaceArea[]; workflows: Workflow[]; ideas: Wish
 // project keeps beside its work. `tags` are area names; `links` are this
 // project's roadmap_items ids. The bytes are never in this shape: `file` is
 // only their description, fetched on demand by getArtifactFileUrl.
-// #616 — the spine's three: one charter and one architecture doc per project,
-// and any number of ADRs. They have their own tabs (Charter, Architecture);
+// #616 — the spine's docs: one charter, one architecture doc and one design doc
+// per project, and any number of ADRs. They have their own tabs (Charter,
+// Architecture, Design);
 // the Artifacts list does not draw them.
-export type ArtifactType = 'doc' | 'plan' | 'design' | 'link' | 'file' | 'charter' | 'architecture' | 'adr' | 'note';
+export type ArtifactType = 'doc' | 'plan' | 'design' | 'link' | 'file' | 'charter' | 'architecture' | 'design_doc' | 'adr' | 'note';
 export type AdrStatus = 'proposed' | 'accepted' | 'superseded';
 export interface Artifact {
   id: number;

@@ -44,9 +44,9 @@ artifacts.use(async (req, res, next) => {
   next();
 });
 
-export const ARTIFACT_TYPES = ['doc', 'plan', 'design', 'link', 'file', 'charter', 'architecture', 'adr', 'note'];
+export const ARTIFACT_TYPES = ['doc', 'plan', 'design', 'link', 'file', 'charter', 'architecture', 'design_doc', 'adr', 'note'];
 // The spine's types, and notes: drawn on the Charter screen, not on Artifacts.
-export const SPINE_TYPES = ['charter', 'architecture', 'adr', 'note'];
+export const SPINE_TYPES = ['charter', 'architecture', 'design_doc', 'adr', 'note'];
 export const ADR_STATUSES = ['proposed', 'accepted', 'superseded'];
 export const FILE_CAP = 10 * 1024 * 1024;
 const INLINE_IMAGES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
@@ -128,10 +128,10 @@ async function readFields(body, projectId, { partial }) {
   return f;
 }
 
-// A second charter or architecture doc trips the unique index. Answer it the
+// A second charter, architecture or design doc trips the unique index. Answer it the
 // way a caller can act on: 409, naming the one that exists.
 async function spineConflict(e, projectId, type, res) {
-  if (e?.code !== '23505' || !['charter', 'architecture'].includes(type)) return false;
+  if (e?.code !== '23505' || !['charter', 'architecture', 'design_doc'].includes(type)) return false;
   const { rows } = await q('SELECT id FROM artifacts WHERE project_id = $1 AND type = $2', [projectId, type]);
   res.status(409).json({ error: `This project already has a ${type} (artifact ${rows[0]?.id}). Edit that one.`, id: rows[0]?.id ?? null });
   return true;

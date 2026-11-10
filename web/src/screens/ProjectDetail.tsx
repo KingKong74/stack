@@ -25,7 +25,7 @@ import { TabStrip } from '../components/TabStrip';
 import { Modal } from '../components/Modal';
 import { RoadmapModal, type RoadmapFields } from '../components/RoadmapModal';
 import { useAutoRefresh } from '../lib/autoRefresh';
-import { Charter, Architecture } from '../detail/Architecture';
+import { Charter, Architecture, Design } from '../detail/Architecture';
 import { Notes } from '../detail/Notes';
 import { Course } from '../detail/Course';
 import { Milestones, MilestoneSummary } from '../detail/Milestones';
@@ -41,15 +41,15 @@ import { PRIORITY_DEFAULT, crumbName } from '../lib/ui';
 // bookmarks and older search payloads; `hl` on it means a commit hash.
 // An inner strip that swallowed the key would break those links.
 type Tab = 'overview' | 'roadmap' | 'activity' | 'auto' | 'plans'
-  | 'artifacts' | 'agents' | 'loops' | 'charter' | 'milestones' | 'architecture' | 'notes';
+  | 'artifacts' | 'agents' | 'loops' | 'charter' | 'milestones' | 'architecture' | 'design' | 'notes';
 /** The keys that land on the For-you screen, in strip order. */
 const FORYOU_TABS: Tab[] = ['overview', 'activity', 'auto'];
 const isForYou = (t: Tab) => FORYOU_TABS.includes(t);
 /** The keys that land on the Charter screen (owner's call, 2026-11-09): the
- *  charter, the milestones and the architecture are ONE rail row with a strip,
+ *  charter, the milestones, the architecture and the design are ONE rail row with a strip,
  *  the same shape as For you. Each keeps its route key, so every deep link,
  *  the SessionStart pointer and the smoke's paths land where they always did. */
-const SPINE_TABS: Tab[] = ['charter', 'milestones', 'architecture'];
+const SPINE_TABS: Tab[] = ['charter', 'milestones', 'architecture', 'design'];
 const isSpine = (t: Tab) => SPINE_TABS.includes(t);
 /** The two tabs that bring their OWN heading block — the console kit's screens
  *  open with a breadcrumb and their own title, so this screen's `detail-head`
@@ -61,7 +61,7 @@ const isMockTab = (t: Tab) => t === 'roadmap'
 // The four readings of a project. `navSections` below is the ONE list of them
 // — #432 moved them from a horizontal strip into the console's left rail, and
 // a second copy anywhere is how the two would drift.
-const TAB_KEYS = new Set<Tab>(['overview', 'roadmap', 'activity', 'auto', 'plans', 'artifacts', 'agents', 'loops', 'charter', 'milestones', 'architecture', 'notes']);
+const TAB_KEYS = new Set<Tab>(['overview', 'roadmap', 'activity', 'auto', 'plans', 'artifacts', 'agents', 'loops', 'charter', 'milestones', 'architecture', 'design', 'notes']);
 // Retired tabs keep old bookmarks and search links inside the project.
 const LEGACY_TABS: Record<string, Tab> = {
   quality: 'overview', bugs: 'overview', audit: 'overview', tips: 'overview', futures: 'overview',
@@ -715,7 +715,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
             slug={slug} onBoard={() => setTab('roadmap')} />
         )}
 
-        {/* THE CHARTER SCREEN — one strip, three views, the For-you shape:
+        {/* THE CHARTER SCREEN — one strip, four views, the For-you shape:
             the strip writes the ROUTE key, so each view keeps its deep link. */}
         {isSpine(tab) && (
           <TabStrip<Tab>
@@ -723,6 +723,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
               { key: 'charter', label: 'Charter' },
               { key: 'milestones', label: 'Milestones', count: data.milestones.filter((m) => m.status !== 'done').length || undefined },
               { key: 'architecture', label: 'Architecture' },
+              { key: 'design', label: 'Design' },
             ]}
             active={tab} onPick={setTab} />
         )}
@@ -743,6 +744,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
         {tab === 'architecture' && (
           <Architecture slug={slug} slices={data.slices} milestones={data.milestones} />
         )}
+        {tab === 'design' && <Design slug={slug} />}
         {tab === 'agents' && <SkillsAgents />}
         {tab === 'loops' && <Loops />}
 

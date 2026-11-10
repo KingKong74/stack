@@ -55,14 +55,19 @@ test('one charter per project; a second is a 409 naming the first', async () => 
   r = await call('PATCH', `${P}/artifacts/${doc.id}`, { type: 'charter' });
   assert.equal(r.status, 409, 'retyping a doc into a second charter is refused too');
   assert.equal((await call('POST', `${P}/artifacts`, { type: 'architecture', title: 'A', body: 'map' })).status, 201);
+  const design = await call('POST', `${P}/artifacts`, { type: 'design_doc', title: 'Design', body: '## Colours' });
+  assert.equal(design.status, 201, design.text);
+  r = await call('POST', `${P}/artifacts`, { type: 'design_doc', title: 'Again', body: '' });
+  assert.equal(r.status, 409, 'one design doc per project');
+  assert.equal(r.body.id, design.body.id);
 });
 
 test('the plain list leaves the spine out; ?types= asks for it', async () => {
   const plain = (await call('GET', `${P}/artifacts`)).body;
-  assert.ok(plain.every((a) => !['charter', 'architecture', 'adr'].includes(a.type)));
+  assert.ok(plain.every((a) => !['charter', 'architecture', 'design_doc', 'adr'].includes(a.type)));
   assert.ok(plain.some((a) => a.title === 'a plain doc'));
-  const spine = (await call('GET', `${P}/artifacts?types=charter,architecture,adr`)).body;
-  assert.deepEqual(spine.map((a) => a.type).sort(), ['architecture', 'charter']);
+  const spine = (await call('GET', `${P}/artifacts?types=charter,architecture,design_doc,adr`)).body;
+  assert.deepEqual(spine.map((a) => a.type).sort(), ['architecture', 'charter', 'design_doc']);
 });
 
 test('a note is its own type, off the plain list, with no status', async () => {
