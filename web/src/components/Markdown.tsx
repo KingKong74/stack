@@ -14,7 +14,7 @@
 // can read it before choosing to go there by hand.
 
 import type { ReactNode } from 'react';
-import { parseBlocks } from '../lib/markdown';
+import { parseBlocks, type Block } from '../lib/markdown';
 
 const INLINE = /(`+)([^`]+?)\1|\*\*([^*]+)\*\*|__([^_]+)__|\*([^*\s][^*]*)\*|_([^_\s][^_]*)_|\[([^\]]+)\]\(([^)\s]+)[^)]*\)/g;
 
@@ -37,43 +37,43 @@ export function inline(text: string): ReactNode[] {
 }
 
 export function Markdown({ text }: { text: string }) {
-  return (
-    <div className="md">
-      {parseBlocks(text).map((b, i) => {
-        switch (b.k) {
-          case 'h': {
-            const H = `h${Math.min(6, b.level + 1)}` as 'h2';   // the page owns h1
-            return <H key={i}>{inline(b.text)}</H>;
-          }
-          case 'p': return <p key={i}>{inline(b.text)}</p>;
-          case 'code': return <pre key={i}><code>{b.text}</code></pre>;
-          case 'quote': return <blockquote key={i}>{inline(b.text)}</blockquote>;
-          case 'hr': return <hr key={i} />;
-          case 'table': return (
-            <div key={i} className="md-table">
-              <table>
-                <thead><tr>{b.head.map((c, j) => <th key={j}>{inline(c)}</th>)}</tr></thead>
-                <tbody>{b.rows.map((r, j) => (
-                  <tr key={j}>{b.head.map((_, k) => <td key={k}>{inline(r[k] ?? '')}</td>)}</tr>
-                ))}</tbody>
-              </table>
-            </div>
-          );
-          case 'list': {
-            const L = b.ordered ? 'ol' : 'ul';
-            return (
-              <L key={i}>
-                {b.items.map((it, j) => (
-                  <li key={j} className={it.box === null ? undefined : 'task'} style={it.depth ? { marginLeft: `${it.depth * 1.25}em` } : undefined}>
-                    {it.box !== null && <span className={`md-box${it.box ? ' on' : ''}`} aria-label={it.box ? 'done' : 'not done'}>{it.box ? '✓' : ''}</span>}
-                    {inline(it.text)}
-                  </li>
-                ))}
-              </L>
-            );
-          }
-        }
-      })}
-    </div>
-  );
+  return <div className="md">{parseBlocks(text).map(block)}</div>;
+}
+
+/** One parsed block, for a page that lays blocks out itself (lib/archDoc.ts).
+ *  Wrap the result in `.md` for the reader's type. */
+export function block(b: Block, i: number): ReactNode {
+  switch (b.k) {
+    case 'h': {
+      const H = `h${Math.min(6, b.level + 1)}` as 'h2';   // the page owns h1
+      return <H key={i}>{inline(b.text)}</H>;
+    }
+    case 'p': return <p key={i}>{inline(b.text)}</p>;
+    case 'code': return <pre key={i}><code>{b.text}</code></pre>;
+    case 'quote': return <blockquote key={i}>{inline(b.text)}</blockquote>;
+    case 'hr': return <hr key={i} />;
+    case 'table': return (
+      <div key={i} className="md-table">
+        <table>
+          <thead><tr>{b.head.map((c, j) => <th key={j}>{inline(c)}</th>)}</tr></thead>
+          <tbody>{b.rows.map((r, j) => (
+            <tr key={j}>{b.head.map((_, k) => <td key={k}>{inline(r[k] ?? '')}</td>)}</tr>
+          ))}</tbody>
+        </table>
+      </div>
+    );
+    case 'list': {
+      const L = b.ordered ? 'ol' : 'ul';
+      return (
+        <L key={i}>
+          {b.items.map((it, j) => (
+            <li key={j} className={it.box === null ? undefined : 'task'} style={it.depth ? { marginLeft: `${it.depth * 1.25}em` } : undefined}>
+              {it.box !== null && <span className={`md-box${it.box ? ' on' : ''}`} aria-label={it.box ? 'done' : 'not done'}>{it.box ? '✓' : ''}</span>}
+              {inline(it.text)}
+            </li>
+          ))}
+        </L>
+      );
+    }
+  }
 }

@@ -7,6 +7,10 @@
 //    the first paragraph is what an agent reads, so it should stand alone.
 //  • THE ARCHITECTURE TAB has two parts:
 //      - THE ARCHITECTURE DOC, one `architecture` artifact, the same editor.
+//        It READS as the design's page (Architecture.dc.html): numbered
+//        sections, a system map, cards and steps, drawn from markdown
+//        conventions that lib/archDoc.ts's header lists. The text stays the
+//        source; anything off-convention draws as plain markdown.
 //      - THE DECISION LOG: `adr` artifacts, numbered by age (ADR-1 is the
 //        oldest), each with a status (proposed → accepted → superseded) and
 //        the slice it was decided for. A human gives the status; phase 4 lets
@@ -19,7 +23,9 @@
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { KitIcon } from './kit/KitIcon';
-import { Markdown } from '../components/Markdown';
+import { Markdown, block, inline } from '../components/Markdown';
+import { ArchSections, SecHead } from './ArchDoc';
+import { parseArchDoc } from '../lib/archDoc';
 import type { AdrStatus, Artifact, Milestone, Slice } from '../types';
 import { getSpineDocs, createArtifact, patchArtifact, deleteArtifact } from '../store';
 import { liveSlices, sliceLabel } from './Spine';
@@ -77,9 +83,11 @@ function useSpineDocs(slug: string) {
  * a textarea with Save and Cancel. An empty doc offers its template, because
  * a blank page is where charters go to not get written.
  */
-function DocEditor({ doc, template, emptyLine, footnote, onSave }: {
+function DocEditor({ doc, template, emptyLine, footnote, onSave, view }: {
   doc: Artifact | null; template: string; emptyLine: string; footnote?: string;
   onSave: (body: string) => Promise<void>;
+  /** Draw the saved doc yourself; `edit` opens the editor on its text. */
+  view?: (doc: Artifact, edit: () => void) => ReactNode;
 }) {
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState('');
@@ -113,6 +121,7 @@ function DocEditor({ doc, template, emptyLine, footnote, onSave }: {
       </div>
     );
   }
+  if (view) return <>{view(doc, () => start(doc.body))}</>;
   return (
     <div className="sp-doc">
       <div className="sp-docacts top">
@@ -169,40 +178,58 @@ export function Architecture({ slug, slices, milestones }: {
     try { setErr(''); await fn(); } catch (e) { setErr((e as Error)?.message || 'Something went wrong.'); }
   };
 
+  const parsed = useMemo(() => parseArchDoc(arch?.body || ''), [arch?.body]);
+  const decisionsN = parsed.sections.length + 1;
+
   return (
-    <div className="sp">
-      <div className="sp-lede">
-        <span>The system map, how it is built, and the decisions behind it.</span>
-      </div>
+    <div className="sp ad">
       {err && <div className="km-err" role="alert">{err}</div>}
+      {docs === null && !err && <span className="sp-empty">Reading…</span>}
+      {docs !== null && (
+        <DocEditor doc={arch} template={ARCH_TEMPLATE}
+          emptyLine="No architecture doc yet: the system map, the data model, how a change flows."
+          onSave={async (body) => {
+            try { setErr(''); put(await upsertDoc(slug, arch, 'architecture', 'Architecture', body)); }
+            catch (e) { setErr((e as Error)?.message || 'Could not save it.'); throw e; }
+          }}
+          view={(doc, edit) => (
+            <>
+              <div className="ad-head">
+                <div className="ad-lede">
+                  <div className="ad-meta">
+                    <span className="ad-eyebrow">Architecture doc</span>
+                    <span className="ad-dot" />
+                    <span className="sp-when">edited {timeAgo(doc.updatedAt)}</span>
+                  </div>
+                  {parsed.lede.map((b, i) => b.k === 'p'
+                    ? <p key={i} className="ad-ledep">{inline(b.text)}</p>
+                    : <div key={i} className="md ad-md">{block(b, i)}</div>)}
+                </div>
+                <button className="k-btn ghost sm ad-edit" onClick={edit}><KitIcon name="pencil" size={13} />Edit</button>
+              </div>
+              <ArchSections sections={parsed.sections} />
+            </>
+          )} />
+      )}
 
-      <section className="sp-sec">
-        <div className="sp-sechead"><span className="sp-eyebrow">Architecture doc</span></div>
-        {docs !== null && (
-          <DocEditor doc={arch} template={ARCH_TEMPLATE}
-            emptyLine="No architecture doc yet: the system map, the data model, how a change flows."
-            onSave={async (body) => {
-              try { setErr(''); put(await upsertDoc(slug, arch, 'architecture', 'Architecture', body)); }
-              catch (e) { setErr((e as Error)?.message || 'Could not save it.'); throw e; }
-            }} />
-        )}
-      </section>
-
-      <section className="sp-sec">
-        <div className="sp-sechead">
-          <span className="sp-eyebrow">Decisions</span>
+      <section className="ad-sec ad-decisions">
+        <SecHead n={decisionsN} title="Decisions">
           <span className="sp-dim">One per design call, oldest first. You rule on the status; a session may only propose.</span>
           <span className="sp-rule" />
           <button className="k-btn sm secondary" onClick={() => guard(async () => {
             put(await createArtifact(slug, { type: 'adr', title: 'Untitled decision', body: ADR_TEMPLATE, status: 'proposed' }));
           })}><KitIcon name="plus" size={13} />Decision</button>
-        </div>
+        </SecHead>
         {docs !== null && adrs.length === 0 && <span className="sp-empty">No decisions recorded yet.</span>}
-        {adrs.map((d, i) => (
-          <Adr key={d.id} n={i + 1} adr={d} slices={slices} milestones={milestones}
-            onPatch={(patch) => guard(async () => { put(await patchArtifact(slug, d.id, patch)); })}
-            onDelete={() => guard(async () => { await deleteArtifact(slug, d.id); drop(d.id); })} />
-        ))}
+        {adrs.length > 0 && (
+          <div className="ad-adrs">
+            {adrs.map((d, i) => (
+              <Adr key={d.id} n={i + 1} adr={d} slices={slices} milestones={milestones}
+                onPatch={(patch) => guard(async () => { put(await patchArtifact(slug, d.id, patch)); })}
+                onDelete={() => guard(async () => { await deleteArtifact(slug, d.id); drop(d.id); })} />
+            ))}
+          </div>
+        )}
       </section>
     </div>
   );
@@ -222,17 +249,18 @@ function Adr({ n, adr, slices, milestones, onPatch, onDelete }: {
   const slice = slices.find((s) => s.id === adr.sliceId) || null;
   return (
     <div className={`sp-adr${open ? ' open' : ''}`}>
-      <div className="sp-adrhead" onClick={() => !editing && setOpen(!open)}>
-        <KitIcon name={open ? 'chevron-down' : 'chevron-right'} size={13} />
+      <div className="sp-adrhead" role="button" tabIndex={0} aria-expanded={open}
+        onClick={() => !editing && setOpen(!open)}
+        onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget && !editing) { e.preventDefault(); setOpen(!open); } }}>
         <span className="sp-adrn">ADR-{n}</span>
         <span className="sp-adrtitle">{adr.title}</span>
-        <span className={`k-tag ${st.tone}`.trim()} title={st.hint}>{st.label}</span>
+        {slice && <span className="sp-adrnote" title="The slice this was decided for">{sliceLabel(slice, milestones)}</span>}
         {/* #626 — a session's proposal says so: only the owner accepts one. */}
         {adr.origin.kind === 'checkpoint' && (
-          <span className="k-tag" title={`Proposed by a session${adr.origin.branch ? ` on ${adr.origin.branch}` : ''}. Deleting it dismisses it for good.`}>from a session</span>
+          <span className="sp-adrnote" title={`Proposed by a session${adr.origin.branch ? ` on ${adr.origin.branch}` : ''}. Deleting it dismisses it for good.`}>from a session</span>
         )}
-        {slice && <span className="k-tag" title="The slice this was decided for">{sliceLabel(slice, milestones)}</span>}
-        <span className="sp-when">{timeAgo(adr.updatedAt)}</span>
+        <span className={`k-tag ${st.tone}`.trim()} title={st.hint}>{st.label}</span>
+        <span className="sp-when sp-adrwhen">{timeAgo(adr.updatedAt)}</span>
       </div>
       {open && (
         <div className="sp-adrbody">
