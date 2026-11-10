@@ -7,7 +7,7 @@ import {
   openTerminal,
   getTermUsagePrefs, setTermUsagePrefs, type TermUsagePrefs,
   getTermViewPrefs, setTermViewPrefs, type TermViewPrefs, type TermView, type TermDest,
-  getTermSwarmHidden, setTermSwarmHidden, getProjects,
+  getTermSwarmHidden, setTermSwarmHidden, getTermFolded, setTermFolded, getProjects,
   createAutopilotSchedule,
   getAutopilotJobs, resumeAutopilotJob, hangupAutopilotJob, type AutopilotJob,
   getTerminalUsage, type TerminalUsageData,
@@ -192,9 +192,12 @@ const CLAUDE_MODELS = [
   { id: 'haiku', name: 'Haiku', note: 'Fastest' },
 ];
 const STATUS_LABEL: Record<TileStatus, string> = { asking: 'asking', working: 'working', idle: 'idle', error: 'exit' };
-// A project's letter chip. Two tints, alternating by name, so neighbours read
-// apart; the colour carries no meaning beyond "this project, not that one".
-const projTint = (p: string) => ([...p].reduce((n, ch) => n + ch.charCodeAt(0), 0) % 2 ? 'b' : 'l');
+// A project's colour: one of six (`--proj-*` in styles.css), picked from its
+// name so a project wears the same colour on every surface and every reload.
+// The colour carries no meaning beyond "this project, not that one". The
+// no-project group ('') is always the first.
+const PROJ_TINTS = 6;
+const projTint = (p: string) => `pc-${[...p].reduce((n, ch) => (n * 31 + ch.charCodeAt(0)) % 9973, 0) % PROJ_TINTS}`;
 const projLetter = (p: string) => (p ? p[0].toUpperCase() : '~');
 
 // #503 — WHAT A SESSION IS TALKING TO, as a chip on its row.
@@ -1157,6 +1160,27 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
     ...(barAsking.length ? [{ project: '!asking', rows: barSort(barAsking) }] : []),
     ...byProject(barEntries.filter((e) => !askingEntry(e)), (e) => e.project).map((g) => ({ ...g, rows: barSort(g.rows) })),
   ];
+  // FOLDING A PROJECT GROUP collapses its tabs into the group's head; it is
+  // only a view, nothing closes. Opening a folded group also reopens every
+  // session of it that was closed here (parked), so one click brings back the
+  // whole project. An asking session is never folded away: it sits in the
+  // asking group at the front, whatever its project.
+  const [folded, setFolded] = useState<Set<string>>(() => new Set(getTermFolded()));
+  const setFold = (project: string, fold: boolean) => setFolded((f) => {
+    const n = new Set(f);
+    if (fold) n.add(project); else n.delete(project);
+    setTermFolded([...n]);
+    return n;
+  });
+  const toggleGroup = (g: { project: string; rows: BarEntry[] }) => {
+    if (!folded.has(g.project)) { setFold(g.project, true); return; }
+    setFold(g.project, false);
+    const parked = g.rows.map((e) => (!e.sess ? e.det : undefined)).filter((d): d is DetachedSession => !!d);
+    let last: number | undefined;
+    for (const d of parked) last = attachDetached(d);
+    const first = g.rows.find((e) => e.sess)?.sess;
+    if (last != null) setActive(last); else if (first) selectTab(first);
+  };
   const cur = sessions.find((s) => s.id === active) ?? null;
   // Main + 3's small panes: the next three tabs, pinned first.
   const minis = view === 'split'
@@ -1601,14 +1625,31 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
           <div className="tv-tabs" ref={tabRowRef}
             onWheel={(e) => { const r = tabRowRef.current; if (r && Math.abs(e.deltaY) > Math.abs(e.deltaX)) r.scrollLeft += e.deltaY; }}>
             {barGroups.map((g) => (
-              <div className={`tv-tabgroup${g.project === '!asking' ? ' asking' : ''}`} key={g.project}>
-                {g.rows.map((e) => {
+              <div className={`tv-tabgroup${g.project === '!asking' ? ' asking' : ` ${projTint(g.project)}`}${folded.has(g.project) && g.project !== '!asking' ? ' folded' : ''}`} key={g.project}>
+                {g.project !== '!asking' && (() => {
+                  const isFolded = folded.has(g.project);
+                  const parkedN = g.rows.filter((e) => !e.sess).length;
+                  const name = g.project || '~';
+                  return (
+                    <button className="tv-grouphead" aria-expanded={!isFolded}
+                      title={isFolded
+                        ? `Open ${name}: show its ${g.rows.length} session${g.rows.length === 1 ? '' : 's'}${parkedN ? ` and reopen the ${parkedN} closed` : ''}`
+                        : `Fold ${name}'s ${g.rows.length} session${g.rows.length === 1 ? '' : 's'} into this chip (they keep running)`}
+                      onClick={() => toggleGroup(g)}>
+                      {projChip(g.project, 16)}
+                      {isFolded && <span className="tv-grouphead-name">{name}</span>}
+                      <span className="tv-grouphead-n mono">{g.rows.length}</span>
+                      <span className="tv-grouphead-caret" aria-hidden="true">{isFolded ? '▸' : '▾'}</span>
+                    </button>
+                  );
+                })()}
+                {!(folded.has(g.project) && g.project !== '!asking') && g.rows.map((e) => {
                   const d = e.det;
                   if (!e.sess && d) {
                     const dst = statusOfDet(d);
                     const dcmd = d.cmd || 'claude';
                     return (
-                      <div key={e.key} className={`tv-tab parked${dst === 'asking' ? ' asking' : ''}${view === 'swarm' && flash === d.name ? ' on' : ''} p-${projTint(e.project)}`}
+                      <div key={e.key} className={`tv-tab parked${dst === 'asking' ? ' asking' : ''}${view === 'swarm' && flash === d.name ? ' on' : ''} ${projTint(e.project)}`}
                         onClick={() => openParked(d)}
                         onContextMenu={(ev) => { ev.preventDefault(); setMenu({ id: -1, det: d.name, x: ev.clientX, y: ev.clientY }); }}
                         title={`${nameOfDet(d)} · ${TOOL[dcmd].name} · ~/${d.cwd || ''} — running, not open here. Click to open; right-click to end.`}>
@@ -1634,7 +1675,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                   // Main + 3: which tabs are on the stage, and where (main green, the small three blue).
                   const slot = view !== 'split' ? '' : s.id === cur?.id ? ' in-main' : minis.some((m) => m.id === s.id) ? ' in-mini' : '';
                   return (
-                    <div key={s.id} data-tab={s.id} className={`tv-tab${on ? ' on' : ''}${slot}${st === 'asking' ? ' asking' : ''} p-${projTint(e.project)}`}
+                    <div key={s.id} data-tab={s.id} className={`tv-tab${on ? ' on' : ''}${slot}${st === 'asking' ? ' asking' : ''} ${projTint(e.project)}`}
                       draggable onDragStart={(e) => { e.dataTransfer.effectAllowed = 'copyMove'; e.dataTransfer.setData('text/x-stack-tab', String(s.id)); setDragTab(s.id); }}
                       onDragEnd={() => { setDragTab(null); setSnapPreview(null); }}
                       onClick={() => selectTab(s)}
@@ -2034,7 +2075,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                   const openId = t.sess?.id;
                   return (
                     <div key={t.key}
-                      className={`tv-tile${hov ? ' hov' : ''}${compact ? ' compact' : ''}${flash === t.key ? ' flash' : ''}${dropOn === t.key && dragTile !== t.key ? ' drop' : ''}${dragTile === t.key ? ' dragging' : ''} p-${projTint(t.project)}`}
+                      className={`tv-tile${hov ? ' hov' : ''}${compact ? ' compact' : ''}${flash === t.key ? ' flash' : ''}${dropOn === t.key && dragTile !== t.key ? ' drop' : ''}${dragTile === t.key ? ' dragging' : ''} ${projTint(t.project)}`}
                       draggable
                       onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/x-stack-tile', t.key); setDragTile(t.key); setTilePeek(null); }}
                       onDragEnd={() => { setDragTile(null); setDropOn(null); }}

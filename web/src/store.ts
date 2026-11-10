@@ -461,6 +461,8 @@ export interface ProjectDetailData {
   // #616 — the charter's opening (capped server-side, `truncated` says so), or
   // null when none is written. The whole doc is on the Charter tab.
   charter: CharterSummary | null;
+  /** How many cards and docs are starred (the rail's Starred badge); 0 from an older server. */
+  starredCount: number;
   keepResumeCard: boolean;
   staleItemDays: number;   // parked-item stale threshold in days (#247) — ages the Parked view
   geminiReady: boolean;    // #278/#520 — a key is configured. The WHOLE answer for every ✧ in the app: the per-agent map that rode beside this went with the registry
@@ -476,7 +478,7 @@ export interface ProjectDetailData {
 export async function getProjectDetail(slug: string): Promise<ProjectDetailData> {
   const d = await request<ProjectPayload & {
     activity: Activity[]; bugs: Bug[]; roadmap: Roadmap;
-    checks?: Check[]; sprints?: Sprint[]; milestones?: Milestone[]; slices?: Slice[]; charter?: CharterSummary | null; keepResumeCard?: boolean; shareToken?: string; liveBranches?: string[];
+    checks?: Check[]; sprints?: Sprint[]; milestones?: Milestone[]; slices?: Slice[]; charter?: CharterSummary | null; starredCount?: number; keepResumeCard?: boolean; shareToken?: string; liveBranches?: string[];
     staleItemDays?: number; geminiReady?: boolean;
     cadence?: { day: string; n: number }[]; lastPushAt?: string | null;
   }>(`/projects/${encodeURIComponent(slug)}`);
@@ -492,6 +494,7 @@ export async function getProjectDetail(slug: string): Promise<ProjectDetailData>
     milestones: d.milestones || [],
     slices: d.slices || [],
     charter: d.charter ?? null,
+    starredCount: Number(d.starredCount) || 0,
     keepResumeCard: d.keepResumeCard !== false,
     // An older server that doesn't send it falls back to the same default (#247).
     staleItemDays: Number.isFinite(d.staleItemDays) ? Number(d.staleItemDays) : 21,
@@ -836,6 +839,17 @@ export function getTermSwarmHidden(): string[] {
 }
 export function setTermSwarmHidden(names: string[]) {
   try { localStorage.setItem(TERM_SWARM_HIDDEN_KEY, JSON.stringify(names.slice(0, 200))); } catch { /* private mode: this tab only */ }
+}
+
+// Project groups folded in the terminal's top bar, by project slug ('' is the
+// no-project group). Device-local and only a view: a folded group's sessions
+// keep running and stay in the switcher.
+const TERM_FOLDED_KEY = 'stack.termFolded';
+export function getTermFolded(): string[] {
+  return readStoredJSON(TERM_FOLDED_KEY, (v) => (Array.isArray(v) ? v.filter((x) => typeof x === 'string').slice(0, 200) : []));
+}
+export function setTermFolded(projects: string[]) {
+  try { localStorage.setItem(TERM_FOLDED_KEY, JSON.stringify(projects.slice(0, 200))); } catch { /* private mode: this tab only */ }
 }
 
 export async function getTerminalAgent(): Promise<{ connected: boolean }> {
@@ -1908,6 +1922,15 @@ export async function putClaudeMd(slug: string, path: string, sha: string, body:
 // The bytes travel on their own: an upload is a raw PUT, and a read comes back
 // as a blob: URL the caller must revoke when it is done with it.
 const artifactsBase = (slug: string) => `/projects/${encodeURIComponent(slug)}/artifacts`;
+
+// STARRED (server/src/routes/starred.js): the owner's shortlist. A star is set
+// only here, never through the card or doc PATCH, and never by an agent.
+export type StarKind = 'cards' | 'docs';
+export const getStarred = (slug: string) =>
+  request<{ cards: RoadmapItem[]; docs: Artifact[] }>(`/projects/${encodeURIComponent(slug)}/starred`);
+export const setStarred = (slug: string, kind: StarKind, id: number, starred: boolean) =>
+  request<{ id: number; starredAt: string | null }>(`/projects/${encodeURIComponent(slug)}/starred/${kind}/${id}`,
+    { method: 'PUT', body: { starred } });
 export const ARTIFACT_FILE_CAP = 10 * 1024 * 1024;
 type ArtifactFields = Partial<{
   type: ArtifactType; title: string; body: string; url: string; tags: string[]; links: number[];
