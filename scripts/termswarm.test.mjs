@@ -109,3 +109,15 @@ test('the timer reads elapsed while working, and the last run once stopped', () 
   assert.equal(spanLabel(42_000), '42s');
   assert.equal(spanLabel(3_840_000), '1h 4m');
 });
+
+test('the host run wins; a tab only sharpens it where they overlap', async () => {
+  const { pickRun } = await import(new URL('../web/src/lib/termSwarm.ts', import.meta.url).href);
+  const host = { start: 1_000_000, last: 1_600_000, working: false };
+  // no host run: the tab's own
+  assert.deepEqual(pickRun(null, { start: 5, last: 9 }, true), { run: { start: 5, last: 9 }, working: true });
+  // reopened long after: the tab's attach burst is not a run, the host's last run is
+  assert.deepEqual(pickRun(host, { start: 9_000_000, last: 9_000_100 }, true), { run: { start: 1_000_000, last: 1_600_000 }, working: false });
+  // overlapping: one run, the wider span
+  assert.deepEqual(pickRun({ ...host, working: true }, { start: 1_590_000, last: 1_610_000 }, true),
+    { run: { start: 1_000_000, last: 1_610_000 }, working: true });
+});

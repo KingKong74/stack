@@ -827,6 +827,9 @@ export interface DetachedSession {
   // the project that branch was cut from.
   preview?: string[];
   activityAt?: number;
+  // How long it has worked, timed on the HOST (terminal/work-run.mjs), so it is
+  // true across a closed browser. null/absent = no run seen (an older daemon).
+  run?: { start: number; last: number; working: boolean } | null;
   branch?: string;
   project?: string;
 }
@@ -839,6 +842,23 @@ export function getTermSwarmHidden(): string[] {
 }
 export function setTermSwarmHidden(names: string[]) {
   try { localStorage.setItem(TERM_SWARM_HIDDEN_KEY, JSON.stringify(names.slice(0, 200))); } catch { /* private mode: this tab only */ }
+}
+
+// Asking sessions the owner has marked SEEN, device-local: tmux name -> the
+// fingerprint of the question seen. A new question has a new fingerprint, so
+// it is loud again; Seen mutes one question, never the session.
+const TERM_ASK_SEEN_KEY = 'stack.termAskSeen';
+export function getTermAskSeen(): Record<string, string> {
+  return readStoredJSON(TERM_ASK_SEEN_KEY, (v) => {
+    const out: Record<string, string> = {};
+    if (v && typeof v === 'object' && !Array.isArray(v)) {
+      for (const [k, f] of Object.entries(v).slice(0, 200)) if (typeof f === 'string') out[k] = f;
+    }
+    return out;
+  });
+}
+export function setTermAskSeen(seen: Record<string, string>) {
+  try { localStorage.setItem(TERM_ASK_SEEN_KEY, JSON.stringify(seen)); } catch { /* private mode: this tab only */ }
 }
 
 // Project groups folded in the terminal's top bar, by project slug ('' is the

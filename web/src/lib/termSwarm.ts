@@ -95,6 +95,21 @@ export function advanceRun(run: WorkRun | undefined, working: boolean, activeAt:
   if (run && at - run.last <= RUN_GRACE_MS) return at > run.last ? { start: run.start, last: at } : run;
   return { start: at, last: at };
 }
+/** The run a session wears, given the HOST's (timed on the host, true across a
+ *  closed browser, at 20s grain) and this tab's own (fine-grained, but only
+ *  since this page was watching). The host's wins; this tab's only sharpens it
+ *  where the two overlap, or stands in when the host has none (an older daemon,
+ *  a session with no tmux). */
+export function pickRun(
+  host: (WorkRun & { working: boolean }) | null | undefined, local: WorkRun | undefined, localWorking: boolean,
+): { run: WorkRun | undefined; working: boolean } {
+  if (!host) return { run: local, working: localWorking };
+  const working = host.working || (localWorking && !!local && local.start <= host.last + RUN_GRACE_MS);
+  if (local && local.start <= host.last + RUN_GRACE_MS && local.last >= host.start - RUN_GRACE_MS) {
+    return { run: { start: Math.min(host.start, local.start), last: Math.max(host.last, local.last) }, working };
+  }
+  return { run: { start: host.start, last: host.last }, working };
+}
 /** "42s", "3m", "1h 4m". */
 export function spanLabel(ms: number): string {
   const s = Math.max(0, Math.round(ms / 1000));

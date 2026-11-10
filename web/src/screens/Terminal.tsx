@@ -7,7 +7,7 @@ import {
   openTerminal,
   getTermUsagePrefs, setTermUsagePrefs, type TermUsagePrefs,
   getTermViewPrefs, setTermViewPrefs, type TermViewPrefs, type TermView, type TermDest,
-  getTermSwarmHidden, setTermSwarmHidden, getTermFolded, setTermFolded, getProjects,
+  getTermSwarmHidden, setTermSwarmHidden, getTermFolded, setTermFolded, getProjects, getTermAskSeen, setTermAskSeen,
   createAutopilotSchedule,
   getAutopilotJobs, resumeAutopilotJob, hangupAutopilotJob, type AutopilotJob,
   getTerminalUsage, type TerminalUsageData,
@@ -25,7 +25,7 @@ import {
 import { hrefTo } from '../lib/route';
 import { newTermName } from '../lib/termLaunch';
 import { FLICK_HINT } from '../lib/flick';
-import { askOf } from '../lib/asking';
+import { askOf, type AskInfo } from '../lib/asking';
 
 import { useAutoRefresh } from '../lib/autoRefresh';
 import { wireTermClipboard } from '../lib/termClipboard';
@@ -48,7 +48,7 @@ import { TerminalDirectoryPicker } from '../components/TerminalDirectoryPicker';
 
 import {
   zoneRect, zoneAt, tileRects, clampRect, tileStatus, agoLabel, orderTiles, moveKey, compactLines, compactRich, paletteColour,
-  STATUS_ORDER, GRID_OPTS, WORKING_MS, HOST_WORKING_MS, advanceRun, runLabel, type WorkRun, type Rect, type Zone, type TileStatus, type PeekSeg,
+  STATUS_ORDER, GRID_OPTS, WORKING_MS, HOST_WORKING_MS, advanceRun, runLabel, pickRun, type WorkRun, type Rect, type Zone, type TileStatus, type PeekSeg,
 } from '../lib/termSwarm';
 import { TopBar } from '../components/TopBar';
 import { NavIcons } from '../detail/ConsoleNav';
@@ -1127,18 +1127,42 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
     activeAt: lastBusy.current[s.id] || 0, now, windowMs: WORKING_MS,
   });
   const statusOfDet = (d: DetachedSession): TileStatus => tileStatus({
-    asking: !!askOf(d), failed: false, activeAt: d.activityAt || 0, now, windowMs: HOST_WORKING_MS,
+    asking: !!askOf(d), failed: false, now, windowMs: HOST_WORKING_MS,
+    // tmux's own clock stands still while nobody is attached; the host's work
+    // timer does not, so a run it calls live counts as work now.
+    activeAt: Math.max(d.activityAt || 0, d.run?.working ? now : d.run?.last || 0),
   });
+  // SEEN mutes one question: the session still reads asking, but quietly — no
+  // ring, no jump to the front of the bar. A new question (a new fingerprint)
+  // is loud again. Device-local, like hiding a tile.
+  const [askSeen, setAskSeenState] = useState<Record<string, string>>(() => getTermAskSeen());
+  const seenAsk = (name: string | undefined, ask: AskInfo | null) => !!(name && ask && askSeen[name] === ask.fingerprint);
+  const sessSeen = (s: Sess) => seenAsk(s.tmux, askFor(s));
+  const detSeen = (d: DetachedSession) => seenAsk(d.name, askOf(d));
+  const markSeen = (name: string | undefined, ask: AskInfo | null) => {
+    if (!name || !ask) return;
+    const alive = new Set(detached.map((d) => d.name));
+    const next = Object.fromEntries(Object.entries(askSeen).filter(([k]) => alive.has(k)));
+    next[name] = ask.fingerprint;
+    setAskSeenState(next);
+    setTermAskSeen(next);
+  };
+  const seenBtn = (name: string | undefined, ask: AskInfo | null) => (
+    <button className="tv-btn xs" title="Seen — mute this question. The session stays asking, quietly, until it asks something new."
+      onClick={(e) => { e.stopPropagation(); markSeen(name, ask); }}>Seen</button>
+  );
   // How long each session has been working, or last worked: one run per
   // tile key, advanced off the same evidence its status reads (lib/termSwarm).
   // Advancing is idempotent for one clock reading, so render may call it twice.
   const runs = useRef<Record<string, WorkRun>>({});
-  const runOf = (key: string, st: TileStatus, activeAt: number) => {
+  // The HOST's run wins (pickRun): it was timed whether or not this page was open.
+  const runOf = (key: string, st: TileStatus, activeAt: number, host: DetachedSession['run']) => {
     const r = advanceRun(runs.current[key], st === 'working', activeAt, now);
     if (r) runs.current[key] = r;
-    return runLabel(r, st === 'working', now);
+    const p = pickRun(host, r, st === 'working');
+    return runLabel(p.run, p.working, now);
   };
-  const runOfSess = (s: Sess, st: TileStatus) => runOf(s.tmux || `tab:${s.id}`, st, lastBusy.current[s.id] || 0);
+  const runOfSess = (s: Sess, st: TileStatus) => runOf(s.tmux || `tab:${s.id}`, st, lastBusy.current[s.id] || 0, detOf(s)?.run);
   const nameOf = (s: Sess) => labelOf(s) || (s.status === 'live'
     ? (labelBusy ? 'naming this session…' : 'New session') : s.note || s.status);
   const nameOfDet = (d: DetachedSession) => labels[d.name] || d.label || 'Not named yet';
@@ -1163,7 +1187,8 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   for (const e of barEntries) if (!barSeen.current.has(e.key)) barSeen.current.set(e.key, barSeen.current.size);
   // A session that is ASKING jumps to the front of the bar, ahead of every
   // project, and wears a badge, so a question is never past the edge.
-  const askingEntry = (e: BarEntry) => (e.sess ? statusOf(e.sess) : e.det ? statusOfDet(e.det) : '') === 'asking';
+  const askingEntry = (e: BarEntry) => (e.sess ? statusOf(e.sess) === 'asking' && !sessSeen(e.sess)
+    : !!e.det && statusOfDet(e.det) === 'asking' && !detSeen(e.det));
   const barSort = (rows: BarEntry[]) => [...rows].sort((a, b) => Number(b.pinned) - Number(a.pinned) || (barSeen.current.get(a.key)! - barSeen.current.get(b.key)!));
   const barAsking = barEntries.filter(askingEntry);
   const barGroups = [
@@ -1311,7 +1336,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   // daemon advertises. A tile is a reading; opening one makes it a window.
   type Tile = {
     key: string; sess?: Sess; det?: DetachedSession; name: string; project: string; cmd: Sess['cmd'];
-    st: TileStatus; ago: string; run: string; ask: string; pinned: boolean; dest: string;
+    st: TileStatus; ago: string; run: string; ask: string; seen: boolean; pinned: boolean; dest: string;
   };
   const allTiles: Tile[] = [
     ...sessions.map((s): Tile => {
@@ -1320,15 +1345,15 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
       return {
         key: s.tmux || `tab:${s.id}`, sess: s, det: d, name: nameOf(s), project: projectOf(s), cmd: s.cmd,
         st, ago: agoLabel(lastBusy.current[s.id] || d?.activityAt || 0, now), run: runOfSess(s, st),
-        ask: st === 'asking' ? askFor(s)?.question || '' : '', pinned: isPinned(s), dest: destLabel(s),
+        ask: st === 'asking' ? askFor(s)?.question || '' : '', seen: st === 'asking' && sessSeen(s), pinned: isPinned(s), dest: destLabel(s),
       };
     }),
     ...detachedShown.map((d): Tile => {
       const st = statusOfDet(d);
       return {
         key: d.name, det: d, name: nameOfDet(d), project: projectOfDet(d), cmd: d.cmd || 'claude',
-        st, ago: agoLabel(d.activityAt || 0, now), run: runOf(d.name, st, d.activityAt || 0),
-        ask: st === 'asking' ? askOf(d)?.question || '' : '', pinned: !!d.keep,
+        st, ago: agoLabel(d.activityAt || 0, now), run: runOf(d.name, st, d.activityAt || 0, d.run),
+        ask: st === 'asking' ? askOf(d)?.question || '' : '', seen: st === 'asking' && detSeen(d), pinned: !!d.keep,
         dest: d.branch ? `⎇ ${d.branch}` : '⎇ main',
       };
     }),
@@ -1349,7 +1374,8 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   const [flash, setFlash] = useState<string | null>(null);
   const flashTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(flashTimer.current), []);
-  const askingCount = allTiles.filter((t) => t.st === 'asking').length;
+  const askingCount = allTiles.filter((t) => t.st === 'asking' && !t.seen).length;
+  const seenCount = allTiles.filter((t) => t.seen).length;
   const workingCount = allTiles.filter((t) => t.st === 'working').length;
   const linesOf = (t: Tile): string[] => {
     const live = t.sess ? handles.current.get(t.sess.id)?.tail(40) : undefined;
@@ -1665,7 +1691,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                     const dst = statusOfDet(d);
                     const dcmd = d.cmd || 'claude';
                     return (
-                      <div key={e.key} className={`tv-tab parked${dst === 'asking' ? ' asking' : ''}${view === 'swarm' && flash === d.name ? ' on' : ''} ${projTint(e.project)}`}
+                      <div key={e.key} className={`tv-tab parked${dst === 'asking' ? (detSeen(d) ? ' asked' : ' asking') : ''}${view === 'swarm' && flash === d.name ? ' on' : ''} ${projTint(e.project)}`}
                         onClick={() => openParked(d)}
                         onContextMenu={(ev) => { ev.preventDefault(); setMenu({ id: -1, det: d.name, x: ev.clientX, y: ev.clientY }); }}
                         title={`${nameOfDet(d)} · ${TOOL[dcmd].name} · ~/${d.cwd || ''} — running, not open here. Click to open; right-click to end.`}>
@@ -1691,7 +1717,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                   // Main + 3: which tabs are on the stage, and where (main green, the small three blue).
                   const slot = view !== 'split' ? '' : s.id === cur?.id ? ' in-main' : minis.some((m) => m.id === s.id) ? ' in-mini' : '';
                   return (
-                    <div key={s.id} data-tab={s.id} className={`tv-tab${on ? ' on' : ''}${slot}${st === 'asking' ? ' asking' : ''} ${projTint(e.project)}`}
+                    <div key={s.id} data-tab={s.id} className={`tv-tab${on ? ' on' : ''}${slot}${st === 'asking' ? (sessSeen(s) ? ' asked' : ' asking') : ''} ${projTint(e.project)}`}
                       draggable onDragStart={(e) => { e.dataTransfer.effectAllowed = 'copyMove'; e.dataTransfer.setData('text/x-stack-tab', String(s.id)); setDragTab(s.id); }}
                       onDragEnd={() => { setDragTab(null); setSnapPreview(null); }}
                       onClick={() => selectTab(s)}
@@ -1895,6 +1921,8 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
               : s.id === cur?.id ? 'main' : miniAt >= 0 ? 'mini' : 'off';
             const st = statusOf(s);
             const run = s.status === 'live' ? runOfSess(s, st) : '';
+            const loud = s.status === 'live' && st === 'asking' && !sessSeen(s);
+            const askBtn = loud ? seenBtn(s.tmux, askFor(s)) : null;
             const runChip = run ? <span className={`tv-run ${st}`} title={st === 'working' ? 'Working for' : 'How long its last run of work took'}>{run}</span> : null;
             const pinned = isPinned(s);
             const p = projectOf(s);
@@ -1905,7 +1933,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
               } : undefined;
             return (
               <div key={s.id} data-win={place === 'win' ? s.id : undefined}
-                className={`tv-pane ${place}${place === 'win' && winOf?.z === topZ ? ' front' : ''}${dropWin === s.id ? ' drop' : ''}${s.status === 'live' && st === 'asking' ? ' asking' : ''}`}
+                className={`tv-pane ${place}${place === 'win' && winOf?.z === topZ ? ' front' : ''}${dropWin === s.id ? ' drop' : ''}${loud ? ' asking' : s.status === 'live' && st === 'asking' ? ' asked' : ''}`}
                 style={style}
                 onMouseDown={place === 'win' ? () => focusWin(s.id) : undefined}
                 onDragOver={place === 'win' ? (e) => { if (!isTabDrag(e)) return; e.preventDefault(); e.stopPropagation(); if (dropWin !== s.id) { setDropWin(s.id); setSnapPreview(null); } } : undefined}
@@ -1922,6 +1950,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                     {destLabel(s) && <span className={`tv-destchip ${s.branch || s.dest === 'branch' ? 'branch' : 'main'}`} title="Where this session's work goes">{destLabel(s)}</span>}
                     {notice?.id === s.id && <span className="pane-notice">{notice.label}</span>}
                     <span className="tv-head-acts">
+                      {askBtn}
                       {(s.status === 'closed' || s.status === 'error') && (
                         <button className="tv-btn sm" onClick={() => handles.current.get(s.id)?.reconnect()}>↻ Reconnect</button>
                       )}
@@ -1946,6 +1975,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                     {projChip(p, 18)}
                     {nameEdit(s, 'pane', 'tv-mini-name')}
                     {runChip}
+                    {askBtn}
                     {s.tmux && (
                       <button className={`tv-ico${pinned ? ' pinned' : ''}`} title={pinned ? 'Unpin' : 'Pin'} onClick={() => togglePinSess(s)}>{pinIcon(11, pinned)}</button>
                     )}
@@ -1966,6 +1996,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                       {runChip}
                       <span className="tv-win-meta">{TOOL[s.cmd].name}{destLabel(s) ? ` · ${destLabel(s)}` : ''}</span>
                       <span className="tv-head-acts">
+                        {askBtn}
                         {s.tmux && (
                           <button className={`tv-ico${pinned ? ' pinned' : ''}`} title={pinned ? 'Unpin' : 'Pin'} onClick={() => togglePinSess(s)}>{pinIcon(11, pinned)}</button>
                         )}
@@ -2046,7 +2077,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
               onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setSnapPreview(null); }}>
               <div className="tv-swarm-head">
                 <span className="tv-counts">
-                  {allTiles.length} sessions · <span className="asking">{askingCount} asking</span> · <span className="working">{workingCount} working</span>
+                  {allTiles.length} sessions · <span className="asking">{askingCount} asking</span>{seenCount ? ` (${seenCount} seen)` : ''} · <span className="working">{workingCount} working</span>
                 </span>
                 <span className="tv-hint">{wins.length ? 'Drag a window to an edge to split, a corner to quarter' : 'Hover to read · click to open · drag to reorder · drag a tab here to open it as a window'}</span>
                 <span className="tv-rel">
@@ -2096,7 +2127,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                   const openId = t.sess?.id;
                   return (
                     <div key={t.key}
-                      className={`tv-tile${hov ? ' hov' : ''}${compact ? ' compact' : ''}${flash === t.key ? ' flash' : ''}${dropOn === t.key && dragTile !== t.key ? ' drop' : ''}${dragTile === t.key ? ' dragging' : ''}${t.st === 'asking' ? ' asking' : ''} ${projTint(t.project)}`}
+                      className={`tv-tile${hov ? ' hov' : ''}${compact ? ' compact' : ''}${flash === t.key ? ' flash' : ''}${dropOn === t.key && dragTile !== t.key ? ' drop' : ''}${dragTile === t.key ? ' dragging' : ''}${t.st === 'asking' ? (t.seen ? ' asked' : ' asking') : ''} ${projTint(t.project)}`}
                       draggable
                       onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/x-stack-tile', t.key); setDragTile(t.key); setTilePeek(null); }}
                       onDragEnd={() => { setDragTile(null); setDropOn(null); }}
@@ -2112,7 +2143,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                           <div className="tv-tile-row">
                             {compact && projChip(t.project, 14)}
                             <span className={`tv-dot ${t.st}`} />
-                            <span className={`tv-st ${t.st}`}>{STATUS_LABEL[t.st]}</span>
+                            <span className={`tv-st ${t.st}`}>{STATUS_LABEL[t.st]}{t.seen ? ' · seen' : ''}</span>
                             {t.run && <span className={`tv-run ${t.st}`} title={t.st === 'working' ? 'Working for' : 'How long its last run of work took'}>{t.run}</span>}
                             <span className="ago">{t.ago}</span>
                             {t.pinned && <span className="tv-pinmark">{pinIcon()}</span>}
@@ -2134,6 +2165,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                               <button className={`tv-ico${t.pinned ? ' pinned' : ''}`} title={t.pinned ? 'Unpin' : 'Pin'}
                                 onClick={() => (t.sess ? togglePinSess(t.sess) : t.det && void togglePin(t.det.name, !t.det.keep))}>{pinIcon(11, t.pinned)}</button>
                             )}
+                            {t.st === 'asking' && !t.seen && seenBtn(t.key, t.sess ? askFor(t.sess) : t.det ? askOf(t.det) : null)}
                             <button className="tv-btn xs" title="Hide from Swarm (keeps running)" onClick={() => hideTile(t.key, openId)}>Hide</button>
                             <button className="tv-btn xs danger" disabled={!!t.det?.attached && !t.sess}
                               title={t.det?.attached && !t.sess ? 'Attached on another device — end it there, or open it here first' : 'End this session'}

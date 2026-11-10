@@ -57,12 +57,15 @@ let detachedSessions = []; // [{ name, cwd, created, attached, keep, tail }]
 // name/cwd/created/attached/keep/tail); pruned when a name leaves the list.
 const detachedLabels = new Map(); // name -> label
 export const termDetached = () =>
-  detachedSessions.map(({ name, cwd, created, attached, keep, blocked, waiting, model, resolvedModel, cmd, tail, activity, branch, project }) => ({
+  detachedSessions.map(({ name, cwd, created, attached, keep, blocked, waiting, model, resolvedModel, cmd, tail, activity, run, branch, project }) => ({
     name, cwd, created, attached, keep, cmd, label: detachedLabels.get(name) || '',
     // Swarm (term-preview.js): the pane's last lines, when it last moved, and
     // the session's own branch. 0 / [] / '' are "unknown", never "idle".
     preview: previewLines(tail),
     activityAt: Number(activity) || 0,
+    // How long it has worked, timed on the host (terminal/work-run.mjs). null =
+    // no run seen, which is not the same as idle.
+    run: run || null,
     branch: cleanBranch(branch),
     project: cleanProject(project),
     // #503 — what the session is talking to, as the HOST read it off the tmux
@@ -92,6 +95,13 @@ export const termDetached = () =>
 // not know how long a prompt has been up, and re-stamping now says "at least
 // this long" rather than inventing a history.
 const blockedSince = new Map();
+// The host's work timer, epoch ms. An older daemon sends none: null, unknown.
+export function runShape(r) {
+  if (!r || typeof r !== 'object') return null;
+  const start = Number(r.start), last = Number(r.last);
+  if (!(start > 0) || !(last >= start)) return null;
+  return { start, last, working: r.working === true };
+}
 const waitingSince = new Map(); // #519 — the same, for `waiting`
 function stampSince(map, sessions, field) {
   for (const s of sessions) {
@@ -491,6 +501,7 @@ export function attachTerm(httpServer) {
             resolvedModel: typeof s.resolvedModel === 'string' ? s.resolvedModel.slice(0, 120) : '',
             // Swarm — an older daemon sends none of these: unknown, not idle.
             activity: Number(s.activity) || 0,
+            run: runShape(s.run),
             branch: s.branch,
             project: s.project,
           }));

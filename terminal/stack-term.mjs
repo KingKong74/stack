@@ -50,7 +50,8 @@ import WebSocket from 'ws';
 import { createUsageMeter } from './usage-meter.mjs';
 import { createCodexAccount } from './codex-account.mjs';
 import { createPlanUsage } from './plan-usage.mjs';
-import { tmuxAvailable, validName, generateName, sessionArgv, sessionExists, killSession, clearFresh, listDetached, listStackSessions, listAutoSessions, markFresh, isKeystroke, paneTail, paneTailStyled, reapDeadSessions, reapFreshSessions, reapIdleSessions, sendKeys, setKeep, setSessionBranch, setSessionModel } from './tmux-session.mjs';
+import { tmuxAvailable, validName, generateName, sessionArgv, sessionExists, killSession, clearFresh, listDetached, listStackSessions, listAutoSessions, markFresh, isKeystroke, paneTail, paneTailStyled, reapDeadSessions, reapFreshSessions, reapIdleSessions, sendKeys, setKeep, setSessionBranch, setSessionModel, setSessionRun } from './tmux-session.mjs';
+import { trackRun, runWorking, encodeRun, decodeRun } from './work-run.mjs';
 import { makeBranchSession } from './session-worktree.mjs';
 import { detectPrompt } from './prompt-scan.mjs';
 import { detectWaiting } from './input-wait.mjs';
@@ -306,6 +307,9 @@ function pushDetached() {
       // Swarm: when the pane last moved (tmux's own clock), and where its work
       // goes when it runs on its own branch ('' = the checkout).
       activity: s.activity || 0,
+      // How long it has worked (work-run.mjs), off the block watch's pane reads,
+      // so it is true whether or not a browser was attached. null = no run yet.
+      run: runFor(s),
       branch: s.branch || '',
       project: s.project || '',
     };
@@ -359,6 +363,22 @@ setInterval(pushAuto, 60_000);
 // on a stop that will sit there for minutes or hours, and it is what keeps a
 // desktop notification from firing on a session that was never waiting.
 let blockedKey = '';
+// name -> { sig, start, last }: the work timer (work-run.mjs). Seeded from the
+// session's own @stack-run, so a restart keeps every timer.
+const workRuns = new Map();
+function runFor(s) {
+  const r = workRuns.get(s.name) || decodeRun(s.run);
+  if (!r || !r.start) return null;
+  return { start: r.start, last: r.last, working: runWorking(r, Date.now()) };
+}
+function noteRun(s, tail) {
+  const now = Date.now();
+  const prev = workRuns.get(s.name) || decodeRun(s.run) || undefined;
+  const next = trackRun(prev, tail, now);
+  workRuns.set(s.name, next);
+  if (next.start && (next.start !== prev?.start || next.last !== prev?.last)) setSessionRun(s.name, encodeRun(next));
+  return runWorking(next, now);
+}
 const waitSeen = new Map(); // name -> { fp, confirmed: {kind, detail, fingerprint} | null }
 function scanWaiting(name) {
   const cand = detectWaiting(paneTailStyled(name));
@@ -380,14 +400,19 @@ function watchBlocks() {
   const list = listStackSessions();
   const key = list
     .map((s) => {
-      const blocked = detectPrompt(paneTail(s.name))?.fingerprint || '';
+      const tail = paneTail(s.name);
+      const blocked = detectPrompt(tail)?.fingerprint || '';
       const waiting = blocked ? '' : (scanWaiting(s.name)?.fingerprint || '');
       if (blocked) waitSeen.delete(s.name);
-      return `${s.name}:${blocked}:${waiting}`;
+      // …and the work timer, off the same read. A run starting or stopping is
+      // a change worth pushing now, not at the next 60s tick.
+      const working = noteRun(s, tail) ? 'w' : '';
+      return `${s.name}:${blocked}:${waiting}:${working}`;
     })
     .join('|');
   const alive = new Set(list.map((s) => s.name));
   for (const name of waitSeen.keys()) if (!alive.has(name)) waitSeen.delete(name);
+  for (const name of workRuns.keys()) if (!alive.has(name)) workRuns.delete(name);
   if (key === blockedKey) return;
   blockedKey = key;
   pushDetached();

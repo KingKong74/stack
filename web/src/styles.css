@@ -9177,6 +9177,13 @@ button.ar-open:hover { background: var(--surface-hover); }
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
 .tv-tile.compact .tv-tile-ask { -webkit-line-clamp: 1; font-size: var(--text-2xs); }
+/* SEEN: still asking, muted. A quiet amber edge and a steady dot, nothing moves. */
+.tv-tile.asked, .tv-pane.asked { border-color: color-mix(in srgb, var(--amber-500) 45%, var(--border-subtle)); }
+.tv-tile.asked .tv-tile-top { background: var(--amber-500); opacity: 0.5; }
+.tv-tab.asked::after {
+  content: ''; position: absolute; top: 4px; right: 4px; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--amber-500); opacity: 0.6;
+}
 /* The work timer: how long so far while working, how long it took once stopped. */
 .tv-run { flex: none; font: var(--weight-medium) var(--text-2xs)/1 var(--font-mono); color: var(--text-tertiary); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .tv-run.working { color: var(--status-success-fg); }

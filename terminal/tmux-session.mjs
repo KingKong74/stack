@@ -244,6 +244,13 @@ export function setSessionBranch(name, branch, project) {
   if (project) spawnSync('tmux', ['set-option', '-t', `=${name}:`, '@stack-project', String(project)], { stdio: 'ignore' });
 }
 
+// The session's last RUN OF WORK (work-run.mjs), stored on the session for the
+// keep pin's reason: a daemon restart must not reset every timer to zero.
+// Best-effort: an unset run reads as "has not worked since Stack was watching".
+export function setSessionRun(name, value) {
+  spawnSync('tmux', ['set-option', '-t', `=${name}:`, '@stack-run', String(value)], { stdio: 'ignore' });
+}
+
 // List every stack-term-* tmux session on the host — the web daemon's own and
 // any started by hand (ssh + `stack term`), with whether a client is attached
 // anywhere. Only stack-term-* names: autopilot/test sessions are not the
@@ -252,13 +259,13 @@ export function setSessionBranch(name, branch, project) {
 export function listStackSessions() {
   const r = spawnSync(
     'tmux',
-    ['list-sessions', '-F', '#{session_name}\t#{session_attached}\t#{session_created}\t#{session_path}\t#{session_activity}\t#{@stack-keep}\t#{@stack-fresh}\t#{@stack-model}\t#{@stack-branch}\t#{@stack-project}'],
+    ['list-sessions', '-F', '#{session_name}\t#{session_attached}\t#{session_created}\t#{session_path}\t#{session_activity}\t#{@stack-keep}\t#{@stack-fresh}\t#{@stack-model}\t#{@stack-branch}\t#{@stack-project}\t#{@stack-run}'],
     { encoding: 'utf8' },
   );
   if (r.status !== 0) return []; // no server running = no sessions
   const out = [];
   for (const line of r.stdout.split('\n')) {
-    const [name, attached, created, path, activity, keep, fresh, model, branch, project] = line.split('\t');
+    const [name, attached, created, path, activity, keep, fresh, model, branch, project, run] = line.split('\t');
     // One strict pattern (#218: #199) instead of the old two-step
     // validName() + startsWith() pair, whose rules could drift apart.
     if (typeof name !== 'string' || !/^stack-term-[A-Za-z0-9_-]{1,64}$/.test(name)) continue;
@@ -285,6 +292,8 @@ export function listStackSessions() {
       // setSessionBranch above; '' = the session runs in the checkout itself.
       branch: typeof branch === 'string' ? branch : '',
       project: typeof project === 'string' ? project : '',
+      // setSessionRun below, raw "start:last"; work-run.mjs decodes it.
+      run: typeof run === 'string' ? run : '',
     });
   }
   return out;
