@@ -50,7 +50,7 @@ import WebSocket from 'ws';
 import { createUsageMeter } from './usage-meter.mjs';
 import { createCodexAccount } from './codex-account.mjs';
 import { createPlanUsage } from './plan-usage.mjs';
-import { tmuxAvailable, validName, generateName, sessionArgv, sessionExists, killSession, clearFresh, listDetached, listStackSessions, listAutoSessions, markFresh, paneTail, paneTailStyled, reapDeadSessions, reapFreshSessions, reapIdleSessions, sendKeys, setKeep, setSessionBranch, setSessionModel } from './tmux-session.mjs';
+import { tmuxAvailable, validName, generateName, sessionArgv, sessionExists, killSession, clearFresh, listDetached, listStackSessions, listAutoSessions, markFresh, isKeystroke, paneTail, paneTailStyled, reapDeadSessions, reapFreshSessions, reapIdleSessions, sendKeys, setKeep, setSessionBranch, setSessionModel } from './tmux-session.mjs';
 import { makeBranchSession } from './session-worktree.mjs';
 import { detectPrompt } from './prompt-scan.mjs';
 import { detectWaiting } from './input-wait.mjs';
@@ -758,6 +758,14 @@ function startSession(msg) {
       // exists for tmux to hang an option on; re-attaching to one never marks
       // it, because whatever it is, it is not new.
       markNewSession = reattached ? null : tmuxSession;
+      // A RE-ATTACH IS SOMEBODY COMING BACK to this session by name: a browser
+      // that remembered it, a view switch, a parked tab reopened. Whatever it
+      // is, it is not an orphan, so the fresh mark comes off now. The timer
+      // below only exempts a session whose CREATING attach lasted a minute, so
+      // without this a tab first held for 50s and then reopened (as a view
+      // switch or a reload does) was reaped later as "never attached", with
+      // its claude context, after 38 minutes of use in one logged case.
+      if (reattached) clearFresh(tmuxSession);
     } else {
       // Degrade gracefully when tmux is absent — direct spawn, no persistence.
       // The tag is still computed: there is no session to hang it on, but the
@@ -793,7 +801,8 @@ function startSession(msg) {
       tries += 1;
       if (sessionExists(name)) {
         clearInterval(tick);
-        markFresh(name);
+        // Typed into before the mark could land: already proven in use.
+        if (!sessions.get(sid)?.seen) markFresh(name);
         // #503 — same poll, same reason: tmux has nothing to hang an option on
         // until the shim's `new-session -A` has actually landed.
         setSessionModel(name, modelTag);
@@ -1167,6 +1176,12 @@ function connect() {
     if (m.t === 'start') startSession(m);
     else if (m.t === 'in' && sess && typeof m.data === 'string') {
       if (child) child.feed(m.data);
+      // Typing is proof of use: a tab typed into and then parked inside the
+      // fuse must not be reaped as unused. Once per session, not per key.
+      if (sess.tmuxSession && !sess.seen && isKeystroke(m.data)) {
+        sess.seen = true;
+        clearFresh(sess.tmuxSession);
+      }
     }
     else if (m.t === 'resize' && sess) {
       // Persist dimensions so a respawned child can be sized correctly.
@@ -1225,7 +1240,11 @@ function connect() {
     // re-announced on reconnect.  Only a shell exit or an explicit kill
     // terminates a session.
     setTimeout(connect, backoff);
-    backoff = Math.min(backoff * 2, 60_000);
+    // Capped at 15s, not 60: every push to main redeploys the server, and a
+    // pane re-attaching after the redeploy is turned away until this socket is
+    // back. A minute's backoff outlasted the panes' patience, so they stopped
+    // at "connection lost" with their sessions alive on the host.
+    backoff = Math.min(backoff * 2, 15_000);
   };
   ws.on('close', () => { log('disconnected — retrying'); retry(); });
   ws.on('error', (e) => { log(`connection error: ${e.message}`); retry(); try { ws.terminate(); } catch { /* already gone */ } });

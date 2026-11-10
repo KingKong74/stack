@@ -155,7 +155,7 @@ process.env.PATH = `${DIR}:${process.env.PATH}`;
 const {
   validName, generateName, sessionExists, sessionArgv, killSession, paneTail, sendKeys,
   setKeep, markFresh, clearFresh, listStackSessions, listDetached, listAutoSessions,
-  reapDeadSessions, reapFreshSessions, reapIdleSessions, tmuxAvailable,
+  reapDeadSessions, reapFreshSessions, reapIdleSessions, tmuxAvailable, isKeystroke,
 } = await import('../../terminal/tmux-session.mjs');
 
 // ---- fixture helpers -------------------------------------------------------
@@ -411,6 +411,16 @@ test('the keep pin exempts a fresh session outright', () => {
   assert.deepEqual(reapFreshSessions(1), []);
   assert.deepEqual(names(), ['stack-term-pinned']);
   assert.equal(stateOf('stack-term-pinned').fresh, true, 'a pin is not a sighting');
+});
+
+test('a keystroke is a person typing; a terminal query reply is not', () => {
+  // The daemon clears the fresh mark on the first keystroke. xterm.js answers
+  // a CLI's startup queries with ESC-led frames a headless probe also sends,
+  // so those must not count, or every probe session would be exempt.
+  for (const k of ['a', 'hello', '\r', '/', ' ', '\x03']) assert.equal(isKeystroke(k), true, JSON.stringify(k));
+  for (const k of ['', '\x1b[?62;22c', '\x1b[12;40R', '\x1b[I', '\x1b[A', undefined, null, 5]) {
+    assert.equal(isKeystroke(k), false, JSON.stringify(k));
+  }
 });
 
 test('a missing created stamp is refused, not guessed at', () => {

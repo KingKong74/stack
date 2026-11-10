@@ -2607,6 +2607,10 @@ function TermSession({ sess, visible, focused, fontSize, onStatus, onUsage, onTm
             onNotice(`📎 ${asked}: ${m.error || 'the host refused that drop'}`, 5000);
           }
         }
+        // While re-attaching after a lost connection, the relay's "daemon is
+        // not connected" is the expected answer until the host dials back in:
+        // it stays a status, not a red line in the scrollback every 15s.
+        else if (m.t === 'err' && retries > 0 && reattachable()) { onStatus('connecting', `waiting for the host — re-attaching (${retries})`); }
         else if (m.t === 'err') { output.flush(); onStatus('error', m.msg || 'terminal error'); term.write(`\r\n\x1b[91m${m.msg || 'terminal error'}\x1b[0m\r\n`); }
       });
       ws.addEventListener('error', () => {
@@ -2621,10 +2625,13 @@ function TermSession({ sess, visible, focused, fontSize, onStatus, onUsage, onTm
           term.write('\r\n\x1b[90m[connection lost — this shell ended with it; ↻ Reconnect starts a new one]\x1b[0m\r\n');
           return;
         }
-        // Backed off, and bounded: six tries is about half a minute, which
-        // covers a redeploy. Past that something is genuinely down and the
-        // pane says so, with ↻ Reconnect, rather than hammering the relay.
-        if (retries >= 6) { onStatus('closed', 'connection lost — ↻ Reconnect to try again'); return; }
+        // Backed off, and bounded at about ten minutes (15s apart once warm).
+        // It was six tries, about half a minute, which a redeploy outlasts:
+        // the relay turns a pane away until the host daemon has dialled back
+        // in too, so the panes gave up with their sessions alive on the host.
+        // Past ten minutes something is genuinely down and the pane says so,
+        // with ↻ Reconnect, rather than hammering the relay.
+        if (retries >= 45) { onStatus('closed', 'connection lost — ↻ Reconnect to try again'); return; }
         retries++;
         onStatus('connecting', `connection lost — re-attaching (${retries})`);
         retryTimer = setTimeout(connect, Math.min(15_000, 500 * 2 ** (retries - 1)));

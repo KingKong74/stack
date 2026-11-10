@@ -199,6 +199,19 @@ export function clearFresh(name) {
   spawnSync('tmux', ['set-option', '-t', `=${name}:`, '-u', '@stack-fresh'], { stdio: 'ignore' });
 }
 
+// Does an 'in' frame from the browser look like a PERSON TYPING? Typing into a
+// session is the plainest proof it is in use, so the daemon clears the fresh
+// mark on the first one. But xterm.js also sends frames nobody typed: its
+// replies to the terminal queries a CLI makes at startup (device attributes,
+// cursor position, focus reports), and every one of those starts with ESC. A
+// headless probe draws claude's splash and so receives those replies, so
+// counting them would exempt exactly the sessions this reaper exists for.
+// Arrow keys also start with ESC; a person who only pressed arrows is not yet
+// proof of use, and their first letter or Enter is.
+export function isKeystroke(data) {
+  return typeof data === 'string' && data.length > 0 && data[0] !== '\x1b';
+}
+
 // (#503) WHAT THIS SESSION IS TALKING TO — the provider and model tag, written
 // once at spawn. A third tmux user option, for the third time and the same
 // reason: the state sits on the thing it describes, so a daemon restart, a
