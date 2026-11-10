@@ -50,7 +50,7 @@ export const SPINE_TYPES = ['charter', 'architecture', 'design_doc', 'adr', 'not
 export const ADR_STATUSES = ['proposed', 'accepted', 'superseded'];
 export const FILE_CAP = 10 * 1024 * 1024;
 const INLINE_IMAGES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
-export const ARTIFACT_COLS = 'id, type, title, body, url, tags, links, origin, status, slice_id, file_name, file_mime, file_size, created_at, updated_at';
+export const ARTIFACT_COLS = 'id, type, title, body, url, tags, links, origin, status, slice_id, file_name, file_mime, file_size, starred_at, created_at, updated_at';
 const COLS = ARTIFACT_COLS;
 
 export const artifactShape = (r) => ({
@@ -67,6 +67,8 @@ export const artifactShape = (r) => ({
   // written for (null = none).
   status: r.status || '',
   sliceId: r.slice_id ?? null,
+  // The owner's star (routes/starred.js); null = not starred.
+  starredAt: r.starred_at ?? null,
   file: r.file_size > 0 || r.file_name
     ? { name: r.file_name, size: Number(r.file_size), mime: r.file_mime, image: INLINE_IMAGES.has(r.file_mime) }
     : null,

@@ -1955,3 +1955,14 @@ CREATE TABLE IF NOT EXISTS propositions (
   updated_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (project_id, source_key)
 );
+
+-- STARRED (2026-11-10): the owner's shortlist inside a project, the rail's
+-- Starred row (routes/starred.js). A timestamp on the row itself, not a stars
+-- table: deleting a card or note takes its star with it, and the time is the
+-- list's order (newest first). NULL = not starred. A star is NOT priority: no
+-- run order, Ready or board sort reads it. Only routes/starred.js writes it,
+-- and only a human's press calls that route.
+ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS starred_at TIMESTAMPTZ;
+ALTER TABLE artifacts     ADD COLUMN IF NOT EXISTS starred_at TIMESTAMPTZ;
+CREATE INDEX IF NOT EXISTS roadmap_items_starred_idx ON roadmap_items (project_id, starred_at DESC) WHERE starred_at IS NOT NULL;
+CREATE INDEX IF NOT EXISTS artifacts_starred_idx     ON artifacts (project_id, starred_at DESC) WHERE starred_at IS NOT NULL;

@@ -182,8 +182,8 @@ Open roadmap items can carry a claim (`claimedBy` — the branch name, e.g.
   An empty Ready queue means nothing to build unattended.
 - **The spine**: `charter` is the charter's opening; `milestones` hold
   `slices`; `sliceId` null is the Icebox (off the board, never Ready).
-- **Never set `ready`/`readyRank`, move an existing item's slice, or write a
-  milestone, slice or sprint.** Those are the owner's call. A sprint commits
+- **Never set `ready`/`readyRank` or a star, move an existing item's slice,
+  or write a milestone, slice or sprint.** Those are the owner's call. A sprint commits
   to slices: an item is in one iff its slice is (`sprintId` is derived and a
   write is refused). You MAY file NEW items into a slice (`sliceId`) on
   `POST /roadmap` or `/batch`; they land at its bottom. A part with no

@@ -31,6 +31,7 @@
 //     unfiled from here (that would ice it), and ✎ on the slice opens the
 //     slice's own dialog.
 
+import { StarButton } from '../components/Star';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { KitIcon } from './kit/KitIcon';
 import type { ItemKind, Priority, RoadmapItem, Slice, Sprint } from '../types';
@@ -85,9 +86,11 @@ const topbarH = () => {
 
 export function BoardFocus({
   slug, open, rows, columns, colOf, areas, sprintOf, phase, onPhase, onClosed,
-  onPatch, onMove, onCreateChild, slices = [], onEditSlice, onCreateInSlice,
+  onPatch, onMove, onCreateChild, slices = [], onEditSlice, onCreateInSlice, onStar,
 }: {
   slug: string;
+  /** Star or unstar a card (the Starred tab; not priority). Absent = no star drawn. */
+  onStar?: (it: RoadmapItem) => void;
   slices?: Slice[];
   onEditSlice?: (s: Slice) => void;
   onCreateInSlice?: (s: Slice, title: string) => Promise<RoadmapItem | undefined>;
@@ -475,7 +478,8 @@ export function BoardFocus({
             columns={columns} colKey={colOf(ed)} areas={areas}
             rolled={rows.some((x) => x.parentId === ed.id && !x.archived)}
             onClose={() => { setEditOpen(false); setEditId(open.id); }}
-            onPatch={(p) => onPatch(ed, p)} onMove={(k) => onMove(ed, k)} />
+            onPatch={(p) => onPatch(ed, p)} onMove={(k) => onMove(ed, k)}
+            onStar={onStar && !slice ? () => onStar(ed) : undefined} />
         )}
 
         {canParent && (
@@ -667,7 +671,7 @@ function CardFace({ item, kids, parent, sprint, onEdit }: {
  * The inline editor. Title and notes save themselves, debounced, and flush
  * when the editor closes; every chip is one write, the same the card sends.
  */
-function FocusEditor({ item, isPart, leadless = false, family, onSwitch, x, y, w, on, ms, columns, colKey, areas, rolled, onClose, onPatch, onMove }: {
+function FocusEditor({ item, isPart, leadless = false, family, onSwitch, x, y, w, on, ms, columns, colKey, areas, rolled, onClose, onPatch, onMove, onStar }: {
   item: RoadmapItem; isPart: boolean;
   /** Slice mode: every member of `family` is a task, none of them the lead. */
   leadless?: boolean;
@@ -680,6 +684,7 @@ function FocusEditor({ item, isPart, leadless = false, family, onSwitch, x, y, w
   /** A cluster: its column is rolled up from its parts, so it is shown, not set. */
   rolled: boolean;
   onClose: () => void; onPatch: (p: Patch) => void; onMove: (key: string) => void;
+  onStar?: () => void;
 }) {
   const [title, setTitle] = useState(item.title);
   const [note, setNote] = useState(item.note);
@@ -711,6 +716,7 @@ function FocusEditor({ item, isPart, leadless = false, family, onSwitch, x, y, w
       <div className="head">
         <span className="eyebrow">{leadless ? 'Edit task' : isPart ? 'Edit part' : 'Edit item'}</span>
         <span className="id">#{item.id}</span>
+        {onStar && <StarButton on={!!item.starredAt} onToggle={onStar} what={`#${item.id}`} size={13} className="bf-star" />}
         <button className="bf-x" onClick={() => { flush(); onClose(); }} aria-label="Close editor" title="Close (Esc)">
           <KitIcon name="x" size={13} />
         </button>

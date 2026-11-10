@@ -17,7 +17,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { KitIcon } from './kit/KitIcon';
 import { Markdown } from '../components/Markdown';
 import type { Artifact, Milestone, Slice } from '../types';
-import { getNotes, createArtifact, patchArtifact, deleteArtifact, createMilestone, createSlice, createRoadmapItem } from '../store';
+import { getNotes, createArtifact, patchArtifact, deleteArtifact, createMilestone, createSlice, createRoadmapItem, setStarred } from '../store';
+import { StarButton } from '../components/Star';
 import { SlicePicker, currentMilestone } from './Spine';
 import { PRIORITY_DEFAULT, timeAgo } from '../lib/ui';
 
@@ -58,6 +59,13 @@ export function Notes({ slug, milestones, slices, onRefresh }: {
     setBusy(true); setErr('');
     try { await fn(); } catch (e) { setErr((e as Error)?.message || 'Something went wrong.'); } finally { setBusy(false); }
   };
+  // The owner's star (routes/starred.js): its own write, so the note's
+  // "edited" time does not move. onRefresh re-reads the rail's Starred count.
+  const star = (n: Artifact) => guard(async () => {
+    const r = await setStarred(slug, 'docs', n.id, !n.starredAt);
+    put({ ...n, starredAt: r.starredAt });
+    onRefresh();
+  });
 
   const add = () => {
     if (busy) return;
@@ -134,7 +142,8 @@ export function Notes({ slug, milestones, slices, onRefresh }: {
           <NoteCard key={n.id} note={n} busy={busy} milestones={milestones} slices={slices}
             onSave={(body) => guard(async () => { put(await patchArtifact(slug, n.id, { body, title: split(body).head.slice(0, 300) || 'Note' })); })}
             onDelete={() => guard(async () => { await deleteArtifact(slug, n.id); setNotes((xs) => (xs || []).filter((x) => x.id !== n.id)); })}
-            onConvert={(kind, target) => convert(n, kind, target)} />
+            onConvert={(kind, target) => convert(n, kind, target)}
+            onStar={() => star(n)} />
         ))}
       </div>
 
@@ -143,12 +152,13 @@ export function Notes({ slug, milestones, slices, onRefresh }: {
           <summary><span className="sp-eyebrow">Ideas that went somewhere</span><span className="sp-dim">{done.length}</span></summary>
           <div className="nt-list">
             {done.map((n) => (
-              <div key={n.id} className="nt-card converted">
+              <div key={n.id} className="nt-card converted" data-hl={`note-${n.id}`}>
                 <div className="nt-body"><Markdown text={n.body} /></div>
                 <div className="nt-foot">
                   <span className="k-tag success">{whereTo(n)}</span>
                   <span className="sp-rule" />
                   <span className="sp-when">{timeAgo(n.updatedAt)}</span>
+                  <StarButton on={!!n.starredAt} onToggle={() => star(n)} what="this note" />
                   <button className="k-btn ghost sm" disabled={busy}
                     onClick={() => guard(async () => { put(await patchArtifact(slug, n.id, { tags: n.tags.filter((t) => t !== 'converted' && !t.startsWith('became:')) })); })}>
                     Reopen
@@ -163,9 +173,9 @@ export function Notes({ slug, milestones, slices, onRefresh }: {
   );
 }
 
-function NoteCard({ note, busy, milestones, slices, onSave, onDelete, onConvert }: {
+function NoteCard({ note, busy, milestones, slices, onSave, onDelete, onConvert, onStar }: {
   note: Artifact; busy: boolean; milestones: Milestone[]; slices: Slice[];
-  onSave: (body: string) => void; onDelete: () => void;
+  onSave: (body: string) => void; onDelete: () => void; onStar: () => void;
   onConvert: (kind: Kind, target: number | null) => void;
 }) {
   const [editing, setEditing] = useState(false);
@@ -196,11 +206,12 @@ function NoteCard({ note, busy, milestones, slices, onSave, onDelete, onConvert 
     );
   }
   return (
-    <div className="nt-card">
+    <div className="nt-card" data-hl={`note-${note.id}`}>
       <div className="nt-body"><Markdown text={note.body} /></div>
       <div className="nt-foot">
         <span className="sp-when">{timeAgo(note.updatedAt)}</span>
         <span className="sp-rule" />
+        <StarButton on={!!note.starredAt} onToggle={onStar} what="this note" />
         <button className={`k-btn sm secondary${turning ? ' on' : ''}`} onClick={() => setTurning(!turning)} aria-expanded={turning}>
           <KitIcon name="arrow-up-right" size={13} />Turn into…
         </button>

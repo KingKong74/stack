@@ -118,7 +118,7 @@ projects.get('/:slug', async (req, res) => {
   const p = rows[0];
 
   const appSettings = await readSettings();
-  const [sessions, bugs, road, checks, sprintRows, weekly, cadence, live, msRows, sliceRows, charterRows] = await Promise.all([
+  const [sessions, bugs, road, checks, sprintRows, weekly, cadence, live, msRows, sliceRows, charterRows, starRows] = await Promise.all([
     q(
       // `authored` rides along for resumeSince(): which of these pushes actually
       // wrote the resume card, and what has landed since.
@@ -167,6 +167,9 @@ projects.get('/:slug', async (req, res) => {
     // LEFT(…) so a 200 KB charter is never shipped to be cut here.
     q(`SELECT id, LEFT(body, ${CHARTER_SUMMARY_CAP + 1}) AS head, updated_at FROM artifacts
         WHERE project_id = $1 AND type = 'charter'`, [p.id]),
+    // The rail's Starred badge: one count over both tables (routes/starred.js).
+    q(`SELECT (SELECT count(*) FROM roadmap_items WHERE project_id = $1 AND starred_at IS NOT NULL)
+            + (SELECT count(*) FROM artifacts WHERE project_id = $1 AND starred_at IS NOT NULL) AS n`, [p.id]),
   ]);
 
   res.json(
@@ -183,6 +186,7 @@ projects.get('/:slug', async (req, res) => {
       milestones: msRows.rows.map(milestoneShape),
       slices: sliceRows.rows.map(sliceShape),
       charter: charterSummary(charterRows.rows[0]),
+      starredCount: Number(starRows.rows[0]?.n) || 0,
       keepResumeCard: appSettings.keep_resume_card,
       sessionDefaults: sessionDefaultLines(appSettings.session_defaults),
       // The parked-item stale threshold (#247) rides the detail payload so the

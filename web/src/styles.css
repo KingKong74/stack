@@ -9454,3 +9454,40 @@ a.pp-link:hover { text-decoration: underline; }
 }
 
 /* The whole slice stays scrollable, including on a narrow board. */
+
+/* ==========================================================================
+   STARRED — components/Star.tsx (the toggle and the mark) and
+   detail/Starred.tsx (the tab). A star is amber when on; off, it is a quiet
+   outline that only takes colour on hover, so a column of them does not shout.
+   ========================================================================== */
+.star-btn { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; padding: 0; border: 0; border-radius: var(--radius-sm); background: none; color: var(--text-tertiary); cursor: pointer; transition: var(--transition-control); }
+.star-btn:hover { background: var(--surface-hover); color: var(--amber-500); }
+.star-btn:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 1px; }
+.star-btn.on { color: var(--amber-500); }
+.star-btn.on svg, .star-mark svg { fill: currentColor; }
+.star-mark { display: inline-flex; align-items: center; color: var(--amber-500); flex: none; }
+.bf-editor .head .bf-star { margin-left: auto; width: 24px; height: 24px; }
+.bf-editor .head .bf-star + .bf-x { margin-left: 0; }
+
+.sp.st { max-width: 920px; gap: var(--space-7); }
+.st-group { display: flex; flex-direction: column; gap: var(--space-3); }
+.st-list { display: flex; flex-direction: column; border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); overflow: hidden; }
+.st-row { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) var(--space-4) var(--space-2) var(--space-2); border-bottom: 1px solid var(--border-subtle); min-width: 0; transition: var(--transition-control); }
+.st-row:last-child { border-bottom: 0; }
+.st-row:hover { background: var(--surface-hover); }
+.st-row.off .st-main { opacity: 0.55; }
+.st-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; padding: var(--space-2) 0; text-decoration: none; color: var(--text-primary); }
+.st-main:hover { color: var(--text-primary); }
+.st-main:hover .st-title { color: var(--text-link-hover); }
+.st-title { font: var(--type-label); overflow-wrap: anywhere; display: flex; gap: var(--space-2); align-items: baseline; }
+.st-id { flex: none; font: var(--weight-regular) var(--text-xs)/1 var(--font-mono); color: var(--text-tertiary); }
+.st-sub { font: var(--type-caption); color: var(--text-tertiary); overflow-wrap: anywhere; }
+.ms-chip.info { background: var(--status-info-bg); color: var(--status-info-fg); }
+.ms-chip.warn { background: var(--status-warning-bg); color: var(--status-warning-fg); }
+.st-empty { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); padding: var(--space-7); border: 1px dashed var(--border-default); border-radius: var(--radius-lg); color: var(--text-tertiary); }
+.st-empty p { margin: 0; font: var(--type-heading); color: var(--text-primary); }
+.st-empty > span { font: var(--type-body-sm); max-width: 52ch; }
+@media (max-width: 640px) {
+  .st-row { flex-wrap: wrap; }
+  .st-row .ms-chip { margin-left: 38px; }
+}

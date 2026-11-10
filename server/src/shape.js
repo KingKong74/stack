@@ -114,6 +114,8 @@ export function roadmapItemShape(row) {
     // its place in the slice and means nothing while sliceId is null.
     sliceId: row.slice_id ?? null,
     sliceRank: Number(row.slice_rank) || 0,
+    // The owner's star (routes/starred.js); null = not starred. Not priority.
+    starredAt: row.starred_at || null,
     plan: cleanPlan(row.plan),         // implementation steps [{text, done}] (#75)
     // In the build queue (routes/ready.js), and where: read the pair.
     ready: row.ready_at != null,
@@ -343,7 +345,7 @@ export function projectListShape(p, { progress, metaLine, pushesThisWeek }) {
   };
 }
 
-export function projectDetailShape(p, { progress, metaLine, pushesThisWeek, cadence, activity, bugs, roadmap, checks, sprints, milestones, slices, charter, keepResumeCard, sessionDefaults, staleItemDays, liveBranches, geminiReady, since }) {
+export function projectDetailShape(p, { progress, metaLine, pushesThisWeek, cadence, activity, bugs, roadmap, checks, sprints, milestones, slices, charter, starredCount, keepResumeCard, sessionDefaults, staleItemDays, liveBranches, geminiReady, since }) {
   const latest = activity[0];
   return {
     ...projectListShape(p, { progress, metaLine, pushesThisWeek }),
@@ -369,6 +371,9 @@ export function projectDetailShape(p, { progress, metaLine, pushesThisWeek, cade
     // #608 — the spine. A slice with no milestone cannot exist (schema.sql).
     milestones: milestones || [],
     slices: slices || [],
+    // How many cards and docs are starred: the rail's Starred badge. A count,
+    // never the docs themselves (artifacts stay out of this payload).
+    starredCount: Number(starredCount) || 0,
     // #616 — the charter's opening (charterSummary), or null for none written.
     charter: charter ?? null,
     // The Monday the Roadmap timeline counts weeks from. null = no start date,

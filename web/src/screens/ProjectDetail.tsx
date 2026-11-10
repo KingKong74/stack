@@ -26,6 +26,7 @@ import { Modal } from '../components/Modal';
 import { RoadmapModal, type RoadmapFields } from '../components/RoadmapModal';
 import { useAutoRefresh } from '../lib/autoRefresh';
 import { Charter, Architecture, Design } from '../detail/Architecture';
+import { Starred } from '../detail/Starred';
 import { Notes } from '../detail/Notes';
 import { Course } from '../detail/Course';
 import { Milestones, MilestoneSummary } from '../detail/Milestones';
@@ -41,7 +42,7 @@ import { PRIORITY_DEFAULT, crumbName } from '../lib/ui';
 // bookmarks and older search payloads; `hl` on it means a commit hash.
 // An inner strip that swallowed the key would break those links.
 type Tab = 'overview' | 'roadmap' | 'activity' | 'auto' | 'plans'
-  | 'artifacts' | 'agents' | 'loops' | 'charter' | 'milestones' | 'architecture' | 'design' | 'notes';
+  | 'artifacts' | 'agents' | 'loops' | 'charter' | 'milestones' | 'architecture' | 'design' | 'notes' | 'starred';
 /** The keys that land on the For-you screen, in strip order. */
 const FORYOU_TABS: Tab[] = ['overview', 'activity', 'auto'];
 const isForYou = (t: Tab) => FORYOU_TABS.includes(t);
@@ -61,7 +62,7 @@ const isMockTab = (t: Tab) => t === 'roadmap'
 // The four readings of a project. `navSections` below is the ONE list of them
 // — #432 moved them from a horizontal strip into the console's left rail, and
 // a second copy anywhere is how the two would drift.
-const TAB_KEYS = new Set<Tab>(['overview', 'roadmap', 'activity', 'auto', 'plans', 'artifacts', 'agents', 'loops', 'charter', 'milestones', 'architecture', 'design', 'notes']);
+const TAB_KEYS = new Set<Tab>(['overview', 'roadmap', 'activity', 'auto', 'plans', 'artifacts', 'agents', 'loops', 'charter', 'milestones', 'architecture', 'design', 'notes', 'starred']);
 // Retired tabs keep old bookmarks and search links inside the project.
 const LEGACY_TABS: Record<string, Tab> = {
   quality: 'overview', bugs: 'overview', audit: 'overview', tips: 'overview', futures: 'overview',
@@ -451,7 +452,14 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
           key: 'overview', label: 'For you', icon: NavIcons.inbox,
           menu: placeMenu(hrefTo.detail(slug, 'overview'), 'overview'), onClick: () => setTab('overview'),
         },
-        { key: 'soon:starred', label: 'Starred', icon: NavIcons.star, soon: true },
+        // STARRED: the owner's shortlist of cards, notes and docs
+        // (detail/Starred.tsx, routes/starred.js). The badge is the payload's
+        // count over both tables, so it agrees with the screen behind it.
+        {
+          key: 'starred', label: 'Starred', icon: NavIcons.star,
+          count: data.starredCount || undefined,
+          menu: placeMenu(hrefTo.detail(slug, 'starred'), 'starred'), onClick: () => setTab('starred'),
+        },
       ],
     },
     {
@@ -729,7 +737,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
         )}
 
         {/* The design's three tabs: each file's header says what is real. */}
-        {tab === 'artifacts' && <Artifacts slug={slug} />}
+        {tab === 'artifacts' && <Artifacts slug={slug} highlightId={highlightId} onStarred={reread} />}
         {tab === 'charter' && (
           <Charter slug={slug} cap={data.charter?.cap ?? 600}
             aside={<MilestoneSummary slug={slug} milestones={data.milestones} slices={data.slices} items={allRoadmap} />} />
@@ -742,9 +750,13 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
           <Notes slug={slug} milestones={data.milestones} slices={data.slices} onRefresh={reread} />
         )}
         {tab === 'architecture' && (
-          <Architecture slug={slug} slices={data.slices} milestones={data.milestones} />
+          <Architecture slug={slug} slices={data.slices} milestones={data.milestones}
+            highlightId={highlightId} onStarred={reread} />
         )}
         {tab === 'design' && <Design slug={slug} />}
+        {tab === 'starred' && (
+          <Starred slug={slug} slices={data.slices} milestones={data.milestones} onChanged={reread} />
+        )}
         {tab === 'agents' && <SkillsAgents />}
         {tab === 'loops' && <Loops />}
 

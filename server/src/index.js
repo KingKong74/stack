@@ -29,6 +29,7 @@ import { terminal } from './routes/terminal.js';
 import { triage } from './routes/triage.js';
 import { tips } from './routes/tips.js';
 import { artifacts } from './routes/artifacts.js';
+import { starred } from './routes/starred.js';
 import { plans } from './routes/plans.js';
 import { propositions } from './routes/propositions.js';
 import { skills } from './routes/skills.js';
@@ -94,6 +95,7 @@ app.use('/api/projects/:slug/slices', requireToken, slices);
 app.use('/api/projects/:slug/checks', requireToken, checks);
 // The project's kept docs, plans, designs, links and files — see routes/artifacts.js.
 app.use('/api/projects/:slug/artifacts', requireToken, artifacts);
+app.use('/api/projects/:slug/starred', requireToken, starred);
 // Plan-mode plans captured by hook/stack-plan.mjs — see routes/plans.js.
 app.use('/api/projects/:slug/plans', requireToken, plans);
 // Proposed milestones/slices/items awaiting the owner — see routes/propositions.js.

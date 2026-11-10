@@ -702,6 +702,7 @@ export const SCREENS = [
   { id: 'project-architecture', label: 'Project — Architecture', path: '#/p/<slug>/architecture' },
   { id: 'project-design', label: 'Project — Design', path: '#/p/<slug>/design' },
   { id: 'project-notes', label: 'Project — Notes', path: '#/p/<slug>/notes' },
+  { id: 'project-starred', label: 'Project — Starred', path: '#/p/<slug>/starred' },
   {
     id: 'project-artifacts',
     label: 'Project — Artifacts',

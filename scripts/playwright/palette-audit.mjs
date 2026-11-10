@@ -166,6 +166,8 @@ const SCREENS = [
   { slug: 'board-proposition', hash: '#/p/{slug}/roadmap', press: ['?.pp-tile'] },
   { slug: 'architecture', hash: '#/p/{slug}/architecture' },
   { slug: 'notes', hash: '#/p/{slug}/notes' },
+  // Starred: the amber star, the state chips and the faint unstarred row.
+  { slug: 'starred', hash: '#/p/{slug}/starred' },
   // #469 — a filtered board (the group filter open, its last group picked)
   // and an open inline title editor, which paints its own text over a card in
   // the focus state. Neither exists at first paint.

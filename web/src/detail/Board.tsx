@@ -95,8 +95,9 @@ import {
   createSprint, patchSprint, putSprintSlices, deleteSprint, putReadyQueue,
   createSlice, patchSlice, deleteSlice, createMilestone, patchMilestone,
   startBuild, planSprint,
-  queueTermLaunch,
+  queueTermLaunch, setStarred,
 } from '../store';
+import { StarMark } from '../components/Star';
 import { DevelopmentView } from './Development';
 import { go, hrefTo } from '../lib/route';
 import { newTermName, termClaim, launchBrief } from '../lib/termLaunch';
@@ -801,6 +802,14 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
 
   const archive = (it: RoadmapItem) =>
     guard(async () => { wrote(await patchRoadmapItem(slug, it.id, { archived: true })); });
+  // THE OWNER'S STAR (routes/starred.js): its own write, never the card PATCH,
+  // and not priority, so nothing on this board sorts or gates by it.
+  const star = (it: RoadmapItem) =>
+    guard(async () => {
+      const r = await setStarred(slug, 'cards', it.id, !it.starredAt);
+      setRows((rs) => rs.map((x) => (x.id === it.id ? { ...x, starredAt: r.starredAt } : x)));
+      onRefresh();
+    });
   const derive = (it: RoadmapItem) =>
     guard(async () => { wrote(await patchRoadmapItem(slug, it.id, { listKey: '' })); });
   const remove = (it: RoadmapItem) =>
@@ -1060,6 +1069,20 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
     const n = Number(highlightId);
     if (Number.isFinite(n) && n > 0) setSelected(n);
   }, [highlightId]);
+  // …AND OPENS THE WAY TO IT, the drop's rule: a card the link names must not
+  // sit behind a folded column or group (a slice group starts folded), or the
+  // link lands on nothing. Unfold, never toggle; once per link, after the rows
+  // that hold it have arrived.
+  const revealed = useRef<string | null>(null);
+  useEffect(() => {
+    const n = Number(highlightId);
+    if (!highlightId || revealed.current === highlightId || !(Number.isFinite(n) && n > 0)) return;
+    const it = rows.find((x) => x.id === n);
+    if (!it || !lists) return;
+    revealed.current = highlightId;
+    unfoldColumn(colOf(it));
+    unfoldArea(groupKey(it));
+  }, [highlightId, rows, lists]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <>
@@ -1280,6 +1303,7 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
                 showArea={!grouped}
                 onPark={() => { setCardMenu(null); park(it); }}
                 onArchive={() => { setCardMenu(null); archive(it); }}
+                onStar={() => { setCardMenu(null); star(it); }}
                 onDerive={() => { setCardMenu(null); derive(it); }}
                 onDelete={() => { setCardMenu(null); remove(it); }} />
             );
@@ -1460,7 +1484,8 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
           onPatch={focusPatch}
           onMove={(it, key) => moveTo(it, key)}
           onCreateChild={createChild}
-          slices={sl} onEditSlice={(x) => setSliceEdit({ slice: x })} onCreateInSlice={createInSlice} />
+          slices={sl} onEditSlice={(x) => setSliceEdit({ slice: x })} onCreateInSlice={createInSlice}
+          onStar={star} />
       )}
     </>
   );
@@ -1849,7 +1874,7 @@ function IssueCard({
   item, sprint, selected, onSelect, dragging, landed, onDragStart, onDragEnd,
   editing, onOpenInline, onInline, onCancelInline,
   priOpen, onPri, onPick, ptsOpen, onPts, onPoints, menuOpen, onMenu,
-  onKind, onDue, onEdit, onSignOff, onPark, onArchive, onDerive, onDelete,
+  onKind, onDue, onEdit, onSignOff, onPark, onArchive, onStar, onDerive, onDelete,
   activeSprint, onBuildNow, onAddToSprint, onRun, onReady, tint, showArea,
   parentItem, kids, parts, away, onOpen, slices, milestones, onSlice,
 }: {
@@ -1916,6 +1941,8 @@ function IssueCard({
    *  card, and the menu only draws it there. */
   onSignOff: () => void;
   onPark: () => void;
+  /** Star or unstar it (the Starred tab's shortlist; not priority). */
+  onStar: () => void;
   onArchive: () => void; onDerive: () => void; onDelete: () => void;
 }) {
   const pri = priorityMeta(item.bucket);
@@ -1997,6 +2024,7 @@ function IssueCard({
           <KitIcon name={parts ? 'layers' : 'circle-check'} size={13} />
         </span>
         <span className="id">#{item.id}</span>
+        {item.starredAt && <StarMark size={11} />}
         {/* #507 — THE SIZE, AND IT IS ALWAYS DRAWN, unsized included. A control
             that only appears once a card already has points is a control nobody
             finds, and unsized is the state every card starts in — so the button
@@ -2219,6 +2247,10 @@ function IssueCard({
       {menuOpen && (
         <Popover anchor={cardRef.current} className="km-menu card" inset={12}>
           <button className="km-menuitem" onClick={onEdit}>Edit item…</button>
+          <button className="km-menuitem" onClick={onStar}
+            title={item.starredAt ? 'Takes it off this project’s Starred list' : 'Keeps it on this project’s Starred list, one click away. A star is not priority.'}>
+            {item.starredAt ? '★ Unstar' : '☆ Star'}
+          </button>
           {/* SIGN OFF IS HERE AGAIN, and only on a card that is actually held.
               #472 took it off this screen because no held row was drawn here
               any more; a held row a session has claimed or built IS drawn here

@@ -24,8 +24,9 @@ import { ConfirmModal } from '../components/ConfirmModal';
 import { Markdown } from '../components/Markdown';
 import {
   getArtifacts, createArtifact, patchArtifact, deleteArtifact, uploadArtifactFile,
-  getArtifactFileUrl, downloadArtifactFile, ARTIFACT_FILE_CAP,
+  getArtifactFileUrl, downloadArtifactFile, ARTIFACT_FILE_CAP, setStarred,
 } from '../store';
+import { StarButton, StarMark } from '../components/Star';
 
 type Fields = Partial<Pick<Art, 'title' | 'body' | 'url'>>;
 
@@ -68,7 +69,9 @@ function ArtImage({ slug, a }: { slug: string; a: Art }) {
   return <span className="ar-wellempty">{failed ? 'The image could not be loaded.' : 'Loading…'}</span>;
 }
 
-export function Artifacts({ slug }: { slug: string }) {
+/** `highlightId` is `doc-<id>` from a Starred link: open that one. `onStarred`
+ *  lets the screen re-read its Starred count after a star changes. */
+export function Artifacts({ slug, highlightId, onStarred }: { slug: string; highlightId?: string | null; onStarred?: () => void }) {
   const [arts, setArts] = useState<Art[] | null>(null);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(0);
@@ -82,7 +85,12 @@ export function Artifacts({ slug }: { slug: string }) {
     let live = true;
     setArts(null); setSel(null); setEditing(false);
     getArtifacts(slug)
-      .then((xs) => { if (live) setArts(xs); })
+      .then((xs) => {
+        if (!live) return;
+        setArts(xs);
+        const want = Number(String(highlightId || '').replace(/^doc-/, ''));
+        if (String(highlightId || '').startsWith('doc-') && xs.some((x) => x.id === want)) setSel(want);
+      })
       .catch((e) => { if (live) { setArts([]); setErr(errText(e)); } });
     return () => { live = false; };
   }, [slug]);
@@ -103,6 +111,12 @@ export function Artifacts({ slug }: { slug: string }) {
     if (prev) window.clearTimeout(prev.t);
     pending.current.set(id, { patch: { ...prev?.patch, ...patch }, t: window.setTimeout(() => flush(id), 600) });
   };
+  // The owner's star (routes/starred.js): its own write, so "edited" stays put.
+  const star = (a: Art) => void work(async () => {
+    const r = await setStarred(slug, 'docs', a.id, !a.starredAt);
+    setArts((xs) => (xs ?? []).map((x) => (x.id === a.id ? { ...x, starredAt: r.starredAt } : x)));
+    onStarred?.();
+  });
   const work = async (fn: () => Promise<void>) => {
     setBusy((n) => n + 1);
     try { await fn(); } catch (e) { setErr(errText(e)); } finally { setBusy((n) => n - 1); }
@@ -169,11 +183,11 @@ export function Artifacts({ slug }: { slug: string }) {
         </div>
         <div className="ar-rows" style={{ paddingTop: 'var(--space-3)' }}>
           {list.map((a) => (
-            <button key={a.id} className={`ar-row${a.id === cur?.id ? ' on' : ''}`}
+            <button key={a.id} className={`ar-row${a.id === cur?.id ? ' on' : ''}`} data-hl={`doc-${a.id}`}
               onClick={() => { setSel(a.id); setEditing(false); }}>
               <span className="ar-badge">{labelOf(a).slice(0, 3).toUpperCase()}</span>
               <span className="main"><span className="t">{a.title || untitled(a)}</span></span>
-              <span className="meta"><span>{ago(atOf(a))}</span></span>
+              <span className="meta">{a.starredAt && <StarMark size={11} />}<span>{ago(atOf(a))}</span></span>
             </button>
           ))}
           {arts && list.length === 0 && (
@@ -190,6 +204,7 @@ export function Artifacts({ slug }: { slug: string }) {
           <div className="ar-viewbar">
             <span className="when">{labelOf(cur)} · edited {ago(atOf(cur))}</span>
             <span className="rc-grow" />
+            <StarButton on={!!cur.starredAt} onToggle={() => star(cur)} what="this doc" />
             <button className="ar-discard" onClick={() => (isBlank(cur) ? remove(cur) : setConfirming(cur))}>Delete</button>
             <button className={`ar-edit${editing ? ' on' : ''}`} onClick={() => setEditing(!editing)}>
               {editing ? 'Done' : 'Edit'}

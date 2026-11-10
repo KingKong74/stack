@@ -215,6 +215,8 @@ export interface RoadmapItem {
   // `sliceRank` is its place in the slice, meaningless while sliceId is null.
   sliceId: number | null;
   sliceRank: number;
+  /** The owner's star (Starred tab); null = not starred. Not priority. Absent from an older server. */
+  starredAt?: string | null;
   plan: PlanStep[];    // the implementation plan ([] = none)
   spec: ItemSpec;      // what a build run is held to ({} = none)
   ready: boolean;      // in the build queue (routes/ready.js); readyRank is its place
@@ -951,6 +953,8 @@ export interface Artifact {
   status: AdrStatus | '';
   /** #616 — the slice it was written for, or null. */
   sliceId: number | null;
+  /** The owner's star (Starred tab); null = not starred. Absent from an older server. */
+  starredAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }

@@ -33,7 +33,8 @@ import { Markdown, block, inline } from '../components/Markdown';
 import { ArchSections, SecHead, sectionId } from './ArchDoc';
 import { parseArchDoc } from '../lib/archDoc';
 import type { AdrStatus, Artifact, Milestone, Slice } from '../types';
-import { getSpineDocs, createArtifact, patchArtifact, deleteArtifact } from '../store';
+import { getSpineDocs, createArtifact, patchArtifact, deleteArtifact, setStarred } from '../store';
+import { StarButton } from '../components/Star';
 import { liveSlices, sliceLabel } from './Spine';
 import { timeAgo } from '../lib/ui';
 
@@ -257,8 +258,12 @@ export function Charter({ slug, cap, aside }: { slug: string; cap: number; aside
   );
 }
 
-export function Architecture({ slug, slices, milestones }: {
+export function Architecture({ slug, slices, milestones, highlightId, onStarred }: {
   slug: string; slices: Slice[]; milestones: Milestone[];
+  /** `doc-<id>` from a Starred link: that decision opens. */
+  highlightId?: string | null;
+  /** Re-read the screen's Starred count after a star changes. */
+  onStarred?: () => void;
 }) {
   const { docs, err, setErr, put, drop } = useSpineDocs(slug);
   const arch = docs?.find((d) => d.type === 'architecture') ?? null;
@@ -314,6 +319,12 @@ export function Architecture({ slug, slices, milestones }: {
           <div className="ad-adrs">
             {adrs.map((d, i) => (
               <Adr key={d.id} n={i + 1} adr={d} slices={slices} milestones={milestones}
+                opened={highlightId === `doc-${d.id}`}
+                onStar={() => guard(async () => {
+                  const r = await setStarred(slug, 'docs', d.id, !d.starredAt);
+                  put({ ...d, starredAt: r.starredAt });
+                  onStarred?.();
+                })}
                 onPatch={(patch) => guard(async () => { put(await patchArtifact(slug, d.id, patch)); })}
                 onDelete={() => guard(async () => { await deleteArtifact(slug, d.id); drop(d.id); })} />
             ))}
@@ -324,12 +335,16 @@ export function Architecture({ slug, slices, milestones }: {
   );
 }
 
-function Adr({ n, adr, slices, milestones, onPatch, onDelete }: {
+function Adr({ n, adr, slices, milestones, opened, onStar, onPatch, onDelete }: {
   n: number; adr: Artifact; slices: Slice[]; milestones: Milestone[];
+  /** Open on mount (a Starred link named it). */
+  opened?: boolean;
+  /** Star or unstar it (the Starred tab; its own write, so "edited" stays put). */
+  onStar: () => void;
   onPatch: (p: { title?: string; body?: string; status?: AdrStatus; sliceId?: number | null }) => void;
   onDelete: () => void;
 }) {
-  const [open, setOpen] = useState(adr.title === 'Untitled decision');
+  const [open, setOpen] = useState(adr.title === 'Untitled decision' || !!opened);
   const [editing, setEditing] = useState(adr.title === 'Untitled decision');
   const [title, setTitle] = useState(adr.title);
   const [body, setBody] = useState(adr.body);
@@ -337,7 +352,7 @@ function Adr({ n, adr, slices, milestones, onPatch, onDelete }: {
   const st = STATUS[(adr.status || 'proposed') as AdrStatus];
   const slice = slices.find((s) => s.id === adr.sliceId) || null;
   return (
-    <div className={`sp-adr${open ? ' open' : ''}`}>
+    <div className={`sp-adr${open ? ' open' : ''}`} data-hl={`doc-${adr.id}`}>
       <div className="sp-adrhead" role="button" tabIndex={0} aria-expanded={open}
         onClick={() => !editing && setOpen(!open)}
         onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget && !editing) { e.preventDefault(); setOpen(!open); } }}>
@@ -349,6 +364,7 @@ function Adr({ n, adr, slices, milestones, onPatch, onDelete }: {
           <span className="sp-adrnote" title={`Proposed by a session${adr.origin.branch ? ` on ${adr.origin.branch}` : ''}. Deleting it dismisses it for good.`}>from a session</span>
         )}
         <span className={`k-tag ${st.tone}`.trim()} title={st.hint}>{st.label}</span>
+        <StarButton on={!!adr.starredAt} onToggle={onStar} what={`ADR-${n}`} />
         <span className="sp-when sp-adrwhen">{timeAgo(adr.updatedAt)}</span>
       </div>
       {open && (
