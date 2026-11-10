@@ -2,7 +2,8 @@
 // how it is built. Markdown first, structured later (the spec's order).
 //
 //  • THE CHARTER is one `charter` artifact per project (a unique index on the
-//    server). SessionStart injects its OPENING into every session, capped at
+//    server). It reads as Charter.dc.html, through the same conventions as
+//    the architecture doc (lib/archDoc.ts). SessionStart injects its OPENING into every session, capped at
 //    the server's CHARTER_SUMMARY_CAP, and the editor says so under the text:
 //    the first paragraph is what an agent reads, so it should stand alone.
 //  • THE ARCHITECTURE TAB has two parts:
@@ -24,7 +25,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { KitIcon } from './kit/KitIcon';
 import { Markdown, block, inline } from '../components/Markdown';
-import { ArchSections, SecHead } from './ArchDoc';
+import { ArchSections, SecHead, sectionId } from './ArchDoc';
 import { parseArchDoc } from '../lib/archDoc';
 import type { AdrStatus, Artifact, Milestone, Slice } from '../types';
 import { getSpineDocs, createArtifact, patchArtifact, deleteArtifact } from '../store';
@@ -142,28 +143,87 @@ async function upsertDoc(slug: string, doc: Artifact | null, type: 'charter' | '
 // `aside` is the milestone summary (detail/Milestones.tsx): milestones are real
 // rows with their own tab, so the Charter shows them beside the doc and never
 // keeps a copy of them in its text.
+//
+// THE LOOK is Charter.dc.html: an "On this page" list on the left (wide
+// screens only), the doc in a reading column (eyebrow, the opening in display
+// type, then numbered sections under rules), and a rail on the right: the
+// milestone summary, then two fixed boxes that state how Stack treats every
+// project (what an agent is told at session start, and who decides).
+// The contents list scrolls in place, because a `#id` link would fight the
+// hash router.
 export function Charter({ slug, cap, aside }: { slug: string; cap: number; aside?: ReactNode }) {
   const { docs, err, setErr, put } = useSpineDocs(slug);
   const charter = docs?.find((d) => d.type === 'charter') ?? null;
+  const parsed = useMemo(() => parseArchDoc(charter?.body || ''), [charter?.body]);
+  const jump = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  const showToc = !!charter?.body.trim() && parsed.sections.length > 0;
   return (
-    <div className="sp-withside">
-    <div className="sp">
-      <div className="sp-lede">
-        <span>Why this project exists, who it is for and what done looks like. The project's spine starts here.</span>
-      </div>
-      {err && <div className="km-err" role="alert">{err}</div>}
-      {docs === null && !err && <span className="sp-empty">Reading…</span>}
-      {docs !== null && (
-        <DocEditor doc={charter} template={CHARTER_TEMPLATE}
-          emptyLine="No charter yet. Every session starts by reading its opening, so a few lines here pay for themselves."
-          footnote={`Every Claude session on this project is told the first ${cap} characters of this charter.`}
-          onSave={async (body) => {
-            try { setErr(''); put(await upsertDoc(slug, charter, 'charter', 'Charter', body)); }
-            catch (e) { setErr((e as Error)?.message || 'Could not save the charter.'); throw e; }
-          }} />
+    <div className="ch">
+      {showToc && (
+        <nav className="ch-toc" aria-label="On this page">
+          <span className="sp-eyebrow">On this page</span>
+          <button onClick={() => jump('ch-overview')}>Overview</button>
+          {parsed.sections.map((x) => <button key={x.n} onClick={() => jump(sectionId(x))}>{x.title}</button>)}
+        </nav>
       )}
-    </div>
-    {aside}
+      <div className="sp ad ch-main">
+        {err && <div className="km-err" role="alert">{err}</div>}
+        {docs === null && !err && <span className="sp-empty">Reading…</span>}
+        {docs !== null && (
+          <DocEditor doc={charter} template={CHARTER_TEMPLATE}
+            emptyLine="No charter yet. Every session starts by reading its opening, so a few lines here pay for themselves."
+            footnote={`Every Claude session on this project is told the first ${cap} characters of this charter.`}
+            onSave={async (body) => {
+              try { setErr(''); put(await upsertDoc(slug, charter, 'charter', 'Charter', body)); }
+              catch (e) { setErr((e as Error)?.message || 'Could not save the charter.'); throw e; }
+            }}
+            view={(doc, edit) => (
+              <>
+                <section className="ch-overview" id="ch-overview">
+                  <div className="ch-metarow">
+                    <div className="ad-meta">
+                      <span className="ad-eyebrow">Charter</span>
+                      <span className="ad-dot" />
+                      <span className="sp-when">edited {timeAgo(doc.updatedAt)}</span>
+                    </div>
+                    <button className="k-btn ghost sm ad-edit" onClick={edit}><KitIcon name="pencil" size={13} />Edit</button>
+                  </div>
+                  <p className="ch-sub">Why this project exists, who it is for and what done looks like. The project's spine starts here.</p>
+                  {parsed.lede.map((b, i) => b.k === 'p'
+                    ? <p key={i} className="ad-ledep">{inline(b.text)}</p>
+                    : <div key={i} className="md ad-md">{block(b, i)}</div>)}
+                </section>
+                <ArchSections sections={parsed.sections} ruled />
+              </>
+            )} />
+        )}
+      </div>
+      <aside className="ch-rail" aria-label="Charter context">
+        {aside}
+        <div className="ch-box">
+          <span className="sp-eyebrow">Agents get at session start</span>
+          <div className="ch-kv">
+            <div><span>Charter opening</span><span className="k">first {cap} chars</span></div>
+            <div><span>Current milestone</span><span className="k">milestone</span></div>
+            <div><span>Their slice</span><span className="k">slice</span></div>
+            <div><span>Repo rules</span><span className="k strong">CLAUDE.md · AGENTS.md</span></div>
+          </div>
+        </div>
+        <div className="ch-box">
+          <span className="sp-eyebrow">Who decides</span>
+          <div className="ch-who">
+            <div>
+              <span className="ad-label accent">Owner</span>
+              <span>Verdicts</span><span>Milestones and slices</span><span>ADR status</span>
+              <span>Every <span className="sp-mono">CLAUDE.md</span> save</span>
+            </div>
+            <div>
+              <span className="ad-label dim">Agents</span>
+              <span>Propose</span><span>Annotate</span><span className="dim">Never decide</span>
+            </div>
+          </div>
+        </div>
+      </aside>
     </div>
   );
 }

@@ -51,6 +51,7 @@ import {
   STATUS_ORDER, GRID_OPTS, WORKING_MS, HOST_WORKING_MS, type Rect, type Zone, type TileStatus, type PeekSeg,
 } from '../lib/termSwarm';
 import { TopBar } from '../components/TopBar';
+import { NavIcons } from '../detail/ConsoleNav';
 import { crumbName } from '../lib/ui';
 
 // The web terminal (#/terminal[?cwd=…]) — xterm.js over websocket to the host
@@ -1585,9 +1586,10 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
       ]}
         actions={<>
           {boardHref && (
-            <a className="btn-repo" href={boardHref}
-              title={`${board ? `${crumbName(board.project.name)}'s board` : 'Back'} (${FLICK_HINT} flicks back here)`}>
-              {board ? 'Board' : 'Back'} <span className="kbd-hint">{FLICK_HINT}</span>
+            <a className="btn-repo btn-ico" href={boardHref}
+              title={`${board ? `${crumbName(board.project.name)}'s board` : 'Back'} (${FLICK_HINT})`}
+              aria-label={board ? `${crumbName(board.project.name)}'s board` : 'Back'}>
+              {board ? NavIcons.board : <span aria-hidden="true">←</span>}
             </a>
           )}
           <a className="btn-repo" href={hrefTo.control} title="Mission Control">Mission Control</a>

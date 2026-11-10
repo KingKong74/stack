@@ -26,8 +26,9 @@ test('from the terminal: the focused pane\'s project board', () => {
   assert.equal(flickTarget(term, { termProject: 'stack', lastAway: '', termMounted: true }), '#/p/stack/roadmap');
 });
 
-test('from the terminal: back to the tab you left, if it is the same project', () => {
-  assert.equal(flickTarget(term, { termProject: 'stack', lastAway: '#/p/stack/plans', termMounted: true }), '#/p/stack/plans');
+test('from the terminal: always the board, never the project tab you left', () => {
+  assert.equal(flickTarget(term, { termProject: 'stack', lastAway: '#/p/stack', termMounted: true }), '#/p/stack/roadmap');
+  assert.equal(flickTarget(term, { termProject: 'stack', lastAway: '#/p/stack/plans', termMounted: true }), '#/p/stack/roadmap');
   assert.equal(flickTarget(term, { termProject: 'stack', lastAway: '#/p/other/plans', termMounted: true }), '#/p/stack/roadmap');
 });
 

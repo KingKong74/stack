@@ -12,22 +12,46 @@
 //
 // `MilestoneSummary` is the Charter's right-hand rail: the current milestone
 // and what is next, linking here. It collapses under the doc on narrow screens.
+//
+// THE LOOK is Milestones.dc.html: the current milestone as one wide card (goal
+// and "Done when" on the left, its slices on the right), the upcoming ones as
+// a grid. A goal's "Done when:" paragraph is read by `splitGoal`
+// (lib/archDoc.ts); a goal without one is all goal. Numbers (01, 02 …) are
+// the display order, current first; a completed milestone carries none.
 
 import { useState } from 'react';
 import { KitIcon } from './kit/KitIcon';
 import { Markdown } from '../components/Markdown';
 import type { Milestone, RoadmapItem, Slice } from '../types';
 import { createMilestone, patchMilestone, deleteMilestone } from '../store';
-import { sliceStateOf } from '../lib/plan';
+import { sliceStateOf, type SliceState } from '../lib/plan';
 import { hrefTo } from '../lib/route';
-
-const STATUS_LABEL: Record<Milestone['status'], { label: string; tone: string }> = {
-  active: { label: 'Current', tone: 'success' },
-  planned: { label: 'Upcoming', tone: 'info' },
-  done: { label: 'Completed', tone: '' },
-};
+import { pad2, splitGoal } from '../lib/archDoc';
 
 type Fields = { name: string; goal: string; targetOn: string | null };
+
+/** A slice's chip: the state is derived (`sliceStateOf`), never stored. */
+function SliceChip({ st }: { st: SliceState }) {
+  const [tone, label] = st.status === 'empty' ? ['empty', 'empty']
+    : st.status === 'done' ? ['ok', 'done']
+    : st.status === 'built' ? ['ok', `${st.built}/${st.total} built`]
+    : ['open', `${st.built}/${st.total} built`];
+  return <span className={`ms-chip ${tone}`}>{label}</span>;
+}
+
+/** One segment per slice: built or done is filled, empty is faint. */
+function SliceBar({ states }: { states: SliceState[] }) {
+  if (!states.length) return null;
+  return (
+    <div className="ms-bar" style={{ gridTemplateColumns: `repeat(${states.length}, 1fr)` }} aria-hidden>
+      {states.map((st, i) => <span key={i} className={st.status === 'empty' ? 'empty' : st.status === 'open' ? 'open' : 'full'} />)}
+    </div>
+  );
+}
+
+function tally(states: SliceState[]) {
+  return { built: states.reduce((n, s) => n + s.built, 0), total: states.reduce((n, s) => n + s.total, 0) };
+}
 
 export function Milestones({ slug, milestones, slices, items, onRefresh }: {
   slug: string; milestones: Milestone[]; slices: Slice[]; items: RoadmapItem[]; onRefresh: () => void;
@@ -44,30 +68,27 @@ export function Milestones({ slug, milestones, slices, items, onRefresh }: {
   const next = milestones.filter((m) => m.status === 'planned');
   const done = milestones.filter((m) => m.status === 'done');
   const incumbent = cur[0] ?? null;
-  const group = (label: string, list: Milestone[], empty: string) => (
-    <section className="sp-sec" aria-label={label}>
-      <div className="sp-sechead"><span className="sp-eyebrow">{label}</span><span className="sp-dim">{list.length}</span></div>
-      {list.length === 0 && <span className="sp-empty">{empty}</span>}
-      {list.map((m) => (
-        <MilestoneCard key={m.id} slug={slug} m={m} incumbent={incumbent} busy={busy}
-          slices={slices.filter((s) => s.milestoneId === m.id)} items={items}
-          onSave={(v) => guard(() => patchMilestone(slug, m.id, v))}
-          onStatus={(status) => guard(() => patchMilestone(slug, m.id, { status }))}
-          onDelete={() => guard(() => deleteMilestone(slug, m.id))} />
-      ))}
-    </section>
+  const card = (m: Milestone, n: number | null, wide: boolean) => (
+    <MilestoneCard key={m.id} slug={slug} m={m} n={n} wide={wide} incumbent={incumbent} busy={busy}
+      slices={slices.filter((s) => s.milestoneId === m.id)} items={items}
+      onSave={(v) => guard(() => patchMilestone(slug, m.id, v))}
+      onStatus={(status) => guard(() => patchMilestone(slug, m.id, { status }))}
+      onDelete={() => guard(() => deleteMilestone(slug, m.id))} />
+  );
+  const head = (label: string, count: number) => (
+    <div className="ms-grouphead"><span className="sp-eyebrow">{label}</span><span className="sp-when">{count}</span><span className="ms-hr" /></div>
   );
   return (
     <div className="sp ms">
-      <div className="sp-lede">
-        <span>Where the project is going, one goal at a time. Slices belong to a milestone; at most one is current.
-          The Charter holds the purpose and boundaries.</span>
+      <div className="ms-top">
+        <div className="ms-intro">
+          <span className="sp-when">{milestones.length} milestone{milestones.length === 1 ? '' : 's'}</span>
+          <p>Where the project is going, one goal at a time. Slices belong to a milestone; at most one is current.
+            The <a href={hrefTo.detail(slug, 'charter')}>Charter</a> holds the purpose and boundaries.</p>
+        </div>
+        {!adding && <button className="k-btn" onClick={() => setAdding(true)}><KitIcon name="plus" size={13} />New milestone</button>}
       </div>
       {err && <div className="km-err" role="alert">{err}</div>}
-      <div className="sp-docacts top">
-        <span className="sp-dim">{milestones.length} milestone{milestones.length === 1 ? '' : 's'}</span>
-        {!adding && <button className="k-btn sm" onClick={() => setAdding(true)}><KitIcon name="plus" size={13} />New milestone</button>}
-      </div>
       {adding && (
         <MilestoneForm initial={{ name: '', goal: '', targetOn: null }} busy={busy} submitLabel="Create"
           onCancel={() => setAdding(false)}
@@ -81,74 +102,135 @@ export function Milestones({ slug, milestones, slices, items, onRefresh }: {
         </div>
       )}
       {milestones.length > 0 && <>
-        {group('Current', cur, 'Nothing is current. Make an upcoming milestone current to file new slices under it.')}
-        {group('Upcoming', next, 'Nothing planned after this one.')}
-        {group('Completed', done, 'No milestone finished yet.')}
+        <section className="ms-group" aria-label="Current">
+          {head('Current', cur.length)}
+          {cur.length === 0 && <span className="sp-empty">Nothing is current. Make an upcoming milestone current to file new slices under it.</span>}
+          {cur.map((m, i) => card(m, i + 1, true))}
+        </section>
+        <section className="ms-group" aria-label="Upcoming">
+          {head('Upcoming', next.length)}
+          {next.length === 0 && <span className="sp-empty">Nothing planned after this one.</span>}
+          {next.length > 0 && <div className="ms-grid">{next.map((m, i) => card(m, cur.length + i + 1, false))}</div>}
+        </section>
+        {done.length > 0 && (
+          <section className="ms-group" aria-label="Completed">
+            {head('Completed', done.length)}
+            <div className="ms-grid">{done.map((m) => card(m, null, false))}</div>
+          </section>
+        )}
       </>}
     </div>
   );
 }
 
-function MilestoneCard({ slug, m, incumbent, slices, items, busy, onSave, onStatus, onDelete }: {
-  slug: string; m: Milestone; incumbent: Milestone | null; slices: Slice[]; items: RoadmapItem[]; busy: boolean;
+const PILL: Record<Milestone['status'], { label: string; tone: string }> = {
+  active: { label: 'Current', tone: 'success' },
+  planned: { label: 'Upcoming', tone: 'info' },
+  done: { label: 'Completed', tone: 'neutral' },
+};
+
+function MilestoneCard({ slug, m, n, wide, incumbent, slices, items, busy, onSave, onStatus, onDelete }: {
+  slug: string; m: Milestone; n: number | null; wide: boolean; incumbent: Milestone | null; slices: Slice[];
+  items: RoadmapItem[]; busy: boolean;
   onSave: (v: Fields) => void; onStatus: (s: Milestone['status']) => void; onDelete: () => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [confirm, setConfirm] = useState(false);
-  const st = STATUS_LABEL[m.status];
   const live = slices.filter((s) => !s.archived);
+  const states = live.map((s) => sliceStateOf(s.id, items));
+  const { built, total } = tally(states);
+  const { goal, done, more } = splitGoal(m.goal);
+  const pill = PILL[m.status];
   if (editing) {
     return (
       <MilestoneForm initial={{ name: m.name, goal: m.goal, targetOn: m.targetOn }} busy={busy} submitLabel="Save"
         onCancel={() => setEditing(false)} onSubmit={(v) => { onSave(v); setEditing(false); }} />
     );
   }
+  const edit = (
+    <button className={`k-btn sm ${wide ? 'ghost ms-edit' : 'ghost ms-editlink'}`} onClick={() => setEditing(true)} aria-label={`Edit milestone ${m.name}`}>
+      <KitIcon name="pencil" size={13} />Edit
+    </button>
+  );
+  const sliceRows = live.map((s, i) => (
+    <a key={s.id} href={hrefTo.detail(slug, 'roadmap')} className="ms-slicerow">
+      <span className="ms-slicename">{wide && <span className="sp-when">{pad2(i + 1)}</span>}{s.title}</span>
+      <SliceChip st={states[i]} />
+    </a>
+  ));
+  const deleteOrWhy = slices.length === 0 ? (
+    <button className="k-btn sm danger ms-del" disabled={busy} onClick={() => (confirm ? onDelete() : setConfirm(true))}>
+      {confirm ? 'Really delete?' : 'Delete'}
+    </button>
+  ) : <span className="sp-foot">Holds slices, so it cannot be deleted.</span>;
+  const statusAction = m.status === 'planned' ? (
+    <div className="ms-action">
+      <button className="k-btn sm secondary" disabled={busy} onClick={() => onStatus('active')}>Make current</button>
+      {incumbent && <span className="sp-foot">Finishes “{incumbent.name}”</span>}
+    </div>
+  ) : m.status === 'active' ? (
+    <button className="k-btn sm accent" disabled={busy} onClick={() => onStatus('done')}>Mark completed</button>
+  ) : (
+    <button className="k-btn sm ghost" disabled={busy} onClick={() => onStatus('planned')}>Reopen as upcoming</button>
+  );
+  const meta = (
+    <div className="ms-meta">
+      {n !== null && <span className={`ms-n${wide ? ' accent' : ''}`}>{pad2(n)}</span>}
+      <span className={`ad-pill ${pill.tone}`}>{pill.label}</span>
+      {m.targetOn && <span className="sp-when" title="A target you set. It gates nothing.">by {m.targetOn}</span>}
+    </div>
+  );
+  const moreView = more && (
+    <details className="ms-more"><summary>More</summary><div className="ar-md"><Markdown text={more} /></div></details>
+  );
+
+  if (wide) {
+    return (
+      <article className="ms-current" aria-label={`Milestone ${m.name}`}>
+        <div className="ms-main">
+          <div className="ms-titlerow">
+            <div className="ms-titles">{meta}<h2 className="ms-title">{m.name}</h2></div>
+            {edit}
+          </div>
+          {goal ? <div className="ms-goal big"><Markdown text={goal} /></div> : <span className="sp-empty">No goal written yet.</span>}
+          {done && (
+            <div className="ms-donebox"><span className="sp-eyebrow">Done when</span><p>{done}</p></div>
+          )}
+          {moreView}
+          <div className="ms-foot">{statusAction}{deleteOrWhy}</div>
+        </div>
+        <div className="ms-side">
+          <div className="ms-sidehead">
+            <span className="sp-eyebrow">Slices · <span className="sp-mono">{live.length}</span></span>
+            <span className="sp-when"><b>{built}</b>/{total} built</span>
+          </div>
+          <SliceBar states={states} />
+          {live.length === 0 ? <span className="sp-empty">No slices in this milestone.</span> : <div className="ms-slicerows">{sliceRows}</div>}
+        </div>
+      </article>
+    );
+  }
   return (
-    <article className="sp-doc ms-card" aria-label={`Milestone ${m.name}`}>
-      <div className="ms-head">
-        <span className="ms-name">{m.name}</span>
-        <span className={`k-tag ${st.tone}`}>{st.label}</span>
-        {m.targetOn && <span className="k-tag" title="A target you set. It gates nothing.">by {m.targetOn}</span>}
-        <span className="sp-rule" />
-        <button className="k-btn ghost sm" onClick={() => setEditing(true)} aria-label={`Edit milestone ${m.name}`}>
-          <KitIcon name="pencil" size={13} />Edit
-        </button>
+    <article className={`ms-card2${m.status === 'done' ? ' done' : ''}`} aria-label={`Milestone ${m.name}`}>
+      <div className="ms-titlerow">
+        <div className="ms-titles">{meta}<h3 className="ms-title sm">{m.name}</h3></div>
+        {edit}
       </div>
-      {m.goal.trim() ? <Markdown text={m.goal} /> : <span className="sp-empty">No goal written yet.</span>}
-      <div className="ms-slices">
-        <span className="sp-eyebrow">Slices · {live.length}</span>
-        {live.length === 0 && <span className="sp-empty">No slices in this milestone.</span>}
-        {live.length > 0 && (
-          <ul className="ms-slicelist">
-            {live.map((s) => {
-              const state = sliceStateOf(s.id, items);
-              return (
-                <li key={s.id}>
-                  <a href={hrefTo.detail(slug, 'roadmap')} className="ms-slice">{s.title}</a>
-                  <span className="sp-dim">{state.status === 'empty' ? 'empty' : `${state.built}/${state.total} built`}</span>
-                </li>
-              );
-            })}
-          </ul>
-        )}
+      {goal || done ? <>
+        {goal && <div className="ms-goal"><Markdown text={goal} /></div>}
+        {done && <div className="ms-donerule"><span className="sp-eyebrow">Done when</span><p>{done}</p></div>}
+        {moreView}
+      </> : (
+        <div className="ms-nogoal">
+          <span>No goal written yet.</span>
+          <button className="sp-link" onClick={() => setEditing(true)}>Write the goal</button>
+        </div>
+      )}
+      <div className="ms-slices2">
+        <span className="sp-eyebrow">Slices · <span className="sp-mono">{live.length}</span></span>
+        {live.length === 0 ? <span className="sp-empty">No slices in this milestone.</span> : sliceRows}
       </div>
-      <div className="sp-docacts">
-        {m.status !== 'active' && (
-          <button className="k-btn sm secondary" disabled={busy} onClick={() => onStatus('active')}
-            title={incumbent ? `Finishes “${incumbent.name}”` : undefined}>
-            Make current{incumbent ? ` (finishes “${incumbent.name}”)` : ''}
-          </button>
-        )}
-        {m.status === 'active' && <button className="k-btn sm secondary" disabled={busy} onClick={() => onStatus('done')}>Mark completed</button>}
-        {m.status === 'done' && <button className="k-btn sm ghost" disabled={busy} onClick={() => onStatus('planned')}>Reopen as upcoming</button>}
-        {slices.length === 0 ? (
-          <button className="k-btn sm danger" disabled={busy} onClick={() => (confirm ? onDelete() : setConfirm(true))}>
-            {confirm ? 'Really delete?' : 'Delete'}
-          </button>
-        ) : (
-          <span className="sp-dim">Holds slices, so it cannot be deleted.</span>
-        )}
-      </div>
+      <div className="ms-foot">{statusAction}{deleteOrWhy}</div>
     </article>
   );
 }
@@ -171,7 +253,7 @@ function MilestoneForm({ initial, busy, submitLabel, onSubmit, onCancel }: {
       </label>
       <label className="km-field">
         <span className="lbl">Goal</span>
-        <textarea className="km-textarea" rows={4} value={goal} placeholder="Markdown. What is true when this milestone is done?"
+        <textarea className="km-textarea" rows={4} value={goal} placeholder={"Markdown. What this milestone is for.\n\nDone when: what is true when it is finished."}
           onChange={(e) => setGoal(e.target.value)} />
       </label>
       <label className="km-field">
@@ -191,23 +273,40 @@ export function MilestoneSummary({ slug, milestones, slices, items }: {
   slug: string; milestones: Milestone[]; slices: Slice[]; items: RoadmapItem[];
 }) {
   const cur = milestones.find((m) => m.status === 'active') ?? null;
-  const next = milestones.filter((m) => m.status === 'planned').slice(0, 3);
+  const planned = milestones.filter((m) => m.status === 'planned');
+  const next = planned.slice(0, 3);
   const live = cur ? slices.filter((s) => s.milestoneId === cur.id && !s.archived) : [];
-  const built = live.reduce((n, s) => n + sliceStateOf(s.id, items).built, 0);
-  const total = live.reduce((n, s) => n + sliceStateOf(s.id, items).total, 0);
+  const states = live.map((s) => sliceStateOf(s.id, items));
+  const { built, total } = tally(states);
+  const goal = cur ? splitGoal(cur.goal).goal.split('\n')[0] : '';
+  const all = hrefTo.detail(slug, 'milestones');
   return (
-    <aside className="ms-aside" aria-label="Milestones">
-      <span className="sp-eyebrow">Milestone</span>
-      {cur ? <>
-        <a className="ms-name" href={hrefTo.detail(slug, 'milestones')}>{cur.name}</a>
-        {cur.goal.trim() && <span className="ms-asidegoal">{cur.goal.trim().split('\n')[0]}</span>}
-        <span className="sp-dim">{live.length} slice{live.length === 1 ? '' : 's'} · {built}/{total} built{cur.targetOn ? ` · by ${cur.targetOn}` : ''}</span>
-      </> : <span className="sp-empty">None current.</span>}
-      {next.length > 0 && <>
+    <>
+      <div className="ch-box card" aria-label="Current milestone">
+        <div className="ch-boxhead">
+          <span className="sp-eyebrow">Current milestone</span>
+          {cur && <span className="ad-pill info">Active</span>}
+        </div>
+        {cur ? <>
+          <a className="ch-msname" href={all}>{cur.name}</a>
+          {goal && <p className="ch-msgoal">{goal}</p>}
+          <div className="ch-mstally">
+            <div className="ms-sidehead">
+              <span className="sp-when">{live.length} slice{live.length === 1 ? '' : 's'}{cur.targetOn ? ` · by ${cur.targetOn}` : ''}</span>
+              <span className="sp-when"><b>{built}</b>/{total} built</span>
+            </div>
+            <SliceBar states={states} />
+          </div>
+        </> : <span className="sp-empty">None current.</span>}
+      </div>
+      <div className="ch-box list" aria-label="Upcoming milestones">
         <span className="sp-eyebrow">Upcoming</span>
-        {next.map((m) => <span key={m.id} className="ms-asidenext">{m.name}</span>)}
-      </>}
-      <a className="k-btn sm secondary" href={hrefTo.detail(slug, 'milestones')}>All milestones</a>
-    </aside>
+        {next.length === 0 && <span className="sp-empty">Nothing planned.</span>}
+        {next.map((m, i) => (
+          <a key={m.id} className="ch-up" href={all}><span className="ad-n">{pad2(i + (cur ? 2 : 1))}</span>{m.name}</a>
+        ))}
+        <a className="ch-all" href={all}>All milestones →</a>
+      </div>
+    </>
   );
 }

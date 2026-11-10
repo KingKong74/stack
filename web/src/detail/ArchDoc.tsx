@@ -1,20 +1,40 @@
-// THE ARCHITECTURE DOC'S PAGE (design: Architecture.dc.html). Draws what
-// lib/archDoc.ts parsed: numbered sections, the system map, cards, steps,
-// callouts, chips and panels. The markdown is the source; this only reads it,
+// THE SPINE DOCS' PAGES (designs: Architecture.dc.html, Charter.dc.html). Draws
+// what lib/archDoc.ts parsed: numbered sections, the system map, cards, steps,
+// principle rows, goals, callouts, chips and panels. The markdown is the source; this only reads it,
 // and every shape it does not recognise draws as the plain markdown it is.
 
 import type { ReactNode } from 'react';
 import { block, inline } from '../components/Markdown';
-import { archRows, pad2, type Part, type Section, type SysMap, type Deps } from '../lib/archDoc';
+import { archRows, pad2, type Card, type Part, type Section, type SysMap, type Deps } from '../lib/archDoc';
 
-export function SecHead({ n, title, children }: { n: number; title: string; children?: ReactNode }) {
+/** A heading's tag: "This phase" reads as now (info); anything else is neutral. */
+const tagTone = (tag: string) => (/phase|current/i.test(tag) ? 'info' : 'neutral');
+
+export function SecHead({ n, title, tag, id, children }: { n: number; title: string; tag?: string; id?: string; children?: ReactNode }) {
   return (
-    <div className="ad-sechead">
+    <div className="ad-sechead" id={id}>
       <h2 className="ad-h"><span className="ad-n">{pad2(n)}</span>{inline(title)}</h2>
+      {tag && <span className={`ad-pill ${tagTone(tag)}`}>{tag}</span>}
       {children}
     </div>
   );
 }
+
+function CardView({ c, accent }: { c: Card; accent?: boolean }) {
+  return (
+    <div className={`ad-card${c.eyebrow ? ' big' : ''}`}>
+      {c.eyebrow && <span className={`ad-eyebrow${accent ? ' accent' : ''}`}>{c.eyebrow}</span>}
+      {c.tag ? (
+        <div className="ad-paneltitle"><span className="ad-label">{inline(c.label)}</span><span className="ad-tag">{c.tag}</span></div>
+      ) : (
+        <span className={c.path ? 'ad-pathlabel' : c.eyebrow ? 'ad-cardhead' : 'ad-label'}>{inline(c.label)}</span>
+      )}
+      {c.text && <span className="ad-body">{inline(c.text)}</span>}
+    </div>
+  );
+}
+
+export function sectionId(s: Section) { return `ad-s${s.n}`; }
 
 function MapView({ map }: { map: SysMap }) {
   return (
@@ -80,14 +100,52 @@ function PartView({ p, narrow }: { p: Part; narrow: boolean }) {
   switch (p.k) {
     case 'map': return <MapView map={p.map} />;
     case 'deps': return <DepsView deps={p.deps} />;
-    case 'cards': return (
-      <div className={`ad-cards${narrow ? ' narrow' : ''}`}>
-        {p.cards.map((c, i) => (
-          <div key={i} className="ad-card">
-            <span className={c.path ? 'ad-pathlabel' : 'ad-label'}>{inline(c.label)}</span>
-            {c.text && <span className="ad-body">{inline(c.text)}</span>}
+    case 'cards': {
+      const eyebrowed = p.cards.some((c) => c.eyebrow);
+      return (
+        <div className={`ad-cards${narrow || eyebrowed ? ' narrow' : ''}`}>
+          {p.cards.map((c, i) => <CardView key={i} c={c} accent={eyebrowed && i === 0} />)}
+        </div>
+      );
+    }
+    case 'rows': return (
+      <div className="ad-rows">
+        {p.rows.map((r, i) => (
+          <div key={i} className="ad-row">
+            <span className="ad-label">{inline(r.label)}</span>
+            <span className="ad-body">{inline(r.text)}</span>
           </div>
         ))}
+      </div>
+    );
+    case 'goals': return (
+      <ol className="ad-goals">
+        {p.goals.map((g, i) => (
+          <li key={i}>
+            <span className="ad-goaln">{i + 1}</span>
+            <div className="ad-goal">
+              <span className="ad-label">{inline(g.label)}</span>
+              {g.chain.length > 0 && (
+                <div className="ad-chain">
+                  {g.chain.map((c, j) => (
+                    <span key={j} className="ad-chainlink">
+                      {j > 0 && <span className="ad-arrowsm" aria-hidden>→</span>}
+                      <span className={`ad-chip${j === g.chain.length - 1 ? ' accent' : ''}`}>{c}</span>
+                    </span>
+                  ))}
+                </div>
+              )}
+              {g.text && <span className="ad-body">{inline(g.text)}</span>}
+            </div>
+          </li>
+        ))}
+      </ol>
+    );
+    case 'mixed': return (
+      <div className="ad-mixed">
+        {p.items.map((it, i) => it.k === 'card'
+          ? <div key={i} className="ad-panel slim"><CardView c={it.card} /></div>
+          : <div key={i} className="ad-line"><span aria-hidden>—</span><span>{inline(it.text)}</span></div>)}
       </div>
     );
     case 'steps': return (
@@ -135,16 +193,18 @@ function PartView({ p, narrow }: { p: Part; narrow: boolean }) {
   }
 }
 
-function SectionView({ s, narrow }: { s: Section; narrow: boolean }) {
+function SectionView({ s, narrow, ruled }: { s: Section; narrow: boolean; ruled?: boolean }) {
   return (
-    <section className="ad-sec">
-      <SecHead n={s.n} title={s.title} />
+    <section className={`ad-sec${ruled ? ' ruled' : ''}`} id={sectionId(s)}>
+      <SecHead n={s.n} title={s.title} tag={s.tag} />
       {s.parts.map((p, i) => <PartView key={i} p={p} narrow={narrow} />)}
     </section>
   );
 }
 
-export function ArchSections({ sections }: { sections: Section[] }) {
+/** `ruled`: the Charter's reading column, one section under a rule after another, never paired. */
+export function ArchSections({ sections, ruled }: { sections: Section[]; ruled?: boolean }) {
+  if (ruled) return <>{sections.map((s) => <SectionView key={s.n} s={s} narrow={false} ruled />)}</>;
   return (
     <>
       {archRows(sections).map((row) => row.length === 1

@@ -14,7 +14,7 @@ module.registerHooks({
     return nextResolve(specifier, context);
   },
 });
-const { parseArchDoc, parseMap, parseDeps, archRows } = await import(new URL('../web/src/lib/archDoc.ts', import.meta.url).href);
+const { parseArchDoc, parseMap, parseDeps, archRows, chainOf, splitGoal } = await import(new URL('../web/src/lib/archDoc.ts', import.meta.url).href);
 
 const DOC = `# Architecture
 
@@ -88,11 +88,11 @@ test('bold-led bullets are cards; a path label is marked; a colon starts a sente
   const p = parseArchDoc(DOC).sections[1].parts[0];
   assert.equal(p.k, 'cards');
   assert.deepEqual(p.cards, [
-    { label: 'web/', text: 'The client.', path: true },
-    { label: 'Docs on the spine', text: 'are artifacts.', path: false },
+    { label: 'web/', text: 'The client.', path: true, eyebrow: '', tag: '' },
+    { label: 'Docs on the spine', text: 'are artifacts.', path: false, eyebrow: '', tag: '' },
   ]);
-  const mixed = parseArchDoc('## X\n\n- **a**: one\n- plain\n').sections[0].parts[0];
-  assert.equal(mixed.k, 'block', 'one plain item: the list stays a list');
+  const plain = parseArchDoc('## X\n\n- one\n- two\n').sections[0].parts[0];
+  assert.equal(plain.k, 'block', 'no bold lead at all: the list stays a list');
 });
 
 test('deps chips and the footer', () => {
@@ -124,4 +124,68 @@ test('a plain doc still parses, with nothing lost', () => {
   const d = parseArchDoc('Just a note.\n\n- a\n- b\n');
   assert.equal(d.sections.length, 0);
   assert.deepEqual(d.lede.map((b) => b.k), ['p', 'list']);
+});
+
+// --- the Charter's shapes (design: Charter.dc.html) --------------------------
+
+const CHARTER = `# Charter
+
+Opening.
+
+## Who it is for
+
+- _Primary reader_ **The owner**: working alone.
+- _Second reader_ **The agents**: Claude Code and Codex.
+
+## Principles
+
+- **Resume is the point.** A session authors its own.
+- **Computed, never hand-set.** Derived.
+
+## What success looks like (this phase)
+
+1. **Every everyday flow reaches the right outcome.** One path.
+2. **One delivery flow, written down and followed.** Commit → review → mirror site → verdict → merge, with an explicit rule.
+
+## Out of scope (for now)
+
+- **The unattended fleet** (shelved 2026-11-09): continuous autopilot.
+- Teams and other users.
+`;
+
+test('a heading tag, eyebrowed cards, principle rows', () => {
+  const s = parseArchDoc(CHARTER).sections;
+  assert.deepEqual(s.map((x) => [x.title, x.tag]), [
+    ['Who it is for', ''], ['Principles', ''], ['What success looks like', 'This phase'], ['Out of scope', 'For now'],
+  ]);
+  assert.deepEqual(s[0].parts[0].cards.map((c) => [c.eyebrow, c.label, c.text]), [
+    ['Primary reader', 'The owner', 'Working alone.'], ['Second reader', 'The agents', 'Claude Code and Codex.'],
+  ]);
+  assert.equal(s[1].parts[0].k, 'rows');
+  assert.deepEqual(s[1].parts[0].rows.map((r) => r.label), ['Resume is the point.', 'Computed, never hand-set.']);
+});
+
+test('long ordered labels are goals, and a goal can open with a chain', () => {
+  const g = parseArchDoc(CHARTER).sections[2].parts[0];
+  assert.equal(g.k, 'goals');
+  assert.deepEqual(g.goals[0].chain, []);
+  assert.equal(g.goals[0].label, 'Every everyday flow reaches the right outcome.');
+  assert.deepEqual(g.goals[1].chain, ['Commit', 'review', 'mirror site', 'verdict', 'merge']);
+  assert.equal(g.goals[1].text, 'With an explicit rule.');
+  assert.deepEqual(chainOf('project → milestone → item (`roadmap_items`). More').chain, [], 'code in a link: not a chain');
+});
+
+test('a mixed list: bold items are cards (with a tag), the rest are lines', () => {
+  const m = parseArchDoc(CHARTER).sections[3].parts[0];
+  assert.equal(m.k, 'mixed');
+  assert.deepEqual(m.items[0], { k: 'card', card: { label: 'The unattended fleet', text: 'Continuous autopilot.', path: false, eyebrow: '', tag: 'shelved 2026-11-09' } });
+  assert.deepEqual(m.items[1], { k: 'line', text: 'Teams and other users.' });
+});
+
+test('a milestone goal splits at its "Done when:" paragraph', () => {
+  assert.deepEqual(splitGoal('Ship it.\n\nDone when: it ships.\n\nProduct brief:\n\n## Purpose'), {
+    goal: 'Ship it.', done: 'It ships.', more: 'Product brief:\n\n## Purpose',
+  });
+  assert.deepEqual(splitGoal('Just a goal.'), { goal: 'Just a goal.', done: '', more: '' });
+  assert.deepEqual(splitGoal(''), { goal: '', done: '', more: '' });
 });

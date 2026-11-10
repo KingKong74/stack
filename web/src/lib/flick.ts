@@ -1,4 +1,4 @@
-import { hrefTo, parseHash, type Route } from './route';
+import { hrefTo, type Route } from './route';
 
 // THE FLICK (⌃`): one key between the terminal and the board, both ways.
 //
@@ -8,11 +8,11 @@ import { hrefTo, parseHash, type Route } from './route';
 // SPAWNS a session for that directory, so a cwd is passed only when the
 // terminal has never been opened.
 //
-// From the terminal, the target is the board of the project the FOCUSED pane is
-// in, because that is the work you are looking at. If the last screen you left
-// was that same project, you go back to the tab you left (the Timeline, say),
-// not to the board. A pane outside any project falls back to wherever you came
-// from.
+// From the terminal, the target is the BOARD of the project the FOCUSED pane is
+// in, because that is the work you are looking at, and the button says Board.
+// It never returns to whichever tab of that project you left (For you, say):
+// the owner pressed Board and landed on For you (2026-11-10). A pane outside
+// any project falls back to wherever you came from.
 //
 // Pure, so `scripts/flick.test.mjs` can read it without a browser.
 export type FlickState = {
@@ -26,11 +26,7 @@ export type FlickState = {
 
 export function flickTarget(route: Route, s: FlickState): string {
   if (route.name === 'terminal') {
-    const away = s.lastAway ? parseHash(s.lastAway) : null;
-    if (s.termProject) {
-      if (away?.name === 'detail' && away.id === s.termProject) return s.lastAway;
-      return hrefTo.detail(s.termProject, 'roadmap');
-    }
+    if (s.termProject) return hrefTo.detail(s.termProject, 'roadmap');
     return s.lastAway || hrefTo.dashboard;
   }
   if (s.termMounted) return hrefTo.terminal();

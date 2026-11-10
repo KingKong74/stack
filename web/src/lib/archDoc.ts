@@ -1,5 +1,5 @@
-// THE ARCHITECTURE DOC, READ AS A PAGE (design: Architecture.dc.html). The
-// doc stays one markdown `architecture` artifact, written and edited as text;
+// THE SPINE'S DOCS, READ AS PAGES (designs: Architecture.dc.html and
+// Charter.dc.html). Each doc stays one markdown artifact, written and edited as text;
 // this turns its blocks into the design's parts so it reads as a map, not a
 // wall of prose. Pure and JSX-free so it runs under Node (scripts/archdoc.test.mjs).
 //
@@ -7,10 +7,18 @@
 // syntax, and each falls back to plain markdown when it does not fit:
 //   • `# H1` is the page's title and is dropped; the paragraph(s) before the
 //     first `## H2` are the lede.
-//   • each `## H2` is a numbered section (01, 02 …).
+//   • each `## H2` is a numbered section (01, 02 …); a trailing `(this
+//     phase)` becomes a tag beside the title.
 //   • a bullet list whose every item opens with `**Label**` → cards. A label
-//     that looks like a path (`web/`, `schema.sql`) draws in mono.
-//   • an ordered list whose every item opens with `**Label**` → step cards.
+//     that looks like a path (`web/`, `schema.sql`) draws in mono; a leading
+//     `_Eyebrow_` sits above the label; `**Label** (tag):` gives the card a tag.
+//   • … and when every such label ENDS IN A FULL STOP (`**Resume is the
+//     point.**`), the list is a principle per row: label left, text right.
+//   • a bullet list where only SOME items open in bold → the bold ones as
+//     cards, the rest as plain dash lines under them.
+//   • an ordered list whose every item opens with `**Label**` → step cards when
+//     every label is short (≤ 3 words), else numbered goals. A goal's text that
+//     opens `a → b → c,` draws that run as a chain of chips.
 //   • a paragraph opening `**Open question …**` (or Note / Warning / Caution) → a callout.
 //   • a ```map fence → the system map (its line grammar is parseMap's).
 //   • a ```deps fence → grouped chips: `Group: Name (note), Name (note)`;
@@ -23,7 +31,8 @@
 
 import { parseBlocks, type Block } from './markdown';
 
-export type Card = { label: string; text: string; path: boolean };
+export type Card = { label: string; text: string; path: boolean; eyebrow: string; tag: string };
+export type Goal = Card & { chain: string[] };
 export type MapNode = { kind: string; name: string; sub: string; accent: boolean };
 export type SysMap = {
   row: ({ k: 'node'; node: MapNode } | { k: 'link'; label: string })[];
@@ -34,17 +43,20 @@ export type Deps = { groups: { group: string; items: { name: string; note: strin
 export type Part =
   | { k: 'cards'; cards: Card[] }
   | { k: 'steps'; steps: Card[] }
+  | { k: 'rows'; rows: Card[] }
+  | { k: 'goals'; goals: Goal[] }
+  | { k: 'mixed'; items: ({ k: 'card'; card: Card } | { k: 'line'; text: string })[] }
   | { k: 'callout'; label: string; text: string }
   | { k: 'map'; map: SysMap }
   | { k: 'deps'; deps: Deps }
   | { k: 'panel'; title: string; tag: string; paras: string[]; chips: string[] }
   | { k: 'block'; block: Block };
-export type Section = { n: number; title: string; parts: Part[]; half: boolean };
+export type Section = { n: number; title: string; tag: string; parts: Part[]; half: boolean };
 export type ArchDoc = { lede: Block[]; sections: Section[] };
 /** Rows of the page: one full section, or two half ones side by side. */
 export type ArchRow = Section[];
 
-const LEAD = /^\*\*(.+?)\*\*\s*(.*)$/;
+const LEAD = /^(?:_([^_]+)_\s+)?\*\*(.+?)\*\*\s*(.*)$/;
 const CALLOUT = /^\*\*((?:open question|note|warning|caution)\b)\s*([^*]*?)\*\*\s*(.*)$/i;
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
@@ -53,12 +65,28 @@ const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 function leadOf(text: string): Card | null {
   const m = text.match(LEAD);
   if (!m) return null;
-  const label = m[1].replace(/[:.]\s*$/, '').trim();
+  const eyebrow = (m[1] || '').trim();
+  const label = m[2].replace(/[:.]\s*$/, '').trim();
+  let after = m[3];
+  let tag = '';
+  const t = after.match(/^\(([^)]+)\)\s*([:.\-–—].*)$/);
+  if (t) { tag = t[1].trim(); after = t[2]; }
   // `**web/**: the host…` reads as a sentence of its own on a card; `**Docs**
   // are artifacts` runs on from its label, so keeps its case.
-  const sep = /[:.]\s*$/.test(m[1]) || /^[:.\-–—]/.test(m[2]);
-  const rest = m[2].replace(/^[:.\-–—]\s*/, '').trim();
-  return { label, text: sep ? cap(rest) : rest, path: !/\s/.test(label) && /[/.]/.test(label) };
+  const sep = /[:.]\s*$/.test(m[2]) || /^[:.\-–—]/.test(after);
+  const rest = after.replace(/^[:.\-–—]\s*/, '').trim();
+  return { label, text: sep ? cap(rest) : rest, path: !/\s/.test(label) && /[/.]/.test(label), eyebrow, tag };
+}
+
+/** The label as written, full stop kept: a principle reads as a sentence. */
+const endsInStop = (text: string) => /^(?:_[^_]+_\s+)?\*\*[^*]*\.\*\*/.test(text);
+
+/** `Commit → review → merge, with …` → the chain and the rest. Each link is a
+ *  few plain words; anything else (code, brackets) is not a chain. */
+export function chainOf(text: string): { chain: string[]; rest: string } {
+  const m = text.match(/^((?:[A-Za-z][\w-]*(?: [\w-]+){0,2})(?:\s*→\s*[A-Za-z][\w-]*(?: [\w-]+){0,2}){2,})\s*[,.]\s*(.*)$/);
+  if (!m) return { chain: [], rest: text };
+  return { chain: m[1].split('→').map((x) => x.trim()), rest: cap(m[2]) };
 }
 
 const split = (s: string) => s.split('|').map((x) => x.trim());
@@ -135,7 +163,22 @@ function partsOf(blocks: Block[]): Part[] {
   return blocks.map((b): Part => {
     if (b.k === 'list' && b.items.every((it) => it.depth === 0 && it.box === null)) {
       const cards = b.items.map((it) => leadOf(it.text));
-      if (cards.every((c): c is Card => c !== null)) return b.ordered ? { k: 'steps', steps: cards } : { k: 'cards', cards };
+      if (cards.every((c): c is Card => c !== null)) {
+        if (b.ordered) {
+          if (cards.every((c) => c.label.split(/\s+/).length <= 3)) return { k: 'steps', steps: cards };
+          return { k: 'goals', goals: cards.map((c, i) => {
+            const { chain, rest } = chainOf(c.text);
+            return { ...c, label: b.items[i].text.match(LEAD)![2].trim(), chain, text: rest };   // a goal is a sentence: keep its stop
+          }) };
+        }
+        if (b.items.every((it) => endsInStop(it.text))) {
+          return { k: 'rows', rows: b.items.map((it, i) => ({ ...cards[i], label: it.text.match(LEAD)![2].trim() })) };
+        }
+        return { k: 'cards', cards };
+      }
+      if (!b.ordered && cards.some((c) => c !== null)) {
+        return { k: 'mixed', items: b.items.map((it, i) => (cards[i] ? { k: 'card' as const, card: cards[i]! } : { k: 'line' as const, text: it.text })) };
+      }
     }
     if (b.k === 'p') {
       const c = b.text.match(CALLOUT);
@@ -160,7 +203,8 @@ export function parseArchDoc(src: string): ArchDoc {
     if (!cur) return;
     const parts = partsOf(cur.blocks);
     const half = parts.length > 0 && parts.every((p) => p.k === 'deps' || p.k === 'panel' || (p.k === 'block' && p.block.k === 'table'));
-    sections.push({ n: sections.length + 1, title: cur.title, parts, half });
+    const t = cur.title.match(/^(.*?)\s*\(([^)]+)\)$/);
+    sections.push({ n: sections.length + 1, title: t ? t[1] : cur.title, tag: t ? cap(t[2]) : '', parts, half });
   };
   blocks.forEach((b, i) => {
     if (b.k === 'h' && b.level === 1 && i === 0) return;
@@ -185,3 +229,20 @@ export function archRows(sections: Section[]): ArchRow[] {
 }
 
 export const pad2 = (n: number) => String(n).padStart(2, '0');
+
+/** A MILESTONE'S GOAL, read as the design's goal and "Done when" (designs:
+ *  Milestones.dc.html, the Charter's rail). The goal is one markdown field;
+ *  a paragraph opening `Done when:` splits it. Text before it is the goal,
+ *  that paragraph is the bar, and anything after it is `more` (a brief kept
+ *  with the milestone), drawn below as plain markdown. No `Done when:` → it
+ *  is all goal. */
+export function splitGoal(src: string): { goal: string; done: string; more: string } {
+  const paras = src.replace(/\r\n/g, '\n').split(/\n\s*\n/);
+  const at = paras.findIndex((p) => /^\s*\**done when\**\s*:/i.test(p));
+  if (at < 0) return { goal: src.trim(), done: '', more: '' };
+  return {
+    goal: paras.slice(0, at).join('\n\n').trim(),
+    done: cap(paras[at].replace(/^\s*\**done when\**\s*:\**\s*/i, '').trim()),
+    more: paras.slice(at + 1).join('\n\n').trim(),
+  };
+}
