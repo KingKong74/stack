@@ -132,6 +132,17 @@ test('daemon launches, resizes and reattaches Codex without a gateway', { timeou
     const attached = await waitFor((f) => f.t === 'ready' && f.sid === 'attach');
     assert.equal(attached.cmd, 'codex');
     assert.equal(attached.model.key, 'codex');
+    const attachOutput = await waitFor((f) => f.t === 'out' && f.sid === 'attach'
+      && Buffer.from(f.data, 'base64').toString().includes('SPAWN'));
+    assert.match(Buffer.from(attachOutput.data, 'base64').toString(), /attach-session/);
+    assert.doesNotMatch(Buffer.from(attachOutput.data, 'base64').toString(), /new-session/);
+    start('missing', 'codex', { tmuxSession: 'stack-term-gone', reattachOnly: true });
+    assert.match((await waitFor((f) => f.t === 'err' && f.sid === 'missing')).msg, /session has ended/);
+    await waitFor((f) => f.t === 'exit' && f.sid === 'missing');
+    assert.equal(frames.some((f) => f.t === 'ready' && f.sid === 'missing'), false);
+    start('invalid-attach', 'codex', { reattachOnly: true });
+    assert.match((await waitFor((f) => f.t === 'err' && f.sid === 'invalid-attach')).msg, /session has ended/);
+
     // An unavailable catalogue must not block a model the user selected earlier.
     start('selected', 'codex', { codexModel: 'gpt-5.3-codex' });
     const selected = await waitFor((f) => f.t === 'ready' && f.sid === 'selected');

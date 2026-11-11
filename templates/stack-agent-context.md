@@ -18,7 +18,7 @@ use YOLO mode; its sidepanel lists account models and reported quota windows. Co
 resume injection, branch claims, SessionEnd backstop or usage/edit tracking. Read live state and
 claims before choosing board work. Author checkpoint JSON and pipe it to
 `node ~/.stack/stack-checkpoint.mjs`; `/checkpoint` is a Claude command, not a Codex command.
-Unknown usage stays unknown. `POST /api/terminal/label` accepts `{sid, tmux, prompt}` to retitle a session.
+Reconnect starts set `reattachOnly:true`; missing sessions fail without spawning. `POST /api/terminal/label` accepts `{sid, tmux, prompt}` to retitle a session.
 
 ## Trust the injected context
 

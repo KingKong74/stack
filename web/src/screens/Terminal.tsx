@@ -19,7 +19,6 @@ import {
   getTermNames, setTermName,
   getTerminalAgent, getTermSessionPrefs, setTermSessionPrefs, type TermSessionPrefs,
   getProjectDetail, type ProjectDetailData,
-  getOverview,
   peekTermLaunch, clearTermLaunch,
 } from '../store';
 import { hrefTo } from '../lib/route';
@@ -140,6 +139,7 @@ const fmtTok = (n: number) =>
 // whole), and it is the only id that exists for EVERY session — a shell has no
 // tmux name, so keying names by tmux is why shells used to go unnamed.
 type Sess = {
+  reattachOnly?: boolean;
   codexModel?: string;
   // What a NEW session was asked to start on. Ignored by the host on a
   // re-attach, so a restored tab never carries them.
@@ -269,6 +269,8 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   onProject?: (slug: string) => void;
 }) {
   const [cwd, setCwd] = useState(initialCwd);
+  const navigationRef = useRef({ visible, initialCwd, initialAttach, initialBrief });
+  navigationRef.current = { visible, initialCwd, initialAttach, initialBrief };
   // The seg control starts on the device's preferred session kind (Settings →
   // Terminal; default claude — that's what this screen is for).
   // DEFAULTS FOR NEW SESSIONS — the tool, each tool's model, and where the work
@@ -378,13 +380,13 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
     const id = nextId.current++;
     const cwdKey = (dir ?? cwd).trim();
     const cmd = kind ?? mode;
+    const name = tmux ?? (cmd !== 'shell' ? newTermName() : undefined);
     setSessions((s) => {
       // Explicit new sessions never adopt a remembered session by directory:
       // Claude and Codex can share a cwd. Reload restoration uses the host list.
-      const name = tmux ?? (cmd !== 'shell' ? newTermName() : undefined);
       const fresh = !tmux;
       return [...s, {
-        id, cwd: cwdKey, cmd, status: 'connecting', note: '', tmux: name,
+        id, cwd: cwdKey, cmd, status: 'connecting', note: '', tmux: name, reattachOnly: !!tmux,
         codexModel: cmd === 'codex' && fresh ? defs.codexModel || undefined : undefined,
         claudeModel: cmd === 'claude' && fresh ? defs.claudeModel || undefined : undefined,
         dest: cmd !== 'shell' && fresh ? defs.dest : undefined,
@@ -393,67 +395,24 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
     setActive(id);
     return id;
   };
-  // The screen comes BACK the way it was left. Every tab this device had open
-  // is restored first — claude tabs by re-attaching their tmux session (the
-  // process survived the reload; that is the point of #171), shell tabs as
-  // fresh shells in the same directory — so four terminals reload as four
-  // terminals rather than one. Only then does the route get its say: an
-  // ?attach= / ?cwd= that a restored tab already covers just focuses that tab
-  // instead of opening a duplicate.
-  //
-  // A RESTORED CLAUDE TAB NEVER SPAWNS. That is the whole of #486, and it is
-  // the difference between reloading a screen and breeding host sessions.
-  //
-  // What went wrong: `openSession` resolves a missing tmux name through
-  // `getTermTmuxName(cwd)`, which stores ONE name PER DIRECTORY. Three tabs in
-  // ~/stack therefore had one name between them, so on every reload the first
-  // re-attached and the other two fell through to `name = undefined` — which
-  // the daemon reads as "start a new session". Refresh three times with three
-  // tabs open and the host is running nine claude sessions, six of them
-  // orphaned, each holding a model's context and each burning the idle
-  // reaper's clock. `tmux` also lands undefined on any tab persisted while it
-  // was still connecting, so a fast double-refresh reproduced it with one tab.
-  //
-  // The fix is to stop guessing from device storage and ASK THE HOST. Device
-  // storage says what this BROWSER had open; only the daemon knows what still
-  // EXISTS. So a saved claude tab is restored by attaching to a real host
-  // session — its own name first, then any unheld session in the same
-  // directory — and if there is nothing to attach to, the tab is not opened at
-  // all. That is the honest outcome: the tab was a window onto a process, and
-  // the process is gone.
-  //
-  // Shell tabs still open eagerly. A shell is stateless and cheap, there is
-  // nothing on the host to adopt, and a fresh one in the same directory is
-  // exactly what it was.
-  //
-  // With nothing remembered, one session still opens itself, as it always
-  // did — the screen is never empty. The kind comes from the device pref
-  // (default claude, skip-permissions via the start frame). A bare open (no
-  // cwd, no attach, nothing stored) lands in the most recently touched project
-  // rather than $HOME — claude in the home directory helps nobody; overview's
-  // resume slug is the "current" project. Falls back to home on any miss.
+  // Restore surviving identities only. Opening an empty terminal screen must
+  // not create a process, and a remembered name that ended stays ended.
   const restoreComplete = useRef(false);
   useEffect(() => {
     const saved = getTermOpenTabs();
-    // Shells now; claude tabs wait for the host list. `ids` keeps a slot per
-    // saved tab (null = deferred) so the route matching below still indexes
-    // against `saved` the way it always has.
-    const ids: (number | null)[] = saved.map((t) =>
-      (t.cmd === 'shell' ? openSession(t.cwd, t.cmd, t.tmux) : null));
+    // Keep a slot per saved tab; populate it only after the effect survives
+    // cleanup and the host confirms any remembered agent session.
+    const ids: (number | null)[] = saved.map(() => null);
     const deferred = saved
       .map((t, i) => ({ t, i }))
       .filter(({ t }) => t.cmd !== 'shell');
 
     let gone = false;
 
-    // The adoption pass. One round trip, then every deferred tab is matched to
-    // a host session that actually exists — exact name first (so a tab lands
-    // back on ITS OWN session, not merely a session), then any unheld one in
-    // the same directory for the tabs whose names were lost to a mid-connect
-    // persist. `held` grows as we go, so two tabs in one directory can never
-    // claim the same host session and mirror each other.
+    // Match exact identities only; another session in the same directory is
+    // not evidence that it belongs to a remembered tab.
     const adopt = async () => {
-      if (!deferred.length) return [] as number[];
+      if (!deferred.length) return;
       // A disconnected host has not reported an empty fleet. Keep the saved
       // identities until a connected daemon can answer, including on restart.
       let feed;
@@ -462,58 +421,45 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
         if (feed?.connected === true) break;
         await new Promise((resolve) => setTimeout(resolve, 1000));
       }
-      if (gone) return [] as number[];
+      if (gone) return;
       const host = feed!.sessions;
       const held = new Set<string>();
-      const opened: number[] = [];
-      // Exact matches first, across ALL deferred tabs, before anything is
-      // allowed to take a session by directory alone — otherwise the first tab
-      // in a directory can adopt the session that belonged to the third.
-      const exact = new Map<number, string>();
       for (const { t, i } of deferred) {
-        if (t.tmux && host.some((h) => h.name === t.tmux) && !held.has(t.tmux)) {
-          held.add(t.tmux); exact.set(i, t.tmux);
-        }
+        if (!t.tmux || held.has(t.tmux) || !host.some((h) => h.name === t.tmux)) continue;
+        held.add(t.tmux);
+        ids[i] = openSession(t.cwd, t.cmd, t.tmux);
       }
-      // Same preference `choosePanes` uses when it fills panes: an UNATTACHED
-      // survivor first, newest before oldest. Attaching to a session some other
-      // client already holds only mirrors it — two windows typing into one
-      // terminal — so it is the last resort rather than the first match.
-      const byPreference = [...host].sort(
-        (a, b) => (a.attached ? 1 : 0) - (b.attached ? 1 : 0) || b.created - a.created);
-      for (const { t, i } of deferred) {
-        const name = exact.get(i)
-          ?? byPreference.find((h) => h.cwd === t.cwd && h.cmd === t.cmd && !held.has(h.name))?.name;
-        if (!name) continue;   // nothing on the host for it — the tab is not reopened
-        held.add(name);
-        const id = openSession(t.cwd, t.cmd, name);
-        ids[i] = id;
-        opened.push(id);
-      }
-      return opened;
     };
 
-    void adopt().then((opened) => {
+    void adopt().then(() => {
       if (gone) return;
+      // After the effect survives cleanup: StrictMode must not open shells twice.
+      for (let i = 0; i < saved.length; i++) {
+        if (saved[i].cmd === 'shell') ids[i] = openSession(saved[i].cwd, 'shell');
+      }
       restoreComplete.current = true;
       const anyRestored = ids.some((x) => x !== null);
 
-      if (initialAttach) {
-        const i = saved.findIndex((t) => t.tmux === initialAttach);
+      const navigation = navigationRef.current;
+      if (!navigation.visible) return;
+      if (navigation.initialAttach) {
+        const i = saved.findIndex((t) => t.tmux === navigation.initialAttach);
         const held = sessionsRef.current.find(
-          (s) => s.tmux === initialAttach && (s.status === 'live' || s.status === 'connecting'));
+          (s) => s.tmux === navigation.initialAttach && (s.status === 'live' || s.status === 'connecting'));
         if (i >= 0 && ids[i] !== null) setActive(ids[i] as number);
         else if (held) setActive(held.id);
-        else openSession(initialCwd, 'claude', initialAttach);
+        else openSession(navigation.initialCwd, 'claude', navigation.initialAttach);
         return;
       }
-      if (initialCwd) {
-        const i = saved.findIndex((t) => t.cwd === initialCwd);
+      if (navigation.initialCwd) {
+        const i = saved.findIndex((t) => t.cwd === navigation.initialCwd);
+        const existing = sessionsRef.current.find((s) => s.cwd === navigation.initialCwd && (s.status === 'live' || s.status === 'connecting'));
         if (i >= 0 && ids[i] !== null) setActive(ids[i] as number);
+        else if (existing) setActive(existing.id);
         // The device's autoStart is what a plain ⌨ press should respect, but a
         // button labelled "Jump back in" that lands you in a bare shell has not
         // done what it said — it always opens claude.
-        else openSession(initialCwd, initialBrief ? 'claude' : getTermSessionPrefs().autoStart);
+        else openSession(navigation.initialCwd, navigation.initialBrief ? 'claude' : getTermSessionPrefs().autoStart);
         return;
       }
       if (anyRestored) {
@@ -521,18 +467,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
         if (first != null) setActive(first);
         return;
       }
-      if (opened.length) return;
-      // NOTHING came back — no saved tabs, or none of them still exists on the
-      // host. Only now does a session get spawned, which is the one case where
-      // spawning is what the screen is for.
-      getOverview()
-        .then((o) => o.resume?.slug ?? '')
-        .catch(() => '')
-        .then((slug) => {
-          if (gone) return;
-          if (slug) setCwd(slug);
-          openSession(slug, getTermSessionPrefs().autoStart);
-        });
+      // Nothing survived. Show the empty screen and let New session create one.
     });
     return () => { gone = true; };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -565,6 +500,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
     const changed = key !== lastNavProp.current;
     lastNavProp.current = key;
     if (!navReady.current) { navReady.current = true; return; } // mount effect owns the first open
+    if (!restoreComplete.current) return;
     if (initialAttach) {
       const held = sessions.find((s) => s.tmux === initialAttach && (s.status === 'live' || s.status === 'connecting'));
       if (held) { setActive(held.id); return; }
@@ -754,8 +690,9 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   };
   // An exit frame while attached means the underlying process really ended
   // (a detach never sends one) — forget the mapping so the next open is fresh.
-  const noteTmuxEnded = (cwdKey: string, name: string | null) => {
+  const noteTmuxEnded = (id: number, cwdKey: string, name: string | null) => {
     if (name) clearTermTmuxName(cwdKey, name);
+    setSessions((tabs) => tabs.map((tab) => tab.id === id ? { ...tab, tmux: undefined } : tab));
   };
 
   // Chips for sessions a live tab already holds would be re-attach traps —
@@ -1964,7 +1901,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                   onBranch={(branch, project) => setSessions((c) => c.map((x) => (x.id === s.id ? { ...x, branch, project: project || x.project } : x)))}
                   onModel={(mdl) => setSessions((c) => c.map((x) => (x.id === s.id ? { ...x, model: mdl, cmd: mdl?.key === 'codex' ? 'codex' : mdl?.key === 'anthropic' || mdl?.key === 'omniroute' ? 'claude' : x.cmd } : x)))}
                   onSid={(sid) => setSessions((c) => c.map((x) => (x.id === s.id ? { ...x, sid } : x)))}
-                  onExit={(name) => noteTmuxEnded(s.cwd, name)}
+                  onExit={(name) => noteTmuxEnded(s.id, s.cwd, name)}
                   onOutput={(bytes) => noteOutput(s.id, bytes)}
                   onTyped={noteTyped}
                   onNotice={(label, ms) => noteNotice(s.id, label, ms)}
@@ -2277,7 +2214,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
 // One tab: an xterm instance + its websocket, kept mounted (hidden when
 // inactive) so the scrollback survives tab switches.
 function TermSession({ sess, visible, focused, fontSize, onStatus, onUsage, onTmux, onBranch, onModel, onSid, onExit, onOutput, onTyped, onNotice, register }: {
-  sess: { codexModel?: string; claudeModel?: string; dest?: TermDest; id: number; cwd: string; cmd: 'shell' | 'claude' | 'codex'; tmux?: string };
+  sess: { reattachOnly?: boolean; codexModel?: string; claudeModel?: string; dest?: TermDest; id: number; cwd: string; cmd: 'shell' | 'claude' | 'codex'; tmux?: string };
   // Rendered on screen at all (it may be one of several panes)...
   visible: boolean;
   // ...and the one that takes keystrokes. With a grid these stopped being the
@@ -2324,6 +2261,7 @@ function TermSession({ sess, visible, focused, fontSize, onStatus, onUsage, onTm
   // frame so the daemon re-attaches to the surviving session instead of
   // spawning a new one.
   const tmuxRef = useRef<string | null>(sess.tmux ?? null);
+  const reattachOnlyRef = useRef(!!sess.reattachOnly);
   // Pending prompt capture survives chunks and resets on each submission.
   // A REF, not state: it changes on every keystroke and nothing renders it, so
   // making it state would re-render a terminal grid on every character typed.
@@ -2513,12 +2451,15 @@ function TermSession({ sess, visible, focused, fontSize, onStatus, onUsage, onTm
         codexModel: sess.codexModel, claudeModel: sess.claudeModel, dest: sess.dest,
         cwd: sess.cwd, cmd: sess.cmd, cols: term.cols, rows: term.rows,
         tmuxSession: sess.cmd !== 'shell' && tmuxRef.current ? tmuxRef.current : undefined,
+        reattachOnly: sess.cmd !== 'shell' && !!tmuxRef.current && reattachOnlyRef.current,
         // Device pref (Settings → Terminal): claude without permission prompts.
         // A boolean only — the daemon maps it to its one allow-listed flag.
         skipPerms: sess.cmd === 'claude' && getTermSessionPrefs().skipPermissions ? true : undefined,
         // #525 — a board card's first prompt, when one was queued for this name.
         brief: sess.cmd !== 'shell' && tmuxRef.current ? peekTermLaunch(tmuxRef.current) : undefined,
       });
+      // Every subsequent connection is a restoration, even if ready was lost.
+      if (sess.cmd !== 'shell') reattachOnlyRef.current = true;
       wsRef.current = ws;
       sizes.seed(term.cols, term.rows); // the start frame carries these
       ws.addEventListener('open', () => {

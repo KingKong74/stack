@@ -542,6 +542,14 @@ test('the fresh mark is a separate option from the pin and does not disturb it',
 
 // ---- G. the start argv, the pane read, the one writer ----------------------
 
+test('restoration uses exact attach-session and cannot recreate a vanished target', () => {
+  const argv = sessionArgv('stack-term-gone', '/home/bailey/stack', 'exec codex', { attachOnly: true });
+  assert.ok(argv.includes('attach-session'));
+  assert.ok(argv.includes('=stack-term-gone:'));
+  assert.ok(!argv.includes('new-session'));
+  assert.ok(!argv.includes('exec codex'));
+});
+
 test('one `new-session -A` does create AND attach, with no race between them', () => {
   const argv = sessionArgv('stack-term-x', '/home/bailey/stack', 'exec claude');
   assert.equal(argv[0], 'tmux');

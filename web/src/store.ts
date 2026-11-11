@@ -537,7 +537,7 @@ export async function getProjectPulse(slug: string): Promise<ProjectPulse> {
 // account model for a new Codex session; it never changes an attached process.
 export function openTerminal(opts: {
   cwd: string; cmd: 'shell' | 'claude' | 'codex'; cols: number; rows: number;
-  tmuxSession?: string; skipPerms?: boolean; codexModel?: string;
+  tmuxSession?: string; reattachOnly?: boolean; skipPerms?: boolean; codexModel?: string;
   // An alias (opus/sonnet/haiku) or a full id; '' / absent = the CLI's default.
   claudeModel?: string;
   // "Work goes to": 'branch' starts a NEW session in its own worktree on

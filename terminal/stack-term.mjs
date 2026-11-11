@@ -731,6 +731,9 @@ function startSession(msg) {
   let branchProject = '';
 
   if (msg.cmd === 'claude' || msg.cmd === 'codex') {
+    if (msg.reattachOnly === true && (!tmuxAvailable() || !validName(msg.tmuxSession) || !sessionExists(msg.tmuxSession))) {
+      return failUplink('This terminal session has ended. Start a new session to continue.');
+    }
     const codexModel = msg.cmd === 'codex' && !(validName(msg.tmuxSession) && sessionExists(msg.tmuxSession)) ? msg.codexModel : undefined;
     // Catalogue reads can be unavailable or stale. Validate syntax in
     // nativeLaunch; the native CLI validates model availability for its account.
@@ -776,7 +779,7 @@ function startSession(msg) {
       const briefFile = !reattached && typeof msg.brief === 'string' ? writeBrief(tmuxSession, msg.brief) : null;
       if (briefFile) log(`session ${sid}: starting ${tmuxSession} on a brief (${msg.brief.length} chars)`);
       const shellCmd = `/bin/bash -lc "${briefFile ? agentCmdWith(briefArg(briefFile)) : agentCmd}"`;
-      argv = sessionArgv(tmuxSession, cwd, shellCmd);
+      argv = sessionArgv(tmuxSession, cwd, shellCmd, { attachOnly: reattached || msg.reattachOnly === true });
       log(`session ${sid}: tmux session ${tmuxSession} (${reattached ? 're-attach' : 'new'})`);
       // A session we are CREATING starts out marked fresh — nobody has been
       // near it yet. The mark is set after the spawn below, once the session

@@ -5,7 +5,8 @@
 //
 // Used by stack-term.mjs to run claude sessions inside named tmux sessions so
 // they survive browser disconnects. The PTY the browser sees is always a
-// `tmux new-session -A` process; when the attach exits (browser disconnect →
+// tmux client (new-session for a fresh start, attach-session for restoration);
+// when the attach exits (browser disconnect →
 // pty-shim dies → HUP to tmux client), the underlying tmux session (and the
 // claude process inside it) keeps running. A reconnect re-attaches by passing
 // the same session name in the start frame.
@@ -50,8 +51,8 @@ export function sessionExists(name) {
 
 // Returns the argv array to pass to pty-shim.py for a tmux session.
 // -A means: attach to the named session if it exists, otherwise create it.
-// This handles both the "new session" and "re-attach" cases in one command,
-// eliminating the race between separate create + attach calls.
+// Explicit starts may create. attachOnly uses exact attach-session instead,
+// so a session disappearing between the existence check and spawn stays gone.
 // shellCmd is a single string that tmux passes to sh -c (tmux's convention
 // for one-arg shell commands; multi-arg joining varies between versions).
 // The trailing command sequence (`;` args) turns mouse mode on server-wide —
@@ -77,11 +78,11 @@ export function sessionExists(name) {
 // Claude session drew monochrome (2026-11-08). So the chain scrubs the global
 // env BEFORE new-session, on every start: start-server makes that legal when
 // no server is running yet, and an existing server is repaired in place.
-export function sessionArgv(name, cwd, shellCmd) {
+export function sessionArgv(name, cwd, shellCmd, { attachOnly = false } = {}) {
   return ['tmux', 'start-server',
     ';', 'set-environment', '-gu', 'NO_COLOR',
     ';', 'set-environment', '-g', 'COLORTERM', 'truecolor',
-    ';', 'new-session', '-A', '-s', name, '-c', cwd, shellCmd,
+    ';', ...(attachOnly ? ['attach-session', '-t', `=${name}:`] : ['new-session', '-A', '-s', name, '-c', cwd, shellCmd]),
     ';', 'set-option', '-g', 'mouse', 'on',
     ';', 'set-option', '-g', 'set-clipboard', 'on',
     ';', 'set-option', '-as', 'terminal-features', ',*:clipboard',
