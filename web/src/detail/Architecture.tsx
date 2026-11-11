@@ -37,6 +37,7 @@ import { getSpineDocs, createArtifact, patchArtifact, deleteArtifact, setStarred
 import { StarButton } from '../components/Star';
 import { liveSlices, sliceLabel } from './Spine';
 import { timeAgo } from '../lib/ui';
+import { useAutoRefresh } from '../lib/autoRefresh';
 
 const CHARTER_TEMPLATE = `# Charter
 
@@ -101,12 +102,26 @@ function useSpineDocs(slug: string) {
     getSpineDocs(slug).then(setDocs).catch((e) => setErr((e as Error)?.message || 'Could not read these docs.'));
   }, [slug]);
   useEffect(() => { setDocs(null); load(); }, [load]);
+  // RE-READ ON THE APP'S CADENCE, and at once on coming back to the tab. Read
+  // once per slug, an open tab kept showing a charter that had been rewritten
+  // elsewhere, and an Edit there started from that stale copy (2026-11-11).
+  useAutoRefresh(load);
+  // …and ALWAYS on coming back to the tab or window, whatever the Auto refresh
+  // setting: one light read, at the moment a stale page would be acted on.
+  useEffect(() => {
+    const back = () => { if (document.visibilityState === 'visible') load(); };
+    document.addEventListener('visibilitychange', back);
+    window.addEventListener('focus', back);
+    return () => { document.removeEventListener('visibilitychange', back); window.removeEventListener('focus', back); };
+  }, [load]);
+  // The server's current version of one doc, for Save's stale check.
+  const latestAt = useCallback(async (id: number) => (await getSpineDocs(slug)).find((x) => x.id === id)?.updatedAt ?? '', [slug]);
   const put = (a: Artifact) => setDocs((xs) => {
     const list = xs || [];
     return list.some((x) => x.id === a.id) ? list.map((x) => (x.id === a.id ? a : x)) : [...list, a];
   });
   const drop = (id: number) => setDocs((xs) => (xs || []).filter((x) => x.id !== id));
-  return { docs, err, setErr, put, drop };
+  return { docs, err, setErr, put, drop, latestAt };
 }
 
 /**
@@ -114,8 +129,10 @@ function useSpineDocs(slug: string) {
  * a textarea with Save and Cancel. An empty doc offers its template, because
  * a blank page is where charters go to not get written.
  */
-function DocEditor({ doc, template, emptyLine, footnote, onSave, view }: {
+function DocEditor({ doc, template, emptyLine, footnote, onSave, view, latestAt }: {
   doc: Artifact | null; template: string; emptyLine: string; footnote?: string;
+  /** The server's current `updatedAt` for a doc, asked at Save time. */
+  latestAt: (id: number) => Promise<string>;
   onSave: (body: string) => Promise<void>;
   /** Draw the saved doc yourself; `edit` opens the editor on its text. */
   view?: (doc: Artifact, edit: () => void) => ReactNode;
@@ -123,10 +140,19 @@ function DocEditor({ doc, template, emptyLine, footnote, onSave, view }: {
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
-  const start = (body: string) => { setText(body); setEditing(true); };
+  // The version the edit started from. If the doc changes underneath (another
+  // tab, a session, the API), Save refuses rather than overwrite the newer text.
+  const [base, setBase] = useState('');
+  const [stale, setStale] = useState(false);
+  const start = (body: string) => { setText(body); setBase(doc?.updatedAt || ''); setStale(false); setEditing(true); };
+  // ASKED OF THE SERVER, not of this tab's copy: the copy is exactly what may
+  // be stale, so comparing against it would let the stale save through.
   const save = async () => {
     setBusy(true);
-    try { await onSave(text); setEditing(false); } finally { setBusy(false); }
+    try {
+      if (doc && base && (await latestAt(doc.id)) !== base) { setStale(true); return; }
+      await onSave(text); setEditing(false);
+    } finally { setBusy(false); }
   };
   if (editing) {
     return (
@@ -134,6 +160,12 @@ function DocEditor({ doc, template, emptyLine, footnote, onSave, view }: {
         <textarea className="km-textarea sp-doctext" value={text} rows={18} autoFocus
           aria-label="Markdown" onChange={(e) => setText(e.target.value)} />
         {footnote && <span className="sp-foot">{footnote}</span>}
+        {stale && (
+          <div className="km-err" role="alert">
+            This changed somewhere else after you opened it, so saving would overwrite the newer version.
+            Copy anything you want to keep, then Cancel to see the latest and edit that.
+          </div>
+        )}
         <div className="sp-docacts">
           <button className="k-btn ghost sm" onClick={() => setEditing(false)} disabled={busy}>Cancel</button>
           <button className="k-btn sm" onClick={save} disabled={busy}>Save</button>
@@ -182,7 +214,7 @@ async function upsertDoc(slug: string, doc: Artifact | null, type: 'charter' | '
 // The contents list scrolls in place, because a `#id` link would fight the
 // hash router.
 export function Charter({ slug, cap, aside }: { slug: string; cap: number; aside?: ReactNode }) {
-  const { docs, err, setErr, put } = useSpineDocs(slug);
+  const { docs, err, setErr, put, latestAt } = useSpineDocs(slug);
   const charter = docs?.find((d) => d.type === 'charter') ?? null;
   const parsed = useMemo(() => parseArchDoc(charter?.body || ''), [charter?.body]);
   const jump = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -200,7 +232,7 @@ export function Charter({ slug, cap, aside }: { slug: string; cap: number; aside
         {err && <div className="km-err" role="alert">{err}</div>}
         {docs === null && !err && <span className="sp-empty">Reading…</span>}
         {docs !== null && (
-          <DocEditor doc={charter} template={CHARTER_TEMPLATE}
+          <DocEditor doc={charter} template={CHARTER_TEMPLATE} latestAt={latestAt}
             emptyLine="No charter yet. Every session starts by reading its opening, so a few lines here pay for themselves."
             footnote={`Every Claude session on this project is told the first ${cap} characters of this charter.`}
             onSave={async (body) => {
@@ -265,7 +297,7 @@ export function Architecture({ slug, slices, milestones, highlightId, onStarred 
   /** Re-read the screen's Starred count after a star changes. */
   onStarred?: () => void;
 }) {
-  const { docs, err, setErr, put, drop } = useSpineDocs(slug);
+  const { docs, err, setErr, put, drop, latestAt } = useSpineDocs(slug);
   const arch = docs?.find((d) => d.type === 'architecture') ?? null;
   const adrs = useMemo(() => (docs || []).filter((d) => d.type === 'adr'), [docs]);
   const guard = async (fn: () => Promise<void>) => {
@@ -280,7 +312,7 @@ export function Architecture({ slug, slices, milestones, highlightId, onStarred 
       {err && <div className="km-err" role="alert">{err}</div>}
       {docs === null && !err && <span className="sp-empty">Reading…</span>}
       {docs !== null && (
-        <DocEditor doc={arch} template={ARCH_TEMPLATE}
+        <DocEditor doc={arch} template={ARCH_TEMPLATE} latestAt={latestAt}
           emptyLine="No architecture doc yet: the system map, the data model, how a change flows."
           onSave={async (body) => {
             try { setErr(''); put(await upsertDoc(slug, arch, 'architecture', 'Architecture', body)); }
@@ -408,7 +440,7 @@ function Adr({ n, adr, slices, milestones, opened, onStar, onPatch, onDelete }: 
 
 /** The Design view: one `design_doc`, read as the architecture doc reads. */
 export function Design({ slug }: { slug: string }) {
-  const { docs, err, setErr, put } = useSpineDocs(slug);
+  const { docs, err, setErr, put, latestAt } = useSpineDocs(slug);
   const design = docs?.find((d) => d.type === 'design_doc') ?? null;
   const parsed = useMemo(() => parseArchDoc(design?.body || ''), [design?.body]);
   return (
@@ -416,7 +448,7 @@ export function Design({ slug }: { slug: string }) {
       {err && <div className="km-err" role="alert">{err}</div>}
       {docs === null && !err && <span className="sp-empty">Reading…</span>}
       {docs !== null && (
-        <DocEditor doc={design} template={DESIGN_TEMPLATE}
+        <DocEditor doc={design} template={DESIGN_TEMPLATE} latestAt={latestAt}
           emptyLine="No design doc yet: the colours, the type, and the UI and UX calls every screen should keep."
           onSave={async (body) => {
             try { setErr(''); put(await upsertDoc(slug, design, 'design_doc', 'Design', body)); }
