@@ -8701,7 +8701,7 @@ button.ar-open:hover { background: var(--surface-hover); }
    detail/ArchDoc.tsx draws what lib/archDoc.ts parsed from the markdown.
    Wider than the reading column (.sp), because the map and the paired
    sections need the room. */
-.sp.ad { max-width: 1240px; gap: var(--space-10); }
+.sp.ad { max-width: none; gap: var(--space-10); }
 .ad code { font: var(--type-code); font-size: 12px; color: var(--text-primary); background: var(--surface-sunken); padding: 1px 5px; border-radius: var(--radius-xs); }
 .ad-eyebrow { font: var(--type-eyebrow); letter-spacing: var(--tracking-caps); text-transform: uppercase; color: var(--text-tertiary); }
 .ad-label { font: var(--type-label); color: var(--text-primary); }
@@ -9403,7 +9403,7 @@ button.ar-open:hover { background: var(--surface-hover); }
 .ad-pill.neutral { background: var(--status-neutral-bg); color: var(--status-neutral-fg); }
 
 /* The tab (design: Milestones.dc.html). */
-.sp.ms { max-width: 1240px; gap: var(--space-8); }
+.sp.ms { max-width: none; gap: var(--space-8); }
 .ms-top { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--space-5); flex-wrap: wrap; }
 .ms-intro { display: flex; flex-direction: column; gap: var(--space-2); max-width: 720px; }
 .ms-intro p { margin: 0; font: var(--type-body); color: var(--text-secondary); text-wrap: pretty; }
@@ -9468,12 +9468,20 @@ button.ar-open:hover { background: var(--surface-hover); }
 }
 
 /* THE CHARTER (design: Charter.dc.html) — contents, the reading column, the rail. */
-.ch { display: flex; gap: var(--space-10); align-items: flex-start; min-width: 0; }
-.ch-toc { position: sticky; top: var(--space-8); width: 168px; flex: none; display: flex; flex-direction: column; gap: var(--space-1); }
+/* Size the document's columns against its available space, including the project rail. */
+.ch { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 320px); gap: var(--space-6); align-items: start; min-width: 0; container-type: inline-size; }
+.ch:has(.ch-toc) { grid-template-columns: 168px minmax(0, 1fr) minmax(280px, 320px); }
+.ch > .ch-main, .ch > .ch-rail { overflow-wrap: anywhere; }
+@container (max-width: 1100px) {
+  .ch > .ch-toc { display: none; }
+  .ch > .ch-main { grid-column: 1 / -1; }
+  .ch > .ch-rail { grid-column: 1 / -1; position: static; max-height: none; width: 100%; max-width: none; min-width: 0; }
+}
+.ch-toc { position: sticky; top: var(--space-8); max-height: calc(100dvh - 2 * var(--space-8)); overflow-y: auto; width: 168px; flex: none; display: flex; flex-direction: column; gap: var(--space-1); }
 .ch-toc > .sp-eyebrow { padding: 0 var(--space-3) var(--space-3); }
 .ch-toc button { text-align: left; background: none; border: 0; cursor: pointer; font: var(--type-body-sm); color: var(--text-secondary); padding: 6px var(--space-3); border-radius: var(--radius-sm); }
 .ch-toc button:hover { background: var(--surface-hover); color: var(--text-primary); }
-.sp.ad.ch-main { flex: 1 1 560px; max-width: 1040px; }
+.sp.ad.ch-main { max-width: none; width: 100%; }
 .ch-overview { display: flex; flex-direction: column; gap: var(--space-4); scroll-margin-top: var(--space-8); }
 .ch-metarow { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); }
 .ch-sub { margin: 0; font: var(--type-body); color: var(--text-secondary); }
@@ -9501,7 +9509,7 @@ button.ar-open:hover { background: var(--surface-hover); }
 .ad-line { display: flex; gap: var(--space-3); align-items: baseline; padding: 0 var(--space-5); font: var(--type-body-sm); color: var(--text-secondary); }
 .ad-line > span:first-child { color: var(--text-tertiary); }
 
-.ch-rail { position: sticky; top: var(--space-8); flex: 1 1 320px; min-width: 280px; max-width: 420px; display: flex; flex-direction: column; gap: var(--space-4); }
+.ch-rail { position: sticky; top: var(--space-8); max-height: calc(100dvh - 2 * var(--space-8)); overflow-y: auto; flex: 1 1 320px; min-width: 280px; max-width: 420px; display: flex; flex-direction: column; gap: var(--space-4); }
 .ch-box { border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: var(--space-4) var(--space-5); display: flex; flex-direction: column; gap: var(--space-3); }
 .ch-box.card { background: var(--surface-card); padding: var(--space-5); }
 .ch-box.list { padding: var(--space-4) 0 var(--space-4); gap: 0; }
@@ -9526,11 +9534,14 @@ button.ar-open:hover { background: var(--surface-hover); }
 .ch-who .ad-label.accent { color: var(--text-accent); }
 .ch-who .ad-label.dim { color: var(--text-secondary); }
 .ch-who .dim { color: var(--text-tertiary); }
-@media (max-width: 1280px) { .ch-toc { display: none; } }
+@media (max-width: 1280px) {
+  .ch-toc { display: none; }
+  .ch:has(.ch-toc) { grid-template-columns: minmax(0, 1fr) minmax(280px, 320px); }
+}
 @media (max-width: 1100px) {
-  .ch { flex-direction: column; gap: var(--space-8); }
+  .ch, .ch:has(.ch-toc) { grid-template-columns: minmax(0, 1fr); gap: var(--space-6); }
   .sp.ad.ch-main { flex-basis: auto; width: 100%; }
-  .ch-rail { position: static; max-width: none; width: 100%; min-width: 0; flex-basis: auto; }
+  .ch-rail { position: static; max-height: none; max-width: none; width: 100%; min-width: 0; flex-basis: auto; }
 }
 @media (max-width: 640px) {
   .ad-row { grid-template-columns: minmax(0, 1fr); gap: var(--space-1); }
