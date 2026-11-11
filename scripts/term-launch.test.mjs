@@ -54,6 +54,13 @@ test('an empty note leaves no empty heading, and a long one says it was cut', ()
   assert.match(long, /built_note/); // the instructions after the note survive
 });
 
+test('a sent-back card leads with what the owner wants changed, and the last built note', () => {
+  const b = launchBrief('s', { id: 7, title: 't', note: 'n', refineNote: 'Make the bar orange.', builtNote: 'Added the bar.' }, 'stack-term-1');
+  assert.match(b, /SENT IT BACK[^]*Make the bar orange\.[^]*Added the bar\.[^]*The card's note:/);
+  // a card nobody sent back says nothing about a review
+  assert.doesNotMatch(launchBrief('s', { id: 7, title: 't', note: 'n', builtNote: 'x' }, 'stack-term-1'), /SENT IT BACK|last session/);
+});
+
 test('the columns move themselves: claim → In Progress, built_note → In Review', () => {
   const card = { done: false, review_tag: '', built_note: '', claimed_by: '' };
   assert.equal(listFor(card), 'planned');

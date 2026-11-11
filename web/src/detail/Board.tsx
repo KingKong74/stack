@@ -75,9 +75,13 @@
 //
 // THE CARD MENU: Park/Unpark, Archive, Delete (a `hook` row's delete tombstones
 // its fingerprint, so it has no undo), and Sign off on a held card. Edit item…
-// opens the full modal, the only writer of a human `risk`. Verdicts are given
-// through the API; this screen draws a verdicted card in Done
-// and says when a machine gave the verdict.
+// opens the full modal, the only writer of a human `risk`.
+//
+// THE VERDICT IS GIVEN HERE (2026-11-11), on an In Review card with built work:
+// Approve (verdict + tick, with Undo) or Send back (refine note, claim
+// released, back to To Do). Built work awaiting a verdict shows whatever
+// milestone is viewed. `approve` has the reasoning. A verdicted card is drawn
+// in Done and says when a machine gave it.
 
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -252,6 +256,9 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
   // from a dead button. Separate from `err` because it is not one, and cleared
   // by the same presses.
   const [note, setNote] = useState('');
+  // The receipt's one-press way back, for a write the owner may regret at
+  // once: a verdict. Cleared by the same presses that clear the receipt.
+  const [undo, setUndo] = useState<(() => Promise<void>) | null>(null);
 
   // ---- THE FOLDS (#510 sections, #511 columns) -----------------------------
   //
@@ -313,7 +320,7 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
   }, [loadShape]);
 
   const guard = async (fn: () => Promise<void>) => {
-    try { setErr(''); setNote(''); await fn(); }
+    try { setErr(''); setNote(''); setUndo(null); await fn(); }
     catch (e) { setErr((e as Error)?.message || 'Something went wrong.'); }
   };
 
@@ -386,6 +393,16 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
   }, [rows, activeId, bview.group]);
   const isPart = (it: RoadmapItem) => it.parentId !== null && partsOf.has(it.parentId);
   const placeOf = (it: RoadmapItem) => clusterKeyOf(it, partsOf.get(it.id) || []);
+  // WHAT THE IN REVIEW VERDICT STRIP MAY ANSWER: built and unverdicted (`isBuilt`
+  // already excludes a verdict), or a cluster whose parts all are, or already
+  // carry one. NOT `placeOf(it) === 'review'` alone: a card dragged into In
+  // Review by hand has a stored `list_key` and nothing built to give a verdict on.
+  const awaitsVerdict = (it: RoadmapItem) => {
+    if (it.done || it.reviewTag) return false;
+    const parts = partsOf.get(it.id) || [];
+    if (!parts.length) return isBuilt(it);
+    return parts.some(isBuilt) && parts.every((p) => isBuilt(p) || p.done || !!p.reviewTag);
+  };
 
   // THE MILESTONE BEING VIEWED (owner's call, 2026-11-09): the strip's ‹ ›
   // flick through every milestone, in order, and the board shows that one's
@@ -400,8 +417,15 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
     const s = it.sliceId !== null ? sl.find((x) => x.id === it.sliceId) : undefined;
     return s ? s.milestoneId : null;
   };
+  // BUILT WORK WAITING ON YOUR VERDICT IS IN VIEW WHATEVER MILESTONE IS
+  // (2026-11-11). The milestone strip scopes what is PLANNED; a verdict is owed
+  // on everything built, and scoping it hid ~25 built cards behind a finished
+  // milestone, where nothing on any screen could answer them. Such a card wears
+  // its milestone's name (`sliceLabel`, the `elsewhere` tag) so it reads as a
+  // visitor, not as this milestone's work.
   const inView = (it: RoadmapItem) => {
     if (!shownMs) return true;
+    if (awaitsVerdict(it)) return true;
     const m = msOfRow(it);
     return m === null ? shownMs.id === (curMs?.id ?? shownMs.id) : m === shownMs.id;
   };
@@ -518,7 +542,7 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
     }
     if (loose) order.push(NO_SLICE);
     return order;
-  }, [bySlice, areaOrder, rows, sl, ms, shownMs?.id]);
+  }, [bySlice, areaOrder, rows, sl, ms, shownMs?.id, partsOf]);
 
   // The lane holder per area: an OPEN item with a branch on it. Same predicate
   // as the server's holders query — not done, claim non-empty — and read off
@@ -817,6 +841,52 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
       await deleteRoadmapItem(slug, it.id);
       setRows((r) => r.filter((x) => x.id !== it.id));
       onRefresh();
+    });
+
+  // ---- THE VERDICT, from In Review (2026-11-11) ------------------------------
+  //
+  // The owner's verdict lived on `#/inbox` until that screen was removed, which
+  // left built work with no way out of In Review from any browser. It is back
+  // where the work is drawn.
+  //
+  // APPROVE IS A VERDICT AND A TICK, in one PATCH per row. The server's rule
+  // that a verdict does not tick (lists.js) was written for the fleet, whose
+  // merge job ticked after merging a branch. Work now lands from terminal
+  // sessions committing to main, and nothing else ever ticks, so a verdict
+  // alone left `done` false and every milestone at 0% for ever. The button's
+  // title says the tick out loud, and Undo restores all three columns it touched.
+  //
+  // A CLUSTER IS ANSWERED WHOLE: the cluster row and each of its built parts.
+  // Send back releases every built part's claim, or the cluster's rolled-up
+  // column would still read In Review.
+  const verdictRows = (it: RoadmapItem) =>
+    [it, ...(partsOf.get(it.id) || []).filter((p) => isBuilt(p))];
+  const approve = (it: RoadmapItem) =>
+    guard(async () => {
+      const targets = verdictRows(it);
+      const before = targets.map((x) => ({ id: x.id, done: x.done, claimedBy: x.claimedBy, reviewTag: x.reviewTag }));
+      const out: RoadmapItem[] = [];
+      for (const x of targets) out.push(await patchRoadmapItem(slug, x.id, { review_tag: 'solid', done: true }));
+      setRows((r) => r.map((x) => out.find((o) => o.id === x.id) || x));
+      onRefresh();
+      setNote(`#${it.id} approved and ticked${targets.length > 1 ? `, with ${targets.length - 1} built part${targets.length === 2 ? '' : 's'}` : ''}. It is in Done and counts as landed.`);
+      setUndo(() => async () => {
+        const back: RoadmapItem[] = [];
+        for (const b of before) {
+          back.push(await patchRoadmapItem(slug, b.id, { review_tag: b.reviewTag, done: b.done, claimed_by: b.claimedBy }));
+        }
+        setRows((r) => r.map((x) => back.find((o) => o.id === x.id) || x));
+        onRefresh();
+        setNote(`#${it.id} is back in In Review, with no verdict.`);
+      });
+    });
+  const sendBack = (it: RoadmapItem, text: string) =>
+    guard(async () => {
+      const out: RoadmapItem[] = [await patchRoadmapItem(slug, it.id, { refine_note: text, claimed_by: '', listKey: '' })];
+      for (const p of verdictRows(it).slice(1)) out.push(await patchRoadmapItem(slug, p.id, { claimed_by: '', listKey: '' }));
+      setRows((r) => r.map((x) => out.find((o) => o.id === x.id) || x));
+      onRefresh();
+      setNote(`#${it.id} went back to To Do with your note. Run it in a terminal and the session starts from what you asked for.`);
     });
 
   // ---- the spine (#608) -----------------------------------------------------
@@ -1129,7 +1199,12 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
             not `alert`: it is confirmation, not a problem, and an assertive
             live region would interrupt a screen reader mid-sentence to say
             something went RIGHT. */}
-        {note && <div className="km-note" role="status">{note}</div>}
+        {note && (
+          <div className="km-note" role="status">
+            {note}
+            {undo && <button className="km-undo" onClick={() => { const u = undo; void guard(u); }}>Undo</button>}
+          </div>
+        )}
 
         {view === 'backlog' && (
           <BacklogView slug={slug} rows={rows} boxes={boxes} slices={sl} activeId={activeId} areas={areas}
@@ -1295,6 +1370,16 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
                 onBuildNow={() => { setCardMenu(null); buildNow(it); }}
                 onRun={col.key === 'planned' && !it.done && !String(it.claimedBy || '').trim() && !isHeld(it)
                   ? () => { closeAll(); setCardMenu(null); runInTerminal(it); } : undefined}
+                // On ANY column, not only In Review: a built card somebody
+                // dragged into Done by hand still has no verdict.
+                verdict={awaitsVerdict(it) ? {
+                  onApprove: () => { closeAll(); approve(it); },
+                  onSendBack: (text) => { closeAll(); sendBack(it, text); },
+                } : undefined}
+                elsewhere={(() => {
+                  const m = msOfRow(it);
+                  return shownMs && m !== null && m !== shownMs.id ? ms.find((x) => x.id === m)?.name || '' : '';
+                })()}
                 onAddToSprint={(sid) => { setCardMenu(null); addToSprint(it, sid); }}
                 onReady={(on) => { setCardMenu(null); setReady(it, on); }}
                 slices={sl} milestones={ms}
@@ -1876,8 +1961,15 @@ function IssueCard({
   priOpen, onPri, onPick, ptsOpen, onPts, onPoints, menuOpen, onMenu,
   onKind, onDue, onEdit, onSignOff, onPark, onArchive, onStar, onDerive, onDelete,
   activeSprint, onBuildNow, onAddToSprint, onRun, onReady, tint, showArea,
-  parentItem, kids, parts, away, onOpen, slices, milestones, onSlice,
+  parentItem, kids, parts, away, onOpen, slices, milestones, onSlice, verdict, elsewhere,
 }: {
+  /** The owner's verdict, drawn only on a card with built work and no verdict
+   *  yet (`awaitsVerdict`), which derives into In Review unless dragged. Approve ticks as well; Send back
+   *  writes the refine note and returns the card to To Do. */
+  verdict?: { onApprove: () => void; onSendBack: (text: string) => void };
+  /** The milestone this card belongs to when it is not the one being viewed
+   *  (built work is shown whatever milestone is), else ''. */
+  elsewhere: string;
   /** #608 — the slices a card can move into, and the move (null = Icebox). */
   slices: Slice[]; milestones: Milestone[];
   onSlice: (sliceId: number | null) => void;
@@ -1964,6 +2056,9 @@ function IssueCard({
   // row keeps saying so after its hold is answered; see the chip below.
   const fly = item.source === 'fly';
   const [confirming, setConfirming] = useState(false);
+  // The Send back draft, open on this card only; null = closed.
+  const [backText, setBackText] = useState<string | null>(null);
+  const sentBack = !!item.refineNote?.trim() && !item.claimedBy.trim() && !item.done;
   // The anchor both of this card's popovers are measured against — the card
   // itself, which is where the stylesheet anchored them before they left the
   // column's clip (see `Popover`).
@@ -1999,7 +2094,7 @@ function IssueCard({
         ['--km-tint' as string]: tint,
       } : undefined}
       data-hl={item.id} onClick={onSelect} onDoubleClick={openItem}
-      draggable={!editing && !parts} onDragStart={onDragStart} onDragEnd={onDragEnd}>
+      draggable={!editing && !parts && backText === null} onDragStart={onDragStart} onDragEnd={onDragEnd}>
       {editing
         ? <InlineTitle initial={item.title} onCommit={onInline} onCancel={onCancelInline} />
         : (
@@ -2082,8 +2177,18 @@ function IssueCard({
         </span>
       </div>
 
-      {(held || item.ready || fly || sprint || kind || due || parentItem || kids || (showArea && item.area) || item.claimedBy || item.skipped || item.reviewTag) && (
+      {(held || item.ready || fly || sprint || kind || due || parentItem || kids || (showArea && item.area) || item.claimedBy || item.skipped || item.reviewTag || sentBack || elsewhere) && (
         <div className="km-cardtags">
+          {/* SENT BACK FROM IN REVIEW, and not yet picked up again: the owner's
+              note is the job, so the chip carries it in its title. */}
+          {sentBack && (
+            <span className="k-tag warning" title={`Sent back: ${item.refineNote}`}>sent back</span>
+          )}
+          {elsewhere && (
+            <span className="k-tag" title={`Filed under the milestone "${elsewhere}". Built work waiting on your verdict shows whichever milestone you are viewing.`}>
+              <KitIcon name="bookmark" size={11} /><span className="v">{elsewhere}</span>
+            </span>
+          )}
           {/* HELD IS FIRST, ahead of even the sprint chip, because it OUTRANKS
               it: a held row in the box in progress still does not run, so a
               card wearing the sprint's `on` tone and nothing else would be a
@@ -2192,6 +2297,42 @@ function IssueCard({
               : 'Verdict on record'}>
               {item.reviewTag}{item.verdictSource === 'auto' ? ' · auto' : ''}
             </span>
+          )}
+        </div>
+      )}
+
+      {/* THE VERDICT STRIP (In Review only). It stops every press and double
+          press from reaching the card, so typing a note never opens the focus
+          canvas, and the card is not draggable while the note is open. */}
+      {verdict && (
+        <div className="km-verdict" onClick={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
+          {item.builtNote.trim() && <p className="bn" title={item.builtNote}>{item.builtNote}</p>}
+          {backText === null ? (
+            <div className="acts">
+              <button className="km-vbtn ok" onClick={verdict.onApprove}
+                title="Approve: gives your verdict and ticks the card, so it moves to Done and counts as landed. Use it once the change is on main. Undo is offered straight after.">
+                <KitIcon name="check" size={13} />Approve
+              </button>
+              <button className="km-vbtn" onClick={() => setBackText('')}
+                title="Send back: say what should change. The card returns to To Do with your note, and Run in terminal starts a session from it.">
+                Send back…
+              </button>
+            </div>
+          ) : (
+            <div className="back">
+              <textarea autoFocus value={backText} rows={3} aria-label={`What should change on #${item.id}`}
+                placeholder="What should change?"
+                onChange={(e) => setBackText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') setBackText(null);
+                  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && backText.trim()) { verdict.onSendBack(backText.trim()); setBackText(null); }
+                }} />
+              <div className="acts">
+                <button className="km-vbtn primary" disabled={!backText.trim()}
+                  onClick={() => { verdict.onSendBack(backText.trim()); setBackText(null); }}>Send back</button>
+                <button className="km-vbtn" onClick={() => setBackText(null)}>Cancel</button>
+              </div>
+            </div>
           )}
         </div>
       )}

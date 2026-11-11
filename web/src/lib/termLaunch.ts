@@ -35,11 +35,25 @@ export const termClaim = (tmux: string) => `term:${tmux}`;
 const NOTE_MAX = 3000;
 
 /** Claude's first prompt for a card run from the board. */
-export function launchBrief(slug: string, item: Pick<RoadmapItem, 'id' | 'title' | 'note'>, tmux: string): string {
+// A SENT-BACK CARD (the board's In Review → Send back…) carries the owner's
+// `refine_note` and keeps its old `built_note`. The brief leads with the
+// refine note, because it is the job: the session is changing work that already
+// landed once, not building the card from scratch.
+export function launchBrief(slug: string, item: Pick<RoadmapItem, 'id' | 'title' | 'note'> & { refineNote?: string; builtNote?: string }, tmux: string): string {
   const note = String(item.note || '').trim();
   const cut = note.length > NOTE_MAX ? `${note.slice(0, NOTE_MAX)}\n[note cut at ${NOTE_MAX} of ${note.length} characters; the full text is on the card]` : note;
+  const refine = String(item.refineNote || '').trim();
+  const built = String(item.builtNote || '').trim();
   return [
     `Work Stack roadmap item #${item.id} in the ${slug} project: ${item.title}`,
+    ...(refine ? [
+      '',
+      'The owner reviewed this card and SENT IT BACK. What they want changed:',
+      refine,
+      ...(built ? ['', 'What the last session said it built:', built] : []),
+      '',
+      'Build on what is already there: change what the owner asked for, not the whole card.',
+    ] : []),
     ...(cut ? ['', 'The card\'s note:', cut] : []),
     '',
     `This session was opened from the board's Run in terminal, and the item is claimed for it as \`${termClaim(tmux)}\`. That claim is yours: this is the session it names, so the SessionStart block listing it does not mean somebody else has the item.`,

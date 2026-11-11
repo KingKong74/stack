@@ -5104,6 +5104,45 @@ body[data-mc-full] .totop { display: none; }
 }
 .km-card[draggable='true'] { cursor: grab; }
 .km-cardtags { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
+/* THE VERDICT STRIP (In Review). The built note is what the verdict is given
+   against, so it leads, clamped to three lines with the whole of it in the
+   title. Approve wears the success tone because it is the owner's own verdict,
+   never an agent's call (those are drawn in the accent). */
+.km-verdict {
+  display: flex; flex-direction: column; gap: var(--space-3);
+  border-top: 1px solid var(--border-subtle); padding-top: var(--space-4);
+  cursor: default;
+}
+.km-verdict .bn {
+  margin: 0; font: var(--type-caption); color: var(--text-secondary);
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+}
+.km-verdict .acts { display: flex; gap: var(--space-3); flex-wrap: wrap; }
+.km-verdict .back { display: flex; flex-direction: column; gap: var(--space-3); }
+.km-verdict textarea {
+  width: 100%; box-sizing: border-box; resize: vertical; min-height: 64px;
+  padding: var(--space-3) var(--space-4); border-radius: var(--radius-md);
+  background: var(--surface-sunken); border: 1px solid var(--border-default);
+  color: var(--text-primary); font: var(--type-body-sm);
+}
+.km-vbtn {
+  height: var(--control-h-sm); padding: 0 10px; border-radius: var(--radius-md);
+  display: inline-flex; align-items: center; gap: var(--space-2);
+  background: var(--surface-card); border: 1px solid var(--border-default);
+  color: var(--text-primary); font: var(--weight-medium) var(--text-sm)/1 var(--font-sans);
+  transition: var(--transition-control); cursor: pointer;
+}
+.km-vbtn:hover { background: var(--surface-overlay); border-color: var(--border-strong); }
+.km-vbtn.ok { background: var(--status-success-bg); color: var(--status-success-fg); border-color: transparent; }
+.km-vbtn.ok:hover { border-color: var(--status-success-fg); }
+.km-vbtn.primary { background: var(--action-primary); color: var(--white); border-color: transparent; }
+.km-vbtn.primary:hover { background: var(--action-primary-hover); }
+.km-vbtn:disabled { opacity: 0.5; cursor: default; }
+.km-note { display: flex; align-items: center; gap: var(--space-4); }
+.km-undo {
+  margin-left: auto; background: none; border: 0; padding: 0; cursor: pointer;
+  color: inherit; font: var(--weight-medium) var(--text-sm)/1 var(--font-sans); text-decoration: underline;
+}
 /* `max-width` AND `min-width: 0` are both needed: a flex item's default
    `min-width: auto` refuses to shrink below its content, which is how a long
    branch name escaped the card entirely. The truncation is on the inner span
