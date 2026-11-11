@@ -8865,7 +8865,7 @@ button.ar-open:hover { background: var(--surface-hover); }
    done · you are here · ahead. The middle column is the one raised card.
    Tokens only.
    ========================================================================== */
-.cb { display: flex; flex-direction: column; gap: var(--space-5); max-width: 1360px; min-width: 0; }
+.cb { display: flex; flex-direction: column; gap: var(--space-5); min-width: 0; }
 .cb-rail, .cb-cols {
   display: grid; gap: var(--space-5);
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr) minmax(0, 1fr);
