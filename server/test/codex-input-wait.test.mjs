@@ -1,0 +1,26 @@
+// Codex waiting detection: node server/test/codex-input-wait.test.mjs
+import assert from 'node:assert/strict';
+import { detectWaiting } from '../../terminal/input-wait.mjs';
+const E = '\x1b';
+const input = `${E}[1m›${E}[0m ${E}[2mAsk Codex to do anything${E}[0m`;
+const footer = '\n  GPT-6.1-Sol default · ~/stack\n  ← for agents · ? for shortcuts';
+const answer = '• Fixed the terminal notification.\n\n  Tests passed.\n';
+const receipt = '\n  Worked for 1m 47s • 19:26\n\n';
+const done = answer + receipt + input + footer;
+const read = (s) => detectWaiting(s, 'codex');
+assert.equal(read(done)?.kind, 'input');
+assert.equal(read(done)?.detail, 'Tests passed.');
+assert.equal(read(done.replace(input, '› '))?.kind, 'input');
+assert.equal(read(done.replace(input, '› Please also fix this')), null);
+assert.equal(read(input + footer), null, 'welcome screen');
+assert.equal(read(answer + '\n• Working (33s • esc to interrupt)\n' + input + footer), null);
+assert.equal(read(answer + receipt + '› Next task\n• Working (33s • esc to interrupt)\n' + input + footer), null, 'old receipt');
+assert.equal(read(answer + receipt + '• Queued follow-up inputs\n' + input + footer), null);
+assert.equal(read(answer + receipt + input + '\n$ '), null, 'exited CLI');
+assert.equal(read(''), null);
+assert.equal(detectWaiting(done), null, 'Codex requires runtime identification');
+assert.equal(read(done.replace('Tests passed.', 'Checks passed.'))?.fingerprint === read(done)?.fingerprint, false);
+const longDone = 'Long answer content '.repeat(80) + done;
+assert.equal(read('Earlier output\n' + longDone)?.fingerprint, read(longDone)?.fingerprint);
+assert.equal(read(longDone.replace('Long answer content ', 'Long answer\ncontent '))?.fingerprint, read(longDone)?.fingerprint);
+console.log('Codex completed-turn detection passed');

@@ -289,7 +289,7 @@ function pushDetached() {
       // the block watch below has CONFIRMED across two reads, and re-checked
       // against the pane as it is now, so a session answered since the last
       // tick is not advertised as still waiting.
-      waiting: confirmedWaiting(s.name),
+      waiting: confirmedWaiting(s.name, s.model),
       // #505 — and WHAT ACTUALLY ANSWERED, read off the session's own
       // transcript. A SIBLING of `model`, not a field inside it, for two
       // reasons: a combo route resolves per request so the two are genuinely
@@ -380,20 +380,20 @@ function noteRun(s, tail) {
   return runWorking(next, now);
 }
 const waitSeen = new Map(); // name -> { fp, confirmed: {kind, detail, fingerprint} | null }
-function scanWaiting(name) {
-  const cand = detectWaiting(paneTailStyled(name));
+function scanWaiting(name, model) {
+  const cand = detectWaiting(paneTailStyled(name), agentForTag(model));
   if (!cand) { waitSeen.delete(name); return null; }
   const prev = waitSeen.get(name);
   const confirmed = prev && prev.fp === cand.fingerprint ? cand : null;
   waitSeen.set(name, { fp: cand.fingerprint, confirmed });
   return confirmed;
 }
-function confirmedWaiting(name) {
+function confirmedWaiting(name, model) {
   const w = waitSeen.get(name)?.confirmed;
   if (!w) return null;
   // Still true of the pane right now? A reply typed since the last tick has
   // made it false, and leaning to null is the rule.
-  return detectWaiting(paneTailStyled(name))?.fingerprint === w.fingerprint ? w : null;
+  return detectWaiting(paneTailStyled(name), agentForTag(model))?.fingerprint === w.fingerprint ? w : null;
 }
 function watchBlocks() {
   if (!tmuxAvailable()) return;
@@ -402,7 +402,7 @@ function watchBlocks() {
     .map((s) => {
       const tail = paneTail(s.name);
       const blocked = detectPrompt(tail)?.fingerprint || '';
-      const waiting = blocked ? '' : (scanWaiting(s.name)?.fingerprint || '');
+      const waiting = blocked ? '' : (scanWaiting(s.name, s.model)?.fingerprint || '');
       if (blocked) waitSeen.delete(s.name);
       // …and the work timer, off the same read. A run starting or stopping is
       // a change worth pushing now, not at the next 60s tick.

@@ -1,4 +1,4 @@
-// Has this claude session FINISHED ITS TURN and gone quiet at its own input?
+// Has this agent FINISHED ITS TURN and gone quiet at its own input?
 //
 // #519 — the half of "a session stopped for you" that prompt-scan.mjs cannot
 // see. prompt-scan reads a PERMISSION prompt, and the owner runs every
@@ -109,7 +109,7 @@ export function hasDraft(styled) {
     }
     const ch = styled[i];
     if (!seenGlyph) {
-      if (ch === '❯' || ch === '>') seenGlyph = true;
+      if (ch === '❯' || ch === '>' || ch === '›') seenGlyph = true;
     } else if (!/[\s │]/.test(ch) && !dim) {
       return true;
     }
@@ -133,7 +133,8 @@ const cap = (s, n = 200) => (s.length <= n ? s : `${s.slice(0, n - 1)}…`);
  * @param {string} styledTail `tmux capture-pane -e -p` output
  * @returns {{kind:'input'|'choice', detail:string, fingerprint:string} | null}
  */
-export function detectWaiting(styledTail) {
+export function detectWaiting(styledTail, runtime = 'claude') {
+  if (runtime === 'codex') return detectCodexWaiting(styledTail);
   if (typeof styledTail !== 'string' || !styledTail) return null;
   const raw = styledTail.replace(/\s+$/, '').split('\n');
   const text = raw.map(plain);
@@ -203,4 +204,33 @@ export function detectWaiting(styledTail) {
 // decides whether that text is the human's or claude's dimmed suggestion.
 function hasDraftCandidate(stripped) {
   return /^[❯>][\s ]+\S/.test(stripped);
+}
+
+// Codex has no ruled input box. Require its completed-turn receipt followed
+// by the final composer and shortcuts footer. Startup, shell prompts and old
+// receipts above a new working turn must never advertise a stop.
+function detectCodexWaiting(styledTail) {
+  if (typeof styledTail !== 'string' || !styledTail) return null;
+  const raw = styledTail.trimEnd().split('\n');
+  const text = raw.map(plain);
+  let prompt = -1;
+  for (let i = text.length - 1; i >= 0; i--) {
+    if (/^\s*›(?:\s|$)/.test(text[i])) { prompt = i; break; }
+  }
+  if (prompt < 0 || hasDraft(raw[prompt])) return null;
+  const footer = text.slice(prompt + 1).filter((l) => l.trim());
+  if (footer.length > 6 || !footer.some((l) => /\? for shortcuts/.test(l))) return null;
+  let receipt = -1;
+  for (let i = prompt - 1; i >= 0; i--) {
+    if (/^\s*Worked for \d/.test(text[i])) { receipt = i; break; }
+  }
+  if (receipt < 0) return null;
+  // A fresh user message or work after that receipt means it is an old turn.
+  const after = text.slice(receipt + 1, prompt).join('\n');
+  if (WORKING_RE.test(after) || /^\s*›/m.test(after) || /queued follow-up inputs/i.test(after)) return null;
+  if (after.trim()) return null;
+  const above = text.slice(0, receipt).filter((l) => l.trim());
+  const detail = cap((above.at(-1) || '').trim().replace(/^[•]\s*/, ''));
+  if (!detail) return null;
+  return { kind: 'input', detail, fingerprint: fingerprint('codex-input', raw.slice(0, receipt)) };
 }
