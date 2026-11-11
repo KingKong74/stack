@@ -781,15 +781,17 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   // (#501) Every session this mount has already ASKED about, answered or not —
   // `labelAskKeys` (lib/termName) says why a failed ask must not be retried.
   const labelAskedRef = useRef<Set<string>>(new Set());
-  const refreshLabels = async (keys: string[]) => {
+  type LabelInput = { sid?: string; tmux?: string; prompt: string };
+  const labelQueue = useRef<LabelInput[]>([]);
+  const refreshLabels = async (keys: string[], input?: LabelInput) => {
     // Guard on a REF, not the state: two triggers in the same tick would both
     // read the stale `false` and fire two Gemini calls for one set of tabs.
-    if (labelBusyRef.current) return;
+    if (labelBusyRef.current) { if (input) labelQueue.current.push(input); return; }
     labelBusyRef.current = true;
     for (const k of keys) labelAskedRef.current.add(k);
     setLabelBusy(true);
     try {
-      const r = await labelTerminalSessions();
+      const r = await labelTerminalSessions(input);
       setLabels((prev) => {
         const next = { ...prev };
         // Key by SID — every session has one, so shells get named too. The
@@ -804,9 +806,13 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
         return next;
       });
     } catch { /* keyless (503) or offline — sessions just stay unnamed */ }
-    finally { labelBusyRef.current = false; setLabelBusy(false); }
+    finally {
+      labelBusyRef.current = false; setLabelBusy(false);
+      const next = labelQueue.current.shift();
+      if (next) void refreshLabels([], next);
+    }
   };
-  // Ask once after meaningful output. Gemini names the task; manual renames win.
+  // Output-based fallback asks once; each submitted prompt explicitly retitles.
   const seenRef = useRef<Record<number, number>>({});
   const NAME_AFTER_BYTES = 2000;
   // …and what Swarm reads as WORKING: a session that put out a real amount in
@@ -847,15 +853,11 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
     const keys = labelAskKeys(live.map((s) => ({ id: s.id, named: !!(renamed[s.id] || (s.sid && labels[s.sid]) || (s.tmux && labels[s.tmux])), bytes: seenRef.current[s.id] || 0 })), detachedShown, labels, labelAskedRef.current, NAME_AFTER_BYTES);
     if (keys.length) void refreshLabels(keys);
   }, visible);
-  // Explicit renames persist by tmux identity. Typed input is a temporary fallback.
+  // Only explicit renames override the generated title.
   const [names, setNames] = useState<Record<string, string>>(() => getTermNames());
-  // This mount's captures, keyed by tab id, for the window between "you pressed
-  // Enter" and "the daemon told us the tmux name" — a session named in its
-  // first second has nothing durable to key on yet, and waiting would mean
-  // watching the name you just typed not appear.
-  const [typed, setTyped] = useState<Record<number, string>>({});
-  const noteTyped = (id: number, text: string) => {
-    setTyped((cur) => (cur[id] ? cur : { ...cur, [id]: text }));
+  const noteTyped = (text: string, target: { sid?: string; tmux?: string }) => {
+    if (!target.sid && !target.tmux) return;
+    void refreshLabels([], { ...target, prompt: text });
   };
   // WHICH SESSION IS BEING RENAMED, AND ON WHICH SURFACE. The `where` is not
   // bookkeeping: the rail row and the pane title both draw an editor for the
@@ -874,7 +876,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   const [renamed, setRenamed] = useState<Record<number, string>>({});
   const labelOf = (s: Sess) =>
     renamed[s.id] || (s.tmux && names[s.tmux])
-    || (s.sid && labels[s.sid]) || (s.tmux && labels[s.tmux]) || typed[s.id] || '';
+    || (s.sid && labels[s.sid]) || (s.tmux && labels[s.tmux]) || '';
   // Persist explicit renames once the daemon supplies a tmux identity.
   useEffect(() => {
     let wrote = false;
@@ -887,7 +889,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
     }
     if (wrote) setNames(getTermNames());
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [typed, renamed, sessions]);
+  }, [renamed, sessions]);
   const startRename = (x: Sess, where: 'tab' | 'pane') => {
     setRenaming({ id: x.id, where }); setDraft(labelOf(x));
   };
@@ -1619,7 +1621,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                     const dst = statusOfDet(d);
                     const dcmd = d.cmd || 'claude';
                     return (
-                      <div key={e.key} className={`tv-tab parked${dst === 'asking' ? (detSeen(d) ? ' asked' : ' asking') : ''}${view === 'swarm' && flash === d.name ? ' on' : ''} ${projTint(e.project)}`}
+                      <div key={e.key} className={`tv-tab runtime-${dcmd} parked${dst === 'asking' ? (detSeen(d) ? ' asked' : ' asking') : ''}${view === 'swarm' && flash === d.name ? ' on' : ''} ${projTint(e.project)}`}
                         onClick={() => openParked(d)}
                         onContextMenu={(ev) => { ev.preventDefault(); setMenu({ id: -1, det: d.name, x: ev.clientX, y: ev.clientY }); }}
                         title={`${nameOfDet(d)} · ${TOOL[dcmd].name} · ~/${d.cwd || ''} — running, not open here. Click to open; right-click to end.`}>
@@ -1645,7 +1647,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                   // Main + 3: which tabs are on the stage, and where (main green, the small three blue).
                   const slot = view !== 'split' ? '' : s.id === cur?.id ? ' in-main' : minis.some((m) => m.id === s.id) ? ' in-mini' : '';
                   return (
-                    <div key={s.id} data-tab={s.id} className={`tv-tab${on ? ' on' : ''}${slot}${st === 'asking' ? (sessSeen(s) ? ' asked' : ' asking') : ''} ${projTint(e.project)}`}
+                    <div key={s.id} data-tab={s.id} className={`tv-tab runtime-${s.cmd}${on ? ' on' : ''}${slot}${st === 'asking' ? (sessSeen(s) ? ' asked' : ' asking') : ''} ${projTint(e.project)}`}
                       draggable onDragStart={(e) => { e.dataTransfer.effectAllowed = 'copyMove'; e.dataTransfer.setData('text/x-stack-tab', String(s.id)); setDragTab(s.id); }}
                       onDragEnd={() => { setDragTab(null); setSnapPreview(null); }}
                       onClick={() => selectTab(s)}
@@ -1861,7 +1863,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
               } : undefined;
             return (
               <div key={s.id} data-win={place === 'win' ? s.id : undefined}
-                className={`tv-pane ${place}${place === 'win' && winOf?.z === topZ ? ' front' : ''}${dropWin === s.id ? ' drop' : ''}${loud ? ' asking' : s.status === 'live' && st === 'asking' ? ' asked' : ''}`}
+                className={`tv-pane runtime-${s.cmd} ${place}${place === 'win' && winOf?.z === topZ ? ' front' : ''}${dropWin === s.id ? ' drop' : ''}${loud ? ' asking' : s.status === 'live' && st === 'asking' ? ' asked' : ''}`}
                 style={style}
                 onMouseDown={place === 'win' ? () => focusWin(s.id) : undefined}
                 onDragOver={place === 'win' ? (e) => { if (!isTabDrag(e)) return; e.preventDefault(); e.stopPropagation(); if (dropWin !== s.id) { setDropWin(s.id); setSnapPreview(null); } } : undefined}
@@ -1964,7 +1966,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                   onSid={(sid) => setSessions((c) => c.map((x) => (x.id === s.id ? { ...x, sid } : x)))}
                   onExit={(name) => noteTmuxEnded(s.cwd, name)}
                   onOutput={(bytes) => noteOutput(s.id, bytes)}
-                  onTyped={(text) => noteTyped(s.id, text)}
+                  onTyped={noteTyped}
                   onNotice={(label, ms) => noteNotice(s.id, label, ms)}
                   register={(h) => { if (h) handles.current.set(s.id, h); else handles.current.delete(s.id); }} />
                 {place === 'main' ? (
@@ -2057,7 +2059,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                   const openId = t.sess?.id;
                   return (
                     <div key={t.key}
-                      className={`tv-tile${hov ? ' hov' : ''}${compact ? ' compact' : ''}${flash === t.key ? ' flash' : ''}${dropOn === t.key && dragTile !== t.key ? ' drop' : ''}${dragTile === t.key ? ' dragging' : ''}${t.st === 'asking' ? (t.seen ? ' asked' : ' asking') : ''} ${projTint(t.project)}`}
+                      className={`tv-tile runtime-${t.cmd}${hov ? ' hov' : ''}${compact ? ' compact' : ''}${flash === t.key ? ' flash' : ''}${dropOn === t.key && dragTile !== t.key ? ' drop' : ''}${dragTile === t.key ? ' dragging' : ''}${t.st === 'asking' ? (t.seen ? ' asked' : ' asking') : ''} ${projTint(t.project)}`}
                       draggable
                       onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/x-stack-tile', t.key); setDragTile(t.key); setTilePeek(null); }}
                       onDragEnd={() => { setDragTile(null); setDropOn(null); }}
@@ -2302,7 +2304,7 @@ function TermSession({ sess, visible, focused, fontSize, onStatus, onUsage, onTm
   // #512 — THE FIRST THING THE HUMAN SENT THIS SESSION, which is its name.
   // Fires at most once per session (lib/termName latches), so the parent may
   // treat it as an assignment rather than a stream.
-  onTyped: (text: string) => void;
+  onTyped: (text: string, target: { sid?: string; tmux?: string }) => void;
   // A finished gesture, already worded and already glyphed — "⧉ copied 12
   // lines", "📎 shot.png → path typed". With a canvas and no browser selection
   // to look at, "did that work?" is otherwise unanswerable, so the pane says
@@ -2322,10 +2324,12 @@ function TermSession({ sess, visible, focused, fontSize, onStatus, onUsage, onTm
   // frame so the daemon re-attaches to the surviving session instead of
   // spawning a new one.
   const tmuxRef = useRef<string | null>(sess.tmux ?? null);
-  // #512 — the pending first line, and the latch that makes it the only one.
+  // Pending prompt capture survives chunks and resets on each submission.
   // A REF, not state: it changes on every keystroke and nothing renders it, so
   // making it state would re-render a terminal grid on every character typed.
   const typedRef = useRef(newCapture());
+  const onTypedRef = useRef(onTyped);
+  onTypedRef.current = onTyped;
   // The relay's id for this session, learned from its first frame.
   const sidRef = useRef<string | null>(null);
 
@@ -2688,11 +2692,10 @@ function TermSession({ sess, visible, focused, fontSize, onStatus, onUsage, onTm
     // It rides the send rather than replacing it: the capture is pure, cannot
     // throw on anything a keyboard produces, and sees a copy of a string the
     // handler already holds — so a session cannot fail to type because its
-    // name failed to parse. `noteTyped` latches after the first submit, so
-    // this is a dead call for the whole life of a session past its first line.
+    // prompt failed to parse. Gemini is called separately after submission.
     const noteTyped = (d: string) => {
-      const name = feedTyped(typedRef.current, d);
-      if (name) onTyped(name);
+      const name = feedTyped(typedRef.current, d, true);
+      if (name) onTypedRef.current(name, { sid: sidRef.current || undefined, tmux: tmuxRef.current || undefined });
     };
     // Input goes out immediately — no batching on the keypress path. #135
     const data = term.onData((d) => {

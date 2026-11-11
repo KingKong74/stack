@@ -6,9 +6,8 @@
 -->
 # Working with my projects through Stack
 
-Stack is my self-hosted side-project command centre. Each project has a live
-"where you left off" resume card, an activity feed, a bug tracker, a priority
-roadmap and sticky notes. State is **auto-managed** — you don't have to curate it.
+Stack is my self-hosted project command centre: resume cards, activity, bugs,
+roadmap and sticky notes. State is **auto-managed**.
 
 `/api/inbox` is retired.
 
@@ -19,7 +18,7 @@ use YOLO mode; its sidepanel lists account models and reported quota windows. Co
 resume injection, branch claims, SessionEnd backstop or usage/edit tracking. Read live state and
 claims before choosing board work. Author checkpoint JSON and pipe it to
 `node ~/.stack/stack-checkpoint.mjs`; `/checkpoint` is a Claude command, not a Codex command.
-Unknown telemetry never means zero usage or no active work.
+Unknown usage stays unknown. `POST /api/terminal/label` accepts `{sid, tmux, prompt}` to retitle a session.
 
 ## Trust the injected context
 

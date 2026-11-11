@@ -45,7 +45,7 @@
  *  correct only until ESC and [D land in different ones, and then an arrow key
  *  is three characters of the session's name. Scanning character by character
  *  with the state carried across chunks has no such seam. */
-export type TypedCapture = { buf: string; done: boolean; esc: EscState };
+export type TypedCapture = { buf: string; done: boolean; esc: EscState; sequence?: string; paste?: boolean };
 
 /** text — ordinary characters. esc — ESC seen, deciding what follows.
  *  csi — inside ESC[ … final, which is where arrow keys and BOTH bracketed
@@ -64,19 +64,18 @@ const MAX_BUF = 400;
 const MAX_NAME = 60;
 
 /**
- * Replay one chunk of the keystroke stream into the pending line.
- *
- * Returns the finished NAME when this chunk completed one (and latches `done`
- * so the session is never renamed), or null while there is still nothing worth
- * naming it. Mutates `st` — it is one session's cursor through its own stream.
+ * Replay terminal input. Legacy mode returns one verbatim name and latches.
+ * Prompt mode returns every submitted prompt (up to 8000 characters), keeps
+ * multiline bracketed pastes together and leaves summarisation to Gemini.
  */
-export function feedTyped(st: TypedCapture, chunk: string): string | null {
+export function feedTyped(st: TypedCapture, chunk: string, prompt = false): string | null {
   if (st.done) return null;
+  const maxBuffer = prompt ? 8000 : MAX_BUF;
   for (const ch of chunk) {
     // ---- the escape parser, ahead of everything: anything it is mid-way
     // through is a KEY, and a key contributes no characters at all.
     if (st.esc === 'esc') {
-      if (ch === '[') st.esc = 'csi';
+      if (ch === '[') { st.esc = 'csi'; st.sequence = ''; }
       else if (ch === ']') st.esc = 'osc';
       else st.esc = 'text';           // ESC + one byte (alt-chords, ESC O …)
       continue;
@@ -84,7 +83,11 @@ export function feedTyped(st: TypedCapture, chunk: string): string | null {
     if (st.esc === 'csi') {
       // Parameter and intermediate bytes, then one final byte 0x40–0x7E ends
       // it — which is what swallows ESC[200~ and ESC[201~ whole.
-      if (ch >= '@' && ch <= '~') st.esc = 'text';
+      if (ch >= '@' && ch <= '~') {
+        if (ch === '~' && st.sequence === '200') st.paste = true;
+        if (ch === '~' && st.sequence === '201') st.paste = false;
+        st.esc = 'text';
+      } else st.sequence = (st.sequence || '') + ch;
       continue;
     }
     if (st.esc === 'osc') {
@@ -96,13 +99,14 @@ export function feedTyped(st: TypedCapture, chunk: string): string | null {
     if (ch === '\x1b') { st.esc = 'esc'; continue; }
 
     if (ch === '\r' || ch === '\n') {
+      if (prompt && st.paste) { if (st.buf.length < maxBuffer) st.buf += '\n'; continue; }
       // A SUBMIT, which is not automatically a name. An empty line is how you
       // get past claude's own trust prompt and how a shell shows you a fresh
       // prompt, and `nameFrom` turns both into '' — so the line clears and the
       // capture stays open for the thing you actually came to ask.
-      const name = nameFrom(st.buf);
+      const name = prompt ? st.buf.trim() : nameFrom(st.buf);
       st.buf = '';
-      if (name) { st.done = true; return name; }
+      if (name && (!prompt || /[A-Za-z]/.test(name))) { st.done = !prompt; return name; }
       continue;
     }
     if (ch === '\x7f' || ch === '\b') { st.buf = st.buf.slice(0, -1); continue; }
@@ -114,10 +118,10 @@ export function feedTyped(st: TypedCapture, chunk: string): string | null {
     // one pass is the obvious spelling and joins the retyped word to the one
     // before it — "fix the raiil" ⌃W "rail" came out "fix therail".
     if (ch === '\x17') { st.buf = st.buf.replace(/\s+$/, '').replace(/\S+$/, ''); continue; }
-    if (ch === '\t') { st.buf += ' '; continue; }
+    if (ch === '\t') { if (st.buf.length < maxBuffer) st.buf += ' '; continue; }
     // Every other C0 control is a key, not a character.
     if (ch < ' ') continue;
-    if (st.buf.length < MAX_BUF) st.buf += ch;
+    if (st.buf.length < maxBuffer) st.buf += ch;
   }
   return null;
 }

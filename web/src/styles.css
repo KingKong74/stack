@@ -3999,14 +3999,14 @@ body[data-mc-full] .totop { display: none; }
 
 .ask-dot {
   flex: none; width: 7px; height: 7px; border-radius: 50%;
-  background: var(--status-warning-fg);
+  background: var(--ask-colour, var(--status-warning-fg));
   animation: term-ask 1.6s ease-in-out infinite;
 }
 /* How long it has been stopped. Mono and quiet: it is the one number here, and
    a duration read down a column has to line up to be comparable at a glance. */
 .ask-age {
   flex: none; font: var(--weight-medium) var(--text-2xs)/1 var(--font-mono);
-  color: var(--status-warning-fg);
+  color: var(--ask-colour, var(--status-warning-fg));
 }
 
 /* ---------- the rail's foot (TerminalNavFoot) ---------- */
@@ -4019,7 +4019,7 @@ body[data-mc-full] .totop { display: none; }
 .ask-count {
   flex: none; display: inline-flex; align-items: center; gap: var(--space-2);
   padding: 2px var(--space-3); border-radius: var(--radius-pill);
-  background: var(--status-warning-bg); color: var(--status-warning-fg);
+  background: var(--ask-bg, var(--status-warning-bg)); color: var(--ask-colour, var(--status-warning-fg));
   font: var(--weight-semibold) var(--text-2xs)/1 var(--font-mono);
 }
 /* One waiting session. A rail row's height and hover, with the left edge going
@@ -4029,7 +4029,7 @@ body[data-mc-full] .totop { display: none; }
 .con-navitem.ask-navrow {
   gap: var(--space-3); padding-left: var(--space-5); margin-left: var(--space-4);
   width: calc(100% - var(--space-4));
-  border-left: 2px solid var(--status-warning-fg); border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  border-left: 2px solid var(--ask-colour, var(--status-warning-fg)); border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
 }
 .ask-rowtext { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .ask-rowname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -4043,14 +4043,14 @@ body[data-mc-full] .totop { display: none; }
   flex: none; display: inline-flex; align-items: center; gap: var(--space-3);
   height: 28px; padding: 0 var(--space-4); border: 0; cursor: pointer;
   border-radius: var(--radius-pill);
-  background: var(--status-warning-bg); color: var(--status-warning-fg);
+  background: var(--ask-bg, var(--status-warning-bg)); color: var(--ask-colour, var(--status-warning-fg));
   font: var(--weight-semibold) var(--text-2xs)/1 var(--font-sans);
   transition: var(--transition-control);
 }
 /* Hover KEEPS the warning ground and adds an edge. Swapping the ground for a
    neutral hover tone made the one element on the bar that is meant to be
    noticed go quieter the moment you reached for it. */
-.ask-chip:hover, .ask-chip.on { box-shadow: inset 0 0 0 1px var(--status-warning-fg); }
+.ask-chip:hover, .ask-chip.on { box-shadow: inset 0 0 0 1px var(--ask-colour, var(--status-warning-fg)); }
 .ask-chipn { font-family: var(--font-mono); }
 .ask-chiplbl { letter-spacing: var(--tracking-wide); }
 
@@ -9075,16 +9075,16 @@ button.ar-open:hover { background: var(--surface-hover); }
 /* ASKING: a question is waiting. The tab leads the bar (its own group, ahead
    of every project), turns amber and wears a pulsing dot until answered. */
 .tv-tab { position: relative; }
-.tv-tab.asking, .tv-tab.on.asking, .tv-tab.asking.in-main, .tv-tab.asking.in-mini { border-color: var(--amber-500); border-style: solid; }
-.tv-tab.asking, .tv-tab.on.asking, .tv-tab.on.asking.in-main, .tv-tab.on.asking.in-mini { background: var(--status-warning-bg); }
+.tv-tab.asking, .tv-tab.on.asking, .tv-tab.asking.in-main, .tv-tab.asking.in-mini { border-color: var(--ask-colour, var(--amber-500)); border-style: solid; }
+.tv-tab.asking, .tv-tab.on.asking, .tv-tab.on.asking.in-main, .tv-tab.on.asking.in-mini { background: var(--ask-bg, var(--status-warning-bg)); }
 .tv-tab.asking .tv-tab-name, .tv-tab.asking .tv-tab-sub { color: var(--text-secondary); }
 .tv-tab.asking::after {
   content: ''; position: absolute; top: 4px; right: 4px; width: 8px; height: 8px; border-radius: 50%;
-  background: var(--amber-500); box-shadow: 0 0 0 2px var(--surface-canvas); animation: tv-ask-pulse 1.6s ease-in-out infinite;
+  background: var(--ask-colour, var(--amber-500)); box-shadow: 0 0 0 2px var(--surface-canvas); animation: tv-ask-pulse 1.6s ease-in-out infinite;
 }
 @keyframes tv-ask-pulse { 50% { opacity: 0.35; } }
 @media (prefers-reduced-motion: reduce) { .tv-tab.asking::after { animation: none; } }
-.tv-tabgroup.asking { border-left-color: var(--amber-500); }
+.tv-tabgroup.asking { border-left-color: var(--ask-colour, var(--amber-500)); }
 .tv-glyph {
   flex: none; width: 26px; height: 26px; border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: center;
   font: var(--weight-semibold) 13px/1 var(--font-mono);
@@ -9116,11 +9116,11 @@ button.ar-open:hover { background: var(--surface-hover); }
 }
 
 .tv-dot { width: 6px; height: 6px; flex: none; border-radius: 50%; background: var(--grey-600); display: inline-block; }
-.tv-dot.asking { background: var(--amber-500); }
+.tv-dot.asking { background: var(--ask-colour, var(--amber-500)); }
 .tv-dot.working { background: var(--lime-500); }
 .tv-dot.error { background: var(--red-500); }
 .tv-st { font: var(--type-label); font-size: var(--text-2xs); white-space: nowrap; color: var(--status-neutral-fg); }
-.tv-st.asking { color: var(--status-warning-fg); }
+.tv-st.asking { color: var(--ask-colour, var(--status-warning-fg)); }
 .tv-st.working { color: var(--status-success-fg); }
 .tv-st.error { color: var(--status-danger-fg); }
 .tv-proj {
@@ -9162,14 +9162,14 @@ button.ar-open:hover { background: var(--surface-hover); }
 .tv-meter-row .nm { font: var(--type-label); font-size: var(--text-xs); color: var(--text-secondary); }
 .tv-meter-bar { flex: 0 1 72px; width: 72px; min-width: 20px; height: 4px; border-radius: var(--radius-pill); background: var(--surface-overlay); overflow: hidden; }
 .tv-meter-bar .v, .tv-uwin .bar .v { display: block; height: 100%; border-radius: var(--radius-pill); background: var(--lime-500); }
-.tv-meter-bar .v.warm, .tv-uwin .bar .v.warm { background: var(--amber-500); }
+.tv-meter-bar .v.warm, .tv-uwin .bar .v.warm { background: var(--ask-colour, var(--amber-500)); }
 .tv-meter-bar .v.hot, .tv-uwin .bar .v.hot { background: var(--red-500); }
 /* The Claude limit draws in the design's orange (Terminal Prototype v2: the
    meter's amber bar and warning-tone figure) until it runs hot. */
-.tv-meter.k-claude .tv-meter-bar .v:not(.hot), .tv-usage.k-claude .tv-uwin .bar .v:not(.hot) { background: var(--amber-500); }
-.tv-meter.k-claude .tv-meter-row .pct:not(.hot), .tv-usage.k-claude .tv-uwin .p:not(.hot) { color: var(--status-warning-fg); }
+.tv-meter.k-claude .tv-meter-bar .v:not(.hot), .tv-usage.k-claude .tv-uwin .bar .v:not(.hot) { background: var(--ask-colour, var(--amber-500)); }
+.tv-meter.k-claude .tv-meter-row .pct:not(.hot), .tv-usage.k-claude .tv-uwin .p:not(.hot) { color: var(--ask-colour, var(--status-warning-fg)); }
 .tv-meter-row .pct { flex: none; font: var(--weight-medium) var(--text-2xs)/1 var(--font-mono); color: var(--text-secondary); }
-.tv-meter-row .pct.warm, .tv-uwin .p.warm { color: var(--status-warning-fg); }
+.tv-meter-row .pct.warm, .tv-uwin .p.warm { color: var(--ask-colour, var(--status-warning-fg)); }
 .tv-meter-row .pct.hot, .tv-uwin .p.hot { color: var(--status-danger-fg); }
 .tv-meter-sub { font: var(--weight-regular) 10px/1 var(--font-mono); color: var(--text-tertiary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
@@ -9217,7 +9217,7 @@ button.ar-open:hover { background: var(--surface-hover); }
 }
 .tv-view:hover { color: var(--text-primary); }
 .tv-view.on { background: var(--surface-selected); color: var(--text-link); }
-.tv-badge { font: var(--weight-medium) var(--text-2xs)/1 var(--font-mono); padding: 3px 6px; border-radius: var(--radius-pill); background: var(--status-warning-bg); color: var(--status-warning-fg); }
+.tv-badge { font: var(--weight-medium) var(--text-2xs)/1 var(--font-mono); padding: 3px 6px; border-radius: var(--radius-pill); background: var(--ask-bg, var(--status-warning-bg)); color: var(--ask-colour, var(--status-warning-fg)); }
 
 .tv-blind { flex: none; padding: var(--space-2) var(--space-4); background: var(--status-warning-bg); color: var(--status-warning-fg); font: var(--type-body-sm); }
 .tv .term-usage { flex: none; margin: 0; padding: var(--space-2) var(--space-4); border-bottom: 1px solid var(--border-subtle); }
@@ -9335,7 +9335,7 @@ button.ar-open:hover { background: var(--surface-hover); }
 .tv-head-name { font: var(--type-label); font-size: var(--text-md); min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tv-head-meta, .tv-win-meta { flex: 0 1 auto; min-width: 0; font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-tertiary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tv-pill { flex: none; font: var(--type-label); font-size: var(--text-2xs); padding: 3px 8px; border-radius: var(--radius-pill); background: var(--status-neutral-bg); color: var(--status-neutral-fg); }
-.tv-pill.asking { background: var(--status-warning-bg); color: var(--status-warning-fg); }
+.tv-pill.asking { background: var(--ask-bg, var(--status-warning-bg)); color: var(--ask-colour, var(--status-warning-fg)); }
 .tv-pill.working { background: var(--status-success-bg); color: var(--status-success-fg); }
 .tv-pill.error { background: var(--status-danger-bg); color: var(--status-danger-fg); }
 .tv-destchip {
@@ -9379,7 +9379,7 @@ button.ar-open:hover { background: var(--surface-hover); }
 .tv-swarm { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .tv-swarm-head { flex: none; display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-5); border-bottom: 1px solid var(--border-subtle); flex-wrap: wrap; }
 .tv-counts { font: var(--weight-regular) var(--text-xs)/1 var(--font-mono); color: var(--text-tertiary); }
-.tv-counts .asking { color: var(--status-warning-fg); }
+.tv-counts .asking { color: var(--ask-colour, var(--status-warning-fg)); }
 .tv-counts .working { color: var(--status-success-fg); }
 .tv-hint { margin-left: auto; font: var(--type-caption); color: var(--text-tertiary); }
 .tv-grid { flex: 1; min-height: 0; padding: var(--space-4) var(--space-5) var(--space-5); display: grid; gap: var(--space-3); }
@@ -9404,31 +9404,31 @@ button.ar-open:hover { background: var(--surface-hover); }
    thing on the screen. An amber frame with a slow breathing ring, a warm face,
    a full-strength top bar and its question in place of the last line. */
 .tv-tile.asking, .tv-pane.asking, .tv-pane.win.asking, .tv-pane.win.front.asking {
-  border-color: var(--amber-500); animation: tv-ask-ring 2s ease-in-out infinite;
+  border-color: var(--ask-colour, var(--amber-500)); animation: tv-ask-ring 2s ease-in-out infinite;
 }
-.tv-tile.asking::after { background: linear-gradient(to top, var(--status-warning-bg) 45%, transparent); }
-.tv-tile.asking .tv-tile-top { background: var(--amber-500); opacity: 1; height: 4px; }
+.tv-tile.asking::after { background: linear-gradient(to top, var(--ask-bg, var(--status-warning-bg)) 45%, transparent); }
+.tv-tile.asking .tv-tile-top { background: var(--ask-colour, var(--amber-500)); opacity: 1; height: 4px; }
 .tv-tile.asking .tv-dot.asking, .tv-pane.asking .tv-dot.asking { animation: tv-ask-pulse 1.6s ease-in-out infinite; }
-.tv-pane.asking .tv-win-head, .tv-pane.asking .tv-mini-head, .tv-pane.asking .tv-head { background: var(--status-warning-bg); border-bottom-color: var(--amber-500); }
+.tv-pane.asking .tv-win-head, .tv-pane.asking .tv-mini-head, .tv-pane.asking .tv-head { background: var(--ask-bg, var(--status-warning-bg)); border-bottom-color: var(--ask-colour, var(--amber-500)); }
 @keyframes tv-ask-ring {
-  0%, 100% { box-shadow: 0 0 0 1px var(--amber-500); }
-  50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--amber-500) 35%, transparent); }
+  0%, 100% { box-shadow: 0 0 0 1px var(--ask-colour, var(--amber-500)); }
+  50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--ask-colour, var(--amber-500)) 35%, transparent); }
 }
 @media (prefers-reduced-motion: reduce) {
   .tv-tile.asking, .tv-pane.asking, .tv-tile.asking .tv-dot.asking, .tv-pane.asking .tv-dot.asking { animation: none; }
-  .tv-tile.asking, .tv-pane.asking { box-shadow: 0 0 0 2px var(--amber-500); }
+  .tv-tile.asking, .tv-pane.asking { box-shadow: 0 0 0 2px var(--ask-colour, var(--amber-500)); }
 }
 .tv-tile-ask {
-  flex: none; font: var(--weight-medium) var(--text-xs)/1.4 var(--font-sans); color: var(--status-warning-fg);
+  flex: none; font: var(--weight-medium) var(--text-xs)/1.4 var(--font-sans); color: var(--ask-colour, var(--status-warning-fg));
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
 .tv-tile.compact .tv-tile-ask { -webkit-line-clamp: 1; font-size: var(--text-2xs); }
 /* SEEN: still asking, muted. A quiet amber edge and a steady dot, nothing moves. */
-.tv-tile.asked, .tv-pane.asked { border-color: color-mix(in srgb, var(--amber-500) 45%, var(--border-subtle)); }
-.tv-tile.asked .tv-tile-top { background: var(--amber-500); opacity: 0.5; }
+.tv-tile.asked, .tv-pane.asked { border-color: color-mix(in srgb, var(--ask-colour, var(--amber-500)) 45%, var(--border-subtle)); }
+.tv-tile.asked .tv-tile-top { background: var(--ask-colour, var(--amber-500)); opacity: 0.5; }
 .tv-tab.asked::after {
   content: ''; position: absolute; top: 4px; right: 4px; width: 6px; height: 6px; border-radius: 50%;
-  background: var(--amber-500); opacity: 0.6;
+  background: var(--ask-colour, var(--amber-500)); opacity: 0.6;
 }
 /* The work timer: how long so far while working, how long it took once stopped. */
 .tv-run { flex: none; font: var(--weight-medium) var(--text-2xs)/1 var(--font-mono); color: var(--text-tertiary); white-space: nowrap; font-variant-numeric: tabular-nums; }
@@ -9587,8 +9587,11 @@ button.ar-open:hover { background: var(--surface-hover); }
 .ch { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 320px); gap: var(--space-6); align-items: start; min-width: 0; container-type: inline-size; }
 .ch:has(.ch-toc) { grid-template-columns: 168px minmax(0, 1fr) minmax(280px, 320px); }
 .ch > .ch-main, .ch > .ch-rail { overflow-wrap: anywhere; }
+/* NARROW, THE CONTENTS BECOME A ROW above the doc instead of vanishing
+   (owner, 2026-11-11: on a laptop the list was simply gone). */
 @container (max-width: 1100px) {
-  .ch > .ch-toc { display: none; }
+  .ch > .ch-toc { grid-column: 1 / -1; position: static; max-height: none; width: auto; flex-direction: row; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+  .ch > .ch-toc > .sp-eyebrow { padding: 0 var(--space-3) 0 0; }
   .ch > .ch-main { grid-column: 1 / -1; }
   .ch > .ch-rail { grid-column: 1 / -1; position: static; max-height: none; width: 100%; max-width: none; min-width: 0; }
 }
@@ -9650,7 +9653,8 @@ button.ar-open:hover { background: var(--surface-hover); }
 .ch-who .ad-label.dim { color: var(--text-secondary); }
 .ch-who .dim { color: var(--text-tertiary); }
 @media (max-width: 1280px) {
-  .ch-toc { display: none; }
+  .ch-toc { grid-column: 1 / -1; position: static; max-height: none; width: auto; flex-direction: row; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+  .ch-toc > .sp-eyebrow { padding: 0 var(--space-3) 0 0; }
   .ch:has(.ch-toc) { grid-template-columns: minmax(0, 1fr) minmax(280px, 320px); }
 }
 @media (max-width: 1100px) {
@@ -9781,3 +9785,6 @@ a.pp-link:hover { text-decoration: underline; }
   .st-row { flex-wrap: wrap; }
   .st-row .ms-chip { margin-left: 38px; }
 }
+
+/* Codex's assigned green follows its asking state through every placement. */
+.runtime-codex { --ask-colour: var(--viz-1); --ask-bg: var(--status-success-bg); }

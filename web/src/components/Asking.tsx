@@ -150,7 +150,7 @@ function AskRow({ a, className, compact, onGo }: {
   const about = a.ask.detail || a.ask.question;
   const waited = waitedFor(a.ask.since);
   return (
-    <a className={className} href={hrefTo.terminal(a.cwd, a.name)} onClick={onGo}
+    <a className={`${className}${a.runtime === 'codex' ? ' runtime-codex' : ''}`} href={hrefTo.terminal(a.cwd, a.name)} onClick={onGo}
       title={`Waiting ${waited}${a.ask.title ? ` — ${a.ask.title}` : ''}\n${a.ask.question}\n${a.ask.detail}\n\nOpens the session; answer it at the pane`}>
       <AskDot />
       <span className="ask-rowtext">
@@ -183,7 +183,7 @@ export function TerminalNavFoot({ slug }: { slug: string }) {
         <span className="con-navico">{NavIcons.terminal}</span>
         <span className="con-navlabel">Terminal</span>
         {asking.length > 0 && (
-          <span className="ask-count" title={`${asking.length} session${asking.length > 1 ? 's' : ''} waiting on an answer`}>
+          <span className={`ask-count${asking.every((a) => a.runtime === 'codex') ? ' runtime-codex' : ''}`} title={`${asking.length} session${asking.length > 1 ? 's' : ''} waiting on an answer`}>
             <AskDot />{asking.length}
           </span>
         )}
@@ -259,7 +259,7 @@ export function AskingChip() {
   const n = asking.length;
   return (
     <>
-      <button ref={btn} type="button" className={`ask-chip${open ? ' on' : ''}`}
+      <button ref={btn} type="button" className={`ask-chip${open ? ' on' : ''}${asking.every((a) => a.runtime === 'codex') ? ' runtime-codex' : ''}`}
         aria-haspopup="dialog" aria-expanded={open}
         title={`${n} session${n > 1 ? 's' : ''} stopped, waiting on your answer`}
         onClick={() => setOpen(!open)}>

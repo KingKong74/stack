@@ -48,6 +48,7 @@ export type AskInfo = {
 export type AskingSession = {
   /** The host tmux session name — the one id every surface agrees on. */
   name: string;
+  runtime?: 'claude' | 'codex' | 'shell';
   /** Jail-relative cwd ('' = the $HOME root); what a re-attach link needs. */
   cwd: string;
   /** ✧ Gemini's take on what it is doing. '' when nothing has named it yet. */
@@ -99,7 +100,7 @@ export function pickAsking(sessions: DetachedSession[]): AskingSession[] {
   for (const d of sessions) {
     const ask = askOf(d);
     if (!ask) continue;
-    out.push({ name: d.name, cwd: d.cwd || '', label: d.label || '', ask });
+    out.push({ name: d.name, runtime: d.cmd || (d.model?.key === 'codex' ? 'codex' : undefined), cwd: d.cwd || '', label: d.label || '', ask });
   }
   return out.sort((a, b) => a.ask.since - b.ask.since || a.name.localeCompare(b.name));
 }

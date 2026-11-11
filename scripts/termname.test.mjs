@@ -169,3 +169,22 @@ test('#501 a live id and a tmux name never share a key', () => {
   // A detached row named "3" must not be silenced by live pane 3's ask.
   assert.deepEqual(labelAskKeys([], [{ name: '3' }], {}, new Set(['live:3']), MIN), ['3']);
 });
+
+test('prompt mode captures every submission without copying it into a title', () => {
+  const state = newCapture();
+  const prompt = 'Please investigate the underlying reason this terminal never updates its title after the next prompt';
+  assert.equal(feedTyped(state, prompt + '\r', true), prompt);
+  assert.equal(feedTyped(state, 'Now make the asking indicator green\r', true), 'Now make the asking indicator green');
+  assert.equal(state.done, false);
+});
+test('a multiline bracketed paste is submitted only on Enter', () => {
+  const state = newCapture();
+  assert.equal(feedTyped(state, '\x1b[200~Fix Swarm refresh\nand session titles\x1b[201~', true), null);
+  assert.equal(feedTyped(state, '\r', true), 'Fix Swarm refresh\nand session titles');
+});
+test('prompt mode ignores cancelled drafts and menu digits', () => {
+  const state = newCapture();
+  assert.equal(feedTyped(state, '1\r', true), null);
+  assert.equal(feedTyped(state, 'cancel this\x03\r', true), null);
+  assert.equal(feedTyped(state, 'fix the title\r', true), 'fix the title');
+});

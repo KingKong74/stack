@@ -345,8 +345,8 @@ export interface TermSession {
 // ✧ Label the terminal sessions — live ones AND the detached tmux survivors —
 // in one Gemini pass over each session's recent output (annotation only; 503
 // when the server has no key).
-export async function labelTerminalSessions(): Promise<{ sessions: TermSession[]; detached: DetachedSession[] }> {
-  const r = await request<{ sessions: TermSession[]; detached?: DetachedSession[] }>('/terminal/label', { method: 'POST' });
+export async function labelTerminalSessions(input?: { sid?: string; tmux?: string; prompt: string }): Promise<{ sessions: TermSession[]; detached: DetachedSession[] }> {
+  const r = await request<{ sessions: TermSession[]; detached?: DetachedSession[] }>('/terminal/label', { method: 'POST', ...(input ? { body: input } : {}) });
   return { sessions: r.sessions, detached: r.detached ?? [] };
 }
 
@@ -957,9 +957,8 @@ export function clearTermTmuxName(cwd: string, name: string) {
 export interface TermOpenTab { cwd: string; cmd: 'shell' | 'claude' | 'codex'; tmux?: string }
 // #487/#512 — A SESSION'S NAME ON THIS DEVICE, overriding the labeller's.
 //
-// Two writers: the first line you sent the session (#512, written once and
-// never over an entry already here) and a double-click rename, which replaces
-// whatever is here. The Gemini labeller's reading sits underneath both.
+// Explicit double-click renames override Gemini titles. Submitted prompts
+// are summarised by Gemini and are never stored as manual names.
 //
 // KEYED BY TMUX NAME, never by the tab id. A tab id is a per-mount counter, so
 // a name keyed on it would attach to a different session after a reload — and
@@ -969,7 +968,9 @@ export interface TermOpenTab { cwd: string; cmd: 'shell' | 'claude' | 'codex'; t
 //
 // Device-local, like every other way-of-looking on this screen: it is what YOU
 // call that session, and the labeller's answer is still there underneath.
-const TERM_NAMES_KEY = 'stack.termNames';
+// Legacy termNames mixed automatic first lines with manual overrides. Keep
+// that data intact, but only new explicit renames may override Gemini titles.
+const TERM_NAMES_KEY = 'stack.termManualNames';
 export function getTermNames(): Record<string, string> {
   return readStoredJSON(TERM_NAMES_KEY, (v) => {
     const o = (v && typeof v === 'object') ? v as Record<string, unknown> : {};
