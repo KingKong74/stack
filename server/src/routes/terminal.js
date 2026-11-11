@@ -170,7 +170,7 @@ Respond with ONLY this JSON:
   }
 });
 
-// One Gemini pass over EVERY session with content — the browser-attached ones
+// One Gemini pass over unnamed sessions with content — the browser-attached ones
 // (relay output tail) and the detached tmux survivors (the daemon captures a
 // pane tail with each advertisement). Detached labels stick to the relay's
 // name-keyed cache so they ride every later GET too.
@@ -180,10 +180,10 @@ terminal.post('/label', async (req, res) => {
   if (!geminiEnabled()) return res.status(503).json({ error: 'Gemini is not configured on the server.' });
   const tails = termTails().filter(({ sid, meta }) => input
     ? sid === input.sid || (!!input.tmux && meta.tmux === input.tmux)
-    : (meta.tail || '').trim().length > 0);
+    : !meta.label && !termDetached().some((d) => d.name === meta.tmux && d.label) && (meta.tail || '').trim().length > 0);
   const orphans = termDetachedTails().filter((d) => input
     ? d.name === input.tmux && !tails.some(({ meta }) => meta.tmux === d.name)
-    : (d.tail || '').trim().length > 0);
+    : !termDetached().some((row) => row.name === d.name && row.label) && (d.tail || '').trim().length > 0);
   if (input && !tails.length && !orphans.length) return res.status(404).json({ error: 'Terminal no longer exists.' });
   if (tails.length || orphans.length) {
     const blocks = [
@@ -215,14 +215,14 @@ Respond with ONLY this JSON: { "labels": { "<session id>": "<label>", ... } }`,
       );
       for (const { sid, meta } of tails) {
         const label = out?.labels?.[sid];
-        if (typeof label === 'string' && label.trim()) {
+        if (typeof label === 'string' && label.trim() && (input || !meta.label)) {
           meta.label = titleLabel(label.trim());
           if (meta.tmux) setDetachedLabel(meta.tmux, meta.label);
         }
       }
       for (const d of orphans) {
         const label = out?.labels?.[d.name];
-        if (typeof label === 'string' && label.trim()) setDetachedLabel(d.name, titleLabel(label.trim().slice(0, 60)));
+        if (typeof label === 'string' && label.trim() && (input || !termDetached().some((row) => row.name === d.name && row.label))) setDetachedLabel(d.name, titleLabel(label.trim().slice(0, 60)));
       }
     } catch (e) {
       return res.status(e.httpStatus || 502).json({ error: e.message || 'Labelling failed.' });

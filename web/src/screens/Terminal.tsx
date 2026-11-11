@@ -16,7 +16,7 @@ import {
   labelTerminalSessions,
   setTermTmuxName, clearTermTmuxName,
   getTermOpenTabs, setTermOpenTabs,
-  getTermNames, setTermName,
+  getTermNames, setTermName, getTermLabels, setTermLabels,
   getTerminalAgent, getTermSessionPrefs, setTermSessionPrefs, type TermSessionPrefs,
   getProjectDetail, type ProjectDetailData,
   peekTermLaunch, clearTermLaunch,
@@ -711,7 +711,8 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
     (d) => !endingNames.current.has(d.name) && !sessions.some((s) => s.tmux === d.name && (s.status === 'live' || s.status === 'connecting')));
 
   // Gemini task titles, keyed by relay sid and durable tmux identity.
-  const [labels, setLabels] = useState<Record<string, string>>({});
+  const [labels, setLabels] = useState<Record<string, string>>(() => getTermLabels());
+  useEffect(() => { setTermLabels(labels); }, [labels]);
   // A ref prevents simultaneous triggers from issuing duplicate free-tier calls.
   const [labelBusy, setLabelBusy] = useState(false);
   const labelBusyRef = useRef(false);
@@ -777,7 +778,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
       // (#501) …and a detached row the SERVER already named, or any session
       // this mount has asked about once, is not asked about again.
       const unnamed = labelAskKeys(
-        live.map((x) => ({ id: x.id, named: !!(renamed[x.id] || (x.sid && labels[x.sid]) || (x.tmux && labels[x.tmux])), bytes: seenRef.current[x.id] || 0 })),
+        live.map((x) => ({ id: x.id, named: !!(renamed[x.id] || (x.sid && labels[x.sid]) || (x.tmux && (labels[x.tmux] || detached.find((d) => d.name === x.tmux)?.label))), bytes: seenRef.current[x.id] || 0 })),
         detachedShown, labels, labelAskedRef.current, NAME_AFTER_BYTES);
       if (!unnamed.length) return;
       void refreshLabels(unnamed);
@@ -787,9 +788,18 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   }, [visible, sessions, detached, labels]);
   useAutoRefresh(() => {
     const live = sessions.filter((s) => s.status === 'live');
-    const keys = labelAskKeys(live.map((s) => ({ id: s.id, named: !!(renamed[s.id] || (s.sid && labels[s.sid]) || (s.tmux && labels[s.tmux])), bytes: seenRef.current[s.id] || 0 })), detachedShown, labels, labelAskedRef.current, NAME_AFTER_BYTES);
+    const keys = labelAskKeys(live.map((s) => ({ id: s.id, named: !!(renamed[s.id] || (s.sid && labels[s.sid]) || (s.tmux && (labels[s.tmux] || detached.find((d) => d.name === s.tmux)?.label))), bytes: seenRef.current[s.id] || 0 })), detachedShown, labels, labelAskedRef.current, NAME_AFTER_BYTES);
     if (keys.length) void refreshLabels(keys);
   }, visible);
+  // Remember server titles even when no labelling request ran in this browser.
+  useEffect(() => {
+    setLabels((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      for (const d of detached) if (d.label && !next[d.name]) { next[d.name] = d.label; changed = true; }
+      return changed ? next : prev;
+    });
+  }, [detached]);
   // Only explicit renames override the generated title.
   const [names, setNames] = useState<Record<string, string>>(() => getTermNames());
   const noteTyped = (text: string, target: { sid?: string; tmux?: string }) => {
@@ -813,7 +823,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   const [renamed, setRenamed] = useState<Record<number, string>>({});
   const labelOf = (s: Sess) =>
     renamed[s.id] || (s.tmux && names[s.tmux])
-    || (s.sid && labels[s.sid]) || (s.tmux && labels[s.tmux]) || '';
+    || (s.sid && labels[s.sid]) || (s.tmux && (labels[s.tmux] || detached.find((d) => d.name === s.tmux)?.label)) || '';
   // Persist explicit renames once the daemon supplies a tmux identity.
   useEffect(() => {
     let wrote = false;

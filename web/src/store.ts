@@ -970,6 +970,21 @@ export interface TermOpenTab { cwd: string; cmd: 'shell' | 'claude' | 'codex'; t
 // call that session, and the labeller's answer is still there underneath.
 // Legacy termNames mixed automatic first lines with manual overrides. Keep
 // that data intact, but only new explicit renames may override Gemini titles.
+// Generated titles have their own cache: refreshing must not turn one into a
+// manual override, which would prevent the next prompt from updating it.
+const TERM_LABELS_KEY = 'stack.termLabels';
+export function getTermLabels(): Record<string, string> {
+  return readStoredJSON(TERM_LABELS_KEY, (value) => Object.fromEntries(
+    Object.entries(value && typeof value === 'object' ? value : {})
+      .filter((entry): entry is [string, string] => entry[0].startsWith('stack-term-') && typeof entry[1] === 'string' && !!entry[1].trim()),
+  ));
+}
+export function setTermLabels(labels: Record<string, string>) {
+  const durable = Object.fromEntries(Object.entries(labels).filter(([key]) => key.startsWith('stack-term-')));
+  try { localStorage.setItem(TERM_LABELS_KEY, JSON.stringify(durable)); }
+  catch { /* storage unavailable — keep the title for this mount */ }
+}
+
 const TERM_NAMES_KEY = 'stack.termManualNames';
 export function getTermNames(): Record<string, string> {
   return readStoredJSON(TERM_NAMES_KEY, (v) => {
