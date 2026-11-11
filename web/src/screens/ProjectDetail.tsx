@@ -140,8 +140,9 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
     return () => { live = false; };
   }, []);
 
-  const initialTab = asTab(routeTab);
-  const [tab, setTab] = useState<Tab>(initialTab);
+  // The URL owns the selected view, so refresh and browser history restore it.
+  const tab = asTab(routeTab);
+  const setTab = (next: Tab) => go.detail(slug, next);
   // ONE HIGHLIGHT CHANNEL: a row id (a bug key, a roadmap id) or, on the
   // Activity tab, a commit hash. A tab that cannot draw the row it names simply
   // ignores it, which is the board's `hl` situation and the right nothing to do.
@@ -152,10 +153,9 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
   // falls back to the areas actually in use, which is what it offered before.
   const [boardAreas, setBoardAreas] = useState<string[]>([]);
 
-  // Keep tab + highlight in sync when the route changes while staying on the
+  // Keep the highlight in sync when the route changes while staying on the
   // same project (e.g. opening another of this project's items from the palette).
   useEffect(() => {
-    setTab(asTab(routeTab));
     setHighlightId(routeHighlight ?? null);
   }, [routeTab, routeHighlight]);
 
@@ -553,9 +553,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
         // Settings) is a different place and does take the third step.
         crumb={[
           { label: 'Projects', href: hrefTo.dashboard },
-          // The href carries the TAB, which the hash does not: the rail switches
-          // tabs in state, so `hrefTo.detail(slug)` alone would open a new tab on
-          // Overview from wherever you actually are.
+          // Keep the selected view when opening the project crumb in a new tab.
           { label: crumbName(project.name), href: hrefTo.detail(slug, tab) },
         ]}
         onSearch={onOpenSearch}
