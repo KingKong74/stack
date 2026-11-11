@@ -259,6 +259,13 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
   // The receipt's one-press way back, for a write the owner may regret at
   // once: a verdict. Cleared by the same presses that clear the receipt.
   const [undo, setUndo] = useState<(() => Promise<void>) | null>(null);
+  // The floating receipt clears itself; one with an Undo stays longer, since
+  // the Undo is the only way back from a batch verdict.
+  useEffect(() => {
+    if (!note) return;
+    const t = window.setTimeout(() => { setNote(''); setUndo(null); }, undo ? 12000 : 6000);
+    return () => window.clearTimeout(t);
+  }, [note, undo]);
 
   // ---- THE FOLDS (#510 sections, #511 columns) -----------------------------
   //
@@ -1206,11 +1213,18 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
         {/* #521 — the receipt for a write with no visible effect. `status` and
             not `alert`: it is confirmation, not a problem, and an assertive
             live region would interrupt a screen reader mid-sentence to say
-            something went RIGHT. */}
+            something went RIGHT.
+            IT FLOATS (owner's call, 2026-11-11): drawn in the flow, it pushed
+            the whole board down the moment a card was approved, so the board
+            jumped under the pointer. Fixed to the viewport, it moves nothing,
+            and it clears itself after a while (`note`'s effect) or on ×. */}
         {note && (
-          <div className="km-note" role="status">
-            {note}
+          <div className="km-note km-toast" role="status">
+            <span className="msg">{note}</span>
             {undo && <button className="km-undo" onClick={() => { const u = undo; void guard(u); }}>Undo</button>}
+            <button className="km-toastx" aria-label="Dismiss" onClick={() => { setNote(''); setUndo(null); }}>
+              <KitIcon name="x" size={13} />
+            </button>
           </div>
         )}
 

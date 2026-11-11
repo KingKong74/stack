@@ -5140,6 +5140,20 @@ body[data-mc-full] .totop { display: none; }
 .km-approveall { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; padding: 0 var(--space-2) var(--space-3); }
 .km-vbtn:disabled { opacity: 0.5; cursor: default; }
 .km-note { display: flex; align-items: center; gap: var(--space-4); }
+/* The board's receipt FLOATS, so it never pushes the board down. Opaque
+   (the info ground is translucent), above the columns, clear of the to-top. */
+.km-toast {
+  position: fixed; left: 50%; bottom: var(--space-7, 24px); transform: translateX(-50%);
+  z-index: 60; max-width: min(560px, calc(100vw - 32px));
+  background: var(--surface-overlay); color: var(--text-primary);
+  border-color: var(--status-info-fg); box-shadow: var(--shadow-lg);
+}
+.km-toast .msg { min-width: 0; }
+.km-toastx {
+  flex: none; display: inline-flex; background: none; border: 0; padding: 0; cursor: pointer;
+  color: var(--text-secondary);
+}
+.km-toastx:hover { color: var(--text-primary); }
 .km-undo {
   margin-left: auto; background: none; border: 0; padding: 0; cursor: pointer;
   color: inherit; font: var(--weight-medium) var(--text-sm)/1 var(--font-sans); text-decoration: underline;
