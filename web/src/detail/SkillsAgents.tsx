@@ -381,7 +381,7 @@ function AgentEditor({ p, room, models, skills, busy, run, onPick, onBack, onOpe
           <Draft className="sa-bigname" value={p.name} aria-label="Name" onSave={(v) => v.trim() && save({ name: v.trim() })} />
           <span className="sa-keytag">{p.key}</span>
         </div>
-        <Draft className="sa-descin" value={p.description} aria-label="Description"
+        <Draft area rows={2} className="sa-descin" value={p.description} aria-label="Description"
           placeholder="When should a run hand work to this agent?" onSave={(v) => save({ description: v })} />
         <Eyebrow aside={`${words(p.prompt)} words · saves on blur`}>System prompt</Eyebrow>
         <Draft area className="sa-body" value={p.prompt} aria-label="System prompt" onSave={(v) => save({ prompt: v })} />
@@ -390,7 +390,7 @@ function AgentEditor({ p, room, models, skills, busy, run, onPick, onBack, onOpe
       <aside className="sa-side">
         <div className="sa-onrow">
           <div className="tx">
-            <span className="lbl">{p.enabled ? 'On · handed to runs' : 'Off · kept, never spawned'}</span>
+            <span className="sa-ontitle">{p.enabled ? 'On · handed to runs' : 'Off · kept, never spawned'}</span>
             <span className="note">{used} open item{used === 1 ? '' : 's'} would spawn this</span>
           </div>
           <Switch on={p.enabled} disabled={busy === `${p.key}:on`}
@@ -429,7 +429,7 @@ function AgentEditor({ p, room, models, skills, busy, run, onPick, onBack, onOpe
           <Eyebrow aside={`${p.tools.length}/${room.knownTools.length} granted`}>Tools</Eyebrow>
           {groups.map((g) => (
             <div key={g.label} className="sa-toolgrp">
-              <span className="lbl">{g.label}</span>
+              <span className="sa-grplbl">{g.label}</span>
               <div className="sa-toolgrid">
                 {g.tools.map((t) => {
                   const on = p.tools.includes(t);
@@ -579,7 +579,7 @@ function SkillEditor({ s, data, projects, busy, run, onPick, onBack, onRemove }:
         <Draft className="sa-bigname mono" value={s.name} aria-label="Skill name"
           transform={(v) => v.toLowerCase().replace(/[^a-z0-9-]+/g, '-').slice(0, 64)}
           onSave={(v) => v && save({ name: v })} />
-        <Draft className="sa-descin" value={s.description} aria-label="Skill description"
+        <Draft area rows={2} className="sa-descin" value={s.description} aria-label="Skill description"
           placeholder="When should Claude reach for this?" onSave={(v) => save({ description: v })} />
         <Eyebrow aside={path}>SKILL.md</Eyebrow>
         <Draft area className="sa-body" value={s.body} aria-label="Skill body"

@@ -8234,7 +8234,7 @@ button.sp-pill { cursor: pointer; }
 }
 
 /* ---- Skills & agents (Claude Design "Skills and Agents" v4) ---- */
-.sa { min-width: 0; max-width: 1200px; margin: 0 auto; display: flex; flex-direction: column; gap: var(--space-4); padding-bottom: var(--space-8); }
+.sa { container-type: inline-size; width: 100%; min-width: 0; max-width: 1200px; margin: 0 auto; display: flex; flex-direction: column; gap: var(--space-4); padding-bottom: var(--space-8); }
 .sa-head { display: flex; align-items: flex-end; justify-content: space-between; flex-wrap: wrap; gap: var(--space-4) var(--space-6); }
 .sa-title { display: flex; flex-direction: column; gap: 4px; }
 .sa-title h1 { margin: 0; font: var(--type-title); letter-spacing: var(--tracking-tight); color: var(--text-primary); }
@@ -8295,17 +8295,17 @@ button.sp-pill { cursor: pointer; }
 .sa .who { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .sa .who .line { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
 .sa-agrow .who .n { font: var(--type-label); color: var(--text-primary); }
-.sa .who .n.off { color: var(--text-disabled); }
+.sa .who .n.off { color: var(--text-tertiary); }
 .sa .who .d { font: var(--type-caption); color: var(--text-tertiary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sa-chip { font: var(--type-caption); padding: 0 6px; border-radius: var(--radius-pill); background: var(--status-neutral-bg); color: var(--status-neutral-fg); }
-.sa-model { font: var(--weight-regular) var(--text-xs)/1 var(--font-mono); color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sa-model { font: var(--weight-regular) var(--text-xs)/1.3 var(--font-mono); color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sa-caps { display: flex; flex-wrap: wrap; gap: 4px; }
 .sa-cap {
   display: inline-flex; align-items: center; gap: 4px; padding: 2px 7px 2px 6px; border-radius: var(--radius-pill);
   font: var(--weight-medium) var(--text-2xs)/1.3 var(--font-sans);
 }
 .sa-usage { text-align: right; font: var(--weight-medium) var(--text-xs)/1 var(--font-mono); color: var(--text-secondary); }
-.sa-usage.zero { color: var(--text-disabled); }
+.sa-usage.zero { color: var(--text-tertiary); }
 .sa-on { justify-self: end; display: flex; }
 
 /* The skill list */
@@ -8328,7 +8328,7 @@ button.sp-pill { cursor: pointer; }
   padding: 12px 16px; border-bottom: 1px solid var(--border-subtle);
 }
 .sa-foreignrow .who .n { color: var(--text-tertiary); }
-.sa-foreignrow .who .d { color: var(--text-disabled); white-space: normal; }
+.sa-foreignrow .who .d { color: var(--text-tertiary); white-space: normal; }
 
 /* The editor: rail · the text · its settings */
 .sa-edit {
@@ -8349,7 +8349,7 @@ button.sp-pill { cursor: pointer; }
 .sa-railrow.mono { font: var(--weight-regular) var(--text-xs)/1.3 var(--font-mono); }
 .sa-railrow:hover { background: var(--surface-hover); }
 .sa-railrow.on { background: var(--surface-selected); }
-.sa-railrow.off { color: var(--text-disabled); }
+.sa-railrow.off { color: var(--text-tertiary); }
 .sa-main { display: flex; flex-direction: column; gap: 14px; padding: 24px 28px; min-width: 0; min-height: 0; }
 .sa-titlerow { display: flex; align-items: center; gap: 14px; min-width: 0; }
 .sa-bigname {
@@ -8360,7 +8360,7 @@ button.sp-pill { cursor: pointer; }
 .sa-keytag { font: var(--type-code); color: var(--text-tertiary); }
 .sa-descin {
   padding: 0 0 12px; border: 0; border-bottom: 1px solid var(--border-subtle); background: none; outline: none;
-  font: var(--type-body); color: var(--text-secondary);
+  font: var(--type-body); color: var(--text-secondary); resize: none; overflow: hidden;
 }
 .sa-descin:focus { border-bottom-color: var(--border-focus); }
 .sa-eyerow { display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-3); min-width: 0; }
@@ -8373,7 +8373,7 @@ button.sp-pill { cursor: pointer; }
 .sa-side { display: flex; flex-direction: column; gap: 22px; padding: 24px 20px; background: var(--surface-raised); border-left: 1px solid var(--border-subtle); overflow: auto; }
 .sa-onrow { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
 .sa-onrow .tx { display: flex; flex-direction: column; gap: 2px; }
-.sa-onrow .lbl { font: var(--type-label); color: var(--text-primary); }
+.sa-ontitle { font: var(--type-label); color: var(--text-primary); }
 .sa-onrow .sa-state { justify-self: auto; }
 .sa-sect { display: flex; flex-direction: column; gap: 8px; }
 .sa-sect .lp-select.sm { width: auto; align-self: flex-start; }
@@ -8387,7 +8387,7 @@ button.sp-pill { cursor: pointer; }
 .sa-skitem .n { font: var(--weight-medium) var(--text-xs)/1.3 var(--font-mono); color: var(--text-primary); }
 .sa-skitem .n.off { color: var(--text-tertiary); }
 .sa-skitem .d { font: var(--type-caption); color: var(--text-tertiary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.sa-skitem .scope { font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-disabled); }
+.sa-skitem .scope { font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-tertiary); }
 .sa-check {
   flex: none; width: 16px; height: 16px; display: grid; place-items: center; border-radius: 4px; font-size: 10px;
   border: 1px solid var(--border-strong); color: var(--white);
@@ -8396,7 +8396,7 @@ button.sp-pill { cursor: pointer; }
 .sa-sknew { padding: 9px 12px; border: 0; background: none; text-align: left; cursor: pointer; font: var(--type-caption); color: var(--text-link); }
 .sa-sknew:hover { color: var(--text-link-hover); }
 .sa-toolgrp { display: flex; flex-direction: column; gap: 6px; }
-.sa-toolgrp .lbl { font: var(--type-caption); color: var(--text-secondary); }
+.sa-grplbl { font: var(--type-caption); color: var(--text-secondary); }
 .sa-toolgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .sa-toolbtn {
   display: flex; align-items: center; gap: 8px; padding: 7px 9px; border-radius: var(--radius-sm); cursor: pointer;
@@ -8410,7 +8410,7 @@ button.sp-pill { cursor: pointer; }
 .sa-toolbtn.on .box { background: var(--action-primary); }
 .sa-del { align-self: flex-start; }
 
-@media (max-width: 900px) {
+@container (max-width: 900px) {
   .sa-agrow { grid-template-columns: 32px minmax(0, 1fr) 56px; }
   .sa-agrow > :nth-child(3), .sa-agrow > :nth-child(4), .sa-agrow > :nth-child(5) { display: none; }
   .sa-skrow { grid-template-columns: 32px minmax(0, 1fr); }

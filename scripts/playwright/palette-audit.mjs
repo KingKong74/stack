@@ -125,14 +125,13 @@ const SCREENS = [
   // findings. First paint measures the cards at rest; the two presses below
   // measure the two popovers, each over a card the press has left lit.
   // The design's other three views. Each press opens tone first paint lacks:
-  // the artifact New menu, a profile's editor, the skill library and a skill's editor,
+  // the artifact New menu, a profile's editor, the skill library,
   // and a loop's Event picker.
   { slug: 'artifacts', hash: '#/p/{slug}/artifacts' },
   { slug: 'artifacts-newmenu', hash: '#/p/{slug}/artifacts', press: ['.ar .ar-new'] },
   { slug: 'agents', hash: '#/p/{slug}/agents' },
   { slug: 'agents-edit', hash: '#/p/{slug}/agents', press: ['.sa .sa-agrow:not(.head) .who'] },
   { slug: 'agents-skills', hash: '#/p/{slug}/agents', press: ['.sa .sa-tabs button:nth-child(2)'] },
-  { slug: 'agents-skill-edit', hash: '#/p/{slug}/agents', press: ['.sa .sa-tabs button:nth-child(2)', '.sa .sa-skrow .who'] },
   { slug: 'loops', hash: '#/p/{slug}/loops' },
   { slug: 'loops-event', hash: '#/p/{slug}/loops', press: ['.lp .lp-node.when .lp-seg button:nth-child(2)'] },
   { slug: 'roadmap', hash: '#/p/{slug}/roadmap' },
