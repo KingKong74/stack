@@ -70,6 +70,27 @@ test('a write is cleaned', async () => {
   assert.equal((await call('PATCH', `${base(OTHER)}/${ids.doc}`, { title: 'x' })).status, 404, 'another project cannot edit it');
 });
 
+test('a note\'s board place is cleaned, and a move is not an edit', async () => {
+  const n = await call('POST', base(SLUG), {
+    type: 'note', title: 'idea', body: 'idea',
+    board: { x: -40, y: 'nope', r: 99, w: 250, kind: 'rant', pinned: 'yes', cluster: ' c1 ', clusterName: 'Terminal', junk: 1 },
+  });
+  assert.equal(n.status, 201, n.text);
+  assert.deepEqual(n.body.board, { x: 0, r: 10, w: 250, cluster: 'c1', clusterName: 'Terminal' });
+  const before = n.body.updatedAt;
+  await new Promise((r) => setTimeout(r, 20));
+  const m = await call('PATCH', `${base(SLUG)}/${n.body.id}`, { board: { x: 300, y: 120, kind: 'idea', pinned: true } });
+  assert.equal(m.status, 200, m.text);
+  assert.deepEqual(m.body.board, { x: 300, y: 120, kind: 'idea', pinned: true }, 'a board PATCH replaces it whole');
+  assert.equal(m.body.updatedAt, before, 'moving a note does not move its edited time');
+  const e = await call('PATCH', `${base(SLUG)}/${n.body.id}`, { body: 'idea, edited' });
+  assert.notEqual(e.body.updatedAt, before, 'an edit does');
+  assert.deepEqual(e.body.board, m.body.board);
+  const doc = (await call('GET', base(SLUG))).body.find((a) => a.id === ids.doc);
+  assert.deepEqual(doc.board, {}, 'an unplaced artifact reads {}');
+  assert.equal((await call('DELETE', `${base(SLUG)}/${n.body.id}`)).status, 204);
+});
+
 test('a deleted roadmap row drops out of links on read', async () => {
   assert.equal((await call('DELETE', `/projects/${SLUG}/roadmap/${ids.gone}`)).status < 300, true);
   const l = await call('GET', base(SLUG));

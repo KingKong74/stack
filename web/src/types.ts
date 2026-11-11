@@ -955,8 +955,19 @@ export interface Artifact {
   sliceId: number | null;
   /** The owner's star (Starred tab); null = not starred. Absent from an older server. */
   starredAt?: string | null;
+  /** A note's place on the Notes canvas; {} = never placed. Absent from an older server. */
+  board?: NoteBoard;
   createdAt: string;
   updatedAt: string;
+}
+
+export type NoteKind = 'note' | 'idea' | 'question';
+/** Where a note sits on the Notes canvas (routes/artifacts.js `cleanBoard`). */
+export interface NoteBoard {
+  x?: number; y?: number; r?: number; w?: number;
+  kind?: NoteKind; pinned?: boolean;
+  /** A key the cluster's members share; its name rides each member. */
+  cluster?: string; clusterName?: string;
 }
 
 // PROPOSITIONS (server/src/routes/propositions.js): a proposed package of new

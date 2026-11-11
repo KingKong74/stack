@@ -24,6 +24,8 @@
 //    Notes tab until it is turned into a milestone, slice or
 //    task. A note is a scratchpad, not work, so the plain list leaves it out
 //    too. A converted note is kept, tagged `converted` and `became:<kind>:<id>`.
+//    Its `board` (schema.sql) is where it sits on the tab's canvas; a PATCH
+//    of `board` alone is a move, not an edit, and leaves updated_at alone.
 //  • `links` ARE roadmap_items IDS IN THIS PROJECT. A write keeps only the ids
 //    that are, so an artifact cannot point at another project's row; a row
 //    deleted later simply drops out of the read.
@@ -50,7 +52,7 @@ export const SPINE_TYPES = ['charter', 'architecture', 'design_doc', 'adr', 'not
 export const ADR_STATUSES = ['proposed', 'accepted', 'superseded'];
 export const FILE_CAP = 10 * 1024 * 1024;
 const INLINE_IMAGES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
-export const ARTIFACT_COLS = 'id, type, title, body, url, tags, links, origin, status, slice_id, file_name, file_mime, file_size, starred_at, created_at, updated_at';
+export const ARTIFACT_COLS = 'id, type, title, body, url, tags, links, origin, status, slice_id, file_name, file_mime, file_size, starred_at, board, created_at, updated_at';
 const COLS = ARTIFACT_COLS;
 
 export const artifactShape = (r) => ({
@@ -69,12 +71,37 @@ export const artifactShape = (r) => ({
   sliceId: r.slice_id ?? null,
   // The owner's star (routes/starred.js); null = not starred.
   starredAt: r.starred_at ?? null,
+  // A note's place on the Notes canvas; {} = never placed.
+  board: r.board && typeof r.board === 'object' && !Array.isArray(r.board) ? r.board : {},
   file: r.file_size > 0 || r.file_name
     ? { name: r.file_name, size: Number(r.file_size), mime: r.file_mime, image: INLINE_IMAGES.has(r.file_mime) }
     : null,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
 });
+
+export const NOTE_KINDS = ['note', 'idea', 'question'];
+const num = (v, lo, hi) => (v !== null && v !== '' && Number.isFinite(Number(v))
+  ? Math.min(hi, Math.max(lo, Math.round(Number(v) * 10) / 10)) : null);
+// A note's placement, cleaned: unknown keys go, numbers are clamped, and a
+// field that is not one becomes absent rather than a wrong value.
+export function cleanBoard(b) {
+  if (!b || typeof b !== 'object' || Array.isArray(b)) return {};
+  const out = {};
+  for (const [k, lo, hi] of [['x', 0, 20000], ['y', 0, 20000], ['r', -10, 10], ['w', 120, 480]]) {
+    const v = num(b[k], lo, hi);
+    if (v !== null) out[k] = v;
+  }
+  if (NOTE_KINDS.includes(b.kind)) out.kind = b.kind;
+  if (b.pinned === true) out.pinned = true;
+  const c = String(b.cluster ?? '').trim().slice(0, 40);
+  if (c) {
+    out.cluster = c;
+    const name = String(b.clusterName ?? '').slice(0, 120);
+    if (name.trim()) out.clusterName = name;
+  }
+  return out;
+}
 
 // Only fields present in the body come back, so PATCH stays partial.
 async function readFields(body, projectId, { partial }) {
@@ -90,6 +117,7 @@ async function readFields(body, projectId, { partial }) {
       .map((t) => String(t ?? '').trim().slice(0, 80)).filter(Boolean);
     f.tags = JSON.stringify([...new Set(tags)].slice(0, 20));
   }
+  if (!partial || has('board')) f.board = JSON.stringify(cleanBoard(body?.board));
   if (!partial || has('links')) {
     const want = [...new Set((Array.isArray(body?.links) ? body.links : [])
       .map(Number).filter((n) => Number.isInteger(n) && n > 0))].slice(0, 50);
@@ -191,7 +219,7 @@ artifacts.patch('/:id', async (req, res) => {
   if (!keys.length) return res.status(400).json({ error: 'Nothing to change.' });
   try {
     const { rows } = await q(
-      `UPDATE artifacts SET ${keys.map((k, i) => `${k} = $${i + 3}`).join(', ')}, updated_at = now()
+      `UPDATE artifacts SET ${keys.map((k, i) => `${k} = $${i + 3}`).join(', ')}${keys.every((k) => k === 'board') ? '' : ', updated_at = now()'}
        WHERE id = $1 AND project_id = $2 RETURNING ${COLS}`,
       [Number(req.params.id), req.project.id, ...keys.map((k) => f[k])]);
     if (!rows.length) return res.status(404).json({ error: 'No such artifact.' });

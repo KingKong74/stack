@@ -1,5 +1,5 @@
 import type {
-  Milestone, Slice, AdrStatus,
+  Milestone, Slice, AdrStatus, NoteBoard,
   Project, Resume, Activity, Bug, Roadmap, RoadmapItem, Check, CheckRun, CheckHistory, Overview,
   ProjectStatus, ProjectCategory, Priority, Severity, BugStatus, SearchResponse, Settings, AutopilotRun, PlanStep,
   AuthDevice, Sprint, SprintPlan, ResumeSince, ProjectDebrief,
@@ -1954,7 +1954,7 @@ export const setStarred = (slug: string, kind: StarKind, id: number, starred: bo
 export const ARTIFACT_FILE_CAP = 10 * 1024 * 1024;
 type ArtifactFields = Partial<{
   type: ArtifactType; title: string; body: string; url: string; tags: string[]; links: number[];
-  status: AdrStatus; sliceId: number | null;
+  status: AdrStatus; sliceId: number | null; board: NoteBoard;
 }>;
 // #616 — the spine's docs (charter, architecture, design, ADRs), oldest first so an
 // ADR's number is its place. The plain list above leaves them out.

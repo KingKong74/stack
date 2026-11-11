@@ -1966,3 +1966,11 @@ ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS starred_at TIMESTAMPTZ;
 ALTER TABLE artifacts     ADD COLUMN IF NOT EXISTS starred_at TIMESTAMPTZ;
 CREATE INDEX IF NOT EXISTS roadmap_items_starred_idx ON roadmap_items (project_id, starred_at DESC) WHERE starred_at IS NOT NULL;
 CREATE INDEX IF NOT EXISTS artifacts_starred_idx     ON artifacts (project_id, starred_at DESC) WHERE starred_at IS NOT NULL;
+
+-- NOTES BOARD (2026-11-11): where a note sits on the Notes tab's canvas
+-- (web/src/detail/Notes.tsx): {x, y, r, w, kind, pinned, cluster, clusterName};
+-- {} = never placed, and the client finds it a spot. Placement only: no run,
+-- count or agent reads it, and moving a note is not editing it, so a PATCH of
+-- `board` alone leaves updated_at alone. A cluster is a key its members share;
+-- its name rides each member, and a rename writes them all.
+ALTER TABLE artifacts ADD COLUMN IF NOT EXISTS board JSONB NOT NULL DEFAULT '{}'::jsonb;
