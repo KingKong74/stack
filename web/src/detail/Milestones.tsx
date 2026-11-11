@@ -6,8 +6,8 @@
 // The server's lifecycle rules are SAID here, never re-implemented:
 //  • At most one milestone is current; making another current FINISHES the
 //    incumbent in the same write, and the button says so before the press.
-//  • A milestone that holds slices cannot be deleted (a 409), so Delete is
-//    offered only on an empty one and says why otherwise.
+//  • Deleting a milestone removes its slices, keeps items in the Icebox and
+//    clears Ready. The confirmation says so before the write.
 //  • A slice's state is `sliceStateOf`, derived from its items.
 //
 // `MilestoneSummary` is the Charter's right-hand rail: the current milestone
@@ -158,11 +158,11 @@ function MilestoneCard({ slug, m, n, wide, incumbent, slices, items, busy, onSav
       <SliceChip st={states[i]} />
     </a>
   ));
-  const deleteOrWhy = slices.length === 0 ? (
+  const deleteAction = (
     <button className="k-btn sm danger ms-del" disabled={busy} onClick={() => (confirm ? onDelete() : setConfirm(true))}>
-      {confirm ? 'Really delete?' : 'Delete'}
+      {confirm ? 'Confirm delete' : 'Delete'}
     </button>
-  ) : <span className="sp-foot">Holds slices, so it cannot be deleted.</span>;
+  );
   const statusAction = m.status === 'planned' ? (
     <div className="ms-action">
       <button className="k-btn sm secondary" disabled={busy} onClick={() => onStatus('active')}>Make current</button>
@@ -197,7 +197,9 @@ function MilestoneCard({ slug, m, n, wide, incumbent, slices, items, busy, onSav
             <div className="ms-donebox"><span className="sp-eyebrow">Done when</span><p>{done}</p></div>
           )}
           {moreView}
-          <div className="ms-foot">{statusAction}{deleteOrWhy}</div>
+          {confirm && <p className="sp-foot" role="alert">Delete “{m.name}” and its {slices.length} slices? Items are kept in the Icebox and leave Ready. This cannot be undone.
+            {' '}<button className="k-btn sm ghost" disabled={busy} onClick={() => setConfirm(false)}>Cancel deletion</button></p>}
+          <div className="ms-foot">{statusAction}{deleteAction}</div>
         </div>
         <div className="ms-side">
           <div className="ms-sidehead">
@@ -230,7 +232,9 @@ function MilestoneCard({ slug, m, n, wide, incumbent, slices, items, busy, onSav
         <span className="sp-eyebrow">Slices · <span className="sp-mono">{live.length}</span></span>
         {live.length === 0 ? <span className="sp-empty">No slices in this milestone.</span> : sliceRows}
       </div>
-      <div className="ms-foot">{statusAction}{deleteOrWhy}</div>
+      {confirm && <p className="sp-foot" role="alert">Delete “{m.name}” and its {slices.length} slices? Items are kept in the Icebox and leave Ready. This cannot be undone.
+        {' '}<button className="k-btn sm ghost" disabled={busy} onClick={() => setConfirm(false)}>Cancel deletion</button></p>}
+      <div className="ms-foot">{statusAction}{deleteAction}</div>
     </article>
   );
 }

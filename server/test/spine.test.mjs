@@ -4,7 +4,7 @@
 //
 //  • A first slice in a project with no milestone makes "Current" for it.
 //  • At most one milestone is active; making one current finishes the other.
-//  • A milestone with slices cannot be deleted; a deleted slice ICES its items
+//  • Deleting a milestone or slice ICES its items
 //    and takes them out of Ready first.
 //  • A part with no sliceId takes its parent's slice.
 //  • Ready refuses an iced item out loud; icing a Ready item takes it out.
@@ -75,12 +75,21 @@ test('making a milestone current finishes the incumbent, in one write', async ()
   assert.ok(ms.find((m) => m.id === first.id).endedAt);
 });
 
-test('a milestone with slices cannot be deleted; an empty one can', async () => {
-  const r = await call('DELETE', `${P}/milestones/${first.id}`);
-  assert.equal(r.status, 409, r.text);
-  assert.match(r.body.error, /1 slice/);
+test('milestone deletion keeps items, clears Ready and removes all its slices', async () => {
   const spare = (await call('POST', `${P}/milestones`, { name: 'Spare' })).body;
+  const held = (await call('POST', `${P}/slices`, { title: 'Remove me', milestoneId: spare.id })).body;
+  const item = (await call('POST', `${P}/roadmap`, { title: 'Keep me', sliceId: held.id })).body;
+  assert.equal((await call('POST', `${P}/ready/add`, { items: [item.id] })).status, 200);
+  assert.equal((await rowOf(item.id)).ready, true);
   assert.equal((await call('DELETE', `${P}/milestones/${spare.id}`)).status, 200);
+  const kept = await rowOf(item.id);
+  assert.equal(kept.title, 'Keep me');
+  assert.equal(kept.sliceId, null);
+  assert.equal(kept.ready, false);
+  assert.equal((await call('GET', `${P}/slices`)).body.some((s) => s.id === held.id), false);
+  assert.equal((await call('DELETE', `${P}/milestones/${spare.id}`)).status, 404);
+  const empty = (await call('POST', `${P}/milestones`, { name: 'Empty' })).body;
+  assert.equal((await call('DELETE', `${P}/milestones/${empty.id}`)).status, 200);
 });
 
 test('a slice is refused a milestone from nowhere, and one with no name', async () => {

@@ -8,7 +8,7 @@
 // SAY out loud rather than pre-empt:
 //
 //  • Making a milestone current FINISHES the one before it, in the same write.
-//  • A milestone with slices cannot be deleted, so there is no delete here.
+//  • Deleting a milestone removes its slices, keeps items in the Icebox and clears Ready.
 //  • Deleting a slice sends its items to the Icebox and takes them out of
 //    Ready. The second press says both, because neither is guessable.
 //  • An unsliced item cannot be queued to build (Ready ⇒ sliced is a CHECK).
@@ -214,7 +214,7 @@ export function SliceDialog({ slice, milestones, areaNames, count, onClose, onSa
  * start a new one, or make an existing one current. Either FINISHES the one in
  * progress, and the line under the buttons says so before the press.
  */
-export function MilestoneDialog({ milestones, onClose, onSave, onCreate, onMakeCurrent, editing }: {
+export function MilestoneDialog({ milestones, onClose, onSave, onCreate, onMakeCurrent, onDelete, editing }: {
   milestones: Milestone[];
   /** The milestone to edit: the one the board is viewing. Default, the current. */
   editing?: Milestone | null;
@@ -222,6 +222,7 @@ export function MilestoneDialog({ milestones, onClose, onSave, onCreate, onMakeC
   onSave: (id: number, v: { name: string; goal: string; targetOn: string | null }) => void;
   onCreate: (v: { name: string; goal: string; targetOn: string | null }) => void;
   onMakeCurrent: (id: number) => void;
+  onDelete: (id: number) => void;
 }) {
   const current = currentMilestone(milestones);
   const target = editing ?? current;
@@ -232,6 +233,7 @@ export function MilestoneDialog({ milestones, onClose, onSave, onCreate, onMakeC
   const [goal, setGoal] = useState(target?.goal ?? '');
   const [targetOn, setTargetOn] = useState(target?.targetOn ?? '');
   const [fresh, setFresh] = useState('');
+  const [confirming, setConfirming] = useState(false);
   const others = milestones.filter((m) => m.id !== cur?.id && m.status !== 'done');
   const save = () => {
     const n = name.trim();
@@ -290,7 +292,11 @@ export function MilestoneDialog({ milestones, onClose, onSave, onCreate, onMakeC
             {current && <span className="km-menunote">That finishes “{current.name}”. Its slices stay where they are.</span>}
           </div>
         )}
+        {confirming && <p className="km-menunote" role="alert">Delete this milestone and all its slices? Items are kept in the Icebox and leave Ready. This cannot be undone.</p>}
         <div className="km-dialog-foot">
+          {target && <button className="k-btn danger km-dialog-left" onClick={() => confirming ? onDelete(target.id) : setConfirming(true)}>
+            {confirming ? 'Confirm delete' : 'Delete milestone'}
+          </button>}
           <button className="k-btn ghost" onClick={onClose}>Cancel</button>
           <button className="k-btn" onClick={save} disabled={!name.trim()}>Save</button>
         </div>

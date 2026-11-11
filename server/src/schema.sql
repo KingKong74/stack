@@ -1665,8 +1665,8 @@ END $$;
 --  2. A SLICE belongs to a milestone, and `milestone_id` is NOT NULL: a slice
 --     outside a milestone is the flat structure this exists to end. NO ACTION,
 --     not RESTRICT, so a project purge's cascade can take both in one
---     statement; a lone milestone delete with slices in it is refused by the
---     route out loud. A slice's STATUS IS DERIVED from its items and never
+--     statement. The milestone delete route ices items and removes slices
+--     first. A slice's STATUS IS DERIVED from its items and never
 --     stored (the rule lib/spine.ts states). `areas` holds area names, free
 --     strings like artifacts.tags: the components it touches.
 --  3. `roadmap_items.slice_id` NULL IS THE ICEBOX. Deleting a slice returns

@@ -97,7 +97,7 @@ import {
   getBoardFolds, setBoardFolds, getBoardView, setBoardView,
   createRoadmapItem, patchRoadmapItem, deleteRoadmapItem,
   createSprint, patchSprint, putSprintSlices, deleteSprint, putReadyQueue,
-  createSlice, patchSlice, deleteSlice, createMilestone, patchMilestone,
+  createSlice, patchSlice, deleteSlice, createMilestone, patchMilestone, deleteMilestone,
   startBuild, planSprint,
   queueTermLaunch, setStarred,
 } from '../store';
@@ -1585,7 +1585,14 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
       )}
       {msEdit && (
         <MilestoneDialog milestones={ms} editing={shownMs} onClose={() => setMsEdit(false)}
-          onSave={saveMilestone} onCreate={startMilestone} onMakeCurrent={makeCurrent} />
+          onSave={saveMilestone} onCreate={startMilestone} onMakeCurrent={makeCurrent}
+          onDelete={(id) => guard(async () => {
+            await deleteMilestone(slug, id);
+            setMsEdit(false); setViewMsId(null);
+            setMs((xs) => xs.filter((m) => m.id !== id));
+            setSl((xs) => xs.filter((s) => s.milestoneId !== id));
+            onRefresh();
+          })} />
       )}
 
       {dialog && (

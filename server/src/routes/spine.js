@@ -14,9 +14,8 @@
 //     cost a detour through a screen you have never seen. A project that has
 //     milestones but none current is refused out loud, because guessing which
 //     one is how work gets filed under the wrong goal.
-//  3. A MILESTONE WITH SLICES CANNOT BE DELETED. Deleting a decision about work
-//     must never delete the work, and a slice cannot exist outside a milestone.
-//     Move or delete its slices first.
+//  3. DELETING A MILESTONE removes its slices and returns their items to the
+//     Icebox, clearing Ready in the same transaction. Work is kept.
 //  4. DELETING A SLICE RETURNS ITS ITEMS TO THE ICEBOX, and takes them out of
 //     Ready first, in one transaction: Ready ⇒ sliced is a CHECK, and an
 //     unsliced row must never be in the build lane.
@@ -140,16 +139,27 @@ milestones.patch('/:id', async (req, res) => {
 
 milestones.delete('/:id', async (req, res) => {
   const id = Number(req.params.id);
-  const { rows } = await q('SELECT id FROM milestones WHERE project_id = $1 AND id = $2', [req.project.id, id]);
-  if (!rows.length) return res.status(404).json({ error: 'No such milestone.' });
-  const { rows: held } = await q('SELECT count(*)::int AS n FROM slices WHERE milestone_id = $1', [id]);
-  if (held[0].n > 0) {
-    return res.status(409).json({
-      error: `This milestone still has ${held[0].n} slice${held[0].n === 1 ? '' : 's'}. Move or delete them first: a slice cannot exist outside a milestone.`,
-    });
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query(
+      'SELECT id FROM milestones WHERE project_id = $1 AND id = $2 FOR UPDATE', [req.project.id, id]);
+    if (!rows.length) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'No such milestone.' }); }
+    // Lock slices before freeing their items, serialising with item filing.
+    await client.query('SELECT id FROM slices WHERE milestone_id = $1 FOR UPDATE', [id]);
+    await client.query(
+      `UPDATE roadmap_items SET ready_at = NULL, ready_rank = 0, slice_id = NULL, slice_rank = 0, updated_at = now()
+        WHERE project_id = $1 AND slice_id IN (SELECT id FROM slices WHERE milestone_id = $2)`, [req.project.id, id]);
+    await client.query('DELETE FROM slices WHERE project_id = $1 AND milestone_id = $2', [req.project.id, id]);
+    await client.query('DELETE FROM milestones WHERE project_id = $1 AND id = $2', [req.project.id, id]);
+    await client.query('COMMIT');
+    res.json({ ok: true });
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw e;
+  } finally {
+    client.release();
   }
-  await q('DELETE FROM milestones WHERE project_id = $1 AND id = $2', [req.project.id, id]);
-  res.json({ ok: true });
 });
 
 // ---------------------------------------------------------------------------

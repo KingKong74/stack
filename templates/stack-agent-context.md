@@ -169,8 +169,7 @@ Open roadmap items can carry a claim (`claimedBy` — the branch name, e.g.
 - **Never start an item claimed by another branch.**
 - **Never start an unapproved auto-found item.** An item with `source: "hook"`
   was extracted from a push by the tooling, not written by the owner, and until
-  they sign it off (`reviewed: true`) it is not work anybody has agreed to. Every unattended path already refuses it, so if you
-  find one in front of you, leave it and take the next item. An item with
+  they sign it off (`reviewed: true`) it is not work anybody has agreed to. Unattended paths refuse it; leave it and take the next item. An item with
   `source: "manual"` is approved the moment it exists — a human wrote it —
   whatever `reviewed` says.
 - **Never start an item with `skipped: true`**: it's parked on purpose; the
@@ -181,6 +180,7 @@ Open roadmap items can carry a claim (`claimedBy` — the branch name, e.g.
   An empty Ready queue means nothing to build unattended.
 - **The spine**: `charter` is the charter's opening; `milestones` hold
   `slices`; `sliceId` null is the Icebox (off the board, never Ready).
+  Deleting milestones ices items, clears Ready and removes slices.
 - **Never set `ready`/`readyRank` or a star, move an existing item's slice,
   or write a milestone, slice or sprint.** Those are the owner's call. A sprint commits
   to slices: an item is in one iff its slice is (`sprintId` is derived and a
