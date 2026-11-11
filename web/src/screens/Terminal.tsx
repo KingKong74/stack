@@ -2007,10 +2007,10 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                       onMouseLeave={() => setTilePeek((k) => (k === t.key ? null : k))}
                       title={`${t.name} — click to open it as a window`}>
                       <div className="tv-tile-top" />
+                      <span className="tv-st tv-tile-number">#{(barSeen.current.get(t.key) ?? 0) + 1}</span>
                       {!hov ? (
                         <div className="tv-tile-face">
                           <div className="tv-tile-row">
-                            <span className="tv-st">#{(barSeen.current.get(t.key) ?? 0) + 1}</span>
                             <button className="tv-btn xs" aria-label={`Refresh terminal ${t.name}`} title="Refresh terminal screen" onClick={(e) => { e.stopPropagation(); if (t.sess) handles.current.get(t.sess.id)?.reload(); void refreshDetached(); }}>↻</button>
 
                             {compact && projChip(t.project, 14)}
@@ -2030,7 +2030,6 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                       ) : (
                         <div className="tv-tile-peek" onClick={(e) => e.stopPropagation()}>
                           <div className="tv-tile-row">
-                            <span className="tv-st">#{(barSeen.current.get(t.key) ?? 0) + 1}</span>
                             <button className="tv-btn xs" aria-label={`Refresh terminal ${t.name}`} title="Refresh terminal screen" onClick={(e) => { e.stopPropagation(); if (t.sess) handles.current.get(t.sess.id)?.reload(); void refreshDetached(); }}>↻</button>
 
                             <span className={`tv-dot ${t.st}`} />

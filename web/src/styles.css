@@ -9440,6 +9440,11 @@ button.ar-open:hover { background: var(--surface-hover); }
   justify-content: flex-end; gap: var(--space-2); overflow: hidden;
 }
 .tv-tile.compact .tv-tile-face { padding: var(--space-2) var(--space-3); gap: 4px; }
+.tv-tile-number { position: absolute; top: var(--space-3); left: var(--space-4); z-index: 3; font-size: var(--text-xl); font-weight: var(--weight-semibold); line-height: 1; pointer-events: none; }
+.tv-tile .tv-tile-face { top: calc(var(--space-3) + var(--text-xl)); }
+.tv-tile.compact .tv-tile-number { top: var(--space-2); left: var(--space-3); }
+.tv-tile.compact .tv-tile-face { top: calc(var(--space-2) + var(--text-xl)); }
+.tv-tile.hov .tv-tile-peek { padding-top: calc(var(--space-3) + var(--text-xl) + var(--space-2)); }
 .tv-tile-row { flex: none; display: flex; align-items: center; gap: var(--space-2); min-height: 22px; min-width: 0; }
 .tv-tile.compact .tv-tile-row { min-height: 16px; }
 .tv-tile-row .ago { margin-left: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-tertiary); }
