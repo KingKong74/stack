@@ -861,15 +861,24 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
   // column would still read In Review.
   const verdictRows = (it: RoadmapItem) =>
     [it, ...(partsOf.get(it.id) || []).filter((p) => isBuilt(p))];
-  const approve = (it: RoadmapItem) =>
+  // APPROVE ALL, per slice group (2026-11-11): the same verdict on every card
+  // in the group that is waiting for one, one PATCH per row, and ONE Undo for
+  // the lot. The head asks first (`bulkAsk`), because the group may be folded
+  // and its built notes unread.
+  const approve = (it: RoadmapItem) => approveMany([it]);
+  const approveMany = (cards: RoadmapItem[]) =>
     guard(async () => {
-      const targets = verdictRows(it);
+      const it = cards[0];
+      if (!it) return;
+      const targets = cards.flatMap(verdictRows);
       const before = targets.map((x) => ({ id: x.id, done: x.done, claimedBy: x.claimedBy, reviewTag: x.reviewTag }));
       const out: RoadmapItem[] = [];
       for (const x of targets) out.push(await patchRoadmapItem(slug, x.id, { review_tag: 'solid', done: true }));
       setRows((r) => r.map((x) => out.find((o) => o.id === x.id) || x));
       onRefresh();
-      setNote(`#${it.id} approved and ticked${targets.length > 1 ? `, with ${targets.length - 1} built part${targets.length === 2 ? '' : 's'}` : ''}. It is in Done and counts as landed.`);
+      setNote(cards.length > 1
+        ? `${cards.length} cards approved and ticked. They are in Done and count as landed.`
+        : `#${it.id} approved and ticked${targets.length > 1 ? `, with ${targets.length - 1} built part${targets.length === 2 ? '' : 's'}` : ''}. It is in Done and counts as landed.`);
       setUndo(() => async () => {
         const back: RoadmapItem[] = [];
         for (const b of before) {
@@ -877,7 +886,7 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
         }
         setRows((r) => r.map((x) => back.find((o) => o.id === x.id) || x));
         onRefresh();
-        setNote(`#${it.id} is back in In Review, with no verdict.`);
+        setNote(cards.length > 1 ? `${cards.length} cards are back in In Review, with no verdict.` : `#${it.id} is back in In Review, with no verdict.`);
       });
     });
   const sendBack = (it: RoadmapItem, text: string) =>
@@ -1053,7 +1062,9 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
   const [inlineId, setInlineId] = useState<number | null>(null);
   const [over, setOver] = useState<string | null>(null);
   const [landedId, land] = useLanded();
-  const closeAll = () => { setMenu(null); setPriMenu(null); setPtsMenu(null); setCardMenu(null); setAreaMenu(null); };
+  const closeAll = () => { setMenu(null); setPriMenu(null); setPtsMenu(null); setCardMenu(null); setAreaMenu(null); setBulkAsk(null); };
+  // Which group head is asking "Approve all N?" (`col::group`), or null.
+  const [bulkAsk, setBulkAsk] = useState<string | null>(null);
 
   // ---- THE FOCUS CANVAS (detail/BoardFocus.tsx) ------------------------------
   // A double-click on a card (or its ✎) flies it onto the canvas. The phase is
@@ -1513,6 +1524,28 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
                           <span className="n mono">{st.built}/{st.total} built</span>
                         </div>
                       )}
+                      {(() => {
+                        const owed = g.items.filter(awaitsVerdict);
+                        if (owed.length < 2) return null;
+                        const k = `${col.key}::${g.key}`;
+                        return (
+                          <div className="km-approveall">
+                            {bulkAsk === k ? (
+                              <>
+                                <span className="q">Approve and tick all {owed.length}?</span>
+                                <button className="km-vbtn ok" onClick={(e) => { e.stopPropagation(); setBulkAsk(null); approveMany(owed); }}>Approve {owed.length}</button>
+                                <button className="km-vbtn" onClick={(e) => { e.stopPropagation(); setBulkAsk(null); }}>Cancel</button>
+                              </>
+                            ) : (
+                              <button className="km-vbtn ok"
+                                title={`Approve every card in this ${bySlice ? 'slice' : 'group'} that is waiting on your verdict: each gets the verdict and a tick. One Undo reverses them all.`}
+                                onClick={(e) => { e.stopPropagation(); closeAll(); setBulkAsk(k); }}>
+                                <KitIcon name="check" size={13} />Approve all {owed.length}
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })()}
                       {!gFolded && g.items.map(card)}
                     </div>
                   );
