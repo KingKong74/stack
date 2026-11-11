@@ -432,6 +432,7 @@ export interface Activity {
   when: string;
   at?: string;        // ISO push time, for grouping by day; absent on an older server
   summary: string;
+  headline?: string;  // the commit's subject line, which heads the slip ('' on older rows)
   tags: string[];
   geminiNote: string; // the second model's one-line take on the push ('' until stamped)
   tokens?: number;    // real session usage from the transcript (#178); 0/absent = unknown

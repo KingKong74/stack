@@ -74,6 +74,12 @@ async function rowsFor(commit) {
   await post({ session_id: 'sess-e', commit_hash: 'bbb2222', branch: 'main', summary: 'a different session', message_count: 4 });
   check('the next session at that HEAD opens its own row', (await rowsFor('bbb2222')).length, 2);
 
+  // 5. The commit subject heads the Activity slip: stored, served, and kept
+  //    when a later post for the same session carries none.
+  await post({ session_id: 'sess-f', commit_hash: 'ccc3333', branch: 'main', summary: 'long sign-off', headline: 'fix(x): the idea' });
+  await post({ session_id: 'sess-f', commit_hash: 'ccc3333', branch: 'main', summary: 'long sign-off' });
+  check('the headline is served on the activity row', (await rowsFor('ccc3333'))[0]?.headline, 'fix(x): the idea');
+
   console.log(failed ? `\n${failed} check(s) failed` : '\nall checks passed');
   process.exit(failed ? 1 : 0);
 })().catch((e) => { console.error(e.message); process.exit(1); });

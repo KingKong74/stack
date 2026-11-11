@@ -16,7 +16,7 @@
 import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import {
-  loadStackEnv, logStderr, projectFromGit, fetchSettings, postIngest,
+  loadStackEnv, logStderr, projectFromGit, fetchSettings, postIngest, commitSubject,
 } from './stack-post.mjs';
 
 loadStackEnv();
@@ -80,6 +80,8 @@ function tmuxSession() {
     authored: true,
     commit_hash: input.session?.commit_hash || fromGit.commit,
     branch: input.session?.branch || fromGit.branch,
+    // The commit's subject heads the Activity slip; a caller's own wins.
+    headline: input.session?.headline || commitSubject(cwd, input.session?.commit_hash || fromGit.commit) || undefined,
     // A name the caller sent wins — a session may know better than the process
     // it is running in (a console spawned under another name) — but it is
     // filled from tmux when absent rather than left to be guessed.

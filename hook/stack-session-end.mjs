@@ -28,7 +28,7 @@
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { dirname, join, basename } from 'node:path';
 import {
-  loadStackEnv, logStderr, projectFromGit, fetchSettings, postIngest, endPresence, git,
+  loadStackEnv, logStderr, projectFromGit, fetchSettings, postIngest, endPresence, git, commitSubject,
 } from './stack-post.mjs';
 
 loadStackEnv();
@@ -328,6 +328,8 @@ function lastSubstantiveMessage(turns) {
       session_id: payload.session_id || null,
       // this session's own commit; HEAD only when it committed nothing
       commit_hash: t.commit || project.commit,
+      // its subject line heads the Activity slip
+      headline: commitSubject(cwd, t.commit || project.commit) || null,
       branch: project.branch,
       cwd,
       model: t.model,

@@ -20,7 +20,7 @@ publicShowcase.get('/:slug/:token', async (req, res) => {
 
   const [sessions, road, bugs] = await Promise.all([
     q(
-      `SELECT commit_hash, branch, summary, tags, created_at FROM sessions
+      `SELECT commit_hash, branch, summary, headline, tags, created_at FROM sessions
         WHERE project_id = $1 ORDER BY created_at DESC LIMIT 20`,
       [p.id]
     ),

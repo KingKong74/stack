@@ -256,6 +256,7 @@ ingest.post('/', async (req, res) => {
     session_id: str(s.session_id, 200),
     commit_hash: commit,
     summary: str(s.summary, 8000),
+    headline: str(s.headline, 200),
     current_phase: str(s.current_phase, 400),
     next_steps: asList(s.next_steps),
     blockers: asList(s.blockers),
@@ -438,6 +439,12 @@ ingest.post('/', async (req, res) => {
          JSON.stringify(session.agent_usage), session.agents_recorded]
       );
       sessionRowId = ins.rows[0].id;
+    }
+
+    // The commit subject heads the Activity slip. A separate write so it rides
+    // neither column list above; a post without one leaves the stored one.
+    if (session.headline) {
+      await client.query('UPDATE sessions SET headline = $2 WHERE id = $1', [sessionRowId, session.headline]);
     }
 
     // --- 3. Refresh the project's live resume state (COALESCE / keep-if-empty) ---

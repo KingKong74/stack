@@ -87,6 +87,10 @@ ALTER TABLE sessions ADD COLUMN IF NOT EXISTS gemini_note TEXT;
 -- per message id), so manual sessions report usage like autopilot runs do.
 -- 0 = unknown (pre-#178 rows, or a hook that couldn't read the transcript).
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS tokens_used BIGINT NOT NULL DEFAULT 0;
+-- headline = the pushed commit's subject line, sent by the hooks: the one-line
+-- idea of the push that heads its Activity slip. NULL on older rows, where the
+-- client falls back to the summary's first sentence.
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS headline TEXT;
 -- Per-model transcript usage for an INTERACTIVE session, shaped exactly like
 -- autopilot_runs.model_usage so the Roles room reads one shape for both. No
 -- costUSD key: a transcript carries no cost, which is why manual spend is

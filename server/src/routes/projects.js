@@ -122,7 +122,7 @@ projects.get('/:slug', async (req, res) => {
     q(
       // `authored` rides along for resumeSince(): which of these pushes actually
       // wrote the resume card, and what has landed since.
-      `SELECT commit_hash, branch, summary, tags, gemini_note, authored, tokens_used, created_at, slice_id
+      `SELECT commit_hash, branch, summary, headline, tags, gemini_note, authored, tokens_used, created_at, slice_id
          FROM sessions
         WHERE project_id = $1 ORDER BY created_at DESC LIMIT 50`,
       [p.id]
@@ -326,7 +326,7 @@ projects.get('/:slug/debrief', async (req, res) => {
       [p.id]
     ),
     q(
-      `SELECT commit_hash, branch, summary, tags, gemini_note, tokens_used, created_at
+      `SELECT commit_hash, branch, summary, headline, tags, gemini_note, tokens_used, created_at
          FROM sessions WHERE project_id = $1 ORDER BY created_at DESC LIMIT 5`,
       [p.id]
     ),

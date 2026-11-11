@@ -78,6 +78,7 @@ import { isAutoIdea } from '../lib/plan';
 import { IceboxList, SlicePicker, liveSlices } from './Spine';
 import { priorityMeta, timeAgo } from '../lib/ui';
 import { patchRoadmapItem, deleteRoadmapItem } from '../store';
+import { slipHeadline } from '../lib/course';
 
 type Tone = 'info' | 'danger' | 'success' | 'warning' | 'neutral';
 
@@ -134,74 +135,101 @@ function dayLabel(iso: string, now: Date): string {
 
 const fmtTokens = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : `${Math.round(n / 1000)}k`);
 
+// THE SLIP IS ONE LINE (owner, 2026-11-11): the idea of the push, which is
+// the commit's subject (`slipHeadline`, lib/course.ts). The session's long
+// sign-off and Gemini's note show only on an opened slip.
+type BranchFilter = 'all' | 'main' | 'other';
+
 function ActivityPane({ activity, highlightId }: { activity: Activity[]; highlightId: string | null }) {
-  // A summary is a paragraph, so a row shows three lines and a click reads the
-  // rest. Local state: leaving the tab is the reset. A highlighted push opens.
+  // Local state: leaving the tab is the reset. A highlighted push opens.
   const [open, setOpen] = useState<string | null>(null);
+  const [branch, setBranch] = useState<BranchFilter>('all');
   useEffect(() => { if (highlightId) setOpen(highlightId); }, [highlightId]);
   const groups = useMemo(() => {
     const now = new Date();
-    const out: { day: string; events: Activity[] }[] = [];
-    for (const a of activity) {
-      const day = a.at && !Number.isNaN(Date.parse(a.at)) ? dayLabel(a.at, now) : 'Recent';
+    const out: { day: string; date: string; events: Activity[] }[] = [];
+    const shown = activity.filter((a) => branch === 'all' || (branch === 'main') === (a.branch === 'main'));
+    for (const a of shown) {
+      const label = a.at && !Number.isNaN(Date.parse(a.at)) ? dayLabel(a.at, now) : 'Recent';
+      const [day, date = ''] = label.split(' · ');
       const last = out[out.length - 1];
-      if (last && last.day === day) last.events.push(a);
-      else out.push({ day, events: [a] });
+      if (last && last.day === day && last.date === date) last.events.push(a);
+      else out.push({ day, date, events: [a] });
     }
     return out;
-  }, [activity]);
+  }, [activity, branch]);
 
   if (!activity.length) {
     return (
       <span className="im-empty">
-        No pushes yet. Every push posts a summary here, so you can scan what changed without
-        reading diffs.
+        No pushes yet. Every push posts a one-line summary here.
       </span>
     );
   }
 
   return (
-    <div className="fy-feed">
-      {groups.map((g, gi) => (
-        <div className="fy-day" key={`${g.day}-${gi}`}>
-          <span className="fy-dim">{g.day}</span>
-          {g.events.map((a, i) => (
-            // `data-hl` is the hash ProjectDetail's scroller looks for; the
-            // ring is drawn here because only this pane knows the row matched.
-            <div className={`fy-event${highlightId && a.hash === highlightId ? ' hl' : ''}`}
-              key={`${a.hash}-${i}`} data-hl={a.hash}
-              onClick={() => setOpen(open === a.hash ? null : a.hash)}>
-              <span className="fy-chip tone-info"><KitIcon name="arrow-up-right" size={13} /></span>
-              <div className="mid">
-                <div className="top">
-                  <span className="t">Pushed to</span>
-                  <span className="br">{a.branch}</span>
-                  {(a.tokens ?? 0) > 0 && (
-                    <span className="fy-dim" title="Real token usage for the session, from its transcript (#178)">
-                      {fmtTokens(a.tokens!)} tok
-                    </span>
-                  )}
-                  <span className="fy-ago">{a.when}</span>
-                </div>
-                <div className="fy-commit">
-                  <span className="sha">{a.hash === '—' ? '—' : a.hash.slice(0, 7)}</span>
-                  <span className={`msg${open === a.hash ? '' : ' clamp'}`}>{a.summary.trim() || 'No summary was posted for this push.'}</span>
-                </div>
-                {/* THE SECOND MODEL ANNOTATES; it is drawn in the accent and
-                    labelled as Gemini's, never as a verdict. Empty until stamped. */}
-                {a.geminiNote.trim() && (
-                  <div className="fy-gem"><span className="star">✦</span><b>Gemini</b> {a.geminiNote}</div>
-                )}
-                {a.tags.length > 0 && (
-                  <div className="fy-tags">
-                    {a.tags.map((t, ti) => <span className="k-tag" key={ti}>{t}</span>)}
-                  </div>
-                )}
-              </div>
-            </div>
+    <div className="af">
+      <div className="af-bar">
+        <span className="af-lede">Every push, newest first. Open one for the session’s full summary.</span>
+        <div className="af-seg" role="group" aria-label="Branches">
+          {(['all', 'main', 'other'] as const).map((b) => (
+            <button key={b} className={branch === b ? 'on' : ''} onClick={() => setBranch(b)}>
+              {b === 'other' ? 'branches' : b}
+            </button>
           ))}
         </div>
-      ))}
+      </div>
+      {groups.length === 0 && <span className="im-empty">No pushes on {branch === 'main' ? 'main' : 'other branches'} in the last 50.</span>}
+      {groups.map((g, gi) => {
+        const tok = g.events.reduce((n, a) => n + (a.tokens ?? 0), 0);
+        return (
+          <section className="af-day" key={`${g.day}-${g.date}-${gi}`}>
+            <div className="af-when">
+              <span className="d">{g.day}</span>
+              {g.date && <span className="dt">{g.date}</span>}
+              <span className="st">{g.events.length} push{g.events.length === 1 ? '' : 'es'}{tok > 0 ? ` · ${fmtTokens(tok)} tok` : ''}</span>
+            </div>
+            <div className="af-line">
+              {g.events.map((a, i) => {
+                const on = open === a.hash;
+                return (
+                  // `data-hl` is the hash ProjectDetail's scroller looks for.
+                  <div className={`af-ev${on ? ' open' : ''}${highlightId && a.hash === highlightId ? ' hl' : ''}`}
+                    key={`${a.hash}-${i}`} data-hl={a.hash}
+                    onClick={() => setOpen(on ? null : a.hash)}>
+                    <i className="af-dot" />
+                    <div className="af-slip">
+                      <div className="af-top">
+                        <span className="af-title">{slipHeadline(a)}</span>
+                        <span className="af-ago">{a.when}</span>
+                      </div>
+                      <div className="af-meta">
+                        <span className="sha">{a.hash === '—' ? '—' : a.hash.slice(0, 7)}</span>
+                        <span className="br">{a.branch}</span>
+                        {(a.tokens ?? 0) > 0 && (
+                          <span title="Real token usage for the session, from its transcript (#178)">{fmtTokens(a.tokens!)} tok</span>
+                        )}
+                        {a.tags.map((t, ti) => <span className="k-tag" key={ti}>{t}</span>)}
+                      </div>
+                      {on && (a.summary.trim() || a.geminiNote.trim()) && (
+                        <div className="af-body">
+                          {a.summary.trim() && <p>{a.summary}</p>}
+                          {/* THE SECOND MODEL ANNOTATES; drawn in the accent,
+                              labelled as Gemini's, never as a verdict. */}
+                          {a.geminiNote.trim() && (
+                            <div className="fy-gem"><span className="star">✦</span><b>Gemini</b> {a.geminiNote}</div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        );
+      })}
+      <span className="af-foot">The feed keeps the last 50 pushes.</span>
     </div>
   );
 }
@@ -285,13 +313,13 @@ function AutoPane({ slug, items, slices, milestones, onRefresh, onEdit, highligh
 
   return (
     <div className="ai">
+      <div className="ai-headrow">
+        <span className="ai-h">To answer</span>
+        <span className="co-num">{queue.length}</span>
+      </div>
       <div className="ai-lede">
-        What your sessions found and nobody has answered yet — read off a push, or opened by a
-        session for work it was doing. Nothing here is on the board, and the overnight runner
-        leaves all of it alone until you answer. <b>Promote</b> signs it off into the slice picked beside
-        it, which puts it on the board, or into the Icebox below when there is none.
-        {' '}Rows marked <b>test</b> are checks a session thought were missing (#500) — one kind for
-        a defect that got through, one for a route nothing watches.
+        What sessions found and nobody has answered. The runner leaves these alone until you
+        <b> Promote</b> one into a slice, or into the Icebox below when none is picked.
       </div>
 
       {err && <div className="km-err" role="alert">{err}</div>}

@@ -37,6 +37,12 @@ export function git(cwd, args) {
   } catch { return ''; }
 }
 
+// A commit's subject line: the one-line idea of the push that heads its
+// Activity slip. '' when the hash doesn't resolve (the server keeps what it has).
+export function commitSubject(cwd, hash) {
+  return hash ? git(cwd, ['log', '-1', '--format=%s', hash]).slice(0, 200) : '';
+}
+
 // Normalise a git remote (ssh or https, with/without .git) into a browseable
 // https URL for the app's "Repo" button. Returns null if unknown.
 export function browseUrl(remote) {

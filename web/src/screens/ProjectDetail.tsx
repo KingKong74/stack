@@ -681,8 +681,9 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
         {/* #622 — COURSE IS THE PROJECT HOME, on the `overview` key the mockup
             used to hold, so every link to a project's home lands on it. */}
         {tab === 'overview' && (
-          <Course slug={slug} items={allRoadmap} milestones={data.milestones} slices={data.slices}
+          <Course slug={slug} name={project.name} items={allRoadmap} milestones={data.milestones} slices={data.slices}
             sprints={data.sprints} charter={data.charter} resume={project.resume}
+            northStar={data.northStar} phase={data.currentPhase} activity={data.activity}
             lastSlice={data.activity.find((a) => a.sliceId != null)?.sliceId ?? null} />
         )}
         {(tab === 'activity' || tab === 'auto') && (

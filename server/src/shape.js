@@ -278,6 +278,8 @@ export function activityShape(row) {
     // and says nothing about which day "3d" fell on.
     at: row.created_at ? new Date(row.created_at).toISOString() : '',
     summary: row.summary || '',
+    // The commit subject, the slip's one-line headline ('' on older rows).
+    headline: row.headline || '',
     tags: Array.isArray(row.tags) ? row.tags : [],
     geminiNote: row.gemini_note || '', // the second model's take, '' until stamped
     tokens: Number(row.tokens_used) || 0, // real session usage (#178); 0 = unknown
