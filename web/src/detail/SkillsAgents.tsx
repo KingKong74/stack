@@ -19,9 +19,8 @@
 // RULES THIS SCREEN KEEPS THAT THE DESIGN DID NOT STATE:
 //
 //  1. WITH NO ADVISOR NOTHING SPAWNS. `--agents` is only passed when an
-//     advisor is set. v4 dropped the policy strip; it is kept as one line over
-//     the agent list, because live-looking switches over an inert catalogue
-//     are the most expensive lie this screen could tell. The ADVISOR runs the
+//     advisor is set. Execution policy lives in profile details; the list footer
+//     states whether automation can delegate. The ADVISOR runs the
 //     session and the EXECUTOR is the subagent (#285).
 //  2. THE LAST TOOL CANNOT BE REVOKED. The engine refuses an empty grant (a
 //     profile that can do nothing is a no-op), so the cell refuses first.
@@ -210,7 +209,7 @@ export function SkillsAgents() {
           ? <AgentEditor p={agent} room={room} models={models} skills={skills} busy={busy} run={run}
               onPick={setAgOpen} onBack={() => setAgOpen(null)} onOpenSkill={openSkill}
               onNewSkill={() => newSkill(`${agent.key}-skill`)} />
-          : <AgentList room={room} models={models} busy={busy} run={run} onOpen={setAgOpen} />)}
+          : <AgentList room={room} busy={busy} run={run} onOpen={setAgOpen} />)}
 
       {tab === 'skills' && (!skills
         ? <div className="sa-loading">Loading the library…</div>
@@ -241,15 +240,12 @@ const withCurrent = (opts: Opt[], cur: string) => (cur && !opts.some((o) => o.mo
 
 // ---------------------------------------------------------------- agents
 
-function AgentList({ room, models, busy, run, onOpen }: {
-  room: AgentProfilesRoom; models: ModelsRoom | null; busy: string; run: Run; onOpen: (k: string) => void;
+function AgentList({ room, busy, run, onOpen }: {
+  room: AgentProfilesRoom; busy: string; run: Run; onOpen: (k: string) => void;
 }) {
   const { policy, knownTools } = room;
   const spawns = policy.spawnsAgents;
-  const execOpts = withCurrent(models?.policy.executorCatalogue ?? [{ model: '', label: 'CLI default' }], policy.executorModel);
-  const advOpts = withCurrent(models?.policy.advisorCatalogue ?? [{ model: '', label: 'None' }], policy.advisorModel);
   const exec = room.profiles.find((p) => p.key === 'executor');
-  const on = room.profiles.filter((p) => p.enabled);
 
   const newAgent = () => {
     const taken = new Set(room.profiles.map((p) => p.key));
@@ -264,29 +260,6 @@ function AgentList({ room, models, busy, run, onOpen }: {
   };
 
   return (<>
-    <div className="sa-bar">
-      <span className={`sa-dot ${spawns ? 'ok' : 'warn'}`} />
-      <span className="tx">
-        {spawns
-          ? <>Subagents spawn: {on.length} of {room.profiles.length} profiles are passed via <code>--agents</code>.</>
-          : <>Nothing spawns. With no advisor, <code>--agents</code> is never passed and the switches below change nothing.</>}
-      </span>
-      <label className="sa-pick" title="Runs the session: plans, delegates, verifies, commits. None = a single-model run.">
-        <span>Advisor</span>
-        <select className="lp-select mono sm" value={policy.advisorModel} disabled={busy === 'policy'}
-          onChange={(e) => { const v = e.target.value; void run('policy', () => patchSettings({ autopilotAdvisorModel: v })); }}>
-          {advOpts.map((o) => <option key={o.model} value={o.model}>{o.label}</option>)}
-        </select>
-      </label>
-      <label className="sa-pick" title="The subagent with the write tools, and what a profile set to inherit runs as.">
-        <span>Executor</span>
-        <select className="lp-select mono sm" value={policy.executorModel} disabled={busy === 'policy'}
-          onChange={(e) => { const v = e.target.value; void run('policy', () => patchSettings({ autopilotExecutorModel: v })); }}>
-          {execOpts.map((o) => <option key={o.model} value={o.model}>{o.label}</option>)}
-        </select>
-      </label>
-    </div>
-
     <div className="sa-card">
       <div className="sa-agrow head">
         <span />
@@ -315,14 +288,15 @@ function AgentList({ room, models, busy, run, onOpen }: {
             <span className={`sa-usage${used ? '' : ' zero'}`}>{used}</span>
             <span className="sa-on">
               <Switch on={p.enabled} disabled={busy === `${p.key}:on`}
-                title={p.enabled ? 'On: handed to runs' : 'Off: kept, never spawned'}
+                title={p.enabled ? 'Available when selected for automation; requires an advisor' : 'Disabled for selection; the built-in executor remains the fallback'}
                 onToggle={() => void run(`${p.key}:on`, () => patchAgentProfile(p.key, { enabled: !p.enabled }))} />
             </span>
           </div>
         );
       })}
       <div className="sa-cardfoot">
-        <span>{exec && exec.enabled ? 'A run that names no profile spawns' : 'The executor is off, so a run that names no profile falls back to'}</span>
+        <span>{spawns ? 'Automation can delegate to selected profiles.' : 'Automation runs without delegation until an advisor is configured in profile details.'}</span>
+        <span>{exec && exec.enabled ? 'Default profile:' : 'Fallback profile:'}</span>
         <code>{room.defaultSpawn.keys.join(', ') || 'the built-in executor'}</code>
         {room.defaultSpawn.reason && <span className="why">{room.defaultSpawn.reason}</span>}
         <span className="why"><a href={hrefTo.control}>Mission Control → Agents</a> draws the same profiles.</span>
@@ -390,11 +364,11 @@ function AgentEditor({ p, room, models, skills, busy, run, onPick, onBack, onOpe
       <aside className="sa-side">
         <div className="sa-onrow">
           <div className="tx">
-            <span className="sa-ontitle">{p.enabled ? 'On · handed to runs' : 'Off · kept, never spawned'}</span>
-            <span className="note">{used} open item{used === 1 ? '' : 's'} would spawn this</span>
+            <span className="sa-ontitle">{p.enabled ? 'On · available for selection' : 'Off · excluded from selection'}</span>
+            <span className="note">{used} open item{used === 1 ? '' : 's'} assigned · {room.policy.spawnsAgents ? 'delegation configured' : 'delegation not configured'}</span>
           </div>
           <Switch on={p.enabled} disabled={busy === `${p.key}:on`}
-            title={p.enabled ? 'On: handed to runs' : 'Off: kept, never spawned'}
+            title={p.enabled ? 'Available when selected for automation; requires an advisor' : 'Disabled for selection; the built-in executor remains the fallback'}
             onToggle={() => save({ enabled: !p.enabled }, `${p.key}:on`)} />
         </div>
 
@@ -406,6 +380,28 @@ function AgentEditor({ p, room, models, skills, busy, run, onPick, onBack, onOpe
             {execOpts.map((o) => <option key={o.model} value={o.model}>{short(o.label)}</option>)}
           </select>
         </label>
+
+        <details className="sa-sect">
+          <summary>Automation execution policy</summary>
+          <p className="note">App-wide automation settings. The advisor runs the parent session; selected profiles are its subagents. These settings do not change your interactive Claude or Codex terminals.</p>
+          <label className="sa-sect">
+            <Eyebrow>Advisor model</Eyebrow>
+            <select className="lp-select mono" aria-label="Automation advisor model" value={room.policy.advisorModel} disabled={busy === 'policy'}
+              onChange={(e) => { const v = e.target.value; void run('policy', () => patchSettings({ autopilotAdvisorModel: v })); }}>
+              {withCurrent(models?.policy.advisorCatalogue ?? [{ model: '', label: 'None' }], room.policy.advisorModel).map((o) => <option key={o.model} value={o.model}>{o.label}</option>)}
+            </select>
+            <span className="note">None means a single-model run with no profile delegation.</span>
+          </label>
+          <label className="sa-sect">
+            <Eyebrow>Default subagent model</Eyebrow>
+            <select className="lp-select mono" aria-label="Automation default subagent model" value={room.policy.executorModel} disabled={busy === 'policy'}
+              onChange={(e) => { const v = e.target.value; void run('policy', () => patchSettings({ autopilotExecutorModel: v })); }}>
+              {withCurrent(models?.policy.executorCatalogue ?? [{ model: '', label: 'CLI default' }], room.policy.executorModel).map((o) => <option key={o.model} value={o.model}>{o.label}</option>)}
+            </select>
+            <span className="note">Inherited by profiles without their own model. Changing a profile model affects that profile only.</span>
+          </label>
+          <p className="note">Available profiles are selected per run; availability does not prove invocation. The built-in executor remains the fallback when no suitable executor is selected.</p>
+        </details>
 
         <div className="sa-sect">
           <Eyebrow aside={`${loaded.length} of ${lib.length} on disk`}>Skills</Eyebrow>

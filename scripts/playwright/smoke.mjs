@@ -438,6 +438,12 @@ const AGENTS_PANELS = [
     expect: '.sa .sa-edit .sa-body',
   },
   {
+    id: 'agents-execution-policy',
+    label: 'Skills & agents — profile details expose automation execution policy',
+    click: '.sa .sa-side details summary',
+    expect: '.sa details[open] select[aria-label="Automation advisor model"]',
+  },
+  {
     id: 'agents-skills',
     label: 'Skills & agents — the Skills tab draws the library',
     click: '.sa .sa-tabs button:nth-child(2)',
