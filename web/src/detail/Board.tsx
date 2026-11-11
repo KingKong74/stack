@@ -833,6 +833,29 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
 
   const archive = (it: RoadmapItem) =>
     guard(async () => { wrote(await patchRoadmapItem(slug, it.id, { archived: true })); });
+  // Complete clears the visible Done cards and their parts by archiving them.
+  // It preserves history and does not write a tick or a verdict.
+  const [completing, setCompleting] = useState(false);
+  const completeDone = (cards: RoadmapItem[]) => guard(async () => {
+    setCompleting(true);
+    const targets = new Map<number, RoadmapItem>();
+    for (const card of cards) {
+      targets.set(card.id, card);
+      for (const part of partsOf.get(card.id) || []) targets.set(part.id, part);
+    }
+    let completed = 0;
+    try {
+      for (const item of targets.values()) {
+        const updated = await patchRoadmapItem(slug, item.id, { archived: true });
+        setRows((rs) => rs.map((x) => x.id === updated.id ? updated : x));
+        completed += 1;
+      }
+      setNote(`${completed} item${completed === 1 ? '' : 's'} completed and archived. History is kept.`);
+    } finally {
+      setCompleting(false);
+      onRefresh();
+    }
+  });
   // THE OWNER'S STAR (routes/starred.js): its own write, never the card PATCH,
   // and not priority, so nothing on this board sorts or gates by it.
   const star = (it: RoadmapItem) =>
@@ -1447,7 +1470,10 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
                   onMenu={(e) => { e.stopPropagation(); closeAll(); setMenu(menu === col.key ? null : col.key); }}
                   onRename={(name) => { setMenu(null); renameCol(col.key, name); }}
                   onMove={(d) => { setMenu(null); moveCol(col.key, d); }}
-                  onDelete={() => { setMenu(null); dropCol(col.key); }} />
+                  onDelete={() => { setMenu(null); dropCol(col.key); }}
+                  onComplete={col.key === 'shipped' && col.items.length > 0
+                    ? () => { closeAll(); completeDone(col.items); } : undefined}
+                  busy={completing} />
 
                 {/* The drop preview, opening a space at the top of the column.
                     The top is not a claim about WHERE the card lands —
@@ -1786,7 +1812,7 @@ export function Popover({ anchor, className, inset = 0, align = 'right', childre
   );
 }
 
-function ColumnHead({ col, first, last, open, folded, canFold, onFold, onMenu, onRename, onMove, onDelete }: {
+function ColumnHead({ col, first, last, open, folded, canFold, onFold, onMenu, onRename, onMove, onDelete, onComplete, busy }: {
   col: { key: string; name: string; items: RoadmapItem[]; real: boolean;
     /** What the points total adds up: a cluster counts as its parts (#600). */
     sized: RoadmapItem[] };
@@ -1802,8 +1828,11 @@ function ColumnHead({ col, first, last, open, folded, canFold, onFold, onMenu, o
   onRename: (name: string) => void;
   onMove: (dir: -1 | 1) => void;
   onDelete: () => void;
+  onComplete?: () => void;
+  busy: boolean;
 }) {
   const [tip, setTip] = useState(false);
+  const [completeConfirm, setCompleteConfirm] = useState(false);
   const [editing, setEditing] = useState(false);
   // The anchor the menu is measured against. A ref rather than the button
   // itself: the menu opens BELOW the whole head, which is where it opened when
@@ -1847,6 +1876,18 @@ function ColumnHead({ col, first, last, open, folded, canFold, onFold, onMenu, o
       )}
       <span className="nm">{col.name}</span>
       <span className="k-badge">{col.items.length}</span>
+      {!folded && onComplete && (
+        <button className="k-btn ghost sm" disabled={busy}
+          title={`Archive the ${col.items.length} visible Done card${col.items.length === 1 ? '' : 's'} and their parts. History is kept.`}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (completeConfirm) { setCompleteConfirm(false); onComplete(); }
+            else setCompleteConfirm(true);
+          }}>{completeConfirm ? 'Confirm complete' : 'Complete'}</button>
+      )}
+      {!folded && onComplete && completeConfirm && (
+        <button className="k-btn ghost sm" onClick={() => setCompleteConfirm(false)}>Cancel</button>
+      )}
       {/* #507 — the column's own total, which is the number a standup actually
           reads. Same rule as the section head's: it says how many cards it left
           out, and it is absent rather than zero when nothing here is sized.
