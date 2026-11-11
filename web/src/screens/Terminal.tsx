@@ -1251,6 +1251,19 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
     setTilePeek(null);
     setSelectedKeys([]);
   };
+  const endableSelected = selectedTiles.filter((t) => !t.pinned && (t.sess || !t.det?.attached));
+  const endSelected = async () => {
+    const picked = endableSelected;
+    const keys = new Set(picked.map((t) => t.key));
+    setSelectedKeys((ks) => ks.filter((k) => !keys.has(k)));
+    setTilePeek(null);
+    const ids = new Set(picked.flatMap((t) => t.sess ? [t.sess.id] : []));
+    setWins((ws) => ws.filter((w) => !ids.has(w.id)));
+    for (const t of picked) {
+      if (t.sess) await endSession(t.sess);
+      else if (t.det) await killIdle([t.det]);
+    }
+  };
   const cap = grid.c * grid.r;
   const compact = cap >= 35;
   const shownTiles = orderTiles(allTiles.filter((t) => !hidden.includes(t.key)), tileOrder);
@@ -1366,14 +1379,21 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   // never taken while nothing is open: Esc is a key claude itself uses.
   const anyPopover = !!(menu || switcher || newMenu || gridMenu || usageOpen || openIn != null);
   useEffect(() => {
-    if (!anyPopover) return;
+    if (!anyPopover && !(visible && view === 'swarm' && wins.length)) return;
     const k = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (!anyPopover) {
+        const front = wins.reduce((a, b) => a.z > b.z ? a : b);
+        closeWin(front.id);
+        return;
+      }
       setMenu(null); setSwitcher(false); setNewMenu(false); setGridMenu(false); setUsageOpen(null); setOpenIn(null);
     };
-    window.addEventListener('keydown', k);
-    return () => window.removeEventListener('keydown', k);
-  }, [anyPopover]);
+    window.addEventListener('keydown', k, true);
+    return () => window.removeEventListener('keydown', k, true);
+  }, [anyPopover, visible, view, wins]);
   // The active tab scrolls itself into view.
   useEffect(() => {
     const row = tabRowRef.current;
@@ -2015,6 +2035,10 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                   <span className="tv-counts" role="status">{selectedTiles.length} selected</span>
                   <button className="tv-btn sm" onClick={tileSelected}>Tile selected</button>
                   <button className="tv-btn sm" onClick={hideSelected}>Hide selected</button>
+                  <button className="tv-btn sm danger" disabled={!endableSelected.length}
+                    title="End selected sessions; pinned sessions and those attached on another device are kept"
+                    onClick={() => void endSelected()}>End selected</button>
+                  {endableSelected.length < selectedTiles.length && <span className="tv-counts">{selectedTiles.length - endableSelected.length} pinned or attached elsewhere kept</span>}
                   <button className="tv-btn sm" onClick={() => setSelectedKeys(shownTiles.slice(0, cap).map((t) => t.key))}>Select visible</button>
                   <button className="tv-btn sm" onClick={() => setSelectedKeys([])}>Clear selection</button>
                 </div>
