@@ -9400,6 +9400,10 @@ button.ar-open:hover { background: var(--surface-hover); }
 .tv-tile.flash { border-color: var(--border-focus); box-shadow: 0 0 0 3px var(--blue-500); }
 .tv-tile.drop { border-color: var(--border-focus); box-shadow: var(--ring-focus); }
 .tv-tile.dragging { opacity: 0.35; }
+.tv-tile.selected { outline: 2px solid var(--border-focus); outline-offset: -2px; }
+.tv-tile-select { position: absolute; top: var(--space-3); right: var(--space-4); z-index: 4; margin: 0; cursor: pointer; }
+.tv-tile .tv-tile-peek { padding-right: calc(var(--space-4) + 20px); }
+
 /* ASKING, in Swarm: the tile, window or pane that waits on you is the loudest
    thing on the screen. An amber frame with a slow breathing ring, a warm face,
    a full-strength top bar and its question in place of the last line. */

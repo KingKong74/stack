@@ -1228,6 +1228,29 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   const [hidden, setHiddenState] = useState<string[]>(() => getTermSwarmHidden());
   const setHidden = (next: string[]) => { setHiddenState(next); setTermSwarmHidden(next); };
   const [tileOrder, setTileOrder] = useState<string[]>([]);
+  const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
+  const selectedTiles = allTiles.filter((t) => selectedKeys.includes(t.key) && !hidden.includes(t.key));
+  const toggleTileSelection = (key: string) => {
+    setSelectedKeys((keys) => keys.includes(key) ? keys.filter((k) => k !== key) : [...keys, key]);
+  };
+  const selectTileClick = (e: ReactMouseEvent, t: Tile) => {
+    if (!(e.ctrlKey || e.metaKey) || (e.target as HTMLElement).closest('button,input')) return;
+    e.preventDefault();
+    e.stopPropagation();
+    toggleTileSelection(t.key);
+  };
+  const tileSelected = () => {
+    const rects = tileRects(selectedTiles.length, area());
+    selectedTiles.forEach((t, i) => openTile(t, { ...rects[i], snapped: true }));
+    setSelectedKeys([]);
+  };
+  const hideSelected = () => {
+    setHidden([...new Set([...hidden, ...selectedTiles.map((t) => t.key)])]);
+    const ids = new Set(selectedTiles.flatMap((t) => t.sess ? [t.sess.id] : []));
+    setWins((ws) => ws.filter((w) => !ids.has(w.id)));
+    setTilePeek(null);
+    setSelectedKeys([]);
+  };
   const cap = grid.c * grid.r;
   const compact = cap >= 35;
   const shownTiles = orderTiles(allTiles.filter((t) => !hidden.includes(t.key)), tileOrder);
@@ -1948,7 +1971,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                 <span className="tv-counts">
                   {allTiles.length} sessions · <span className="asking">{askingCount} asking</span>{seenCount ? ` (${seenCount} seen)` : ''} · <span className="working">{workingCount} working</span>
                 </span>
-                <span className="tv-hint">{wins.length ? 'Drag a window to an edge to split, a corner to quarter' : 'Hover to read · click to open · drag to reorder · drag a tab here to open it as a window'}</span>
+                <span className="tv-hint">{wins.length ? 'Drag a window to an edge to split, a corner to quarter' : 'Hover to read · click to open · Ctrl/⌘-click to select · drag to reorder'}</span>
                 <span className="tv-rel">
                   <button className={`tv-btn tv-icon${gridMenu ? ' on' : ''}`} title="Grid size" aria-label="Grid size" onClick={() => setGridMenu((v) => !v)}>
                     <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><circle cx="8" cy="8" r="2.3" /><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4" /></svg>
@@ -1987,6 +2010,15 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                   </>
                 )}
               </div>
+              {selectedTiles.length > 0 && (
+                <div className="tv-swarm-head" role="toolbar" aria-label="Selected terminals">
+                  <span className="tv-counts" role="status">{selectedTiles.length} selected</span>
+                  <button className="tv-btn sm" onClick={tileSelected}>Tile selected</button>
+                  <button className="tv-btn sm" onClick={hideSelected}>Hide selected</button>
+                  <button className="tv-btn sm" onClick={() => setSelectedKeys(shownTiles.slice(0, cap).map((t) => t.key))}>Select visible</button>
+                  <button className="tv-btn sm" onClick={() => setSelectedKeys([])}>Clear selection</button>
+                </div>
+              )}
               <div className="tv-grid" ref={swarmBodyRef}
                 style={{ gridTemplateColumns: `repeat(${grid.c}, minmax(0,1fr))`, gridTemplateRows: `repeat(${grid.r}, minmax(0,1fr))` }}>
                 {tiles.map((t) => {
@@ -1996,7 +2028,8 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                   const openId = t.sess?.id;
                   return (
                     <div key={t.key}
-                      className={`tv-tile runtime-${t.cmd}${hov ? ' hov' : ''}${compact ? ' compact' : ''}${flash === t.key ? ' flash' : ''}${dropOn === t.key && dragTile !== t.key ? ' drop' : ''}${dragTile === t.key ? ' dragging' : ''}${t.st === 'asking' ? (t.seen ? ' asked' : ' asking') : ''} ${projTint(t.project)}`}
+                      className={`tv-tile${selectedKeys.includes(t.key) ? ' selected' : ''} runtime-${t.cmd}${hov ? ' hov' : ''}${compact ? ' compact' : ''}${flash === t.key ? ' flash' : ''}${dropOn === t.key && dragTile !== t.key ? ' drop' : ''}${dragTile === t.key ? ' dragging' : ''}${t.st === 'asking' ? (t.seen ? ' asked' : ' asking') : ''} ${projTint(t.project)}`}
+                      onClickCapture={(e) => selectTileClick(e, t)}
                       draggable
                       onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/x-stack-tile', t.key); setDragTile(t.key); setTilePeek(null); }}
                       onDragEnd={() => { setDragTile(null); setDropOn(null); }}
@@ -2007,6 +2040,9 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                       onMouseLeave={() => setTilePeek((k) => (k === t.key ? null : k))}
                       title={`${t.name} — click to open it as a window`}>
                       <div className="tv-tile-top" />
+                      <input className="tv-tile-select" type="checkbox" checked={selectedKeys.includes(t.key)}
+                        aria-label={`Select terminal ${t.name}`} onClick={(e) => e.stopPropagation()}
+                        onChange={() => toggleTileSelection(t.key)} />
                       <span className="tv-st tv-tile-number">#{(barSeen.current.get(t.key) ?? 0) + 1}</span>
                       {!hov ? (
                         <div className="tv-tile-face">
