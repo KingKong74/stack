@@ -863,8 +863,7 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
     [it, ...(partsOf.get(it.id) || []).filter((p) => isBuilt(p))];
   // APPROVE ALL, per slice group (2026-11-11): the same verdict on every card
   // in the group that is waiting for one, one PATCH per row, and ONE Undo for
-  // the lot. The head asks first (`bulkAsk`), because the group may be folded
-  // and its built notes unread.
+  // the lot. No confirm (owner's call, 2026-11-11): the Undo is the safety.
   const approve = (it: RoadmapItem) => approveMany([it]);
   const approveMany = (cards: RoadmapItem[]) =>
     guard(async () => {
@@ -1062,9 +1061,7 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
   const [inlineId, setInlineId] = useState<number | null>(null);
   const [over, setOver] = useState<string | null>(null);
   const [landedId, land] = useLanded();
-  const closeAll = () => { setMenu(null); setPriMenu(null); setPtsMenu(null); setCardMenu(null); setAreaMenu(null); setBulkAsk(null); };
-  // Which group head is asking "Approve all N?" (`col::group`), or null.
-  const [bulkAsk, setBulkAsk] = useState<string | null>(null);
+  const closeAll = () => { setMenu(null); setPriMenu(null); setPtsMenu(null); setCardMenu(null); setAreaMenu(null); };
 
   // ---- THE FOCUS CANVAS (detail/BoardFocus.tsx) ------------------------------
   // A double-click on a card (or its ✎) flies it onto the canvas. The phase is
@@ -1527,22 +1524,13 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
                       {(() => {
                         const owed = g.items.filter(awaitsVerdict);
                         if (owed.length < 2) return null;
-                        const k = `${col.key}::${g.key}`;
                         return (
                           <div className="km-approveall">
-                            {bulkAsk === k ? (
-                              <>
-                                <span className="q">Approve and tick all {owed.length}?</span>
-                                <button className="km-vbtn ok" onClick={(e) => { e.stopPropagation(); setBulkAsk(null); approveMany(owed); }}>Approve {owed.length}</button>
-                                <button className="km-vbtn" onClick={(e) => { e.stopPropagation(); setBulkAsk(null); }}>Cancel</button>
-                              </>
-                            ) : (
-                              <button className="km-vbtn ok"
-                                title={`Approve every card in this ${bySlice ? 'slice' : 'group'} that is waiting on your verdict: each gets the verdict and a tick. One Undo reverses them all.`}
-                                onClick={(e) => { e.stopPropagation(); closeAll(); setBulkAsk(k); }}>
-                                <KitIcon name="check" size={13} />Approve all {owed.length}
-                              </button>
-                            )}
+                            <button className="km-vbtn ok"
+                              title={`Approve every card in this ${bySlice ? 'slice' : 'group'} that is waiting on your verdict: each gets the verdict and a tick. One Undo reverses them all.`}
+                              onClick={(e) => { e.stopPropagation(); closeAll(); approveMany(owed); }}>
+                              <KitIcon name="check" size={13} />Approve all {owed.length}
+                            </button>
                           </div>
                         );
                       })()}

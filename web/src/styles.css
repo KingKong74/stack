@@ -5138,7 +5138,6 @@ body[data-mc-full] .totop { display: none; }
 .km-vbtn.primary { background: var(--action-primary); color: var(--white); border-color: transparent; }
 .km-vbtn.primary:hover { background: var(--action-primary-hover); }
 .km-approveall { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; padding: 0 var(--space-2) var(--space-3); }
-.km-approveall .q { font: var(--type-caption); color: var(--text-secondary); }
 .km-vbtn:disabled { opacity: 0.5; cursor: default; }
 .km-note { display: flex; align-items: center; gap: var(--space-4); }
 .km-undo {
