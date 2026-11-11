@@ -531,14 +531,13 @@ function Sticky({ note, p, z, selected, dragging, settling, target, busy, milest
   onConvert: (kind: Kind, target: number | null) => void;
 }) {
   const [text, setText] = useState(note.body);
-  const [confirming, setConfirming] = useState(false);
   const [turning, setTurning] = useState(false);
   const [kind, setKind] = useState<Kind>('task');
   const live = milestones.filter((m) => m.status !== 'done');
   const [msId, setMsId] = useState<number | null>(currentMilestone(milestones)?.id ?? live[0]?.id ?? null);
   const [sliceId, setSliceId] = useState<number | null>(null);
   useEffect(() => { setText(note.body); }, [note.body]);
-  useEffect(() => { if (!selected) { setTurning(false); setConfirming(false); } }, [selected]);
+  useEffect(() => { if (!selected) setTurning(false); }, [selected]);
   const { head, rest } = split(note.body);
   const into = kind === 'milestone' ? 'its goal' : kind === 'slice' ? 'its spec' : 'its notes';
   const nk: NoteKind = note.board?.kind || 'note';
@@ -591,9 +590,9 @@ function Sticky({ note, p, z, selected, dragging, settling, target, busy, milest
               )}
               <span className="nt-gap" />
               {p.cluster && <button type="button" className="nt-quiet" onClick={onUncluster}>Ungroup</button>}
-              <button type="button" className="nt-quiet danger" onClick={() => (confirming ? onDelete() : setConfirming(true))}
-                onBlur={() => setConfirming(false)}>
-                {confirming ? 'Really delete?' : 'Delete'}
+              {/* One press deletes (owner's call, 2026-11-11): a note is a scratchpad. */}
+              <button type="button" className="nt-quiet danger" onClick={onDelete}>
+                Delete
               </button>
             </div>
             {turning && (
