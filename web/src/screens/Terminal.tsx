@@ -1175,7 +1175,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   const openWin = (id: number, geo?: Rect & { snapped?: boolean }) => {
     const a = area();
     setWins((ws) => {
-      const w = Math.min(860, a.w * 0.62), h = Math.min(580, a.h * 0.75);
+      const w = Math.min(1040, a.w * 0.72), h = Math.min(680, a.h * 0.85);
       if (ws.some((x) => x.id === id)) {
         return ws.map((x) => (x.id === id
           ? { ...x, ...(geo ? clampRect(geo, a) : {}), snapped: !!geo?.snapped, z: ++zTop.current } : x));
@@ -1193,7 +1193,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
     setWins((ws) => ws.map((w) => {
       if (w.id !== id) return w;
       if (w.snapped) {
-        const p = w.prev || { w: 860, h: 580 };
+        const p = w.prev || { w: 1040, h: 680 };
         return { ...w, ...clampRect({ x: a.x + (a.w - p.w) / 2, y: a.y + 40, w: p.w, h: p.h }, a), snapped: false };
       }
       return { ...w, ...zoneRect('max', a), snapped: true, prev: { w: w.w, h: w.h } };
@@ -1217,7 +1217,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
     if (!w0) return;
     let base: Rect = { x: w0.x, y: w0.y, w: w0.w, h: w0.h };
     if (w0.snapped) {
-      const r = w0.prev || { w: 860, h: 580 };
+      const r = w0.prev || { w: 1040, h: 680 };
       base = { w: r.w, h: r.h, x: e.clientX - r.w * ((e.clientX - w0.x) / w0.w), y: w0.y };
     }
     const ox = e.clientX - base.x, oy = e.clientY - base.y;
