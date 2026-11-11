@@ -773,20 +773,9 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   const detachedShown = detached.filter(
     (d) => !endingNames.current.has(d.name) && !sessions.some((s) => s.tmux === d.name && (s.status === 'live' || s.status === 'connecting')));
 
-  // ---- what each claude session is DOING (#120), on this screen ----
-  // Gemini's one-line take, keyed by the host tmux session — the only id both
-  // sides agree on (the browser never learns the relay's sid, and a claude tab
-  // knows its tmux name from the ready frame). Shell tabs are not labelled:
-  // the daemon only reads claude sessions' output for this.
+  // Gemini task titles, keyed by relay sid and durable tmux identity.
   const [labels, setLabels] = useState<Record<string, string>>({});
-  // The REF is the guard (two triggers in one tick would both read a stale
-  // `false` and fire two calls); the STATE is what a session row renders as
-  // "naming this session…" while the one ask is in flight. The ✧ Re-label
-  // button that also read it is gone (#490), but this placeholder is the more
-  // useful of the two: it is the difference between a session that has no name
-  // yet and one that is about to get one. Since #512 that gap is the unusual
-  // case — most sessions are named by their own first line, before this has
-  // anything to say about them.
+  // A ref prevents simultaneous triggers from issuing duplicate free-tier calls.
   const [labelBusy, setLabelBusy] = useState(false);
   const labelBusyRef = useRef(false);
   // (#501) Every session this mount has already ASKED about, answered or not —
@@ -817,41 +806,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
     } catch { /* keyless (503) or offline — sessions just stay unnamed */ }
     finally { labelBusyRef.current = false; setLabelBusy(false); }
   };
-  // (#490) NAMED ONCE, THEN NEVER AGAIN — and (#512) THE LABELLER IS NOW THE
-  // FALLBACK, NOT THE NAMER.
-  //
-  // This used to re-ask as a session talked: a title that says what you are
-  // working on ought to follow the work, and the work shows up as output. The
-  // trouble is that a title which keeps changing underneath you is not a name,
-  // it is a status line — you learn where a pane is by its position rather than
-  // by reading it, and the one moment the label matters (finding a session you
-  // walked away from) is the moment it has just been rewritten to describe
-  // whatever happened last. So #490 cut it to one ask.
-  //
-  // #512 moved the naming off output entirely: a session is called the first
-  // thing the human sent it (see `labelOf` and lib/termName). WHAT IS LEFT FOR
-  // THIS TO DO is the one case that has no such line to read — a DETACHED
-  // session that survived from another device or an earlier run, where the
-  // typing happened somewhere this browser was not. Leaving those permanently
-  // "not named yet" would be the honest answer to the wrong question: the rail
-  // lists them precisely so you can find the one worth re-attaching, and a
-  // column of six identical placeholders is what that list is for avoiding.
-  //
-  // It still fires for a browser-attached session nobody has typed into after
-  // a screenful of output — an auto-started tab, or one watching a build — for
-  // the same reason. It never overrides a typed name: `labelOf` reads the two
-  // human sources first, and the gate below skips anything `labelOf` answers.
-  //
-  // The re-ask machinery — the per-session dirty-byte counters, the minimum
-  // interval, the "has it moved on" test — is gone rather than merely
-  // disabled, because a threshold left in the file is an invitation to tune it
-  // back up.
-  // The ONE ask is gated on there being something to read. Naming once and
-  // naming EARLY are different things, and doing both gives every session the
-  // permanent title "starting claude session" — read off the splash screen,
-  // before the session has done anything, and now never revised. So a live
-  // session must have emitted a screenful before it is named. The counter only
-  // ever gates the FIRST name; nothing decrements it and nothing re-asks.
+  // Ask once after meaningful output. Gemini names the task; manual renames win.
   const seenRef = useRef<Record<number, number>>({});
   const NAME_AFTER_BYTES = 2000;
   // …and what Swarm reads as WORKING: a session that put out a real amount in
@@ -879,36 +834,20 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
       // (#501) …and a detached row the SERVER already named, or any session
       // this mount has asked about once, is not asked about again.
       const unnamed = labelAskKeys(
-        live.map((x) => ({ id: x.id, named: !!labelOf(x), bytes: seenRef.current[x.id] || 0 })),
+        live.map((x) => ({ id: x.id, named: !!(renamed[x.id] || (x.sid && labels[x.sid]) || (x.tmux && labels[x.tmux])), bytes: seenRef.current[x.id] || 0 })),
         detachedShown, labels, labelAskedRef.current, NAME_AFTER_BYTES);
       if (!unnamed.length) return;
       void refreshLabels(unnamed);
     };
     tick();
-    const t = setInterval(tick, 15_000);
-    return () => clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, sessions, detached, labels]);
-  // Named by sid first (every session has one), falling back to the tmux name
-  // so a tab that re-attached a detached session inherits the name it wore as
-  // a chip instead of reading as unnamed until the next ask.
-  // #512 — A SESSION IS NAMED BY WHAT YOU TYPED INTO IT: the first line it is
-  // sent becomes its title (lib/termName does the reading), so the common case
-  // needs no gesture at all.
-  //
-  // AND A NAME YOU TYPE STILL WINS (owner's call, after #512 took the editor
-  // away). #512's reasoning — the words you would put in a rename box are the
-  // words you already sent the session — holds for a session opened with a
-  // question and fails for every other kind: one opened with `ls`, a pasted
-  // screenshot path, or a question that stopped describing it an hour in. So
-  // double-click the name, on the rail row or the pane title, and what you
-  // type replaces it. There is no ✎ on the rows for the reason the pin is only
-  // drawn when lit: a control on every row marks nothing.
-  //
-  // `names` holds both kinds, keyed by tmux name (store.ts says why never the
-  // tab id), and the persist effect below never writes over an entry, so a
-  // rename is never overwritten by a first line. Clearing one (an empty
-  // rename) hands the row back to the first line and then the labeller.
+  useAutoRefresh(() => {
+    const live = sessions.filter((s) => s.status === 'live');
+    const keys = labelAskKeys(live.map((s) => ({ id: s.id, named: !!(renamed[s.id] || (s.sid && labels[s.sid]) || (s.tmux && labels[s.tmux])), bytes: seenRef.current[s.id] || 0 })), detachedShown, labels, labelAskedRef.current, NAME_AFTER_BYTES);
+    if (keys.length) void refreshLabels(keys);
+  }, visible);
+  // Explicit renames persist by tmux identity. Typed input is a temporary fallback.
   const [names, setNames] = useState<Record<string, string>>(() => getTermNames());
   // This mount's captures, keyed by tab id, for the window between "you pressed
   // Enter" and "the daemon told us the tmux name" — a session named in its
@@ -933,18 +872,10 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   // tab's life, and copied into `names` once there is a tmux name to key on.
   // '' is a rename to nothing — it clears, and must shadow nothing.
   const [renamed, setRenamed] = useState<Record<number, string>>({});
-  // THE ORDER IS THE ORDER OF AUTHORITY, and the two human sources sit above
-  // the machine one: the name stored against this tmux session, then this
-  // mount's capture, then — only for a session nobody here typed into — the
-  // labeller's reading. A restored tab re-attaches a tmux session that already
-  // carries the first thing ever asked of it, which is why the stored name
-  // wins over a line typed into it this afternoon.
   const labelOf = (s: Sess) =>
-    renamed[s.id] || (s.tmux && names[s.tmux]) || typed[s.id]
-    || (s.sid && labels[s.sid]) || (s.tmux && labels[s.tmux]) || '';
-  // PERSIST ONCE THE SESSION HAS SOMETHING TO KEY ON, and never over a name
-  // that is already there — the stored one is older, and older is the whole
-  // point of naming from the first line.
+    renamed[s.id] || (s.tmux && names[s.tmux])
+    || (s.sid && labels[s.sid]) || (s.tmux && labels[s.tmux]) || typed[s.id] || '';
+  // Persist explicit renames once the daemon supplies a tmux identity.
   useEffect(() => {
     let wrote = false;
     for (const x of sessions) {
@@ -953,9 +884,6 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
       // it is newer than anything stored and it was a decision.
       const r = renamed[x.id];
       if (r && names[x.tmux] !== r) { setTermName(x.tmux, r); wrote = true; continue; }
-      const t = typed[x.id];
-      if (!t || r !== undefined || names[x.tmux]) continue;
-      setTermName(x.tmux, t); wrote = true;
     }
     if (wrote) setNames(getTermNames());
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1992,11 +1920,13 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                       title="Drag to move · drag to an edge or corner to snap · double-click to maximise">
                       <span className={`tv-dot ${st}`} />
                       {projChip(p, 18)}
+                      <span className="tv-st">#{(barSeen.current.get(s.tmux || `tab:${s.id}`) ?? 0) + 1}</span>
                       {nameEdit(s, 'pane', 'tv-win-name')}
                       {runChip}
                       <span className="tv-win-meta">{TOOL[s.cmd].name}{destLabel(s) ? ` · ${destLabel(s)}` : ''}</span>
                       <span className="tv-head-acts">
                         {askBtn}
+                        <button className="tv-btn sm" aria-label="Refresh this terminal" title="Refresh terminal screen" onClick={() => handles.current.get(s.id)?.reload()}>↻</button>
                         {s.tmux && (
                           <button className={`tv-ico${pinned ? ' pinned' : ''}`} title={pinned ? 'Unpin' : 'Pin'} onClick={() => togglePinSess(s)}>{pinIcon(11, pinned)}</button>
                         )}
@@ -2141,6 +2071,9 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                       {!hov ? (
                         <div className="tv-tile-face">
                           <div className="tv-tile-row">
+                            <span className="tv-st">#{(barSeen.current.get(t.key) ?? 0) + 1}</span>
+                            <button className="tv-btn xs" aria-label={`Refresh terminal ${t.name}`} title="Refresh terminal screen" onClick={(e) => { e.stopPropagation(); if (t.sess) handles.current.get(t.sess.id)?.reload(); void refreshDetached(); }}>↻</button>
+
                             {compact && projChip(t.project, 14)}
                             <span className={`tv-dot ${t.st}`} />
                             <span className={`tv-st ${t.st}`}>{STATUS_LABEL[t.st]}{t.seen ? ' · seen' : ''}</span>
@@ -2158,6 +2091,9 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                       ) : (
                         <div className="tv-tile-peek" onClick={(e) => e.stopPropagation()}>
                           <div className="tv-tile-row">
+                            <span className="tv-st">#{(barSeen.current.get(t.key) ?? 0) + 1}</span>
+                            <button className="tv-btn xs" aria-label={`Refresh terminal ${t.name}`} title="Refresh terminal screen" onClick={(e) => { e.stopPropagation(); if (t.sess) handles.current.get(t.sess.id)?.reload(); void refreshDetached(); }}>↻</button>
+
                             <span className={`tv-dot ${t.st}`} />
                             {projChip(t.project)}
                             <span className="tv-tile-pname">{t.name}</span>

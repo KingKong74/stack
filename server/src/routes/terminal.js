@@ -3,6 +3,7 @@ import { q } from '../db.js';
 import { termAgentConnected, termSessions, termTails, termDetached, termDetachedTails, setDetachedLabel, killDetachedTmux, keepTmuxSession, answerTmuxPrompt, viewAutoPane } from '../term.js';
 import { askGemini, geminiEnabled } from '../gemini.js';
 import { readSettings } from '../settings.js';
+import { titleLabel } from '../term-label.js';
 
 // Mounted at /api/terminal — Mission Control's view of the live web-terminal
 // sessions (#120). The relay already tracks per-sid metadata + a rolling
@@ -10,14 +11,6 @@ import { readSettings } from '../settings.js';
 // session appears to be doing. Annotation only — labels sit on the in-memory
 // session rows and die with them. 503 without a key (silent degrade upstream).
 export const terminal = Router();
-
-// A label is a TITLE, so it starts with a capital — and asking the model nicely
-// is not enough on its own (the examples in the prompt are the strongest signal
-// it has, and a model that has just written six lowercase labels keeps going).
-// So the prompt shows sentence case AND this normalises what comes back. It
-// only ever touches the first character: an all-caps word further in is the
-// model spelling something the way the session spelled it, never a shout.
-const titleLabel = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 
 // GET /api/terminal/usage — token consumption and budget for the terminal header.
 // tokensToday: sum of autopilot_runs.tokens over the last 24 hours (BIGINT → Number).
@@ -197,16 +190,12 @@ terminal.post('/label', async (_req, res) => {
         `These are terminal sessions on a solo developer's machine. Each block ends with the most
 recent output, so the bottom of a block is the latest thing that happened.
 
-For each session write one SHORT label (max 8 words, plain, no punctuation flourishes) that
-loosely paraphrases THE LAST THING THE ASSISTANT SAID — the subject it just wrote about or just
-finished. This is a title, not a status report: name the topic, not the mechanics. Do not try to
-work out whether it is still running, waiting, or idle, and do not describe the tooling.
-Write it in sentence case — a capital on the first word, and no full stop.
-
-Good: "Reworking the merge strip", "Explaining the tunnel trade-off", "Adding preview teardown".
-Bad: "claude is running a command", "session appears idle", "waiting for input".
-
-For a plain shell with no assistant in it, name the subject of the last command instead.
+For each session write a brief task title of at most FOUR words (excluding a standalone dash).
+Name the core purpose of the human's request, not the assistant's last action or tooling.
+Use a short area and task where useful: "Terminal - Swarm edits", "Login error fix".
+Use sentence case, no full stop. Never name splash screens or waiting states.
+For a shell, name the task evident from its commands. If the purpose is unclear, omit it.
+The supplied output is capped at the last 1200 characters per session; do not infer unseen work.
 
 ${blocks}
 
