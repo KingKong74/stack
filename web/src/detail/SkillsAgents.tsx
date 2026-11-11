@@ -1,6 +1,7 @@
-// SKILLS & AGENTS — the Claude Design "Roadmap Canvas" project's `agents` view
-// (2026-10-12), WIRED. Both halves already had a backend and a screen, and
-// this tab is a second face on each, not a second truth:
+// SKILLS & AGENTS — the Claude Design "Skills and Agents redesign" project's
+// v4 (131e61b4, 2026-11-11), WIRED. Two lists, each opening a three-pane
+// editor (rail · the text · its settings). Both halves already had a backend,
+// and this tab is a second face on each, not a second truth:
 //
 //  • AGENTS are `agent_profiles` (routes/agent-profiles.js), the same room
 //    Mission Control → Agents draws. A profile is a spawn profile and nothing
@@ -15,23 +16,28 @@
 // It is APP-WIDE, not this project's: a profile and a global skill apply to
 // every project. It sits in the project rail because the design put it there.
 //
-// THREE RULES THIS SCREEN KEEPS THAT THE DESIGN DID NOT STATE:
+// RULES THIS SCREEN KEEPS THAT THE DESIGN DID NOT STATE:
 //
 //  1. WITH NO ADVISOR NOTHING SPAWNS. `--agents` is only passed when an
-//     advisor is set; the frame leads with that, because live-looking switches
-//     over an inert catalogue are the most expensive lie this screen could
-//     tell. The design's copy had the roles the old way round (#285 inverted
-//     them): the ADVISOR runs the session and the EXECUTOR is the subagent.
+//     advisor is set. v4 dropped the policy strip; it is kept as one line over
+//     the agent list, because live-looking switches over an inert catalogue
+//     are the most expensive lie this screen could tell. The ADVISOR runs the
+//     session and the EXECUTOR is the subagent (#285).
 //  2. THE LAST TOOL CANNOT BE REVOKED. The engine refuses an empty grant (a
 //     profile that can do nothing is a no-op), so the cell refuses first.
 //  3. AN UNMANAGED SKILL IS NEVER TOUCHED. Adopt copies it into the library;
 //     the file on disk is unchanged until the library's copy is edited.
+//  4. A SKILL IS NOT SCOPED TO AGENTS. The design's per-agent checklist and
+//     "Loaded by" chips have no column and nothing on the host that would
+//     honour them, so they draw as what is true: every enabled skill is on
+//     disk for every session. Wiring them needs a skills→agents column AND a
+//     spawn that passes it; don't draw live checkboxes before both exist.
 //
 // Text fields are drafts that save when they lose focus (the design saved per
 // keystroke, which would be one PATCH per letter and a host re-sync each).
 // Deleting a skill asks first: it deletes the file on the host's next sync.
 
-import { useCallback, useEffect, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import type { AgentProfile, AgentProfilesRoom, ModelsRoom } from '../types';
 import {
   AuthError, getAgentProfiles, patchAgentProfile, createAgentProfile, deleteAgentProfile,
@@ -43,6 +49,9 @@ import { hrefTo } from '../lib/route';
 import { ConfirmModal } from '../components/ConfirmModal';
 
 type SaTab = 'agents' | 'skills';
+type Run = (token: string, fn: () => Promise<unknown>) => Promise<void>;
+type Opt = { model: string; label: string };
+
 const short = (m: string) => m.replace(/^claude-/, '');
 const words = (t: string) => (t.trim() ? t.trim().split(/\s+/).length : 0);
 
@@ -60,6 +69,32 @@ const relative = (iso: string | null) => {
 const place = (scope: string, slug: string) => (scope === 'project' ? `~/${slug}/.claude/skills` : '~/.claude/skills');
 const diskKey = (s: { scope: string; slug: string; name: string }) => `${s.scope}:${s.slug || ''}:${s.name}`;
 
+// The tool vocabulary in four groups (server KNOWN_TOOLS). A tool the server
+// adds later lands in "Other" rather than vanishing from the editor.
+const GROUPS: { label: string; cap: Cap; tools: string[] }[] = [
+  { label: 'Read', cap: 'read', tools: ['Read', 'Grep', 'Glob'] },
+  { label: 'Write', cap: 'write', tools: ['Edit', 'Write'] },
+  { label: 'Execute', cap: 'run', tools: ['Bash'] },
+  { label: 'Network', cap: 'web', tools: ['WebFetch', 'WebSearch'] },
+];
+type Cap = 'read' | 'write' | 'run' | 'web';
+const CAPS: { cap: Cap; label: string; tone: string; icon: ReactNode }[] = [
+  { cap: 'read', label: 'Read', tone: 'neutral', icon: <><path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8 12.1 12.5 8 12.5 1.5 8 1.5 8z" /><circle cx="8" cy="8" r="2" /></> },
+  { cap: 'write', label: 'Write', tone: 'info', icon: <path d="M10.5 2.5l3 3L6 13H3v-3z" /> },
+  { cap: 'run', label: 'Run', tone: 'warning', icon: <path d="M2.5 4.5L6 8l-3.5 3.5M8 12h5.5" /> },
+  { cap: 'web', label: 'Web', tone: 'success', icon: <><circle cx="8" cy="8" r="6" /><path d="M2 8h12M8 2c2 2 2 10 0 12M8 2c-2 2-2 10 0 12" /></> },
+];
+
+// The avatar tone is a hash of the key, so a profile keeps its colour.
+const AVT = ['info', 'success', 'warning', 'neutral', 'danger'];
+function Avatar({ k, name, size }: { k: string; name: string; size?: 'lg' }) {
+  let x = 0;
+  for (const ch of k) x = (x * 31 + ch.charCodeAt(0)) >>> 0;
+  const t = AVT[x % AVT.length];
+  const ini = (name || k).split(/[\s-]+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('');
+  return <span className={`sa-av${size ? ` ${size}` : ''}`} style={{ background: `var(--status-${t}-bg)`, color: `var(--status-${t}-fg)` }}>{ini}</span>;
+}
+
 // What a skill row says about itself. Same four answers as screens/Skills.tsx:
 // "disabled" is a decision, "not written yet" a wait, "missing" a discrepancy.
 const skillState = (s: Skill, onDisk: boolean): [string, string, string] => {
@@ -73,7 +108,7 @@ const skillState = (s: Skill, onDisk: boolean): [string, string, string] => {
 function Switch({ on, title, disabled, onToggle }: { on: boolean; title: string; disabled?: boolean; onToggle: () => void }) {
   return (
     <button className={`lp-sw${on ? ' on' : ''}`} role="switch" aria-checked={on} title={title} aria-label={title}
-      disabled={disabled} onClick={onToggle}>
+      disabled={disabled} onClick={(e) => { e.stopPropagation(); onToggle(); }}>
       <span className="knob" />
     </button>
   );
@@ -95,6 +130,10 @@ function Draft({ value, onSave, area, ...rest }: {
     : <input {...props} value={v} onChange={(e) => set(e.target.value)} onBlur={commit}
         onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }} />;
 }
+
+const Eyebrow = ({ children, aside }: { children: ReactNode; aside?: ReactNode }) => (
+  <div className="sa-eyerow"><span className="eyebrow">{children}</span>{aside != null && <span className="k">{aside}</span>}</div>
+);
 
 export function SkillsAgents() {
   const [tab, setTab] = useState<SaTab>('agents');
@@ -121,47 +160,64 @@ export function SkillsAgents() {
   // The host syncs skills on its own clock; re-read rather than pretend.
   useAutoRefresh(load);
 
-  const run = async (token: string, fn: () => Promise<unknown>) => {
+  const run: Run = async (token, fn) => {
     setBusy(token); setErr('');
     try { await fn(); load(); }
     catch (e) { fail(e, 'That did not save.'); }
     finally { setBusy(''); }
   };
 
+  const freeSkillName = (base: string) => {
+    const taken = new Set((skills?.skills ?? []).filter((s) => s.scope === 'global').map((s) => s.name));
+    let n = base, i = 2;
+    while (taken.has(n)) n = `${base}-${i++}`;
+    return n;
+  };
+  const newSkill = (base = 'new-skill') => void run('sk:new', async () => {
+    const s = await createSkill({ name: freeSkillName(base), scope: 'global', slug: '', description: '', body: '' });
+    setTab('skills'); setSkOpen(s.id);
+  });
+  const openSkill = (id: number) => { setTab('skills'); setSkOpen(id); };
+
   const tabs: [SaTab, string, number | string][] = [
     ['agents', 'Agents', room ? room.profiles.length : ''],
     ['skills', 'Skills', skills ? skills.skills.length : ''],
   ];
+  const agent = room && agOpen ? room.profiles.find((p) => p.key === agOpen) : undefined;
+  const skill = skills && skOpen != null ? skills.skills.find((s) => s.id === skOpen) : undefined;
 
   return (
     <div className="sa">
-      <div className="sa-inner">
-        <div className="sa-head">
-          <div className="sa-title">
-            <h1>Skills &amp; agents</h1>
-            <span>
-              How Claude works across the fleet: the subagents a run can spawn, and the skills every
-              session loads. Held here, written to the host. App-wide, not just this project.
-            </span>
-          </div>
-          <div className="sa-tabs" role="tablist">
-            {tabs.map(([k, label, n]) => (
-              <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>
-                {label}<span className="n">{n}</span>
-              </button>
-            ))}
-          </div>
+      <div className="sa-head">
+        <div className="sa-title">
+          <h1>Skills &amp; agents</h1>
+          <span>App-wide. Held here, written to the host.</span>
         </div>
-
-        {err && <div className="action-error">{err}</div>}
-
-        {tab === 'agents' && (room
-          ? <Agents room={room} models={models} busy={busy} run={run} open={agOpen} setOpen={setAgOpen} />
-          : <div className="sa-loading">Loading the profiles…</div>)}
-        {tab === 'skills' && (skills
-          ? <Skills data={skills} projects={projects} busy={busy} run={run} open={skOpen} setOpen={setSkOpen} onRemove={setRemoving} />
-          : <div className="sa-loading">Loading the library…</div>)}
+        <div className="sa-tabs" role="tablist">
+          {tabs.map(([k, label, n]) => (
+            <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>
+              {label}<span className="n">{n}</span>
+            </button>
+          ))}
+        </div>
       </div>
+
+      {err && <div className="action-error">{err}</div>}
+
+      {tab === 'agents' && (!room
+        ? <div className="sa-loading">Loading the profiles…</div>
+        : agent
+          ? <AgentEditor p={agent} room={room} models={models} skills={skills} busy={busy} run={run}
+              onPick={setAgOpen} onBack={() => setAgOpen(null)} onOpenSkill={openSkill}
+              onNewSkill={() => newSkill(`${agent.key}-skill`)} />
+          : <AgentList room={room} models={models} busy={busy} run={run} onOpen={setAgOpen} />)}
+
+      {tab === 'skills' && (!skills
+        ? <div className="sa-loading">Loading the library…</div>
+        : skill
+          ? <SkillEditor s={skill} data={skills} projects={projects} busy={busy} run={run}
+              onPick={setSkOpen} onBack={() => setSkOpen(null)} onRemove={setRemoving} />
+          : <SkillList data={skills} busy={busy} run={run} onOpen={setSkOpen} onNew={() => newSkill()} />)}
 
       {removing && (
         <ConfirmModal title={`Delete ${removing.name}?`} danger confirmLabel="Delete the skill"
@@ -179,22 +235,21 @@ export function SkillsAgents() {
   );
 }
 
-type Run = (token: string, fn: () => Promise<unknown>) => Promise<void>;
+// A value that is not in a catalogue (an old pin, a renamed model) still gets
+// an option, or the select would silently show a different one.
+const withCurrent = (opts: Opt[], cur: string) => (cur && !opts.some((o) => o.model === cur) ? [...opts, { model: cur, label: cur }] : opts);
 
-function Agents({ room, models, busy, run, open, setOpen }: {
-  room: AgentProfilesRoom; models: ModelsRoom | null; busy: string; run: Run;
-  open: string | null; setOpen: (k: string | null) => void;
+// ---------------------------------------------------------------- agents
+
+function AgentList({ room, models, busy, run, onOpen }: {
+  room: AgentProfilesRoom; models: ModelsRoom | null; busy: string; run: Run; onOpen: (k: string) => void;
 }) {
   const { policy, knownTools } = room;
   const spawns = policy.spawnsAgents;
-  // A value that is not in a catalogue (an old pin, a renamed model) still
-  // gets an option, or the select would silently show a different one.
-  const withCurrent = (opts: { model: string; label: string }[], cur: string) =>
-    (cur && !opts.some((o) => o.model === cur) ? [...opts, { model: cur, label: cur }] : opts);
   const execOpts = withCurrent(models?.policy.executorCatalogue ?? [{ model: '', label: 'CLI default' }], policy.executorModel);
   const advOpts = withCurrent(models?.policy.advisorCatalogue ?? [{ model: '', label: 'None' }], policy.advisorModel);
-  const cols = { gridTemplateColumns: `minmax(240px,1fr) 184px repeat(${knownTools.length},40px) 64px 48px` };
   const exec = room.profiles.find((p) => p.key === 'executor');
+  const on = room.profiles.filter((p) => p.enabled);
 
   const newAgent = () => {
     const taken = new Set(room.profiles.map((p) => p.key));
@@ -204,156 +259,209 @@ function Agents({ room, models, busy, run, open, setOpen }: {
     const tools = ['Read', 'Grep', 'Glob'].filter((t) => knownTools.includes(t));
     void run('new', async () => {
       await createAgentProfile({ key, name: 'New agent', description: '', prompt: '', model: '', tools: tools.length ? tools : knownTools.slice(0, 1) });
-      setOpen(key);
+      onOpen(key);
     });
   };
 
   return (<>
-    <div className="sa-policy">
-      <label className="cell">
-        <span className="eyebrow">Advisor model</span>
-        <select className="lp-select mono" value={policy.advisorModel} disabled={busy === 'policy'}
+    <div className="sa-bar">
+      <span className={`sa-dot ${spawns ? 'ok' : 'warn'}`} />
+      <span className="tx">
+        {spawns
+          ? <>Subagents spawn: {on.length} of {room.profiles.length} profiles are passed via <code>--agents</code>.</>
+          : <>Nothing spawns. With no advisor, <code>--agents</code> is never passed and the switches below change nothing.</>}
+      </span>
+      <label className="sa-pick" title="Runs the session: plans, delegates, verifies, commits. None = a single-model run.">
+        <span>Advisor</span>
+        <select className="lp-select mono sm" value={policy.advisorModel} disabled={busy === 'policy'}
           onChange={(e) => { const v = e.target.value; void run('policy', () => patchSettings({ autopilotAdvisorModel: v })); }}>
           {advOpts.map((o) => <option key={o.model} value={o.model}>{o.label}</option>)}
         </select>
-        <span className="note">Runs the session: plans, delegates, verifies, commits. None = a single-model run.</span>
       </label>
-      <label className="cell">
-        <span className="eyebrow">Executor model</span>
-        <select className="lp-select mono" value={policy.executorModel} disabled={busy === 'policy'}
+      <label className="sa-pick" title="The subagent with the write tools, and what a profile set to inherit runs as.">
+        <span>Executor</span>
+        <select className="lp-select mono sm" value={policy.executorModel} disabled={busy === 'policy'}
           onChange={(e) => { const v = e.target.value; void run('policy', () => patchSettings({ autopilotExecutorModel: v })); }}>
           {execOpts.map((o) => <option key={o.model} value={o.model}>{o.label}</option>)}
         </select>
-        <span className="note">The subagent with the write tools, and what a profile set to inherit runs as.</span>
       </label>
-      <div className="cell">
-        <span className="eyebrow">Spawning</span>
-        <span className={`sa-spawn ${spawns ? 'yes' : 'no'}`}><span className="dot" />{spawns ? 'Subagents spawn' : 'Nothing spawns'}</span>
-        <span className="note">
-          {spawns ? 'Runs are handed every enabled profile below via ' : 'No advisor is set, so '}
-          <code>--agents</code>
-          {spawns ? '.' : ' is never passed and the switches below change nothing.'}
-        </span>
-      </div>
     </div>
 
     <div className="sa-card">
-      <div className="sa-cardhead">
-        <h2>Profiles</h2>
-        <span className="note">Click a tool to grant or revoke it. Click a name to edit the prompt.</span>
-        <span className="rc-grow" />
-        <button className="lp-primary" disabled={busy === 'new'} onClick={newAgent}><span className="plus">+</span>New agent</button>
+      <div className="sa-agrow head">
+        <span />
+        <span className="eyebrow">Agent</span>
+        <span className="eyebrow">Model</span>
+        <span className="eyebrow">Capabilities</span>
+        <span className="eyebrow end" title="Open items that would spawn this profile">Items</span>
+        <button className="sa-new" disabled={busy === 'new'} onClick={newAgent}>+ New</button>
       </div>
-      <div className="sa-scrollx">
-        <div className="sa-grid" style={{ minWidth: 560 + knownTools.length * 48 }}>
-          <div className="sa-gridrow head" style={cols}>
-            <span className="eyebrow">Agent</span>
-            <span className="eyebrow">Model</span>
-            {knownTools.map((t) => <span key={t} className="sa-toolhead">{t}</span>)}
-            <span className="eyebrow end" title="Open items that would spawn this profile">Items</span>
-            <span className="eyebrow end">On</span>
+      {room.profiles.map((p) => {
+        const used = room.usage[p.key] ?? 0;
+        return (
+          <div key={p.key} className="sa-agrow" role="button" tabIndex={0} onClick={() => onOpen(p.key)}
+            onKeyDown={(e) => { if (e.key === 'Enter') onOpen(p.key); }}>
+            <Avatar k={p.key} name={p.name} />
+            <div className="who">
+              <span className="line">
+                <span className={`n${p.enabled ? '' : ' off'}`}>{p.name}</span>
+                <span className="k">{p.key}</span>
+                {p.builtin && <span className="sa-chip">built-in</span>}
+              </span>
+              <span className="d">{p.description || 'No description'}</span>
+            </div>
+            <span className="sa-model">{p.model ? short(p.model) : 'inherit'}</span>
+            <Caps tools={p.tools} />
+            <span className={`sa-usage${used ? '' : ' zero'}`}>{used}</span>
+            <span className="sa-on">
+              <Switch on={p.enabled} disabled={busy === `${p.key}:on`}
+                title={p.enabled ? 'On: handed to runs' : 'Off: kept, never spawned'}
+                onToggle={() => void run(`${p.key}:on`, () => patchAgentProfile(p.key, { enabled: !p.enabled }))} />
+            </span>
           </div>
-          {room.profiles.map((p) => (
-            <ProfileRow key={p.key} p={p} room={room} cols={cols} busy={busy} run={run}
-              execOpts={withCurrent(models?.policy.executorCatalogue.filter((o) => o.model) ?? [], p.model)}
-              open={open === p.key} onToggleOpen={() => setOpen(open === p.key ? null : p.key)}
-              onDeleted={() => setOpen(null)} />
-          ))}
-        </div>
-      </div>
+        );
+      })}
       <div className="sa-cardfoot">
         <span>{exec && exec.enabled ? 'A run that names no profile spawns' : 'The executor is off, so a run that names no profile falls back to'}</span>
         <code>{room.defaultSpawn.keys.join(', ') || 'the built-in executor'}</code>
         {room.defaultSpawn.reason && <span className="why">{room.defaultSpawn.reason}</span>}
+        <span className="why"><a href={hrefTo.control}>Mission Control → Agents</a> draws the same profiles.</span>
       </div>
     </div>
-    <p className="sa-capnote">
-      <a href={hrefTo.control}>Mission Control → Agents</a> draws the same profiles, with each one's
-      state spelled out.
-    </p>
   </>);
 }
 
-function ProfileRow({ p, room, cols, busy, run, execOpts, open, onToggleOpen, onDeleted }: {
-  p: AgentProfile; room: AgentProfilesRoom; cols: CSSProperties; busy: string; run: Run;
-  execOpts: { model: string; label: string }[]; open: boolean; onToggleOpen: () => void; onDeleted: () => void;
-}) {
-  const used = room.usage[p.key] ?? 0;
-  const save = (patch: Parameters<typeof patchAgentProfile>[1], token = `${p.key}:edit`) =>
-    void run(token, () => patchAgentProfile(p.key, patch));
-  const inherit = `inherit · ${short(room.policy.executorModel) || 'CLI default'}`;
+function Caps({ tools }: { tools: string[] }) {
   return (
-    <div className={`sa-prof${open ? ' open' : ''}`}>
-      <div className="sa-gridrow" style={cols}>
-        <button className="sa-profname" onClick={onToggleOpen} aria-expanded={open}>
-          <span className="caret">{open ? '▾' : '▸'}</span>
-          <span className="tx">
-            <span className="line">
-              <span className={`n${p.enabled ? '' : ' off'}`}>{p.name}</span>
-              <span className="k">{p.key}</span>
-              {p.builtin && <span className="chip">built-in</span>}
-            </span>
-            <span className="d">{p.description || 'No description'}</span>
+    <div className="sa-caps">
+      {CAPS.map(({ cap, label, tone, icon }) => {
+        const got = GROUPS.filter((g) => g.cap === cap).flatMap((g) => g.tools).filter((t) => tools.includes(t));
+        if (!got.length) return null;
+        return (
+          <span key={cap} className="sa-cap" title={got.join(', ')} style={{ background: `var(--status-${tone}-bg)`, color: `var(--status-${tone}-fg)` }}>
+            <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">{icon}</svg>
+            {label}
           </span>
-        </button>
-        <select className="lp-select mono sm" value={p.model} aria-label={`${p.name} model`} disabled={busy === `${p.key}:edit`}
-          onChange={(e) => save({ model: e.target.value })}>
-          <option value="">{inherit}</option>
-          {execOpts.map((o) => <option key={o.model} value={o.model}>{short(o.label)}</option>)}
-        </select>
-        {room.knownTools.map((t) => {
-          const on = p.tools.includes(t);
-          const last = on && p.tools.length === 1;
-          return (
-            <button key={t} className={`sa-tool${on ? ' on' : ''}`} aria-pressed={on} disabled={last || busy === `${p.key}:tools`}
-              title={last ? `${t} is its only tool, and a profile with none can do nothing` : `${on ? 'Revoke' : 'Grant'} ${t}`}
-              onClick={() => save({ tools: on ? p.tools.filter((x) => x !== t) : [...p.tools, t] }, `${p.key}:tools`)}>
-              {on ? '✓' : ''}
-            </button>
-          );
-        })}
-        <span className={`sa-usage${used ? '' : ' zero'}`}>{used}</span>
-        <span className="sa-on">
-          <Switch on={p.enabled} disabled={busy === `${p.key}:on`}
-            title={p.enabled ? 'On: handed to runs' : 'Off: kept, never spawned'}
-            onToggle={() => save({ enabled: !p.enabled }, `${p.key}:on`)} />
-        </span>
-      </div>
-      {open && (
-        <div className="sa-profbody">
-          <div className="col">
-            <label className="sa-field">
-              <span className="eyebrow">Name</span>
-              <Draft className="sa-input" value={p.name} aria-label="Name" onSave={(v) => v.trim() && save({ name: v.trim() })} />
-            </label>
-            <label className="sa-field">
-              <span className="eyebrow">Description</span>
-              <Draft area className="sa-input" rows={3} value={p.description} aria-label="Description"
-                placeholder="When should a run hand work to this agent?" onSave={(v) => save({ description: v })} />
-            </label>
-            <span className="note">{p.tools.length ? `Granted ${p.tools.join(', ')}.` : 'No tools granted. It can only answer in text.'}</span>
-            <div className="sa-actions">
-              {p.builtin
-                ? <span className="note">Built-in profiles can be turned off, not deleted.</span>
-                : <button className="lp-btn danger" disabled={busy === `${p.key}:del`}
-                    onClick={() => void run(`${p.key}:del`, async () => { await deleteAgentProfile(p.key); onDeleted(); })}>
-                    Delete profile
-                  </button>}
-            </div>
-          </div>
-          <label className="sa-field">
-            <span className="sa-fieldhead"><span className="eyebrow">System prompt</span><span className="rc-grow" /><span className="k">{words(p.prompt)} words</span></span>
-            <Draft area className="sa-input code" rows={11} value={p.prompt} aria-label="System prompt" onSave={(v) => save({ prompt: v })} />
-          </label>
-        </div>
-      )}
+        );
+      })}
     </div>
   );
 }
 
-function Skills({ data, projects, busy, run, open, setOpen, onRemove }: {
-  data: SkillsData; projects: string[]; busy: string; run: Run;
-  open: number | null; setOpen: (id: number | null) => void; onRemove: (s: Skill) => void;
+function AgentEditor({ p, room, models, skills, busy, run, onPick, onBack, onOpenSkill, onNewSkill }: {
+  p: AgentProfile; room: AgentProfilesRoom; models: ModelsRoom | null; skills: SkillsData | null; busy: string; run: Run;
+  onPick: (k: string) => void; onBack: () => void; onOpenSkill: (id: number) => void; onNewSkill: () => void;
+}) {
+  const used = room.usage[p.key] ?? 0;
+  const save = (patch: Parameters<typeof patchAgentProfile>[1], token = `${p.key}:edit`) =>
+    void run(token, () => patchAgentProfile(p.key, patch));
+  const execOpts = withCurrent(models?.policy.executorCatalogue.filter((o) => o.model) ?? [], p.model);
+  const known = new Set(GROUPS.flatMap((g) => g.tools));
+  const groups = [
+    ...GROUPS.map((g) => ({ label: g.label, tools: g.tools.filter((t) => room.knownTools.includes(t)) })),
+    { label: 'Other', tools: room.knownTools.filter((t) => !known.has(t)) },
+  ].filter((g) => g.tools.length);
+  const lib = skills?.skills ?? [];
+  const loaded = lib.filter((s) => s.enabled);
+
+  return (
+    <div className="sa-edit">
+      <nav className="sa-rail">
+        <button className="sa-back" onClick={onBack}>← All agents</button>
+        {room.profiles.map((x) => (
+          <button key={x.key} className={`sa-railrow${x.key === p.key ? ' on' : ''}${x.enabled ? '' : ' off'}`} onClick={() => onPick(x.key)}>
+            <span className={`sa-dot ${x.enabled ? 'ok' : 'idle'}`} />{x.name}
+          </button>
+        ))}
+      </nav>
+
+      <div className="sa-main">
+        <div className="sa-titlerow">
+          <Avatar k={p.key} name={p.name} size="lg" />
+          <Draft className="sa-bigname" value={p.name} aria-label="Name" onSave={(v) => v.trim() && save({ name: v.trim() })} />
+          <span className="sa-keytag">{p.key}</span>
+        </div>
+        <Draft className="sa-descin" value={p.description} aria-label="Description"
+          placeholder="When should a run hand work to this agent?" onSave={(v) => save({ description: v })} />
+        <Eyebrow aside={`${words(p.prompt)} words · saves on blur`}>System prompt</Eyebrow>
+        <Draft area className="sa-body" value={p.prompt} aria-label="System prompt" onSave={(v) => save({ prompt: v })} />
+      </div>
+
+      <aside className="sa-side">
+        <div className="sa-onrow">
+          <div className="tx">
+            <span className="lbl">{p.enabled ? 'On · handed to runs' : 'Off · kept, never spawned'}</span>
+            <span className="note">{used} open item{used === 1 ? '' : 's'} would spawn this</span>
+          </div>
+          <Switch on={p.enabled} disabled={busy === `${p.key}:on`}
+            title={p.enabled ? 'On: handed to runs' : 'Off: kept, never spawned'}
+            onToggle={() => save({ enabled: !p.enabled }, `${p.key}:on`)} />
+        </div>
+
+        <label className="sa-sect">
+          <Eyebrow>Model</Eyebrow>
+          <select className="lp-select mono" value={p.model} aria-label={`${p.name} model`} disabled={busy === `${p.key}:edit`}
+            onChange={(e) => save({ model: e.target.value })}>
+            <option value="">inherit · {short(room.policy.executorModel) || 'CLI default'}</option>
+            {execOpts.map((o) => <option key={o.model} value={o.model}>{short(o.label)}</option>)}
+          </select>
+        </label>
+
+        <div className="sa-sect">
+          <Eyebrow aside={`${loaded.length} of ${lib.length} on disk`}>Skills</Eyebrow>
+          <div className="sa-sklist">
+            {lib.map((s) => (
+              <button key={s.id} className="sa-skitem" onClick={() => onOpenSkill(s.id)} title="Open this skill">
+                <span className={`sa-check${s.enabled ? ' on' : ''}`}>{s.enabled ? '✓' : ''}</span>
+                <span className="tx">
+                  <span className={`n${s.enabled ? '' : ' off'}`}>{s.name}</span>
+                  <span className="d">{s.description || 'No description'}</span>
+                </span>
+                <span className="scope">{s.scope === 'project' ? s.slug : 'global'}</span>
+              </button>
+            ))}
+            <button className="sa-sknew" disabled={busy === 'sk:new'} onClick={onNewSkill}>+ New skill</button>
+          </div>
+          <span className="note">Skills are not scoped to agents: an enabled skill is on disk for every session, this agent's included.</span>
+        </div>
+
+        <div className="sa-sect">
+          <Eyebrow aside={`${p.tools.length}/${room.knownTools.length} granted`}>Tools</Eyebrow>
+          {groups.map((g) => (
+            <div key={g.label} className="sa-toolgrp">
+              <span className="lbl">{g.label}</span>
+              <div className="sa-toolgrid">
+                {g.tools.map((t) => {
+                  const on = p.tools.includes(t);
+                  const last = on && p.tools.length === 1;
+                  return (
+                    <button key={t} className={`sa-toolbtn${on ? ' on' : ''}`} aria-pressed={on} disabled={last || busy === `${p.key}:tools`}
+                      title={last ? `${t} is its only tool, and a profile with none can do nothing` : `${on ? 'Revoke' : 'Grant'} ${t}`}
+                      onClick={() => save({ tools: on ? p.tools.filter((x) => x !== t) : [...p.tools, t] }, `${p.key}:tools`)}>
+                      <span className="box">{on ? '✓' : ''}</span>{t}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {p.builtin
+          ? <span className="note">Built-in profiles can be turned off, not deleted.</span>
+          : <button className="lp-btn danger sa-del" disabled={busy === `${p.key}:del`}
+              onClick={() => void run(`${p.key}:del`, async () => { await deleteAgentProfile(p.key); onBack(); })}>
+              Delete profile
+            </button>}
+      </aside>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- skills
+
+function SkillList({ data, busy, run, onOpen, onNew }: {
+  data: SkillsData; busy: string; run: Run; onOpen: (id: number) => void; onNew: () => void;
 }) {
   const { skills, report } = data;
   const disk = report.skills;
@@ -365,27 +473,17 @@ function Skills({ data, projects, busy, run, open, setOpen, onRemove }: {
     ...[...new Set(skills.filter((s) => s.scope === 'project').map((s) => s.slug))].sort()
       .map((slug) => ({ scope: 'project' as const, slug, label: slug })),
   ];
-  const save = (s: Skill, input: SkillInput, token = `sk:${s.id}`) => void run(token, () => patchSkill(s.id, input));
-  const free = (base: string) => {
-    const taken = new Set(skills.filter((s) => s.scope === 'global').map((s) => s.name));
-    let n = base, i = 2;
-    while (taken.has(n)) n = `${base}-${i++}`;
-    return n;
-  };
   const hostQuiet = !report.when;
 
   return (<>
-    <div className="sa-hostline">
-      <span className={`dot${hostQuiet ? ' quiet' : ''}`} />
+    <div className="sa-bar">
+      <span className={`sa-dot ${hostQuiet ? 'idle' : 'ok'}`} />
       <span className="tx">
         {hostQuiet
           ? 'The host has not reported yet. The library below is real; what is on disk is unknown until the next sync (every ~5 minutes, or ./stack skills by hand).'
-          : `Host synced ${relative(report.when)} · ${disk.filter((d) => d.managed).length} managed skills on disk. Edits reach disk on the next sync, within ~5 minutes.`}
+          : <>Host synced <span className="mono">{relative(report.when)}</span>. Edits reach disk on the next sync, within ~5 minutes.</>}
       </span>
-      <button className="lp-primary" disabled={busy === 'sk:new'}
-        onClick={() => void run('sk:new', async () => { const s = await createSkill({ name: free('new-skill'), scope: 'global', slug: '', description: '', body: '' }); setOpen(s.id); })}>
-        <span className="plus">+</span>New skill
-      </button>
+      <button className="lp-primary" disabled={busy === 'sk:new'} onClick={onNew}><span className="plus">+</span>New skill</button>
     </div>
 
     {places.map((pl) => {
@@ -408,72 +506,18 @@ function Skills({ data, projects, busy, run, open, setOpen, onRemove }: {
             )}
             {rows.map((s) => {
               const [text, tone, title] = skillState(s, onDisk.has(diskKey(s)));
-              const isOpen = open === s.id;
               return (
-                <div className={`sa-skill${isOpen ? ' open' : ''}`} key={s.id}>
-                  <div className="sa-skillrow">
-                    <Switch on={s.enabled} disabled={busy === `sk:${s.id}:on`}
-                      title={s.enabled ? 'On: the host keeps this on disk' : 'Off: the host removes it from disk, the library keeps it'}
-                      onToggle={() => save(s, { enabled: !s.enabled }, `sk:${s.id}:on`)} />
-                    <div className={`main${s.enabled ? '' : ' off'}`}>
-                      <span className="line">
-                        <span className="n">{s.name || 'unnamed'}</span>
-                        <span className="state" title={title} style={{ background: `var(--status-${tone}-bg)`, color: `var(--status-${tone}-fg)` }}>{text}</span>
-                      </span>
-                      <span className={`d${s.description ? '' : ' none'}`}>{s.description || 'No description. Claude has nothing to match on.'}</span>
-                    </div>
-                    <span className="k" title={place(s.scope, s.slug)}>{place(s.scope, s.slug)}</span>
-                    <button className="lp-btn" onClick={() => setOpen(isOpen ? null : s.id)} aria-expanded={isOpen}>{isOpen ? 'Done' : 'Edit'}</button>
+                <div className="sa-skrow" key={s.id} role="button" tabIndex={0} onClick={() => onOpen(s.id)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') onOpen(s.id); }}>
+                  <Switch on={s.enabled} disabled={busy === `sk:${s.id}:on`}
+                    title={s.enabled ? 'On: the host keeps this on disk' : 'Off: the host removes it from disk, the library keeps it'}
+                    onToggle={() => void run(`sk:${s.id}:on`, () => patchSkill(s.id, { enabled: !s.enabled }))} />
+                  <div className="who">
+                    <span className={`n${s.enabled ? '' : ' off'}`}>{s.name || 'unnamed'}</span>
+                    <span className="d">{s.description || 'No description. Claude has nothing to match on.'}</span>
                   </div>
-                  {isOpen && (
-                    <div className="sa-skillbody">
-                      <div className="col">
-                        <label className="sa-field">
-                          <span className="eyebrow">Name</span>
-                          <Draft className="sa-input mono" value={s.name} aria-label="Skill name"
-                            transform={(v) => v.toLowerCase().replace(/[^a-z0-9-]+/g, '-').slice(0, 64)}
-                            onSave={(v) => v && save(s, { name: v })} />
-                          <span className="note">Lower-case and hyphens. It is the directory name on disk.</span>
-                        </label>
-                        <label className="sa-field">
-                          <span className="eyebrow">Description</span>
-                          <Draft area className="sa-input" rows={3} value={s.description} aria-label="Skill description"
-                            placeholder="When should Claude reach for this?" onSave={(v) => save(s, { description: v })} />
-                          <span className="note">Claude reads this to decide whether the skill applies. Write the trigger, not the summary.</span>
-                        </label>
-                        <div className="sa-field">
-                          <span className="eyebrow">Where</span>
-                          <div className="sa-where">
-                            <div className="lp-seg">
-                              {([['global', 'Global'], ['project', 'One project']] as const).map(([k, label]) => (
-                                <button key={k} className={s.scope === k ? 'on' : ''} disabled={k === 'project' && !projects.length}
-                                  onClick={() => s.scope !== k && save(s, { scope: k, slug: k === 'project' ? projects[0] : '' })}>{label}</button>
-                              ))}
-                            </div>
-                            {s.scope === 'project' && (
-                              <select className="lp-select mono sm" value={s.slug} aria-label="Project"
-                                onChange={(e) => save(s, { slug: e.target.value })}>
-                                {(projects.includes(s.slug) ? projects : [s.slug, ...projects]).map((p) => <option key={p} value={p}>{p}</option>)}
-                              </select>
-                            )}
-                          </div>
-                        </div>
-                        <div className="sa-actions">
-                          <button className="lp-btn danger" onClick={() => onRemove(s)}>Delete</button>
-                          <span className="note">To stop Claude loading it, turn it off instead.</span>
-                        </div>
-                      </div>
-                      <label className="sa-field">
-                        <span className="sa-fieldhead">
-                          <span className="eyebrow">The skill</span><span className="rc-grow" />
-                          <span className="k path" title={`${place(s.scope, s.slug)}/${s.name}/SKILL.md`}>{place(s.scope, s.slug)}/{s.name || '…'}/SKILL.md</span>
-                        </span>
-                        <Draft area className="sa-input code" rows={13} value={s.body} aria-label="Skill body"
-                          placeholder="The instructions, in markdown. The frontmatter is written for you." onSave={(v) => save(s, { body: v })} />
-                        <span className="note">Saved to the library when you leave the field. The host puts it on disk within ~5 minutes.</span>
-                      </label>
-                    </div>
-                  )}
+                  <span className="sa-all" title="Stack does not scope a skill to agents">All agents</span>
+                  <span className="sa-state" title={title} style={{ background: `var(--status-${tone}-bg)`, color: `var(--status-${tone}-fg)` }}>{text}</span>
                 </div>
               );
             })}
@@ -487,28 +531,93 @@ function Skills({ data, projects, busy, run, open, setOpen, onRemove }: {
         <div className="sa-grouphead">
           <h2>Not managed by Stack</h2>
           <span className="note">On the host already. Reported, never touched.</span>
-          <span className="hair" />
-          <span className="k">{unmanaged.length}</span>
         </div>
         <div className="sa-card dashed">
           {unmanaged.map((d) => (
-            <div className="sa-skillrow" key={diskKey(d)}>
-              <span className="sa-foreign" title="Not written by Stack">◇</span>
-              <div className="main">
-                <span className="line"><span className="n dim">{d.name}</span></span>
-                <span className="d none">{d.description || 'No description in its frontmatter.'}</span>
+            <div className="sa-foreignrow" key={diskKey(d)}>
+              <div className="who">
+                <span className="n">{d.name}</span>
+                <span className="d">{d.description || 'No description in its frontmatter.'}</span>
               </div>
               <span className="k" title={d.path}>{place(d.scope, d.slug)}</span>
               <button className="lp-btn" disabled={busy === `adopt:${diskKey(d)}`}
                 title="Copy into the library so it can be edited and toggled here. The file is untouched until you change it."
                 onClick={() => void run(`adopt:${diskKey(d)}`, async () => {
                   const s = await createSkill({ name: d.name, scope: d.scope, slug: d.slug, description: d.description, body: d.body });
-                  setOpen(s.id);
-                })}>↥ Adopt</button>
+                  onOpen(s.id);
+                })}>Adopt</button>
             </div>
           ))}
         </div>
       </div>
     )}
   </>);
+}
+
+function SkillEditor({ s, data, projects, busy, run, onPick, onBack, onRemove }: {
+  s: Skill; data: SkillsData; projects: string[]; busy: string; run: Run;
+  onPick: (id: number) => void; onBack: () => void; onRemove: (s: Skill) => void;
+}) {
+  const onDisk = new Set(data.report.skills.map(diskKey));
+  const stateOf = (x: Skill) => skillState(x, onDisk.has(diskKey(x)));
+  const [text, tone, title] = stateOf(s);
+  const save = (input: SkillInput, token = `sk:${s.id}`) => void run(token, () => patchSkill(s.id, input));
+  const path = `${place(s.scope, s.slug)}/${s.name || '…'}/SKILL.md`;
+
+  return (
+    <div className="sa-edit">
+      <nav className="sa-rail">
+        <button className="sa-back" onClick={onBack}>← All skills</button>
+        {data.skills.map((x) => (
+          <button key={x.id} className={`sa-railrow mono${x.id === s.id ? ' on' : ''}${x.enabled ? '' : ' off'}`} onClick={() => onPick(x.id)}>
+            <span className="sa-dot" style={{ background: `var(--status-${stateOf(x)[1]}-fg)` }} />{x.name || 'unnamed'}
+          </button>
+        ))}
+      </nav>
+
+      <div className="sa-main">
+        <Draft className="sa-bigname mono" value={s.name} aria-label="Skill name"
+          transform={(v) => v.toLowerCase().replace(/[^a-z0-9-]+/g, '-').slice(0, 64)}
+          onSave={(v) => v && save({ name: v })} />
+        <Draft className="sa-descin" value={s.description} aria-label="Skill description"
+          placeholder="When should Claude reach for this?" onSave={(v) => save({ description: v })} />
+        <Eyebrow aside={path}>SKILL.md</Eyebrow>
+        <Draft area className="sa-body" value={s.body} aria-label="Skill body"
+          placeholder="The instructions, in markdown. The frontmatter is written for you." onSave={(v) => save({ body: v })} />
+      </div>
+
+      <aside className="sa-side">
+        <div className="sa-onrow">
+          <span className="sa-state" title={title} style={{ background: `var(--status-${tone}-bg)`, color: `var(--status-${tone}-fg)` }}>{text}</span>
+          <Switch on={s.enabled} disabled={busy === `sk:${s.id}:on`}
+            title={s.enabled ? 'On: the host keeps this on disk' : 'Off: the host removes it from disk, the library keeps it'}
+            onToggle={() => save({ enabled: !s.enabled }, `sk:${s.id}:on`)} />
+        </div>
+        <span className="note">{title}</span>
+
+        <div className="sa-sect">
+          <Eyebrow>Where</Eyebrow>
+          <div className="lp-seg">
+            {([['global', 'Global'], ['project', 'One project']] as const).map(([k, label]) => (
+              <button key={k} className={s.scope === k ? 'on' : ''} disabled={k === 'project' && !projects.length}
+                onClick={() => s.scope !== k && save({ scope: k, slug: k === 'project' ? projects[0] : '' })}>{label}</button>
+            ))}
+          </div>
+          {s.scope === 'project' && (
+            <select className="lp-select mono sm" value={s.slug} aria-label="Project" onChange={(e) => save({ slug: e.target.value })}>
+              {(projects.includes(s.slug) ? projects : [s.slug, ...projects]).map((p) => <option key={p} value={p}>{p}</option>)}
+            </select>
+          )}
+        </div>
+
+        <div className="sa-sect">
+          <Eyebrow>Loaded by</Eyebrow>
+          <div><span className="sa-all">All agents</span></div>
+          <span className="note">Stack does not scope a skill to agents. Once on disk, Claude loads it in any session whose work matches the description.</span>
+        </div>
+
+        <button className="lp-btn danger sa-del" onClick={() => onRemove(s)}>Delete skill</button>
+      </aside>
+    </div>
+  );
 }

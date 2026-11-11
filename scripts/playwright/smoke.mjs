@@ -426,22 +426,22 @@ const ROADMAP_PANELS = [
 
 // THE DESIGN'S OTHER VIEWS (detail/SkillsAgents.tsx, Loops.tsx). Loops is a
 // mockup on component state, so a press there writes nothing anywhere. Skills
-// & agents is WIRED: its presses are view state only (a fold opened), and
-// NEVER a switch, a tool cell, a model picker or Adopt. Artifacts has no
+// & agents is WIRED: its presses are view state only (an editor opened, by
+// the name, never the row's centre), and NEVER a switch, a tool cell, a model picker or Adopt. Artifacts has no
 // view-only press left (every control there creates, edits or deletes), so
 // only its first paint is walked.
 const AGENTS_PANELS = [
   {
-    id: 'agents-fold',
-    label: 'Skills & agents — a profile name opens its prompt',
-    click: '.sa .sa-profname',
-    expect: '.sa .sa-profbody',
+    id: 'agents-edit',
+    label: 'Skills & agents — a profile row opens its editor',
+    click: '.sa .sa-agrow:not(.head) .who',
+    expect: '.sa .sa-edit .sa-body',
   },
   {
     id: 'agents-skills',
     label: 'Skills & agents — the Skills tab draws the library',
     click: '.sa .sa-tabs button:nth-child(2)',
-    expect: '.sa .sa-hostline',
+    expect: '.sa .sa-bar',
   },
 ];
 const LOOPS_PANELS = [
