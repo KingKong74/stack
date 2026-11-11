@@ -176,7 +176,7 @@ function MilestoneCard({ slug, m, n, wide, incumbent, slices, items, busy, onSav
   const meta = (
     <div className="ms-meta">
       {n !== null && <span className={`ms-n${wide ? ' accent' : ''}`}>{pad2(n)}</span>}
-      <span className={`ad-pill ${pill.tone}`}>{pill.label}</span>
+      <span className={`doc-pill ${pill.tone}`}>{pill.label}</span>
       {m.targetOn && <span className="sp-when" title="A target you set. It gates nothing.">by {m.targetOn}</span>}
     </div>
   );
@@ -289,7 +289,7 @@ export function MilestoneSummary({ slug, milestones, slices, items }: {
       <div className="ch-box card" aria-label="Current milestone">
         <div className="ch-boxhead">
           <span className="sp-eyebrow">Current milestone</span>
-          {cur && <span className="ad-pill info">Active</span>}
+          {cur && <span className="doc-pill info">Active</span>}
         </div>
         {cur ? <>
           <a className="ch-msname" href={all}>{cur.name}</a>
@@ -307,7 +307,7 @@ export function MilestoneSummary({ slug, milestones, slices, items }: {
         <span className="sp-eyebrow">Upcoming</span>
         {next.length === 0 && <span className="sp-empty">Nothing planned.</span>}
         {next.map((m, i) => (
-          <a key={m.id} className="ch-up" href={all}><span className="ad-n">{pad2(i + (cur ? 2 : 1))}</span>{m.name}</a>
+          <a key={m.id} className="ch-up" href={all}><span className="doc-n">{pad2(i + (cur ? 2 : 1))}</span>{m.name}</a>
         ))}
         <a className="ch-all" href={all}>All milestones →</a>
       </div>

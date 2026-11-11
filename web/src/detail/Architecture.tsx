@@ -228,7 +228,7 @@ export function Charter({ slug, cap, aside }: { slug: string; cap: number; aside
           {parsed.sections.map((x) => <button key={x.n} onClick={() => jump(sectionId(x))}>{x.title}</button>)}
         </nav>
       )}
-      <div className="sp ad ch-main">
+      <div className="sp doc-view ch-main">
         {err && <div className="km-err" role="alert">{err}</div>}
         {docs === null && !err && <span className="sp-empty">Reading…</span>}
         {docs !== null && (
@@ -243,17 +243,17 @@ export function Charter({ slug, cap, aside }: { slug: string; cap: number; aside
               <>
                 <section className="ch-overview" id="ch-overview">
                   <div className="ch-metarow">
-                    <div className="ad-meta">
-                      <span className="ad-eyebrow">Charter</span>
-                      <span className="ad-dot" />
+                    <div className="doc-meta">
+                      <span className="doc-eyebrow">Charter</span>
+                      <span className="doc-dot" />
                       <span className="sp-when">edited {timeAgo(doc.updatedAt)}</span>
                     </div>
-                    <button className="k-btn ghost sm ad-edit" onClick={edit}><KitIcon name="pencil" size={13} />Edit</button>
+                    <button className="k-btn ghost sm doc-edit" onClick={edit}><KitIcon name="pencil" size={13} />Edit</button>
                   </div>
                   <p className="ch-sub">Why this project exists, who it is for and what done looks like. The project's spine starts here.</p>
                   {parsed.lede.map((b, i) => b.k === 'p'
-                    ? <p key={i} className="ad-ledep">{inline(b.text)}</p>
-                    : <div key={i} className="md ad-md">{block(b, i)}</div>)}
+                    ? <p key={i} className="doc-ledep">{inline(b.text)}</p>
+                    : <div key={i} className="md doc-md">{block(b, i)}</div>)}
                 </section>
                 <ArchSections sections={parsed.sections} ruled />
               </>
@@ -275,12 +275,12 @@ export function Charter({ slug, cap, aside }: { slug: string; cap: number; aside
           <span className="sp-eyebrow">Who decides</span>
           <div className="ch-who">
             <div>
-              <span className="ad-label accent">Owner</span>
+              <span className="doc-label accent">Owner</span>
               <span>Verdicts</span><span>Milestones and slices</span><span>ADR status</span>
               <span>Every <span className="sp-mono">CLAUDE.md</span> save</span>
             </div>
             <div>
-              <span className="ad-label dim">Agents</span>
+              <span className="doc-label dim">Agents</span>
               <span>Propose</span><span>Annotate</span><span className="dim">Never decide</span>
             </div>
           </div>
@@ -308,7 +308,7 @@ export function Architecture({ slug, slices, milestones, highlightId, onStarred 
   const decisionsN = parsed.sections.length + 1;
 
   return (
-    <div className="sp ad">
+    <div className="sp doc-view">
       {err && <div className="km-err" role="alert">{err}</div>}
       {docs === null && !err && <span className="sp-empty">Reading…</span>}
       {docs !== null && (
@@ -320,25 +320,25 @@ export function Architecture({ slug, slices, milestones, highlightId, onStarred 
           }}
           view={(doc, edit) => (
             <>
-              <div className="ad-head">
-                <div className="ad-lede">
-                  <div className="ad-meta">
-                    <span className="ad-eyebrow">Architecture doc</span>
-                    <span className="ad-dot" />
+              <div className="doc-head">
+                <div className="doc-lede">
+                  <div className="doc-meta">
+                    <span className="doc-eyebrow">Architecture doc</span>
+                    <span className="doc-dot" />
                     <span className="sp-when">edited {timeAgo(doc.updatedAt)}</span>
                   </div>
                   {parsed.lede.map((b, i) => b.k === 'p'
-                    ? <p key={i} className="ad-ledep">{inline(b.text)}</p>
-                    : <div key={i} className="md ad-md">{block(b, i)}</div>)}
+                    ? <p key={i} className="doc-ledep">{inline(b.text)}</p>
+                    : <div key={i} className="md doc-md">{block(b, i)}</div>)}
                 </div>
-                <button className="k-btn ghost sm ad-edit" onClick={edit}><KitIcon name="pencil" size={13} />Edit</button>
+                <button className="k-btn ghost sm doc-edit" onClick={edit}><KitIcon name="pencil" size={13} />Edit</button>
               </div>
               <ArchSections sections={parsed.sections} />
             </>
           )} />
       )}
 
-      <section className="ad-sec ad-decisions">
+      <section className="doc-sec doc-decisions">
         <SecHead n={decisionsN} title="Decisions">
           <span className="sp-dim">One per design call, oldest first. You rule on the status; a session may only propose.</span>
           <span className="sp-rule" />
@@ -348,7 +348,7 @@ export function Architecture({ slug, slices, milestones, highlightId, onStarred 
         </SecHead>
         {docs !== null && adrs.length === 0 && <span className="sp-empty">No decisions recorded yet.</span>}
         {adrs.length > 0 && (
-          <div className="ad-adrs">
+          <div className="doc-adrs">
             {adrs.map((d, i) => (
               <Adr key={d.id} n={i + 1} adr={d} slices={slices} milestones={milestones}
                 opened={highlightId === `doc-${d.id}`}
@@ -444,7 +444,7 @@ export function Design({ slug }: { slug: string }) {
   const design = docs?.find((d) => d.type === 'design_doc') ?? null;
   const parsed = useMemo(() => parseArchDoc(design?.body || ''), [design?.body]);
   return (
-    <div className="sp ad">
+    <div className="sp doc-view">
       {err && <div className="km-err" role="alert">{err}</div>}
       {docs === null && !err && <span className="sp-empty">Reading…</span>}
       {docs !== null && (
@@ -456,18 +456,18 @@ export function Design({ slug }: { slug: string }) {
           }}
           view={(doc, edit) => (
             <>
-              <div className="ad-head">
-                <div className="ad-lede">
-                  <div className="ad-meta">
-                    <span className="ad-eyebrow">Design doc</span>
-                    <span className="ad-dot" />
+              <div className="doc-head">
+                <div className="doc-lede">
+                  <div className="doc-meta">
+                    <span className="doc-eyebrow">Design doc</span>
+                    <span className="doc-dot" />
                     <span className="sp-when">edited {timeAgo(doc.updatedAt)}</span>
                   </div>
                   {parsed.lede.map((b, i) => b.k === 'p'
-                    ? <p key={i} className="ad-ledep">{inline(b.text)}</p>
-                    : <div key={i} className="md ad-md">{block(b, i)}</div>)}
+                    ? <p key={i} className="doc-ledep">{inline(b.text)}</p>
+                    : <div key={i} className="md doc-md">{block(b, i)}</div>)}
                 </div>
-                <button className="k-btn ghost sm ad-edit" onClick={edit}><KitIcon name="pencil" size={13} />Edit</button>
+                <button className="k-btn ghost sm doc-edit" onClick={edit}><KitIcon name="pencil" size={13} />Edit</button>
               </div>
               <ArchSections sections={parsed.sections} />
             </>
