@@ -1124,6 +1124,10 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
     setActive(id);
     setTilePeek(null);
   };
+  const startSession = (kind?: Sess['cmd']) => {
+    const id = openSession(undefined, kind);
+    if (view === 'swarm') openWin(id);
+  };
   const closeWin = (id: number) => { setWins((ws) => ws.filter((w) => w.id !== id)); setOpenIn(null); };
   const toggleMax = (id: number) => {
     const a = area();
@@ -1680,13 +1684,13 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
             })}
           </div>
           <div className="tv-start">
-            <TerminalDirectoryPicker value={cwd} projects={projects} onChange={setCwd} onSubmit={() => openSession()} />
+            <TerminalDirectoryPicker value={cwd} projects={projects} onChange={setCwd} onSubmit={() => startSession()} />
             <select className="tv-select" aria-label="Session type" value={mode}
               onChange={(e) => setMode(e.target.value as Sess['cmd'])}>
               <option value="claude">Claude</option><option value="codex">Codex</option><option value="shell">Shell</option>
             </select>
             <span className="tv-split-btn">
-              <button className="tv-go" onClick={() => openSession()} title={`Open ${startLabel}`}>
+              <button className="tv-go" onClick={() => startSession()} title={`Open ${startLabel}`}>
                 <span className="plus">+</span>Start
               </button>
               <button className="tv-go caret" aria-label="Session defaults" title="Model and where work goes"
@@ -1699,7 +1703,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                   {(['claude', 'codex', 'shell'] as const).map((k) => {
                     const lim = k === 'shell' ? null : meterOf(k).session;
                     return (
-                      <button key={k} className="tv-kind" onClick={() => { setMode(k); setNewMenu(false); openSession(undefined, k); }}>
+                      <button key={k} className="tv-kind" onClick={() => { setMode(k); setNewMenu(false); startSession(k); }}>
                         <span className={`tv-glyph ${k}`}>{TOOL[k].glyph}</span>
                         <span className="b">
                           <span className="n">{TOOL[k].name} session</span>
@@ -1973,13 +1977,13 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
               <span className="d">{sessions.length ? 'Select a session from the top bar to reopen it.' : 'Open a session from Swarm, or start a new one.'}</span>
               <span className="row">
                 <button className="tv-btn" onClick={() => setView('swarm')}>Open Swarm</button>
-                <button className="tv-go solo" onClick={() => openSession()} title={`Open ${startLabel}`}>New session</button>
+                <button className="tv-go solo" onClick={() => startSession()} title={`Open ${startLabel}`}>New session</button>
               </span>
             </div>
           )}
           {view === 'split' && cur && Array.from({ length: Math.max(0, 3 - minis.length) }, (_, i) => (
             <button key={`new-${i}`} className="tv-newcell" style={{ gridColumn: minis.length + i + 1, gridRow: 2 }}
-              onClick={() => openSession()} title={`Open ${startLabel}`}>
+              onClick={() => startSession()} title={`Open ${startLabel}`}>
               <span className="plus">+</span><span className="l">New session</span><span className="d">{startLabel}</span>
             </button>
           ))}
@@ -2129,7 +2133,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                 })}
                 {Array.from({ length: Math.max(0, cap - tiles.length) }, (_, i) => (
                   <button key={`e${i}`} className={`tv-newcell${dropOn === 'end' ? ' drop' : ''}`}
-                    onClick={() => openSession()} title={`Open ${startLabel}`}
+                    onClick={() => startSession()} title={`Open ${startLabel}`}
                     onDragOver={(e) => { if (!dragTile) return; e.preventDefault(); if (dropOn !== 'end') setDropOn('end'); }}
                     onDrop={(e) => { if (!dragTile) return; e.preventDefault(); e.stopPropagation(); setTileOrder(moveKey(shownTiles.map((x) => x.key), dragTile, null)); setDragTile(null); setDropOn(null); }}>
                     <span className="plus">+</span><span className="l">New session</span>
