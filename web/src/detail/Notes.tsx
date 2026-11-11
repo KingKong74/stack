@@ -196,13 +196,22 @@ export function Notes({ slug, milestones, slices, onRefresh }: {
       guard(async () => {
         const made = await createArtifact(slug, { type: 'note', title: titleOf(body), body, board: n.board || {} });
         z.current.set(made.id, zOf(n.id));
-        setNotes((xs) => (xs || []).map((x) => (x.id === n.id ? made : x)));
+        // A kind, pin or move made while the create was in flight landed on
+        // the local note: carry it over and save it, rather than lose it.
+        const latest = openRef.current.find((x) => x.id === n.id)?.board || {};
+        if (JSON.stringify(latest) !== JSON.stringify(made.board || {})) patchBoard(made.id, latest);
+        setNotes((xs) => (xs || []).map((x) => (x.id === n.id ? { ...made, board: latest } : x)));
         setSel((s) => (s === n.id ? made.id : s));
       });
       return;
     }
     if (!body || body === n.body) return;
-    guard(async () => { put(await patchArtifact(slug, n.id, { body, title: titleOf(body) })); });
+    // The answer carries the board as it was when the text went out; a kind
+    // or pin picked since must survive it, so the local board wins.
+    guard(async () => {
+      const saved = await patchArtifact(slug, n.id, { body, title: titleOf(body) });
+      setNotes((xs) => (xs || []).map((x) => (x.id === n.id ? { ...saved, board: x.board } : x)));
+    });
   };
 
   const addAt = (x: number, y: number, cluster: string | null) => {
@@ -480,8 +489,8 @@ export function Notes({ slug, milestones, slices, onRefresh }: {
         <div className="nt-compose">
           <textarea value={draft} rows={1} placeholder="What’s on your mind?" aria-label="New note"
             onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); addDraft(); } }} />
-          <span className="nt-kbd">⌘↵</span>
+            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); addDraft(); } }} />
+          <span className="nt-kbd">↵ add · ⇧↵ new line</span>
           <button type="button" className="k-btn sm" onClick={addDraft} disabled={busy || !draft.trim()}>Add</button>
         </div>
       </div>
@@ -549,7 +558,8 @@ function Sticky({ note, p, z, selected, dragging, settling, target, busy, milest
           onFocus={onFocus}
           onBlur={() => onSave(text)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); (e.target as HTMLTextAreaElement).blur(); }
+            // Enter finishes the note; Shift+Enter is a new line.
+            if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); (e.target as HTMLTextAreaElement).blur(); }
             if (e.key === 'Escape') { setText(note.body); (e.target as HTMLTextAreaElement).blur(); }
           }} />
         <div className="nt-meta">
@@ -557,7 +567,7 @@ function Sticky({ note, p, z, selected, dragging, settling, target, busy, milest
           <span className="nt-age">{saved ? timeAgo(note.updatedAt) : 'just now'}</span>
           <span className="nt-gap" />
           {saved && <StarButton on={!!note.starredAt} onToggle={onStar} what="this note" size={13} />}
-          <button type="button" className={`nt-pin${pinned ? ' on' : ''}`} onClick={onPin} aria-pressed={pinned}
+          <button type="button" className={`nt-pin${pinned ? ' on' : ''}`} onClick={onPin} onMouseDown={(e) => e.preventDefault()} aria-pressed={pinned}
             title={pinned ? 'Unpin' : 'Pin in place'} aria-label={pinned ? 'Unpin' : 'Pin in place'}>
             <svg width="14" height="14" viewBox="0 0 16 16" fill={pinned ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" aria-hidden>
               <path d="M9.5 1.8l4.7 4.7-1.6.8-2.6 2.6-.4 3.3-6.8-6.8 3.3-.4 2.6-2.6z" /><path d="M5.2 10.8L1.8 14.2" fill="none" />
@@ -566,7 +576,8 @@ function Sticky({ note, p, z, selected, dragging, settling, target, busy, milest
         </div>
         {selected && (
           <div className="nt-panel">
-            <div className="nt-kinds" role="group" aria-label="Kind of note">
+            {/* Picking a kind never takes focus from the text, so it can change mid-sentence. */}
+            <div className="nt-kinds" role="group" aria-label="Kind of note" onMouseDown={(e) => e.preventDefault()}>
               {KINDS.map((k) => (
                 <button key={k.id} type="button" className={`nt-chip${k.id === nk ? ' on' : ''}`} aria-pressed={k.id === nk}
                   onClick={() => onKind(k.id)}>{k.label}</button>
