@@ -22,6 +22,7 @@ export const KINDS: { id: NoteKind; label: string }[] = [
   { id: 'note', label: 'Note' },
   { id: 'idea', label: 'Idea' },
   { id: 'question', label: 'Question' },
+  { id: 'bug', label: 'Bug' },
 ];
 
 export interface Placed { id: number; x: number; y: number; w: number; r: number; pinned: boolean; cluster: string | null }

@@ -961,7 +961,7 @@ export interface Artifact {
   updatedAt: string;
 }
 
-export type NoteKind = 'note' | 'idea' | 'question';
+export type NoteKind = 'note' | 'idea' | 'question' | 'bug';
 /** Where a note sits on the Notes canvas (routes/artifacts.js `cleanBoard`). */
 export interface NoteBoard {
   x?: number; y?: number; r?: number; w?: number;

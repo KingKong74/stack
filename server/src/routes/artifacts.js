@@ -80,7 +80,7 @@ export const artifactShape = (r) => ({
   updatedAt: r.updated_at,
 });
 
-export const NOTE_KINDS = ['note', 'idea', 'question'];
+export const NOTE_KINDS = ['note', 'idea', 'question', 'bug'];
 const num = (v, lo, hi) => (v !== null && v !== '' && Number.isFinite(Number(v))
   ? Math.min(hi, Math.max(lo, Math.round(Number(v) * 10) / 10)) : null);
 // A note's placement, cleaned: unknown keys go, numbers are clamped, and a

@@ -8611,6 +8611,7 @@ button.ar-open:hover { background: var(--surface-hover); }
 .nt-dot { width: 6px; height: 6px; border-radius: var(--radius-pill); background: var(--grey-500); }
 .k-idea .nt-dot { background: var(--lime-500); }
 .k-question .nt-dot { background: var(--blue-400); }
+.k-bug .nt-dot { background: var(--red-500); }
 .nt-age { font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-tertiary); white-space: nowrap; }
 .nt-gap { flex: 1; }
 .nt-pin {

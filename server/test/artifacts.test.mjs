@@ -79,9 +79,9 @@ test('a note\'s board place is cleaned, and a move is not an edit', async () => 
   assert.deepEqual(n.body.board, { x: 0, r: 10, w: 250, cluster: 'c1', clusterName: 'Terminal' });
   const before = n.body.updatedAt;
   await new Promise((r) => setTimeout(r, 20));
-  const m = await call('PATCH', `${base(SLUG)}/${n.body.id}`, { board: { x: 300, y: 120, kind: 'idea', pinned: true } });
+  const m = await call('PATCH', `${base(SLUG)}/${n.body.id}`, { board: { x: 300, y: 120, kind: 'bug', pinned: true } });
   assert.equal(m.status, 200, m.text);
-  assert.deepEqual(m.body.board, { x: 300, y: 120, kind: 'idea', pinned: true }, 'a board PATCH replaces it whole');
+  assert.deepEqual(m.body.board, { x: 300, y: 120, kind: 'bug', pinned: true }, 'a board PATCH replaces it whole');
   assert.equal(m.body.updatedAt, before, 'moving a note does not move its edited time');
   const e = await call('PATCH', `${base(SLUG)}/${n.body.id}`, { body: 'idea, edited' });
   assert.notEqual(e.body.updatedAt, before, 'an edit does');
