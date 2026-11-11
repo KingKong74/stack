@@ -53,6 +53,21 @@ import { TopBar } from '../components/TopBar';
 import { NavIcons } from '../detail/ConsoleNav';
 import { crumbName } from '../lib/ui';
 
+// Small decorative action cues; visible labels remain the accessible names.
+function TermActionIcon({ action }: { action: 'fill' | 'hide' | 'show' | 'sort' | 'tile' | 'close' | 'end' | 'select' }) {
+  const paths = {
+    fill: 'M8 3v10M3 8h10',
+    hide: 'M2 2l12 12M6 3.5A7 7 0 0 1 14 8a10 10 0 0 1-2 2.5M9.5 12.5A7 7 0 0 1 2 8a10 10 0 0 1 2-2.5M6.5 6.5a2 2 0 0 0 3 3',
+    show: 'M1.5 8s2.5-5 6.5-5 6.5 5 6.5 5-2.5 5-6.5 5-6.5-5-6.5-5ZM10 8a2 2 0 1 1-4 0 2 2 0 0 1 4 0',
+    sort: 'M4 3v10m-2-2 2 2 2-2M9 4h5M9 8h4M9 12h2',
+    tile: 'M2 2h12v12H2ZM8 2v12M8 8h6',
+    close: 'M4 4l8 8M12 4l-8 8',
+    end: 'M4 4h8v8H4Z',
+    select: 'M2 8l4 4 8-8',
+  };
+  return <svg className="tv-action-icon" aria-hidden="true" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d={paths[action]} /></svg>;
+}
+
 // The web terminal (#/terminal[?cwd=…]) — xterm.js over websocket to the host
 // PTY daemon (via the server relay at /term). Parallel sessions are panes in a
 // grid (each is its own socket; the relay multiplexes them over the one agent
@@ -2026,35 +2041,35 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                   )}
                 </span>
                 {cap - tiles.length > 0 && (
-                  <button className="tv-go solo sm" title="Start a new session in every empty slot, using your defaults"
-                    onClick={() => setFillAsk(cap - tiles.length)}>Fill {cap - tiles.length} empty</button>
+                  <button className="tv-btn sm tv-action-fill" title="Start a new session in every empty slot, using your defaults"
+                    onClick={() => setFillAsk(cap - tiles.length)}><TermActionIcon action="fill" />Fill {cap - tiles.length} empty</button>
                 )}
                 {tiles.length > 0 && (
-                  <button className="tv-btn sm" title="Hide every tile from Swarm (sessions keep running)"
-                    onClick={() => { setHidden([...new Set([...hidden, ...allTiles.map((t) => t.key)])]); setWins([]); setTilePeek(null); }}>Hide all</button>
+                  <button className="tv-btn sm tv-action-hide" title="Hide every tile from Swarm (sessions keep running)"
+                    onClick={() => { setHidden([...new Set([...hidden, ...allTiles.map((t) => t.key)])]); setWins([]); setTilePeek(null); }}><TermActionIcon action="hide" />Hide all</button>
                 )}
                 {hiddenCount > 0 && (
-                  <button className="tv-btn sm" title="Bring hidden sessions back into Swarm" onClick={() => setHidden([])}>Show {hiddenCount} hidden</button>
+                  <button className="tv-btn sm tv-action-show" title="Bring hidden sessions back into Swarm" onClick={() => setHidden([])}><TermActionIcon action="show" />Show {hiddenCount} hidden</button>
                 )}
-                {tiles.length > 1 && <button className="tv-btn sm" title="Asking first, then failed, working, idle" onClick={sortByStatus}>Sort by status</button>}
+                {tiles.length > 1 && <button className="tv-btn sm tv-action-layout" title="Asking first, then failed, working, idle" onClick={sortByStatus}><TermActionIcon action="sort" />Sort by status</button>}
                 {wins.length > 0 && (
                   <>
-                    <button className="tv-btn sm" onClick={tileAllWins}>Tile {wins.length} window{wins.length === 1 ? '' : 's'}</button>
-                    <button className="tv-btn sm" onClick={() => { setWins([]); setOpenIn(null); }}>Close all</button>
+                    <button className="tv-btn sm tv-action-layout" onClick={tileAllWins}><TermActionIcon action="tile" />Tile {wins.length} window{wins.length === 1 ? '' : 's'}</button>
+                    <button className="tv-btn sm" onClick={() => { setWins([]); setOpenIn(null); }}><TermActionIcon action="close" />Close all</button>
                   </>
                 )}
               </div>
               {selectedTiles.length > 0 && (
                 <div className="tv-swarm-head" role="toolbar" aria-label="Selected terminals">
                   <span className="tv-counts" role="status">{selectedTiles.length} selected</span>
-                  <button className="tv-btn sm" onClick={tileSelected}>Tile selected</button>
-                  <button className="tv-btn sm" onClick={hideSelected}>Hide selected</button>
+                  <button className="tv-btn sm tv-action-layout" onClick={tileSelected}><TermActionIcon action="tile" />Tile selected</button>
+                  <button className="tv-btn sm tv-action-hide" onClick={hideSelected}><TermActionIcon action="hide" />Hide selected</button>
                   <button className="tv-btn sm danger" disabled={!endableSelected.length}
                     title="End selected sessions; pinned sessions and those attached on another device are kept"
-                    onClick={() => void endSelected()}>End selected</button>
+                    onClick={() => void endSelected()}><TermActionIcon action="end" />End selected</button>
                   {endableSelected.length < selectedTiles.length && <span className="tv-counts">{selectedTiles.length - endableSelected.length} pinned or attached elsewhere kept</span>}
-                  <button className="tv-btn sm" onClick={() => setSelectedKeys(shownTiles.slice(0, cap).map((t) => t.key))}>Select visible</button>
-                  <button className="tv-btn sm" onClick={() => setSelectedKeys([])}>Clear selection</button>
+                  <button className="tv-btn sm" onClick={() => setSelectedKeys(shownTiles.slice(0, cap).map((t) => t.key))}><TermActionIcon action="select" />Select visible</button>
+                  <button className="tv-btn sm" onClick={() => setSelectedKeys([])}><TermActionIcon action="close" />Clear selection</button>
                 </div>
               )}
               <div className="tv-grid" ref={swarmBodyRef}
@@ -2117,7 +2132,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                                 onClick={() => (t.sess ? togglePinSess(t.sess) : t.det && void togglePin(t.det.name, !t.det.keep))}>{pinIcon(11, t.pinned)}</button>
                             )}
                             {t.st === 'asking' && !t.seen && seenBtn(t.key, t.sess ? askFor(t.sess) : t.det ? askOf(t.det) : null)}
-                            <button className="tv-btn xs" title="Hide from Swarm (keeps running)" onClick={() => hideTile(t.key, openId)}>Hide</button>
+                            <button className="tv-btn xs tv-action-hide" title="Hide from Swarm (keeps running)" onClick={() => hideTile(t.key, openId)}><TermActionIcon action="hide" />Hide</button>
                             <button className="tv-btn xs danger" disabled={!!t.det?.attached && !t.sess}
                               title={t.det?.attached && !t.sess ? 'Attached on another device — end it there, or open it here first' : 'End this session'}
                               onClick={() => askEnd(t.sess, t.sess ? undefined : t.det)}>End</button>

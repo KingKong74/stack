@@ -9224,6 +9224,19 @@ button.ar-open:hover { background: var(--surface-hover); }
 .tv-btn:disabled { opacity: 0.5; cursor: default; }
 .tv-btn.pinned { background: var(--surface-selected); color: var(--text-link); }
 .tv-btn.tv-icon { width: 30px; padding: 0; justify-content: center; }
+/* Action colours stay quiet; red remains reserved for ending sessions. */
+.tv-btn.tv-action-fill, .tv-btn.tv-action-show {
+  background: var(--status-success-bg); color: var(--status-success-fg); border-color: var(--status-success-fg);
+}
+.tv-btn.tv-action-hide {
+  background: var(--proj-2-tint); color: var(--proj-2); border-color: var(--proj-2);
+}
+.tv-btn.tv-action-layout {
+  background: var(--status-info-bg); color: var(--status-info-fg); border-color: var(--status-info-fg);
+}
+.tv-btn.danger { color: var(--status-danger-fg); }
+.tv-btn[class*="tv-action-"]:hover:not(:disabled) { filter: brightness(1.12); }
+.tv-action-icon { flex: none; }
 .tv-btn .caret, .tv-switch .caret { font-size: 9px; color: var(--text-tertiary); }
 .tv-ico {
   flex: none; width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center; border: 0;
