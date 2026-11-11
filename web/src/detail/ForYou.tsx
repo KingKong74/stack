@@ -79,6 +79,7 @@ import { IceboxList, SlicePicker, liveSlices } from './Spine';
 import { priorityMeta, timeAgo } from '../lib/ui';
 import { patchRoadmapItem, deleteRoadmapItem } from '../store';
 import { slipHeadline } from '../lib/course';
+import { Markdown } from '../components/Markdown';
 
 type Tone = 'info' | 'danger' | 'success' | 'warning' | 'neutral';
 
@@ -137,7 +138,8 @@ const fmtTokens = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : `${Mat
 
 // THE SLIP IS ONE LINE (owner, 2026-11-11): the idea of the push, which is
 // the commit's subject (`slipHeadline`, lib/course.ts). The session's long
-// sign-off and Gemini's note show only on an opened slip.
+// sign-off opens on the right, with Gemini’s note underneath the slip.
+// Both use the shared Markdown reader; opening a slip writes nothing.
 type BranchFilter = 'all' | 'main' | 'other';
 
 function ActivityPane({ activity, highlightId }: { activity: Activity[]; highlightId: string | null }) {
@@ -170,7 +172,7 @@ function ActivityPane({ activity, highlightId }: { activity: Activity[]; highlig
   return (
     <div className="af">
       <div className="af-bar">
-        <span className="af-lede">Every push, newest first. Open one for the session’s full summary.</span>
+        <span className="af-lede">Every push, newest first. Open one for Gemini’s note and the full session summary.</span>
         <div className="af-seg" role="group" aria-label="Branches">
           {(['all', 'main', 'other'] as const).map((b) => (
             <button key={b} className={branch === b ? 'on' : ''} onClick={() => setBranch(b)}>
@@ -195,30 +197,36 @@ function ActivityPane({ activity, highlightId }: { activity: Activity[]; highlig
                 return (
                   // `data-hl` is the hash ProjectDetail's scroller looks for.
                   <div className={`af-ev${on ? ' open' : ''}${highlightId && a.hash === highlightId ? ' hl' : ''}`}
-                    key={`${a.hash}-${i}`} data-hl={a.hash}
-                    onClick={() => setOpen(on ? null : a.hash)}>
+                    key={`${a.hash}-${i}`} data-hl={a.hash}>
                     <i className="af-dot" />
                     <div className="af-slip">
-                      <div className="af-top">
-                        <span className="af-title">{slipHeadline(a)}</span>
-                        <span className="af-ago">{a.when}</span>
-                      </div>
-                      <div className="af-meta">
-                        <span className="sha">{a.hash === '—' ? '—' : a.hash.slice(0, 7)}</span>
-                        <span className="br">{a.branch}</span>
-                        {(a.tokens ?? 0) > 0 && (
-                          <span title="Real token usage for the session, from its transcript (#178)">{fmtTokens(a.tokens!)} tok</span>
-                        )}
-                        {a.tags.map((t, ti) => <span className="k-tag" key={ti}>{t}</span>)}
-                      </div>
-                      {on && (a.summary.trim() || a.geminiNote.trim()) && (
-                        <div className="af-body">
-                          {a.summary.trim() && <p>{a.summary}</p>}
-                          {/* THE SECOND MODEL ANNOTATES; drawn in the accent,
-                              labelled as Gemini's, never as a verdict. */}
-                          {a.geminiNote.trim() && (
-                            <div className="fy-gem"><span className="star">✦</span><b>Gemini</b> {a.geminiNote}</div>
+                      <button type="button" className="af-toggle" aria-expanded={on}
+                        onClick={() => setOpen(on ? null : a.hash)}>
+                        <span className="af-top">
+                          <span className="af-title">{slipHeadline(a)}</span>
+                          <span className="af-ago">{a.when}</span>
+                        </span>
+                        <span className="af-meta">
+                          <span className="sha">{a.hash === '—' ? '—' : a.hash.slice(0, 7)}</span>
+                          <span className="br">{a.branch}</span>
+                          {(a.tokens ?? 0) > 0 && (
+                            <span title="Real token usage for the session, from its transcript (#178)">{fmtTokens(a.tokens!)} tok</span>
                           )}
+                          {a.tags.map((t, ti) => <span className="k-tag" key={ti}>{t}</span>)}
+                        </span>
+                      </button>
+                      {on && (
+                        <div className="af-body">
+                          <section className="af-gem" aria-label="Gemini summary">
+                            <h3 className="af-section-title"><span className="star">✦</span> Gemini summary</h3>
+                            {a.geminiNote.trim() ? <Markdown text={a.geminiNote} />
+                              : <p className="af-missing">No Gemini summary was recorded for this push.</p>}
+                          </section>
+                          <section className="af-summary" aria-label="Full session summary">
+                            <h3 className="af-section-title">Full session summary</h3>
+                            {a.summary.trim() ? <Markdown text={a.summary} />
+                              : <p className="af-missing">No session summary was recorded for this push.</p>}
+                          </section>
                         </div>
                       )}
                     </div>

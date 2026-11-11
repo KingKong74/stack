@@ -5609,7 +5609,7 @@ body[data-mc-full] .totop { display: none; }
 
 /* ---- activity ---- */
 /* ---- Activity (ForYou.tsx): day column, a rule of dots, one-line slips ---- */
-.af { display: flex; flex-direction: column; gap: var(--space-7); max-width: 1040px; min-width: 0; }
+.af { display: flex; flex-direction: column; gap: var(--space-7); min-width: 0; }
 .af-bar { display: flex; gap: var(--space-4); align-items: center; flex-wrap: wrap; }
 .af-lede { flex: 1; font: var(--type-body-sm); color: var(--text-secondary); }
 .af-seg { display: flex; gap: var(--space-1); background: var(--surface-sunken); border-radius: var(--radius-pill); padding: 3px; }
@@ -5625,7 +5625,7 @@ body[data-mc-full] .totop { display: none; }
 .af-when .st { font: var(--weight-regular) var(--text-2xs)/1.4 var(--font-mono); color: var(--text-tertiary); }
 .af-line { position: relative; display: flex; flex-direction: column; min-width: 0; }
 .af-line::before { content: ''; position: absolute; left: 7px; top: 22px; bottom: 22px; width: 1px; background: var(--border-default); }
-.af-ev { position: relative; display: grid; grid-template-columns: 15px minmax(0, 1fr); gap: var(--space-4); padding: var(--space-2) 0; cursor: pointer; }
+.af-ev { position: relative; display: grid; grid-template-columns: 15px minmax(0, 1fr); gap: var(--space-4); padding: var(--space-2) 0; }
 .af-dot {
   width: 15px; height: 15px; border-radius: 50%; margin-top: 16px; box-sizing: border-box;
   background: var(--surface-canvas); border: 1px solid var(--border-strong);
@@ -5639,7 +5639,9 @@ body[data-mc-full] .totop { display: none; }
 .af-ev:hover .af-slip { border-color: var(--border-strong); }
 .af-ev.open .af-slip { background: var(--surface-card); border-color: var(--border-default); }
 .af-ev.hl .af-slip { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent); }
-.af-top { display: flex; gap: var(--space-4); align-items: baseline; }
+.af-toggle { display: flex; flex-direction: column; gap: var(--space-3); width: 100%; min-width: 0; padding: 0; border: 0; background: transparent; text-align: left; cursor: pointer; }
+.af-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: var(--radius-sm); }
+.af-top { width: 100%; display: flex; gap: var(--space-4); align-items: baseline; }
 .af-title { flex: 1; min-width: 0; font: var(--weight-medium) var(--text-md)/var(--leading-snug) var(--font-sans); color: var(--text-primary); text-wrap: pretty; }
 .af-ago { font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-tertiary); white-space: nowrap; }
 .af-meta {
@@ -5648,8 +5650,17 @@ body[data-mc-full] .totop { display: none; }
 }
 .af-meta .sha { color: var(--text-link); }
 .af-meta .br { color: var(--text-secondary); background: var(--surface-sunken); border-radius: var(--radius-sm); padding: 3px 6px; }
-.af-body { display: flex; flex-direction: column; gap: var(--space-3); border-top: 1px solid var(--border-subtle); padding-top: var(--space-3); }
-.af-body p { margin: 0; font: var(--type-body-sm); color: var(--text-secondary); text-wrap: pretty; max-width: 72ch; }
+.af-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr); gap: var(--space-6); border-top: 1px solid var(--border-subtle); padding-top: var(--space-5); }
+.af-gem, .af-summary { min-width: 0; }
+.af-summary { border-left: 1px solid var(--border-subtle); padding-left: var(--space-6); }
+.af-section-title { margin: 0 0 var(--space-4); font: var(--type-label); color: var(--text-primary); }
+.af-section-title .star { color: var(--accent-text); }
+.af-body .md { font: var(--type-body-sm); }
+.af-missing { margin: 0; font: var(--type-body-sm); color: var(--text-secondary); }
+@media (max-width: 1100px) {
+  .af-body { grid-template-columns: minmax(0, 1fr); }
+  .af-summary { border-left: 0; border-top: 1px solid var(--border-subtle); padding: var(--space-5) 0 0; }
+}
 .af-foot { font: var(--type-caption); color: var(--text-tertiary); padding-left: calc(170px + var(--space-6)); }
 @media (max-width: 720px) {
   .af-day { grid-template-columns: 1fr; gap: var(--space-2); }
