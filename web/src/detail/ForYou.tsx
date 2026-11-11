@@ -305,7 +305,7 @@ function AutoPane({ slug, items, slices, milestones, onRefresh, onEdit, highligh
         reviewed: true, parentId: null, ...(sliceId !== it.sliceId ? { sliceId } : {}),
       }));
     });
-  // THE ICEBOX'S TWO WAYS OUT: into a slice, or archived.
+  // Keep, file or archive an Icebox item; deletion uses dismiss below.
   const toSlice = (it: RoadmapItem, sliceId: number) =>
     guard(it.id, async () => { wrote(await patchRoadmapItem(slug, it.id, { sliceId })); });
   const archive = (it: RoadmapItem) =>
@@ -425,7 +425,7 @@ function AutoPane({ slug, items, slices, milestones, onRefresh, onEdit, highligh
       )}
 
       <IceboxList items={rows} slices={slices} milestones={milestones} busy={busy}
-        onSlice={toSlice} onArchive={archive} onEdit={onEdit} />
+        onSlice={toSlice} onArchive={archive} onDelete={dismiss} onEdit={onEdit} />
     </div>
   );
 }

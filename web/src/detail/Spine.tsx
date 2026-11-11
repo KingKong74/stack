@@ -307,16 +307,17 @@ export function MilestoneDialog({ milestones, onClose, onSave, onCreate, onMakeC
 
 /**
  * THE ICEBOX: kept ideas in no slice. It is a screen a row can live on
- * (`homeOf` → 'icebox'), so every row here has two ways out: into a slice
- * (onto the board) or Archive. Delete stays on the board's card menu and the
- * item modal, because a kept idea was already signed off once.
+ * (`homeOf` → 'icebox'), so a row can move into a slice,
+ * be archived, or be deleted after a second press confirms permanent removal.
  */
-export function IceboxList({ items, slices, milestones, busy, onSlice, onArchive, onEdit }: {
+export function IceboxList({ items, slices, milestones, busy, onSlice, onArchive, onDelete, onEdit }: {
   items: RoadmapItem[]; slices: Slice[]; milestones: Milestone[]; busy: number | null;
   onSlice: (it: RoadmapItem, sliceId: number) => void;
   onArchive: (it: RoadmapItem) => void;
+  onDelete: (it: RoadmapItem) => void;
   onEdit: (it: RoadmapItem) => void;
 }) {
+  const [confirmDelete, setConfirmDelete] = useState<number | null>(null);
   const rows = useMemo(() => items
     .filter((it) => !it.archived && isIced(it))
     .sort((a, b) => (Date.parse(b.updatedAt || '') || 0) - (Date.parse(a.updatedAt || '') || 0) || b.id - a.id),
@@ -346,6 +347,14 @@ export function IceboxList({ items, slices, milestones, busy, onSlice, onArchive
                 <span className="k-tag" style={{ color: p.color }} title={`Priority — ${p.label}`}>{p.glyph} {p.short}</span>
                 <button className="k-btn ghost sm" onClick={() => onEdit(it)}><KitIcon name="pencil" size={13} />Edit…</button>
                 <button className="k-btn ghost sm" disabled={busy === it.id} onClick={() => onArchive(it)}>Archive</button>
+                <button className="k-btn ghost sm" disabled={busy !== null}
+                  title="Permanently delete this item. Extracted ideas will not be recreated by the next push."
+                  onClick={() => {
+                    if (confirmDelete === it.id) { onDelete(it); setConfirmDelete(null); }
+                    else setConfirmDelete(it.id);
+                  }}>{confirmDelete === it.id ? 'Confirm delete' : 'Delete'}</button>
+                {confirmDelete === it.id && <button className="k-btn ghost sm"
+                  onClick={() => setConfirmDelete(null)}>Cancel</button>}
               </div>
             </div>
             <div className="ai-acts">
