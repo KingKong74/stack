@@ -9587,23 +9587,32 @@ button.ar-open:hover { background: var(--surface-hover); }
 .ch { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 320px); gap: var(--space-6); align-items: start; min-width: 0; container-type: inline-size; }
 .ch:has(.ch-toc) { grid-template-columns: 168px minmax(0, 1fr) minmax(280px, 320px); }
 .ch > .ch-main, .ch > .ch-rail { overflow-wrap: anywhere; }
+/* Room below the last section, so a jump to "Out of scope" can bring its
+   heading to the top like every other one. Narrow, the rail below does it. */
+.ch:has(.ch-toc) > .ch-main { padding-bottom: 50dvh; }
+@container (max-width: 1100px) { .ch:has(.ch-toc) > .ch-main { padding-bottom: 0; } }
+@media (max-width: 1280px) { .ch:has(.ch-toc) > .ch-main { padding-bottom: 0; } }
 /* NARROW, THE CONTENTS BECOME A ROW above the doc instead of vanishing
    (owner, 2026-11-11: on a laptop the list was simply gone). */
 @container (max-width: 1100px) {
-  .ch > .ch-toc { grid-column: 1 / -1; position: static; max-height: none; width: auto; flex-direction: row; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+  .ch > .ch-toc { grid-column: 1 / -1; position: sticky; top: var(--topbar-h); z-index: 5; background: var(--surface-canvas); padding: var(--space-3) 0; border-bottom: 1px solid var(--border-subtle); max-height: none; width: auto; flex-direction: row; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
   .ch > .ch-toc > .sp-eyebrow { padding: 0 var(--space-3) 0 0; }
   .ch > .ch-main { grid-column: 1 / -1; }
   .ch > .ch-rail { grid-column: 1 / -1; position: static; max-height: none; width: 100%; max-width: none; min-width: 0; }
 }
-.ch-toc { position: sticky; top: var(--space-8); max-height: calc(100dvh - 2 * var(--space-8)); overflow-y: auto; width: 168px; flex: none; display: flex; flex-direction: column; gap: var(--space-1); }
+.ch { --ch-stick: calc(var(--topbar-h) + var(--space-6)); }
+/* THE TOP BAR IS STICKY (48px), so everything here sticks and lands BELOW it.
+   Sticking at 24px slid the contents under the bar, where its links could not
+   be pressed, and a jump parked the heading behind it (owner, 2026-11-11). */
+.ch-toc { position: sticky; top: var(--ch-stick); max-height: calc(100dvh - var(--ch-stick) - var(--space-8)); overflow-y: auto; width: 168px; flex: none; display: flex; flex-direction: column; gap: var(--space-1); }
 .ch-toc > .sp-eyebrow { padding: 0 var(--space-3) var(--space-3); }
 .ch-toc button { text-align: left; background: none; border: 0; cursor: pointer; font: var(--type-body-sm); color: var(--text-secondary); padding: 6px var(--space-3); border-radius: var(--radius-sm); }
 .ch-toc button:hover { background: var(--surface-hover); color: var(--text-primary); }
 .sp.ad.ch-main { max-width: none; width: 100%; }
-.ch-overview { display: flex; flex-direction: column; gap: var(--space-4); scroll-margin-top: var(--space-8); }
+.ch-overview { display: flex; flex-direction: column; gap: var(--space-4); scroll-margin-top: calc(var(--topbar-h) + var(--space-8)); }
 .ch-metarow { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); }
 .ch-sub { margin: 0; font: var(--type-body); color: var(--text-secondary); }
-.ad-sec.ruled { border-top: 1px solid var(--border-subtle); padding-top: var(--space-8); scroll-margin-top: var(--space-6); }
+.ad-sec.ruled { border-top: 1px solid var(--border-subtle); padding-top: var(--space-8); scroll-margin-top: calc(var(--topbar-h) + var(--space-11)); }
 .ad-eyebrow.accent { color: var(--text-accent); }
 .ad-card.big { padding: var(--space-5); }
 .ad-cardhead { font: var(--type-heading); color: var(--text-primary); }
@@ -9627,7 +9636,7 @@ button.ar-open:hover { background: var(--surface-hover); }
 .ad-line { display: flex; gap: var(--space-3); align-items: baseline; padding: 0 var(--space-5); font: var(--type-body-sm); color: var(--text-secondary); }
 .ad-line > span:first-child { color: var(--text-tertiary); }
 
-.ch-rail { position: sticky; top: var(--space-8); max-height: calc(100dvh - 2 * var(--space-8)); overflow-y: auto; flex: 1 1 320px; min-width: 280px; max-width: 420px; display: flex; flex-direction: column; gap: var(--space-4); }
+.ch-rail { position: sticky; top: var(--ch-stick); max-height: calc(100dvh - var(--ch-stick) - var(--space-8)); overflow-y: auto; flex: 1 1 320px; min-width: 280px; max-width: 420px; display: flex; flex-direction: column; gap: var(--space-4); }
 .ch-box { border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: var(--space-4) var(--space-5); display: flex; flex-direction: column; gap: var(--space-3); }
 .ch-box.card { background: var(--surface-card); padding: var(--space-5); }
 .ch-box.list { padding: var(--space-4) 0 var(--space-4); gap: 0; }
@@ -9653,7 +9662,7 @@ button.ar-open:hover { background: var(--surface-hover); }
 .ch-who .ad-label.dim { color: var(--text-secondary); }
 .ch-who .dim { color: var(--text-tertiary); }
 @media (max-width: 1280px) {
-  .ch-toc { grid-column: 1 / -1; position: static; max-height: none; width: auto; flex-direction: row; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+  .ch-toc { grid-column: 1 / -1; position: sticky; top: var(--topbar-h); z-index: 5; background: var(--surface-canvas); padding: var(--space-3) 0; border-bottom: 1px solid var(--border-subtle); max-height: none; width: auto; flex-direction: row; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
   .ch-toc > .sp-eyebrow { padding: 0 var(--space-3) 0 0; }
   .ch:has(.ch-toc) { grid-template-columns: minmax(0, 1fr) minmax(280px, 320px); }
 }
