@@ -48,8 +48,9 @@ on two screens gets acted on twice; a row on none has silently vanished.
 
 ## Ordering
 
-- **`queueOrder` is the client twin of the runner's sort**, curried on the active sprint's id, and
-  stable over the order the server already sent.
+- **`queueOrder` is the client twin of the runner's sort**, given the current milestone's ordered
+  live slice IDs. Ready rank leads, then slice order and item `sliceRank`, then bucket; ties keep
+  the order the server already sent.
 - `position` is a different number: scoped to the bucket, still PATCHable, and written by nothing in
   the client. The kanban has no within-column drag because its columns cut across buckets.
 - `points` is unitless and NULL means unset, never zero in a total. `estimate` is in weeks, and

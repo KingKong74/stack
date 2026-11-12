@@ -4,7 +4,7 @@ The root `CLAUDE.md` holds the cross-package rules (mirrored predicates, run gat
 directions). This file holds what applies only here. These file headers carry their own rules; read
 one before editing its file: `routes/ingest.js` (the most invariants: read it first),
 `routes/checks.js`, `routes/worktrees.js`, `routes/terminal.js`, `routes/autopilot.js`,
-`routes/sprints.js`, `routes/context.js`, `prompts.js`, `agent-profiles.js`, `pulse.js`, `lanes.js`.
+`routes/context.js`, `prompts.js`, `agent-profiles.js`, `pulse.js`, `lanes.js`.
 
 ## Structure
 
@@ -35,7 +35,7 @@ only on an empty board. It is deliberately **not** a health score.
 ## Roadmap row semantics
 
 - **`bucket`** is the priority: highest/high/medium/low/lowest (`util.js` BUCKETS). It orders run
-  candidates below the sprint rank and excludes none.
+  candidates below Ready rank or planning slice order and item `slice_rank`, and excludes none.
 - **`risk`** (low/normal/high) is how much damage a wrong build does: not difficulty, not desire.
   `risk_source`: `human` = hand-set, `auto` = the plan-time pre-pass, NULL = nobody chose. Only NULL
   may be replaced by an auto write, enforced by CASE expressions inside `PATCH /roadmap/:id`'s own
@@ -62,22 +62,16 @@ are `adr` artifacts with `status`. The plain artifact list leaves them out (`?ty
 payload carries only the charter's capped opening. Areas are the components (`description`,
 `paths`); renaming or deleting one rewrites `slices.areas` in the same transaction.
 
-## Sprints
+## Planning and build lanes
 
-**Since #621 a sprint commits to SLICES** (`sprint_slices`, ordered; `PUT /sprints/:id/slices`), and
-an item's `sprint_id`/`sprint_rank` are derived by triggers (`spine_sprint_sync`). The item-level
-writes (`sprintId` on POST/PATCH, `PUT /:id/order`) are refused out loud. What follows predates that
-and still holds for the sprint row itself.
+Planning takes eligible plan-less items in non-archived slices of the current (`active`) milestone,
+ordered by slice `position`, slice id, then item `slice_rank`, bucket and payload order. No current
+milestone means no planning; archived items, archived slices and Icebox work are excluded. Approval,
+parked and claim gates still apply. Builds take only Ready, by `ready_rank`.
 
-`sprints` has status `planned | active | done`, with at most one `active` per project enforced by a
-partial unique index. `sprint_rank` is dense, 0 = top, and rewritten whole on every drop
-(`PUT /sprints/:id/order`). `sprint_id` NULL is the backlog. Deleting a sprint releases its items
-(ON DELETE SET NULL). Finishing one leaves its unfinished rows in it, because a done sprint is the
-record of what was committed to. `starts_on`/`ends_on` are the planned window and gate nothing;
-`started_at`/`ended_at` are when it actually ran.
-
-The ✧ Planner (`POST /sprints/:id/plan`) exists for the area lane, not the ranking: a sprint of one
-area stalls after the first build. Lane holders are read off every open row, held ones included.
+Sprint endpoints are retired (`410`), and item `sprintId`/`sprintRank` writes are refused. Historical
+tables and metadata remain stored, but derivation triggers are removed; never use them to scope or
+order work. The backlog and planning views use milestones and slices.
 
 ## Autopilot and spend
 
