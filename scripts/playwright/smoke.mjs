@@ -587,6 +587,10 @@ export const SCREENS = [
     id: 'terminal', label: 'Terminal', path: '#/terminal',
     // View state only: neither press launches or changes a running session.
     interactions: [
+      { id: 'terminal-configuration', label: 'Terminal — launch configuration',
+        click: 'button[title="Inspect the active session\'s launch configuration"]', expect: '.terminal-config-body' },
+      { id: 'terminal-configuration-close', label: 'Terminal — close configuration',
+        click: '.modal-actions .btn-cancel', expect: '.tv-start' },
       { id: 'terminal-defaults', label: 'Terminal — session defaults',
         click: 'button[aria-label="Session defaults"]', expect: '.tv-newmenu' },
       { id: 'terminal-directories', label: 'Terminal — project directory choices',

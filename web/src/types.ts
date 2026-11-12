@@ -930,3 +930,13 @@ export interface Proposition {
   createdAt: string;
   updatedAt: string;
 }
+
+
+export interface SessionConfiguration {
+  id: string; sessionName: string; runtime: 'claude' | 'codex'; runtimeVersion: string | null;
+  cwd: string; checkout: string; branch: string | null; head: string | null; dirty: boolean | null;
+  project: string | null; createdAt: string; state: 'prepared' | 'unknown'; contextDelivery: string;
+  profiles: { key: string; revision: string; model: string | null; tools: string[]; skills: { id: number; name: string; revision: string }[] }[];
+  skills: { id: number; name: string; revision: string; path: string }[];
+  blind: string[];
+}

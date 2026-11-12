@@ -9913,3 +9913,7 @@ a.pp-link:hover { text-decoration: underline; }
 .km-backlog .km-toolbar { flex-wrap: wrap; }
 .km-backlog .km-toolbar .k-input { flex: 1; min-width: 120px; }
 .pl-month { display: inline-flex; align-items: center; gap: var(--space-3); }
+
+.terminal-config-body { max-height: 65vh; overflow: auto; overflow-wrap: anywhere; }
+.terminal-config-facts { display: grid; grid-template-columns: minmax(100px, 1fr) minmax(0, 3fr); gap: 8px 16px; }
+.terminal-config-facts dd { margin: 0; }

@@ -1,3 +1,4 @@
+import { recordTerminalConfiguration } from './terminal-configurations.js';
 import { WebSocketServer } from 'ws';
 import { tokenValid } from './auth.js';
 import { previewLines, cleanBranch, cleanProject } from './term-preview.js';
@@ -614,6 +615,7 @@ export function attachTerm(httpServer) {
         }
       }
       if (m.t === 'ready' && typeof m.tmuxSession === 'string') {
+        if (m.configuration?.sessionName === m.tmuxSession) void recordTerminalConfiguration(m.configuration).catch(() => {});
         // The daemon confirmed (or assigned) the tab's tmux session — keep the
         // name on the meta row so Mission Control can offer a jump-in attach.
         const meta = termMeta.get(m.sid);

@@ -1,4 +1,6 @@
 import { Router } from 'express';
+import { configurationChanges } from '../terminal-configurations.js';
+import { mergeProfiles } from '../agent-profiles.js';
 import { q } from '../db.js';
 import { termAgentConnected, termSessions, termTails, termDetached, termDetachedTails, setDetachedLabel, killDetachedTmux, keepTmuxSession, answerTmuxPrompt, viewAutoPane } from '../term.js';
 import { askGemini, geminiEnabled } from '../gemini.js';
@@ -41,6 +43,18 @@ terminal.get('/usage', async (_req, res) => {
 // GET /api/terminal/agent — is the host daemon's uplink live right now? The
 // watchdog cron (#221) polls this: an unambiguous connected flag, unlike
 // /detached whose empty list also just means "no orphans".
+// A known launch ID is required: a reused/external tmux name must not inherit
+// an older session's configuration. Library changes never rewrite the snapshot.
+terminal.get('/configurations/:id', async (req, res) => {
+  if (!/^[a-f0-9-]{36}$/.test(req.params.id)) return res.status(400).json({ error: 'Invalid configuration ID.' });
+  const { rows } = await q('SELECT snapshot FROM terminal_configurations WHERE id = $1', [req.params.id]);
+  if (!rows.length) return res.status(404).json({ error: 'No recorded launch configuration.' });
+  const [profiles, skills, settings] = await Promise.all([q('SELECT * FROM agent_profiles'),
+    q('SELECT s.*, p.slug FROM skills s LEFT JOIN projects p ON p.id = s.project_id AND p.deleted_at IS NULL'), readSettings()]);
+  const effective = mergeProfiles(profiles.rows.map(p => ({ ...p, skillIds: p.skill_ids || [] })));
+  res.json({ snapshot: rows[0].snapshot, changes: configurationChanges(rows[0].snapshot, effective, skills.rows, settings.autopilot_executor_model || ''), connected: termAgentConnected() });
+});
+
 terminal.get('/agent', (_req, res) => {
   res.json({ connected: termAgentConnected() });
 });

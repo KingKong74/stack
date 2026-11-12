@@ -1913,3 +1913,10 @@ ALTER TABLE skills ADD COLUMN IF NOT EXISTS runtimes JSONB NOT NULL DEFAULT '["c
 
 ALTER TABLE skills ADD COLUMN IF NOT EXISTS resources JSONB NOT NULL DEFAULT '[]'::jsonb;
 ALTER TABLE agent_profiles ADD COLUMN IF NOT EXISTS skill_ids JSONB NOT NULL DEFAULT '[]'::jsonb;
+
+CREATE TABLE IF NOT EXISTS terminal_configurations (
+  id TEXT PRIMARY KEY,
+  session_name TEXT NOT NULL,
+  snapshot JSONB NOT NULL,
+  reported_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);

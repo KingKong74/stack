@@ -23,7 +23,7 @@ cannot replace newer ones. Installed does not mean invoked. `runtimes` selects t
 
 Terminal launches snapshot supplied skills and optional Claude `profileKeys`. Reconnect reuses
 that snapshot. Missing required skills refuse launch; unprofiled API outages yield unknown
-configuration. Codex profile delegation is unsupported. Supplied is not invoked.
+configuration. Codex profile delegation is unsupported. Supplied is not invoked. `GET /terminal/configurations/:id` compares the immutable snapshot.
 
 ## Trust the injected context
 

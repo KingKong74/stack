@@ -1923,3 +1923,8 @@ export const acceptProposition = (slug: string, id: number, keys: string[], into
     `${propositionsBase(slug)}/${id}/accept`, { method: 'POST', body: { keys, into } });
 export const dismissProposition = (slug: string, id: number) =>
   request<Proposition>(`${propositionsBase(slug)}/${id}/dismiss`, { method: 'POST' });
+
+
+export async function getTerminalConfiguration(id: string): Promise<{ snapshot: import('./types').SessionConfiguration; changes: string[]; connected: boolean }> {
+  return request(`/terminal/configurations/${encodeURIComponent(id)}`);
+}

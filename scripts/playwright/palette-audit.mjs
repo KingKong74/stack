@@ -87,6 +87,7 @@ const OPEN_BOARD = '?.km-collapseall[data-all-folded="true"]';
 
 const SCREENS = [
   { slug: 'terminal', hash: '#/terminal' },
+  { slug: 'terminal-configuration', hash: '#/terminal', press: ['button[title="Inspect the active session\'s launch configuration"]'] },
   { slug: 'terminal-defaults', hash: '#/terminal', press: ['button[aria-label="Session defaults"]'] },
   { slug: 'terminal-directories', hash: '#/terminal', press: ['button[aria-label="Session defaults"]', '.tv-newmenu button[aria-label="Choose project directory"]'] },
   { slug: 'dashboard', hash: '#/' },

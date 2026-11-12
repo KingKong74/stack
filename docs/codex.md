@@ -34,6 +34,8 @@ New terminal launches record runtime/version, checkout, branch, working-tree sta
 skill/profile revisions. Required Claude profile skills must resolve and be installed; unsupported
 Codex profile requests fail explicitly. Unprofiled launches can proceed with unknown Stack
 configuration during an API outage. This is launch context, not lifecycle or usage tracking.
+The terminal Configuration dialog shows this snapshot and current library differences. Profile
+selection in session defaults applies only to new Claude sessions. External sessions stay unknown.
 
 Agent tabs retain their tmux identity across page reloads and connection errors. If the daemon
 is restarting, restoration waits for its session list rather than discarding saved tabs or
@@ -127,6 +129,6 @@ authorised task handoff, not while testing documentation examples.
 
 ## Next integration boundary
 
-Automatic context delivery and Codex lifecycle/usage capture need a separate tested adapter.
+Codex lifecycle/usage capture and broader profile delegation need separate tested adapters.
 Keep the runtime's telemetry declaration honest until those capabilities exist. The stages and
 acceptance criteria are in GOALS.md.

@@ -42,6 +42,8 @@ import { createTermWrites, createTermSizeSender } from '../lib/termStream';
 // screen has no project payload and no agent state to read. Titling one
 // `claude · stack` hides the one fact that distinguishes it from the four
 // beside it, so the name is parsed back.
+import type { SessionConfiguration } from '../types';
+import { TerminalConfiguration, TerminalProfilePicker } from '../components/TerminalConfiguration';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { TerminalDirectoryPicker } from '../components/TerminalDirectoryPicker';
 
@@ -154,6 +156,8 @@ const fmtTok = (n: number) =>
 // whole), and it is the only id that exists for EVERY session — a shell has no
 // tmux name, so keying names by tmux is why shells used to go unnamed.
 type Sess = {
+  profileKeys?: string[];
+  configuration?: SessionConfiguration | null;
   reattachOnly?: boolean;
   codexModel?: string;
   // What a NEW session was asked to start on. Ignored by the host on a
@@ -299,6 +303,8 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   const mode = defs.autoStart;
   const setMode = (m: Sess['cmd']) => saveDefs({ autoStart: m });
   const [sessions, setSessions] = useState<Sess[]>([]);
+  const [profileKeys, setProfileKeys] = useState<string[]>([]);
+  const [configurationOpen, setConfigurationOpen] = useState(false);
   // A mirror of `sessions` for the async restore (#486) to read. The adoption
   // pass resolves after its own round trip, by which time the `sessions` it
   // closed over at mount is empty — and deciding "is this already open" from a
@@ -405,6 +411,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
         codexModel: cmd === 'codex' && fresh ? defs.codexModel || undefined : undefined,
         claudeModel: cmd === 'claude' && fresh ? defs.claudeModel || undefined : undefined,
         dest: cmd !== 'shell' && fresh ? defs.dest : undefined,
+        profileKeys: cmd === 'claude' && fresh ? [...profileKeys] : undefined,
       }];
     });
     setActive(id);
@@ -1779,12 +1786,14 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                         {!usage?.codex?.models?.length && <span className="tv-dim">catalogue unavailable</span>}
                       </div>
                     </div>
+                    <TerminalProfilePicker value={profileKeys} onChange={setProfileKeys} runtime={mode} />
                     <span className="tv-dim">A session already running keeps its model; use /model inside it.</span>
                   </div>
                 </div>
               </>
             )}
           </div>
+          <button className="tv-btn" onClick={() => setConfigurationOpen(true)} title="Inspect the active session's launch configuration">Configuration</button>
           {brief && (
             <button className="tv-btn" onClick={pasteBrief}
               title="Types the roadmap brief into the active session — review it, then press Enter yourself">▶ Paste brief</button>
@@ -1971,6 +1980,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                   onUsage={setUsage}
                   onTmux={(name) => noteTmux(s.id, s.cwd, name)}
                   onBranch={(branch, project) => setSessions((c) => c.map((x) => (x.id === s.id ? { ...x, branch, project: project || x.project } : x)))}
+                  onConfiguration={(configuration) => setSessions(c => c.map(x => x.id === s.id ? { ...x, configuration } : x))}
                   onModel={(mdl) => setSessions((c) => c.map((x) => (x.id === s.id ? { ...x, model: mdl, cmd: mdl?.key === 'codex' ? 'codex' : mdl?.key === 'anthropic' || mdl?.key === 'omniroute' ? 'claude' : x.cmd } : x)))}
                   onSid={(sid) => setSessions((c) => c.map((x) => (x.id === s.id ? { ...x, sid } : x)))}
                   onExit={(name) => noteTmuxEnded(s.id, s.cwd, name)}
@@ -2177,6 +2187,8 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
       </div>
     </div>
 
+    {configurationOpen && <TerminalConfiguration snapshot={cur?.configuration} name={cur?.tmux} onClose={() => setConfigurationOpen(false)} />}
+
     {view === 'swarm' && snapPreview && visible && (
       <div className="tv-snap" style={{ left: snapPreview.x, top: snapPreview.y, width: snapPreview.w, height: snapPreview.h }} />
     )}
@@ -2304,8 +2316,8 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
 
 // One tab: an xterm instance + its websocket, kept mounted (hidden when
 // inactive) so the scrollback survives tab switches.
-function TermSession({ sess, visible, focused, fontSize, onStatus, onUsage, onTmux, onBranch, onModel, onSid, onExit, onOutput, onTyped, onNotice, register }: {
-  sess: { reattachOnly?: boolean; codexModel?: string; claudeModel?: string; dest?: TermDest; id: number; cwd: string; cmd: 'shell' | 'claude' | 'codex'; tmux?: string };
+function TermSession({ sess, visible, focused, fontSize, onStatus, onUsage, onTmux, onBranch, onModel, onConfiguration, onSid, onExit, onOutput, onTyped, onNotice, register }: {
+  sess: { profileKeys?: string[]; reattachOnly?: boolean; codexModel?: string; claudeModel?: string; dest?: TermDest; id: number; cwd: string; cmd: 'shell' | 'claude' | 'codex'; tmux?: string };
   // Rendered on screen at all (it may be one of several panes)...
   visible: boolean;
   // ...and the one that takes keystrokes. With a grid these stopped being the
@@ -2323,6 +2335,7 @@ function TermSession({ sess, visible, focused, fontSize, onStatus, onUsage, onTm
   // #503 — what the host says this session is running on. Arrives on the ready
   // frame, and again on a 'model' frame if a usage-limit switch-over moves it.
   onModel: (m: SessionModel | null) => void;
+  onConfiguration: (configuration: SessionConfiguration | null) => void;
   onSid: (sid: string) => void;
   onExit: (tmuxName: string | null) => void;
   // Bytes this session has emitted. Read for ONE purpose: holding the fallback
@@ -2539,7 +2552,7 @@ function TermSession({ sess, visible, focused, fontSize, onStatus, onUsage, onTm
       onStatus('connecting', retries ? `connection lost — re-attaching (${retries})` : '');
       safeFit();
       const ws = openTerminal({
-        codexModel: sess.codexModel, claudeModel: sess.claudeModel, dest: sess.dest,
+        codexModel: sess.codexModel, claudeModel: sess.claudeModel, dest: sess.dest, profileKeys: sess.profileKeys,
         cwd: sess.cwd, cmd: sess.cmd, cols: term.cols, rows: term.rows,
         tmuxSession: sess.cmd !== 'shell' && tmuxRef.current ? tmuxRef.current : undefined,
         reattachOnly: sess.cmd !== 'shell' && !!tmuxRef.current && reattachOnlyRef.current,
@@ -2569,6 +2582,7 @@ function TermSession({ sess, visible, focused, fontSize, onStatus, onUsage, onTm
           sid?: string;
           tmuxSession?: string; branch?: string; project?: string;
           model?: SessionModel | null;
+          configuration?: SessionConfiguration | null;
           tokens?: number; resetAt?: number; resetLabel?: string; sched?: { runDate: string; atTime: string };
           totalTokens?: number; plan?: TermUsage['plan']; codex?: TermUsage['codex'];
           // #513 — the answer to one 'drop': the host's path for the file, or
@@ -2595,6 +2609,7 @@ function TermSession({ sess, visible, focused, fontSize, onStatus, onUsage, onTm
           // daemon too old to send the field at all leaves it undefined, which
           // is the third state — not yet answered.
           if (m.model !== undefined) onModel(m.model);
+          onConfiguration(m.configuration ?? null);
           onStatus('live', m.cwd || '');
           if (focused) term.focus();
         }

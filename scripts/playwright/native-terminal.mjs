@@ -15,6 +15,8 @@ const serve = process.argv.includes('--serve');
 const starts = [];
 const requests = [];
 const sessions = new Map();
+const configurations = new Map();
+const profileRoom = { profiles: [{ key: 'executor', name: 'Builder', enabled: true, prompt: 'Build', tools: ['Read', 'Write'], model: '', skillIds: [] }], policy: {}, usage: {}, defaultSpawn: { keys: ['executor'] }, knownTools: ['Read', 'Write'] };
 let hostConnected = true;
 const out = '/tmp/stack-native-terminal-ui';
 // Reuse the repository's rootless browser dependencies when provisioned.
@@ -28,7 +30,9 @@ const server = createServer((req, res) => {
   const path = new URL(req.url, 'http://fixture').pathname;
   if (path.startsWith('/api/')) {
     requests.push(path);
-    const payload = path === '/api/health' ? { version: 'fixture', ok: true }
+    const payload = path === '/api/agent-profiles' ? profileRoom
+      : path.startsWith('/api/terminal/configurations/') ? { snapshot: [...configurations.values()].find(c => c.id === path.split('/').at(-1)), changes: [], connected: hostConnected }
+      : path === '/api/health' ? { version: 'fixture', ok: true }
       : path === '/api/terminal/detached' ? { connected: hostConnected, sessions: hostConnected ? [...sessions.values()] : [] }
       : path === '/api/terminal/agent' ? { connected: true }
       : path === '/api/settings' ? { termIdleHours: 0 }
@@ -60,8 +64,13 @@ wss.on('connection', (ws, req) => {
       starts.push(m);
       const name = m.tmuxSession || `stack-term-fixture-${starts.length}`;
       const model = { key: m.cmd === 'codex' ? 'codex' : 'anthropic', id: 'native', label: m.cmd };
+      const configuration = configurations.get(name) || { id: `00000000-0000-4000-8000-${String(configurations.size + 1).padStart(12, '0')}`, sessionName: name, runtime: m.cmd,
+        runtimeVersion: `${m.cmd} fixture`, cwd: '/fixture/project', checkout: '/fixture/project', project: 'fixture', branch: 'main', head: 'a'.repeat(40), dirty: false,
+        createdAt: new Date().toISOString(), state: 'prepared', contextDelivery: 'supplied',
+        profiles: (m.profileKeys || []).map(key => ({ key, revision: 'b'.repeat(64), model: 'CLI default', tools: ['Read'], skills: [] })), skills: [], blind: m.cmd === 'codex' ? ['Automatic usage/edit tracking is not integrated.'] : [] };
+      configurations.set(name, configuration);
       sessions.set(name, { name, cmd: m.cmd, cwd: m.cwd, created: Date.now(), model, label: `${m.cmd} fixture` });
-      ws.send(JSON.stringify({ t: 'ready', sid: String(starts.length), tmuxSession: name, model, cwd: m.cwd }));
+      ws.send(JSON.stringify({ t: 'ready', sid: String(starts.length), tmuxSession: name, model, cwd: m.cwd, configuration }));
       ws.send(JSON.stringify({ t: 'usage', tokens: 0, codex: { models: [{ id: 'gpt-fixture', label: 'GPT fixture' }], limits: [{ key: 'codex:primary', name: 'Codex · Session · 5h', pct: 32, resetAt: Date.now() + 3600000 }] } }));
       ws.send(JSON.stringify({ t: 'out', data: Buffer.from(`Native ${m.cmd} fixture\r\n`).toString('base64') }));
     }
@@ -90,16 +99,25 @@ try {
   await page.goto(`${url}/#/terminal`);
   await page.getByLabel('Session type').waitFor();
   assert.deepEqual(await page.getByLabel('Session type').locator('option').allTextContents(), ['Claude', 'Codex', 'Shell']);
-  await page.waitForFunction(() => JSON.parse(localStorage.getItem('stack.termTabs') || '[]').some((t) => t.tmux));
-  if (await page.getByTitle('Expand the sessions rail').count()) await page.getByTitle('Expand the sessions rail').click();
-  await page.getByRole('button', { name: 'Codex models', exact: true }).click();
-  await page.getByLabel('Codex model', { exact: true }).selectOption('gpt-fixture');
-  await page.getByRole('button', { name: 'Codex models', exact: true }).click();
-  await page.getByText('Codex · Session · 5h', { exact: true }).waitFor();
+  assert.equal(starts.length, 0, 'opening an empty terminal must not create a process');
+  await page.getByLabel('Session defaults', { exact: true }).click();
+  await page.getByLabel('Builder', { exact: true }).check();
+  await page.keyboard.press('Escape');
+  await page.locator('.tv-go').filter({ hasText: 'Start' }).click();
+  await page.waitForFunction(() => JSON.parse(localStorage.getItem('stack.termTabs') || '[]').some(t => t.tmux));
+  assert.deepEqual(starts[0].profileKeys, ['executor']);
+  await page.getByRole('button', { name: 'Configuration', exact: true }).click();
+  await page.getByRole('heading', { name: 'Session configuration' }).waitFor();
+  assert.match(await page.getByRole('dialog').innerText(), /fixture.*supplied/s);
+  await page.getByRole('button', { name: 'Close', exact: true }).click();
   await page.getByLabel('Session type').selectOption('codex');
-  await page.getByRole('button', { name: /^\+ Codex in/ }).click();
-  await page.waitForFunction(() => JSON.parse(localStorage.getItem('stack.termTabs') || '[]').some((t) => t.cmd === 'codex' && t.tmux));
-  assert.equal(starts.find((m) => m.cmd === 'codex').codexModel, 'gpt-fixture');
+  await page.getByLabel('Session defaults', { exact: true }).click();
+  await page.getByRole('button', { name: 'GPT fixture', exact: true }).click();
+  await page.keyboard.press('Escape');
+  await page.locator('.tv-go').filter({ hasText: 'Start' }).click();
+  await page.waitForFunction(() => JSON.parse(localStorage.getItem('stack.termTabs') || '[]').some(t => t.cmd === 'codex' && t.tmux));
+  assert.equal(starts.find(m => m.cmd === 'codex').codexModel, 'gpt-fixture');
+  assert.equal(starts.find(m => m.cmd === 'codex').profileKeys, undefined);
   const names = [...sessions.keys()];
   hostConnected = false;
   const startsBeforeRestart = starts.length;
@@ -124,14 +142,18 @@ try {
     assert.equal(start.contextTokens, undefined);
     if (start.cmd === 'codex') assert.equal(start.skipPerms, undefined);
   }
-  if (await page.getByTitle('Expand the sessions rail').count()) await page.getByTitle('Expand the sessions rail').click();
-  await page.getByRole('button', { name: /Settings/ }).click();
+  await page.getByLabel('Session defaults', { exact: true }).click();
   assert.doesNotMatch(await page.locator('body').innerText(), /OmniRoute|gateway/i);
-  await page.getByRole('button', { name: /Settings/ }).click();
+  await page.keyboard.press('Escape');
+  await page.locator('.tv-tab').filter({ hasText: /codex/i }).first().click();
+  await page.getByRole('button', { name: 'Configuration', exact: true }).click();
+  await page.getByRole('heading', { name: 'Session configuration' }).waitFor();
+  assert.ok((await page.getByRole('dialog').innerText()).includes('Automatic usage/edit tracking is not integrated.'));
   await page.screenshot({ path: `${out}/desktop.png`, fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.screenshot({ path: `${out}/mobile.png`, fullPage: true });
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), 'mobile has no page overflow');
+  await page.getByRole('button', { name: 'Close', exact: true }).click();
   assert.deepEqual(errors, []);
   assert.ok(!requests.some((p) => /terminal\/(models|gateway)/.test(p)));
   await browser.close();
