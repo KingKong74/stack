@@ -1,3 +1,4 @@
+import { queueOrder } from './plan';
 // The Overview tab's PROGRESSION SPINE (design 4a) — pure derivation, no
 // network, no React. Turns a project's own collections into the four stages a
 // change passes through, the progress ledger's arithmetic, and the small
@@ -207,31 +208,10 @@ export function progressLedger(pct: number, roadmap: Roadmap, bugs: Bug[]): Prog
 
 // --- the panels that hang off the spine ------------------------------------
 
-const BUCKET_ORDER: Record<string, number> = { highest: 0, high: 1, medium: 2, low: 3, lowest: 4 };
-
-/**
- * The top of the run queue: the SPRINT IN PROGRESS first and in its own order,
- * then bucket, then board order — the same primary sort the queue itself uses
- * (#477). Parked items are left out; they are planned but explicitly not to be
- * picked up.
- *
- * `activeId` null means no sprint is in progress, which makes this a plain
- * bucket ordering of the backlog. That is deliberately NOT an empty list: the
- * panel answers "what would you work on next", which still has an answer
- * between sprints, and only the RUNNER treats no active sprint as nothing to
- * do. A rank is read only for rows actually in the active sprint, because
- * `sprintRank` is 0 on every backlog row and an unguarded compare would float
- * the whole backlog to the top.
- */
-export function nextUp(roadmap: Roadmap, activeId: number | null = null, limit = 3): RoadmapItem[] {
-  const inSprint = (it: RoadmapItem) => activeId !== null && it.sprintId === activeId;
-  return flat(roadmap)
-    .filter((it) => isPlanned(it) && !it.skipped)
-    .sort((a, b) =>
-      (Number(inSprint(b)) - Number(inSprint(a)))
-      || (inSprint(a) && inSprint(b) ? a.sprintRank - b.sprintRank : 0)
-      || (BUCKET_ORDER[a.bucket] ?? 5) - (BUCKET_ORDER[b.bucket] ?? 5))
-    .slice(0, limit);
+/** Suggestions preserve Ready order, then current milestone slice order. */
+export function nextUp(roadmap: Roadmap, planningSlices: readonly number[] = [], limit = 3): RoadmapItem[] {
+  return flat(roadmap).filter((it) => isPlanned(it) && !it.skipped)
+    .sort(queueOrder(planningSlices)).slice(0, limit);
 }
 
 export const SEVERITIES: Severity[] = ['critical', 'high', 'medium', 'low'];

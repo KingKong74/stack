@@ -81,7 +81,7 @@ try {
   // and they are still in it (derived by the database, not copied).
   const { rows: commits } = await q('SELECT sprint_id, slice_id FROM sprint_slices');
   const sprintOf = async (id) => (await q('SELECT sprint_id FROM roadmap_items WHERE id = $1', [id])).rows[0].sprint_id;
-  check('the sprint commits to exactly one slice: the one its rows went to', commits.length, 1);
+  check('retired sprints gain no new derived slice commitments', commits.length, 0);
   check('…and its rows are still in the sprint', [await sprintOf(inSprintA), await sprintOf(inSprintB)], [sp.id, sp.id]);
   check('a row whose slice is in no sprint is in no sprint', await sprintOf(idleA), null);
   check('the two clusters became slices, then "Carried over" last', sl.map((s) => s.title),

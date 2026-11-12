@@ -72,15 +72,15 @@ export function HowToGuide({ onClose }: { onClose: () => void }) {
             The left rail holds the project’s work and context. <b>For you</b> is where you left off, the push feed
             and the extracted-idea queue, where <b>Promote</b> moves an idea onto the board.
             <b> The board</b> — it wears the project's own name — is the committed work: a kanban
-            that writes, and a <b>Backlog</b> tab where sprints are ordered. <b>Plans</b> reads the stored schedule back as a timeline and a calendar.
+            that writes, and a <b>Backlog</b> tab organised by milestone and slice. <b>Plans</b> reads the stored schedule back as a timeline and a calendar.
           </div>
         </div>
 
         <div className="guide-step">
           <div className="guide-step-title"><span className="n">5</span> What the machine builds</div>
           <div className="guide-step-body">
-            A <b>sprint</b> is a named, ordered box of board items, and the order inside it is the
-            priority — top first. The sprint in progress is what gets <b>planned</b>; what gets
+            The current <b>milestone</b> holds ordered <b>slices</b>. Live slices in that milestone
+            are what get <b>planned</b>; what gets
             <b> built</b> is the Ready queue, which the autopilot works through whenever there is
             budget. The worker cap, the budget and the two models are in Settings.
           </div>

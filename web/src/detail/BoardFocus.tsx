@@ -34,7 +34,7 @@
 import { StarButton } from '../components/Star';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { KitIcon } from './kit/KitIcon';
-import type { ItemKind, Priority, RoadmapItem, Slice, Sprint } from '../types';
+import type { ItemKind, Priority, RoadmapItem, Slice } from '../types';
 import { listKeyOf, isBoardWork, isBuilt } from '../lib/plan';
 import { isHeld } from '../lib/approval';
 import { PRIORITY_META, priorityMeta, dueRead, ITEM_KIND_LABEL } from '../lib/ui';
@@ -85,7 +85,7 @@ const topbarH = () => {
 };
 
 export function BoardFocus({
-  slug, open, rows, columns, colOf, areas, sprintOf, phase, onPhase, onClosed,
+  slug, open, rows, columns, colOf, areas, phase, onPhase, onClosed,
   onPatch, onMove, onCreateChild, slices = [], onEditSlice, onCreateInSlice, onStar,
 }: {
   slug: string;
@@ -101,7 +101,6 @@ export function BoardFocus({
   /** The column a row is drawn in, by the board's own rule. */
   colOf: (it: RoadmapItem) => string;
   areas: { name: string; dot: string }[];
-  sprintOf: (it: RoadmapItem) => Sprint | null;
   phase: FocusPhase;
   onPhase: (p: FocusPhase) => void;
   /** The flight home has landed: unmount. */
@@ -585,7 +584,7 @@ export function BoardFocus({
         }}>
         {slice
           ? <SliceFace slice={slice} kids={kids} onEdit={() => { if (live) editOn(f.id); }} />
-          : <CardFace item={f} kids={kids} parent={parent} sprint={sprintOf(f)}
+          : <CardFace item={f} kids={kids} parent={parent}
             onEdit={() => { if (live) editOn(f.id); }} />}
       </div>
     </>
@@ -621,8 +620,8 @@ function SliceFace({ slice, kids, onEdit }: { slice: Slice; kids: RoadmapItem[];
 }
 
 /** The focused card's face: the board card's own grammar, read-only but for ✎. */
-function CardFace({ item, kids, parent, sprint, onEdit }: {
-  item: RoadmapItem; kids: RoadmapItem[]; parent: RoadmapItem | null; sprint: Sprint | null; onEdit: () => void;
+function CardFace({ item, kids, parent, onEdit }: {
+  item: RoadmapItem; kids: RoadmapItem[]; parent: RoadmapItem | null; onEdit: () => void;
 }) {
   const pri = priorityMeta(item.bucket);
   const pts = item.points ?? null;
@@ -645,14 +644,10 @@ function CardFace({ item, kids, parent, sprint, onEdit }: {
           <span className="bf-pri lg" style={{ color: pri.color }}>{pri.glyph}</span>
         </span>
       </div>
-      {(held || sprint || kind || due || parent || kids.length > 0 || item.claimedBy || item.skipped) && (
+      {(held || kind || due || parent || kids.length > 0 || item.claimedBy || item.skipped) && (
         <div className="km-cardtags">
           {held && <span className="k-tag warning">held</span>}
-          {sprint && (
-            <span className={`k-tag km-sprint${sprint.status === 'active' ? ' on' : ''}`}>
-              <KitIcon name="layers" size={11} /><span className="v">{sprint.name}</span>
-            </span>
-          )}
+
           {kind && <span className={`k-tag km-kind ${kind}`}>{ITEM_KIND_LABEL[kind]}</span>}
           {due && <span className={`k-tag km-due ${due.tone}`}><KitIcon name="calendar" size={11} /><span className="v">{due.label}</span></span>}
           {parent && <span className="k-tag mono" title={`Part of #${parent.id} — ${parent.title}`}>↳ #{parent.id}</span>}

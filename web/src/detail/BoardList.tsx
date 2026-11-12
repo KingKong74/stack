@@ -19,7 +19,7 @@
 //    tie-break, so two renders of the same rows never disagree.
 
 import { useMemo } from 'react';
-import type { BoardArea, BoardList as BoardColumn, RoadmapItem, Sprint } from '../types';
+import type { BoardArea, BoardList as BoardColumn, RoadmapItem, Slice, Milestone } from '../types';
 import { homeOf, listKeyOf, queueOrder, bucketRank } from '../lib/plan';
 import { isHeld } from '../lib/approval';
 import { priorityMeta, timeAgo } from '../lib/ui';
@@ -51,11 +51,11 @@ function whereOf(it: RoadmapItem): { label: string; tone: string; title: string 
   return { label: 'Board', tone: 'info', title: 'Committed work, on the board' };
 }
 
-export function sortRows(rows: RoadmapItem[], sort: BoardSort, activeId: number | null): RoadmapItem[] {
+export function sortRows(rows: RoadmapItem[], sort: BoardSort, planningSlices: readonly number[]): RoadmapItem[] {
   const out = [...rows];
   const byNewest = (a: RoadmapItem, b: RoadmapItem) => stamp(b.createdAt) - stamp(a.createdAt) || b.id - a.id;
   switch (sort) {
-    case 'run': return out.sort(queueOrder(activeId));
+    case 'run': return out.sort(queueOrder(planningSlices));
     case 'oldest': return out.sort((a, b) => -byNewest(a, b));
     case 'updated': return out.sort((a, b) => stamp(b.updatedAt) - stamp(a.updatedAt) || b.id - a.id);
     case 'priority': return out.sort((a, b) => bucketRank(a.bucket) - bucketRank(b.bucket) || byNewest(a, b));
@@ -70,7 +70,7 @@ export function sortRows(rows: RoadmapItem[], sort: BoardSort, activeId: number 
   }
 }
 
-export function BoardListView({ rows, sort, show, area, lists, areas, sprints, activeId, selected, onOpen }: {
+export function BoardListView({ rows, sort, show, area, lists, areas, slices, milestones, planningSlices, selected, onOpen }: {
   /** Already filtered for archive, search and parked by the board. */
   rows: RoadmapItem[];
   sort: BoardSort;
@@ -79,8 +79,9 @@ export function BoardListView({ rows, sort, show, area, lists, areas, sprints, a
   area: string;
   lists: BoardColumn[];
   areas: BoardArea[];
-  sprints: Sprint[];
-  activeId: number | null;
+  slices: Slice[];
+  milestones: Milestone[];
+  planningSlices: readonly number[];
   selected: number | null;
   onOpen: (it: RoadmapItem) => void;
 }) {
@@ -93,8 +94,8 @@ export function BoardListView({ rows, sort, show, area, lists, areas, sprints, a
       if (area === ' untagged') return !it.area.trim();
       return !area || it.area.trim() === area;
     });
-    return sortRows(scoped, sort, activeId);
-  }, [rows, sort, show, area, activeId]);
+    return sortRows(scoped, sort, planningSlices);
+  }, [rows, sort, show, area, planningSlices]);
 
   if (drawn.length === 0) return <div className="km-colempty">Nothing matches those filters.</div>;
 
@@ -107,7 +108,7 @@ export function BoardListView({ rows, sort, show, area, lists, areas, sprints, a
         <span role="columnheader">Status</span>
         <span role="columnheader" className="bl-c-pri" title="Priority">Pri</span>
         <span role="columnheader" className="bl-c-pts">Pts</span>
-        <span role="columnheader" className="bl-c-sprint">Sprint</span>
+        <span role="columnheader" className="bl-c-spine">Milestone / Slice</span>
         <span role="columnheader" className="bl-c-when">Created</span>
         <span role="columnheader" className="bl-c-when">Updated</span>
       </div>
@@ -117,7 +118,8 @@ export function BoardListView({ rows, sort, show, area, lists, areas, sprints, a
         const status = homeOf(it) === 'board' ? (col?.name || 'No column') : where.label;
         const pri = priorityMeta(it.bucket);
         const dot = areas.find((a) => a.name === it.area.trim())?.dot || '';
-        const box = it.sprintId === null ? null : sprints.find((b) => b.id === it.sprintId) || null;
+        const slice = slices.find((s) => s.id === it.sliceId);
+        const milestone = milestones.find((m) => m.id === slice?.milestoneId);
         const parent = it.parentId === null ? '' : titles.get(it.parentId) || '';
         return (
           <div key={it.id} role="row" data-hl={it.id}
@@ -146,8 +148,10 @@ export function BoardListView({ rows, sort, show, area, lists, areas, sprints, a
             </span>
             <span role="cell" className="bl-c-pri" style={{ color: pri.color }} title={`Priority — ${pri.label}`}>{pri.glyph}</span>
             <span role="cell" className="bl-c-pts mono">{it.points ?? ''}</span>
-            <span role="cell" className="bl-c-sprint">
-              {box && <span className={`k-tag${box.id === activeId ? ' info' : ''}`} title={`Sprint: ${box.name} (${box.status})`}>{box.name}</span>}
+            <span role="cell" className="bl-c-spine bl-title">
+              <span className="bl-parent" title={milestone?.name}>{milestone?.name || 'No milestone'}</span>
+              <span className="k-tag" title={slice?.title}>{slice?.title || (homeOf(it) === 'board' ? 'No slice' : where.label)}</span>
+              {it.ready && <span className="k-tag info">Ready #{it.readyRank + 1}</span>}
             </span>
             <span role="cell" className="bl-c-when" title={it.createdAt || ''}>{timeAgo(it.createdAt)}</span>
             <span role="cell" className="bl-c-when" title={it.updatedAt || ''}>{timeAgo(it.updatedAt)}</span>

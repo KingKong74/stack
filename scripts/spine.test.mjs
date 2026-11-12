@@ -198,37 +198,37 @@ test('the 90% cap is reported as armed vs actually biting', () => {
 
 // --- the rail ---------------------------------------------------------
 
-// #477 — the sprint in progress leads, in its OWN order, and it outranks the
+// #477 — the current milestone slices leads, in its OWN order, and it outranks the
 // priority: a `low` sitting at the top of the running box goes before a
 // `highest` nobody has committed to. Getting this backwards is the whole
 // failure mode the sprint replaced the desire tier to fix.
-test('next up leads with the sprint in progress, in its own order, then bucket', () => {
+test('next up leads with the current milestone slices, in its own order, then bucket', () => {
   const items = [
-    item({ title: 'uncommitted must', bucket: 'highest' }),
-    item({ title: 'sprint second', bucket: 'high', sprintId: 7, sprintRank: 1 }),
-    item({ title: 'sprint first', bucket: 'low', sprintId: 7, sprintRank: 0 }),
-    item({ title: 'parked in sprint', bucket: 'highest', sprintId: 7, sprintRank: 2, skipped: true }),
-    item({ title: 'claimed in sprint', bucket: 'highest', sprintId: 7, sprintRank: 3, claimedBy: 'feat/9-x' }),
+    item({ title: 'uncommitted must', bucket: 'highest', sliceId: 2 }),
+    item({ title: 'slice second', bucket: 'high', sliceId: 7, sliceRank: 1 }),
+    item({ title: 'slice first', bucket: 'low', sliceId: 7, sliceRank: 0 }),
+    item({ title: 'parked in sprint', bucket: 'highest', sliceId: 7, sliceRank: 2, skipped: true }),
+    item({ title: 'claimed in sprint', bucket: 'highest', sliceId: 7, sliceRank: 3, claimedBy: 'feat/9-x' }),
     // A row in a PLANNED box is not in the running one, so its rank means
     // nothing here — it must not outrank the backlog on a default of 0.
-    item({ title: 'other sprint', bucket: 'lowest', sprintId: 8, sprintRank: 0 }),
+    item({ title: 'other sprint', bucket: 'lowest', sliceId: 8, sliceRank: 0 }),
   ];
   assert.deepEqual(
-    nextUp(board(items), 7).map((i) => i.title),
-    ['sprint first', 'sprint second', 'uncommitted must']);
+    nextUp(board(items), [7]).map((i) => i.title),
+    ['slice first', 'slice second', 'uncommitted must']);
 });
 
-// No sprint in progress is NOT an empty answer here: the panel asks "what would
+// No current milestone slices is NOT an empty answer here: the panel asks "what would
 // you work on next", which still has an answer between cycles. Only the RUNNER
 // reads no active sprint as nothing to do.
-test('next up falls back to priority order when no sprint is in progress', () => {
+test('next up falls back to priority order when no current milestone is in progress', () => {
   const items = [
     item({ title: 'low', bucket: 'low' }),
     item({ title: 'highest', bucket: 'highest' }),
-    item({ title: 'ranked in a planned box', bucket: 'lowest', sprintId: 8, sprintRank: 0 }),
+    item({ title: 'ranked in a planned box', bucket: 'lowest', sliceId: 8, sliceRank: 0 }),
   ];
   assert.deepEqual(
-    nextUp(board(items), null).map((i) => i.title),
+    nextUp(board(items)).map((i) => i.title),
     ['highest', 'low', 'ranked in a planned box']);
 });
 

@@ -21,7 +21,7 @@
 
 import { useMemo, useState } from 'react';
 import { KitIcon } from './kit/KitIcon';
-import type { Activity, Milestone, RoadmapItem, Slice, Sprint } from '../types';
+import type { Activity, Milestone, RoadmapItem, Slice } from '../types';
 import type { CharterSummary } from '../store';
 import type { Resume } from '../types';
 import { queueTermLaunch } from '../store';
@@ -36,8 +36,8 @@ const HL_SHOWN = 4;
 const SHAS_SHOWN = 6;
 const STATE_LABEL = { empty: 'Empty', open: 'Open', built: 'Built', done: 'Done' } as const;
 
-export function Course({ slug, name, items, milestones, slices, sprints, charter, resume, northStar = '', phase = '', activity = [], lastSlice = null }: {
-  slug: string; name: string; items: RoadmapItem[]; milestones: Milestone[]; slices: Slice[]; sprints: Sprint[];
+export function Course({ slug, name, items, milestones, slices, charter, resume, northStar = '', phase = '', activity = [], lastSlice = null }: {
+  slug: string; name: string; items: RoadmapItem[]; milestones: Milestone[]; slices: Slice[];
   charter: CharterSummary | null; resume: Resume | null;
   /** The project's north star, the footnote; the charter's opening stands in. */
   northStar?: string;
@@ -59,7 +59,6 @@ export function Course({ slug, name, items, milestones, slices, sprints, charter
   const inFlight = live.filter((it) => !it.done && it.claimedBy.trim() !== '' && !isBuilt(it));
   const waiting = live.filter((it) => isBuilt(it) && !it.reviewTag);
   const nowSlices = new Set(inFlight.map((it) => it.sliceId).filter((x): x is number => x !== null));
-  const active = sprints.find((b) => b.status === 'active') || null;
   const iced = live.filter(isIced).length;
   const ideas = live.filter(isAutoIdea).length;
   const goal = String(ms?.goal || '').split(/\n\s*\n/)[0].trim();
@@ -203,11 +202,11 @@ export function Course({ slug, name, items, milestones, slices, sprints, charter
           )}
           <div className="cb-foot">
             <span className="co-dim">
-              {active ? <>Sprint <b>{active.name}</b> in progress</> : 'No sprint in progress'}
+              {ms ? <>Current milestone: <b>{ms.name}</b></> : 'No current milestone'}
               {inFlight.length > 0 ? ` · ${inFlight.length} in flight` : ''}
             </span>
             <div className="cb-acts">
-              {!active && <button className="k-btn sm secondary" onClick={() => go.detail(slug, 'plans')}>Plan a sprint</button>}
+              <button className="k-btn sm secondary" onClick={() => go.detail(slug, 'milestones')}>Milestones</button>
               {(iced > 0 || ideas > 0) && (
                 <button className="k-btn sm ghost" onClick={() => go.detail(slug, 'auto')}>
                   {ideas > 0 ? `${ideas} to answer` : ''}{ideas > 0 && iced > 0 ? ' · ' : ''}{iced > 0 ? `${iced} in the Icebox` : ''} →

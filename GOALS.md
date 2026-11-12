@@ -1,6 +1,6 @@
 # Stack — goals and delivery outline
 
-Refreshed 2 November 2026 from the repository and its current operating rules. This is the
+Refreshed 12 November 2026 from the repository and its current operating rules. This is the
 working project direction; live priorities, claims and completion stay in Stack's board.
 
 ## North star
@@ -14,7 +14,7 @@ the person switches coding agents.
 | Goal | What success looks like |
 | --- | --- |
 | Frictionless resume | A useful summary, current work, next moves and blockers survive between sessions. |
-| Deliberate planning | Ideas stay distinct from approved work; the active sprint is the planning lane and Ready is the unattended build lane. |
+| Deliberate planning | Ideas stay distinct from approved work; the current milestone’s live slices are the planning lane and Ready is the unattended build lane. |
 | Reviewable delivery | Built work has a branch, an account of the change and verification evidence; missing reviews never look green. |
 | A board for the owner | Organising tasks and clusters stays understandable and hands-on; automation respects the owner's choices. |
 | Honest visibility | Activity, usage, host presence and checks show what was observed; unknown or disconnected never means healthy or free. |
@@ -23,7 +23,7 @@ the person switches coding agents.
 ## Current baseline
 
 The repository contains the React frontend, Express/Postgres API, host terminal daemon, CLI,
-Claude hooks, checkpoint poster and continuous automation runner. It has Ready and active-sprint
+Claude hooks, checkpoint poster and continuous automation runner. It has Ready and current-milestone planning
 lanes, approval and claim gates, worktrees, a review workflow and runtime launch support.
 
 The Terminal page offers native Claude and Codex sessions, with Shell as a utility. Both agent

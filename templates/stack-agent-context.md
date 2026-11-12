@@ -175,16 +175,16 @@ Open roadmap items can carry a claim (`claimedBy` — the branch name, e.g.
 - **Never start an item with `skipped: true`**: it's parked on purpose; the
   owner unparks it when it's back in play.
 - **Only the READY queue is yours to build**: items with `ready: true`, in
-  `readyRank` order, lowest first. The sprint in progress (`status: "active"`
-  in `sprints`) is the PLANNING lane: designed and broken down, not built.
-  An empty Ready queue means nothing to build unattended.
+  `readyRank` order, lowest first. Live slices of the current milestone (`status: "active"` in
+  `milestones`) are the PLANNING lane: slice `position`, then `sliceRank`,
+  then bucket. Archived slices and Icebox are excluded.
+  Empty Ready means no builds.
 - **The spine**: `charter` is the charter's opening; `milestones` hold
   `slices`; `sliceId` null is the Icebox (off the board, never Ready).
   Deleting milestones ices items, clears Ready and removes slices.
 - **Never set `ready`/`readyRank` or a star, move an existing item's slice,
-  or write a milestone, slice or sprint.** Those are the owner's call. A sprint commits
-  to slices: an item is in one iff its slice is (`sprintId` is derived and a
-  write is refused). You MAY file NEW items into a slice (`sliceId`) on
+  or write a milestone or slice.** Those are the owner's call. Sprints are retired;
+  legacy writes are refused. You MAY file NEW items into a slice (`sliceId`) on
   `POST /roadmap` or `/batch`; they land at its bottom. A part with no
   `sliceId` takes its parent's. Filing is not
   approval: a `fly`/`plan` item stays held until signed off.
@@ -259,7 +259,7 @@ Open roadmap items can carry a claim (`claimedBy` — the branch name, e.g.
 
   Stopping partway is fine: ticked steps tell the next session where to resume.
 
-  The **plan sweep** designs the sprint's plan-less items, filing big ones as
+  The **plan sweep** designs plan-less items in the current milestone’s live slices, filing big ones as
   held `plan` pieces; it never builds, ticks or touches a started plan.
 - **Items can carry a `spec`**: `{"goal","acceptance":[],"files":[],"outOfScope":[]}`,
   on POST or PATCH. A build run is held to it. `POST /roadmap/batch` with

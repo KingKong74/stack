@@ -370,6 +370,14 @@ const ROADMAP_PANELS = [
     click: '.km-parked',
     expect: '.km-parked.on',
   },
+  {
+    id: 'board-list-layout', label: 'Board — list shows milestone and slice context',
+    click: '.km-layout button:nth-child(2)', expect: '.bl-list .bl-c-spine',
+  },
+  {
+    id: 'board-list-back', label: 'Board — return to card layout',
+    click: '.km-layout button:nth-child(1)', expect: '.km-cols',
+  },
   // THESE THREE MUST COME LAST, and not for tidiness: the presses above all
   // name `.km-col`, which only exists while the Board tab is the one drawn.
   // Switch tabs first and every one of them reports a control it cannot
@@ -379,38 +387,7 @@ const ROADMAP_PANELS = [
     id: 'board-backlog-tab',
     label: 'Board — Backlog tab',
     click: '.km-tabs .k-tab:nth-child(2)',
-    expect: '.km-bl .km-pull',
-  },
-  // THE GRAB HANDLE IS NO LONGER A PRESS (#477). It was a button that toggled
-  // one row's own styling and moved nothing — the mockup's stand-in for a drag,
-  // and the honest thing to test while the tab was a picture. The rows are real
-  // HTML5 drag sources now, which this harness cannot drive and which would be
-  // a lie to assert a click against, so what is tested instead is the control
-  // that actually opens on a press: the sprint composer.
-  {
-    id: 'board-backlog-newsprint',
-    label: 'Backlog — New sprint opens its name field',
-    // A named hook, never a tone class: this pressed `.k-btn.secondary` for
-    // exactly one commit, until the button changed colour and the harness
-    // reported a control that was sitting right there.
-    click: '.km-newsprint',
-    expect: '.km-bl-new input',
-  },
-  // And back out of it, so the Development tab below is reached from a screen
-  // with no half-finished composer sitting on it.
-  {
-    id: 'board-backlog-newsprint-cancel',
-    label: 'Backlog — the composer cancels',
-    click: '.km-bl-new .k-btn.ghost',
-    expect: '.km-newsprint',
-  },
-  // ONE BACKLOG LAYOUT since the Timeline was removed (owner's call,
-  // 2026-11-07): the tab press above lands straight on the boxes.
-  {
-    id: 'board-backlog-list',
-    label: 'Backlog — the boxes and the backlog are drawn',
-    click: '.km-tabs .k-tab:nth-child(2)',
-    expect: '.km-bl .km-backlog',
+    expect: '.km-backlog input[aria-label="Search backlog"]',
   },
   {
     id: 'board-dev-tab',
@@ -491,70 +468,12 @@ const LOOPS_PANELS = [
 // until every area is open and "Collapse all" after. That is what
 // `expectTextChangeIn` is for.
 const PLANS_PANELS = [
-  {
-    id: 'plans-built-filter',
-    label: 'Timeline — hiding built rows changes the count',
-    click: '.pl-toolbar .k-btn[aria-pressed]',
-    expectTextChangeIn: '.pl-toolbar .k-btn[aria-pressed]',
-  },
-  {
-    id: 'plans-sprint-fold',
-    label: 'Timeline — a sprint folds shut',
-    click: '.pl-fold',
-    expectTextChangeIn: '.pl-fold',
-  },
-  {
-    id: 'plans-summary',
-    label: 'Plans — Summary view',
-    click: '.pl-tabs .k-tab:nth-child(1)',
-    expect: '.pl-donut',
-  },
-  {
-    id: 'plans-progress',
-    label: 'Plans — Progress view',
-    click: '.pl-tabs .k-tab:nth-child(2)',
-    expect: '.pl-arearow',
-  },
-  {
-    id: 'plans-progress-expand',
-    label: 'Progress — every area folds open',
-    click: '.pl-panelhead .pl-linkbtn',
-    expectTextChangeIn: '.pl-panelhead .pl-linkbtn',
-  },
-  {
-    id: 'plans-calendar',
-    label: 'Plans — Calendar view',
-    click: '.pl-tabs .k-tab:nth-child(4)',
-    expect: '.pl-calgrid',
-  },
-  // The month the grid is on is the one thing on this view that a press must
-  // move. A calendar whose arrow repaints the same month is the whole bug.
-  {
-    id: 'plans-calendar-month',
-    label: 'Calendar — the arrow moves the month',
-    click: '.pl-monthnav .arw:last-child',
-    expectTextChangeIn: '.pl-monthnav',
-  },
-  {
-    id: 'plans-releases',
-    label: 'Plans — Releases view',
-    click: '.pl-tabs .k-tab:nth-child(5)',
-    expect: '.pl-relhead',
-  },
-  // The LAST release is closed at first paint (only tokens-v1.5 is open), so
-  // its body is the one thing on this view that cannot already be there.
-  {
-    id: 'plans-release-fold',
-    label: 'Releases — a release folds open',
-    click: '.pl-release:last-child .pl-relhead',
-    expect: '.pl-release:last-child .pl-relbody',
-  },
-  {
-    id: 'plans-dependencies',
-    label: 'Plans — Dependencies view',
-    click: '.pl-tabs .k-tab:nth-child(6)',
-    expect: '.pl-depcard',
-  },
+  { id: 'plans-built-filter', label: 'Timeline — hide built toggles',
+    click: '.pl-view .k-btn[aria-pressed]', expectTextChangeIn: '.pl-view .k-btn[aria-pressed]' },
+  { id: 'plans-calendar', label: 'Plans — Calendar view',
+    click: '.pl-tabs .k-tab:nth-child(2)', expect: '.pl-calgrid' },
+  { id: 'plans-calendar-month', label: 'Calendar — next month changes the date',
+    click: '.pl-month button[aria-label="Next month"]', expectTextChangeIn: '.pl-month' },
 ];
 
 // Mission Control's four tabs (the v5 design), plus the presses that prove a

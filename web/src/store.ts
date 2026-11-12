@@ -2,7 +2,7 @@ import type {
   Milestone, Slice, AdrStatus, NoteBoard,
   Project, Resume, Activity, Bug, Roadmap, RoadmapItem, Check, CheckRun, CheckHistory, Overview,
   ProjectStatus, ProjectCategory, Priority, Severity, BugStatus, SearchResponse, Settings, AutopilotRun, PlanStep,
-  AuthDevice, Sprint, SprintPlan, ResumeSince, ProjectDebrief,
+  AuthDevice, ResumeSince, ProjectDebrief,
   SchedSpan, ProjectPulse, BoardShape, BoardList, BoardArea, ItemKind,
   AgentProfile, AgentProfilesRoom, ModelsRoom, ContextRoom, ClaudeMdRead,
   ProjectKind, Spaces, SpaceArea, Workflow, WishIdea, IdeaStage,
@@ -363,25 +363,6 @@ export async function hangupAutopilotJob(id: string): Promise<AutopilotJob> {
   return request<AutopilotJob>(`/autopilot/jobs/${id}`, { method: 'PATCH', body: { status: 'paused' } });
 }
 
-// ▶ BUILD NOW (#521) — queue a manual autopilot job for ONE item, from the card
-// that names it. `POST /autopilot/start` is the same route Mission Control's Run
-// now pressed, and it is deliberately NOT sprint-gated: what the sprint gates is
-// the automation CHOOSING work for itself, and a human pointing at one card is
-// the same commitment dragging it into the box would have been
-// (routes/autopilot.js says so at the route).
-//
-// TWO ANSWERS ARE BOTH SUCCESS, and a caller has to tell them apart. A project
-// with a job already queued, claimed or running gets that job back with a 200
-// rather than a second one stacked on top — so the card must say "already
-// building" instead of claiming it started something. `queued` on the returned
-// job is what distinguishes them: a job this call created is always fresh.
-//
-// AND A HELD ROW IS REFUSED OUT LOUD, 409 with the reason and the ids (#359).
-// That is the whole point of pressing it here rather than letting an unattended
-// enqueue drop it silently — `request()` throws on a 409 with the server's own
-// sentence, which names the hold, so nothing here has to compose one.
-// A merge job for a built branch; the dispatcher merges it into main, and a
-// conflict aborts it rather than forcing anything.
 export async function queueMerge(slug: string, branch: string, itemId: number): Promise<AutopilotJob> {
   return request<AutopilotJob>('/autopilot/merge', { method: 'POST', body: { slug, branch, itemId } });
 }
@@ -450,10 +431,6 @@ export interface ProjectDetailData {
   bugs: Bug[];
   roadmap: Roadmap;
   checks: Check[];
-  // #477 — the project's sprints, in board order, riding the payload every tab
-  // already renders from. The board draws its boxes from this and resolves an
-  // item's `sprintId` against it; nothing carries a sprint's NAME on the item.
-  sprints: Sprint[];
   // #608 — the spine, in board order. An older server sends neither, which
   // reads as a board with no slices: everything is in the Icebox.
   milestones: Milestone[];
@@ -478,7 +455,7 @@ export interface ProjectDetailData {
 export async function getProjectDetail(slug: string): Promise<ProjectDetailData> {
   const d = await request<ProjectPayload & {
     activity: Activity[]; bugs: Bug[]; roadmap: Roadmap;
-    checks?: Check[]; sprints?: Sprint[]; milestones?: Milestone[]; slices?: Slice[]; charter?: CharterSummary | null; starredCount?: number; keepResumeCard?: boolean; shareToken?: string; liveBranches?: string[];
+    checks?: Check[]; milestones?: Milestone[]; slices?: Slice[]; charter?: CharterSummary | null; starredCount?: number; keepResumeCard?: boolean; shareToken?: string; liveBranches?: string[];
     staleItemDays?: number; geminiReady?: boolean;
     cadence?: { day: string; n: number }[]; lastPushAt?: string | null;
   }>(`/projects/${encodeURIComponent(slug)}`);
@@ -487,10 +464,6 @@ export async function getProjectDetail(slug: string): Promise<ProjectDetailData>
     blockers: d.blockers || [], directives: d.directives || [],
     activity: d.activity, bugs: d.bugs, roadmap: d.roadmap,
     checks: d.checks || [],
-    // An older server sends none, which reads as "no sprints yet" — the board
-    // then draws a backlog and an invitation to open one, which is exactly the
-    // state a project that has never used them is in.
-    sprints: d.sprints || [],
     milestones: d.milestones || [],
     slices: d.slices || [],
     charter: d.charter ?? null,
@@ -1198,10 +1171,6 @@ export async function createRoadmapItem(
     // #608 — file it into a slice. Omitted, a part takes its parent's slice
     // and anything else lands in the Icebox.
     sliceId?: number;
-    // NO `sprintId` HERE, and the server refuses one too (#477). Filing work
-    // into a sprint is a commitment somebody makes by dragging it into a box;
-    // a create that could land straight in the ACTIVE sprint would let the
-    // composer commission tonight's work by typing a title.
     sched?: { start: number; len: number };
   },
 ): Promise<RoadmapItem> {
@@ -1217,10 +1186,6 @@ export async function patchRoadmapItem(
     // #262 — omitting risk_source means the server records the write as human,
     // which is exactly what an edit from the modal is.
     risk_source: 'human' | 'auto'; risk_reason: string;
-    // NO `sprintId` (#621): an item is in a sprint exactly when its slice is,
-    // and the server refuses a direct write. Commit the slice (putSprintSlices).
-    // #608 — into a slice (at its bottom), or null to the ICEBOX. Icing a row
-    // also takes it out of Ready: Ready ⇒ sliced is a CHECK on the server.
     sliceId: number | null;
     // ---- the Roadmap tab v2 ----
     // null returns the bar to the tray. The server writes the BASELINE only if
@@ -1239,9 +1204,6 @@ export async function patchRoadmapItem(
     // #507 — the board's relative size. null (or '') CLEARS it back to unsized,
     // so a card given a size by mistake can be given none again.
     points: number | null;
-    // #508 — null, '' or any string that is not a real day all CLEAR the due
-    // date; `kind: ''` clears the kind. The server runs the same `cleanDate`
-    // sprints do, so an unparseable date can never become a deadline.
     dueOn: string | null;
     kind: ItemKind;
   }>,
@@ -1390,66 +1352,6 @@ export async function patchList(
 export async function deleteList(slug: string, key: string): Promise<void> {
   await request<void>(`${listsBase(slug)}/${encodeURIComponent(key)}`, { method: 'DELETE' });
 }
-// ---- sprints (#477) --------------------------------------------------------
-//
-// The backlog's boxes, and the boundary of what the automation may touch. The
-// READ is not here: sprints ride the project detail payload every tab already
-// renders from, so a screen never fetches a list that has to agree with the
-// items in the same response. These are the writes.
-//
-// #621 — A SPRINT COMMITS TO SLICES. `putSprintSlices` IS THE ONLY CALL THAT
-// WRITES ITS ORDER, and it sends the WHOLE sprint top to bottom rather than one
-// slice's new index; the items' sprintId/sprintRank are derived from it by the
-// database. That is not verbosity: the
-// alternative is a read-modify-write over rows another browser may be dragging
-// at the same moment, and a full list is idempotent where a partial one is a
-// race. It also ADOPTS — an id that was in the backlog or in another sprint
-// moves into this one — so a drag from the backlog, a drag between boxes and a
-// reorder inside one are the same single request, which is what lets the drop
-// handler stop caring which of the three just happened.
-const sprintsBase = (slug: string) => `/projects/${encodeURIComponent(slug)}/sprints`;
-
-export async function createSprint(
-  slug: string, name: string, window?: { startsOn?: string | null; endsOn?: string | null },
-): Promise<Sprint> {
-  return request<Sprint>(sprintsBase(slug), { method: 'POST', body: { name, ...(window || {}) } });
-}
-// Setting `status: 'active'` FINISHES whichever sprint was in progress, in the
-// same transaction — one project has at most one active sprint and the database
-// enforces it, so "start this one" and "end that one" are inseparable. The
-// caller does not send the second write and must not try.
-export async function patchSprint(
-  slug: string, id: number,
-  // `startsOn`/`endsOn` take a bare YYYY-MM-DD, or null to clear. Each end is
-  // settable alone — half a window is a real thing to know. A window that would
-  // end before it starts is refused OUT LOUD (400), because every reader would
-  // otherwise render it as a negative length.
-  patch: Partial<{
-    name: string; status: Sprint['status']; position: number;
-    startsOn: string | null; endsOn: string | null;
-  }>,
-): Promise<Sprint> {
-  return request<Sprint>(`${sprintsBase(slug)}/${id}`, { method: 'PATCH', body: patch });
-}
-// The response is the sprint's REAL membership afterwards, which is not always
-// what was sent: an id belonging to a row somebody else has since moved is
-// dropped rather than taking the whole reorder down with it. Render the answer,
-// not the request.
-// ✧ THE PLANNER (#522) — propose an order for one sprint. WRITES NOTHING; the
-// answer is applied with `putSprintOrder` below, which is the same call a drag
-// makes. The split is the rule: an agent may FILE a new item into an open sprint,
-// but ordering a box (or moving an existing row) is the human's.
-export async function planSprint(slug: string, sprintId: number): Promise<SprintPlan> {
-  return request<SprintPlan>(`${sprintsBase(slug)}/${sprintId}/plan`, { method: 'POST', body: {} });
-}
-
-export async function putSprintSlices(slug: string, id: number, slices: number[]): Promise<Sprint> {
-  return request<Sprint>(`${sprintsBase(slug)}/${id}/slices`, { method: 'PUT', body: { slices } });
-}
-// THE READY QUEUE (server/src/routes/ready.js) — what the automation builds.
-// Like a sprint box, the WHOLE queue top to bottom: listed ids are ranked by
-// index, anything Ready that is left out leaves it. A held id is refused (409)
-// with a sentence naming it, and nothing is written.
 export async function putReadyQueue(slug: string, items: number[]): Promise<{ items: number[] }> {
   return request<{ items: number[] }>(`/projects/${encodeURIComponent(slug)}/ready`, { method: 'PUT', body: { items } });
 }
@@ -1457,16 +1359,6 @@ export async function putReadyQueue(slug: string, items: number[]): Promise<{ it
 export async function addToReady(slug: string, items: number[]): Promise<{ added: number[] }> {
   return request<{ added: number[] }>(`/projects/${encodeURIComponent(slug)}/ready/add`, { method: 'POST', body: { items } });
 }
-// The box goes; the work stays. Its items return to the backlog rather than
-// being deleted with it — deleting a decision about work must never delete the
-// work, so this needs no confirmation about losing anything.
-// ---- the spine (#608): milestones and slices ----
-//
-// Making a milestone 'active' FINISHES the current one in the same write, the
-// same move as starting a sprint. A milestone with slices cannot be deleted
-// (409, out loud). Deleting a slice returns its items to the Icebox and takes
-// them out of Ready first. A first slice in a project with no milestone gets a
-// "Current" one made for it.
 const milestonesBase = (slug: string) => `/projects/${encodeURIComponent(slug)}/milestones`;
 const slicesBase = (slug: string) => `/projects/${encodeURIComponent(slug)}/slices`;
 export async function createMilestone(
@@ -1498,10 +1390,6 @@ export async function deleteSlice(slug: string, id: number): Promise<{ iced: num
   return request<{ iced: number[] }>(`${slicesBase(slug)}/${id}`, { method: 'DELETE' });
 }
 
-export async function deleteSprint(slug: string, id: number): Promise<void> {
-  await request<void>(`${sprintsBase(slug)}/${id}`, { method: 'DELETE' });
-}
-
 export async function deleteRoadmapItem(slug: string, id: number): Promise<void> {
   await request<void>(`${roadmapBase(slug)}/${id}`, { method: 'DELETE' });
 }
@@ -1516,13 +1404,6 @@ export async function suggestRoadmapTitle(slug: string, note: string): Promise<s
   return r.title;
 }
 
-// Gemini fills the whole item from its note — title, tidied note, area, branch
-// claim, priority. Suggestion only: it prefills the modal, the human saves.
-//
-// IT NEVER PROPOSES A SPRINT (#477). #277 let it propose a desire tier and #298
-// then carved the top rank back out on the grounds that what the machine works
-// tonight is the owner's call. Sprint membership IS what the machine works
-// tonight, so the whole field is that carve-out now.
 export interface RoadmapAssist {
   title: string; note: string; area: string; branch: string; priority: Priority | null;
   // #298 — '' when the assist has no read on it or the field is switched off.

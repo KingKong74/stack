@@ -160,8 +160,8 @@ function suiteFor(slug, ORIGIN) {
     // suite is what #212 and #263 spend. A GET on a POST-only route is a 404,
     // which is a contract this route shares with nothing else on the collection
     // — a plan route that answered a GET would be one a crawler could run.
-    { name: 'Planner — proposes on POST only', url: u(`/api/projects/${slug}/sprints/1/plan`), auth: true, expect_status: 404 },
-    { name: 'Planner — auth gate closed', url: u(`/api/projects/${slug}/sprints/1/plan`), expect_status: 401 },
+    { name: 'Sprints — retired', url: u(`/api/projects/${slug}/sprints/1/plan`), auth: true, expect_status: 410 },
+    { name: 'Retired sprints — auth gate closed', url: u(`/api/projects/${slug}/sprints/1/plan`), expect_status: 401 },
     { name: 'Search — grouped counts', url: u('/api/search?q=roadmap'), auth: true, json_path: 'counts.total' },
     { name: 'Search — empty query is empty', url: u('/api/search?q='), auth: true, json_path: 'counts.total', json_expect: '0' },
     // BUG-2 — ⌘K's counts and its RESULTS are two different keys, and only the

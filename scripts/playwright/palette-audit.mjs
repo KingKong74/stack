@@ -179,52 +179,14 @@ const SCREENS = [
   // chips, an arrow and a dashed zone, on a --surface-selected ground this
   // audit had never measured anything over. `drag` below is what gets there.
   { slug: 'board-drag', hash: '#/p/{slug}/roadmap', press: [OPEN_BOARD], drag: true },
-  // The Backlog tab has two layouts, a device-local choice, so each is pressed
-  // explicitly: List (the boxes) and Timeline (the Gantt).
+  { slug: 'board-list', hash: '#/p/{slug}/roadmap', press: ['.km-layout button:nth-child(2)'] },
   { slug: 'board-backlog', hash: '#/p/{slug}/roadmap', press: ['.km-tabs .k-tab:nth-child(2)'] },
-  // #498 — THE BACKLOG TAB WEARS THE SAME FOUR DRAG STATES, over grounds the
-  // kanban's row never measured: a row in flight at the page's full width, a
-  // sprint box lit as a target and the drop preview inside it. A backlog row
-  // aimed at a sprint box, or — on a board whose backlog is empty — a sprint's
-  // row aimed at the backlog. Needs a sprint to exist; none is `unreachable`.
-  { slug: 'board-backlog-drag', hash: '#/p/{slug}/roadmap', press: ['.km-tabs .k-tab:nth-child(2)'], drag: 'backlog' },
-  // #522 — THE PLANNER'S PANEL IS DELIBERATELY NOT A SCREEN HERE, and the
-  // reason is this file's own honesty rule rather than laziness. It only exists
-  // after a Gemini call: a screen that pressed ✧ Plan would spend one on every
-  // audit run, measure a different set of rows each time, and — on any install
-  // with no key — report "could not be pressed" for ever, which is a standing
-  // false finding in the tool whose whole job is not manufacturing those. Its
-  // tones were measured by hand once when it landed and were clean; they are
-  // all ramp tokens by construction (`--surface-card`, `.k-tag.warning`,
-  // `--action-accent`), and `styles.css` is where a drift would show.
   { slug: 'board-dev', hash: '#/p/{slug}/roadmap', press: ['.km-tabs .k-tab:nth-child(3)'] },
   { slug: 'activity', hash: '#/p/{slug}/activity' },
   { slug: 'auto', hash: '#/p/{slug}/auto' },
-  // Plans is six sub-views behind one strip and first paint reaches ONE of
-  // them, so each of the other five is walked as its own row. Nearly every row
-  // on this screen lightens — a timeline row on hover, an area row when it is
-  // selected, a subject row while its fold is open — and the press leaves the
-  // ground lit, which is exactly the state the #450 findings were caught in.
-  // TWO OF THE SIX ARE WIRED NOW (#482) and they are the two that carry tone
-  // this audit had never measured: the Timeline's derived status tags and risk
-  // dot, and the Calendar's sprint bands, which paint --status-info-bg and
-  // --status-success-bg as a GROUND with a caption on top of them.
   { slug: 'plans', hash: '#/p/{slug}/plans' },
-  // #482 — the Timeline is wired, so first paint above is real rows on real
-  // tone: derived status tags, a verdict tag, the risk dot and the sprint's own
-  // status. This row is the BUILT TOGGLE HELD DOWN, which is the one ground on
-  // the screen that only exists after a press — a --surface-selected fill under
-  // --text-link, the pairing #432's two layers exist to keep honest.
-  { slug: 'plans-timeline-pressed', hash: '#/p/{slug}/plans', press: ['.pl-toolbar .k-btn[aria-pressed]'] },
-  { slug: 'plans-summary', hash: '#/p/{slug}/plans', press: ['.pl-tabs .k-tab:nth-child(1)'] },
-  { slug: 'plans-progress', hash: '#/p/{slug}/plans', press: ['.pl-tabs .k-tab:nth-child(2)'] },
-  // An OPEN subject fold, measured with the cursor resting on it: the fold's
-  // body sits on --surface-raised inside a card, and the row above it wears
-  // --surface-hover permanently while it is open.
-  { slug: 'plans-progress-open', hash: '#/p/{slug}/plans', press: ['.pl-tabs .k-tab:nth-child(2)', '.pl-childrow'] },
-  { slug: 'plans-calendar', hash: '#/p/{slug}/plans', press: ['.pl-tabs .k-tab:nth-child(4)'] },
-  { slug: 'plans-releases', hash: '#/p/{slug}/plans', press: ['.pl-tabs .k-tab:nth-child(5)'] },
-  { slug: 'plans-deps', hash: '#/p/{slug}/plans', press: ['.pl-tabs .k-tab:nth-child(6)'] },
+  { slug: 'plans-timeline-pressed', hash: '#/p/{slug}/plans', press: ['.pl-view .k-btn[aria-pressed]'] },
+  { slug: 'plans-calendar', hash: '#/p/{slug}/plans', press: ['.pl-tabs .k-tab:nth-child(2)'] },
   { slug: 'settings', hash: '#/settings' },
   { slug: 'skills', hash: '#/skills' },
   { slug: 'timeline', hash: '#/timeline' },
@@ -554,17 +516,7 @@ async function main() {
       // surface rather than most of it. Failure is reported, never skipped —
       // a drag that did not start is a screen nobody looked at.
       if (screen.drag) {
-        const marked = screen.drag === 'backlog' ? await page.evaluate(() => {
-          const box = document.querySelector('.km-sprintbox');
-          const loose = document.querySelector('.km-backlog .km-blrow');
-          const boxed = document.querySelector('.km-sprintbox .km-blrow');
-          const [src, dst] = loose && box ? [loose, box]
-            : boxed ? [boxed, document.querySelector('.km-backlog')] : [null, null];
-          if (!src || !dst) return false;
-          src.setAttribute('data-audit-drag', 'from');
-          dst.setAttribute('data-audit-drag', 'to');
-          return true;
-        }) : await page.evaluate(() => {
+        const marked = await page.evaluate(() => {
           for (const row of document.querySelectorAll('.km-cols')) {
             const cols = [...row.querySelectorAll('.km-col')].filter((c) => !c.classList.contains('catchall'));
             const src = cols.find((c) => c.querySelector('.km-card'));
@@ -599,11 +551,8 @@ async function main() {
         // this can fail fails SILENTLY — the events land, nothing paints, and
         // the audit reports the resting screen under the dragging screen's
         // name. Exactly the absence-mistaken-for-a-pass this tool exists for.
-        const began = marked && await page.evaluate((backlog) => (backlog
-          ? !!document.querySelector('.km-blrow.dragging')
-            && !!document.querySelector('.km-sprintbox.over .km-slot, .km-backlog.over .km-slot')
-          : !!document.querySelector('.km-card.dragging') && !!document.querySelector('.km-col.over .km-slot')),
-        screen.drag === 'backlog');
+        const began = marked && await page.evaluate(() =>
+          !!document.querySelector('.km-card.dragging') && !!document.querySelector('.km-col.over .km-slot'));
         if (!began) {
           findings.push({ screen: screen.slug, kind: 'unreachable', detail: 'the drag did not paint — no card in flight or no drop preview, nothing audited' });
           await page.close();

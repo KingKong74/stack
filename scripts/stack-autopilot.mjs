@@ -546,7 +546,7 @@ const eligible = (targetArea) => (it) =>
 // It is the strongest argument in this file for the constant above: a key list
 // spelled once is a key list that gets renamed once.
 const BUCKETS = ['highest', 'high', 'medium', 'low', 'lowest'];
-// The bucket's own rank, for the tiebreak below the sprint's order. The desire
+// The bucket's own rank, for the tiebreak below the planning slice order. The desire
 // tier (#227) used to lead this comparison and is gone (#477) — see the pick.
 const BUCKET_RANK = { highest: 0, high: 1, medium: 2, low: 3, lowest: 4 };
 const bucketRank = (b) => BUCKET_RANK[String(b || '')] ?? 4;
@@ -1612,21 +1612,23 @@ try {
       const blockedAreas = new Set();
       // TWO LANES, and each is the whole candidate set for its kind of run:
       //   • a BUILD takes the READY queue (routes/ready.js), top first;
-      //   • a PLAN takes the SPRINT IN PROGRESS, the planning lane.
+      //   • a PLAN takes live slices of the current milestone, in slice order.
       // A filter, not a preference: an empty lane means nothing to do, said
       // out loud below, never a fall-back to the whole board. This mirrors the
       // server's fan-out and plan sweep (routes/autopilot.js); the two cannot
       // import each other, so change one, change the other.
-      const sprint = (detail.sprints || []).find((sp) => sp.status === 'active');
+      const milestone = (detail.milestones || []).find((m) => m.status === 'active');
+      const planningSlices = (detail.slices || []).filter((s) => !s.archived && milestone && String(s.milestoneId) === String(milestone.id))
+        .sort((a, b) => a.position - b.position || a.id - b.id).map((s) => String(s.id));
       const everything = BUCKETS.flatMap((b) => detail.roadmap?.[b] || []);
       const lane = PLAN_ONLY
-        ? (!sprint ? [] : everything.filter((it) => it.sprintId != null && String(it.sprintId) === String(sprint.id)))
+        ? everything.filter((it) => !it.archived && it.sliceId != null && planningSlices.includes(String(it.sliceId)))
         : everything.filter((it) => it.ready);
-      const rankOf = (it) => (PLAN_ONLY ? it.sprintRank : it.readyRank) ?? 0;
+      const rankOf = (it) => (PLAN_ONLY ? planningSlices.indexOf(String(it.sliceId)) : it.readyRank) ?? 0;
       item = lane
         // The lane's own order is the priority, top first; bucket breaks a tie,
         // and the payload's order (bucket-then-position) is last, via a stable sort.
-        .sort((a, b) => rankOf(a) - rankOf(b) || bucketRank(a.bucket) - bucketRank(b.bucket))
+        .sort((a, b) => rankOf(a) - rankOf(b) || (PLAN_ONLY ? (a.sliceRank ?? 0) - (b.sliceRank ?? 0) : 0) || bucketRank(a.bucket) - bucketRank(b.bucket))
         .filter((it) => !attempted.has(it.id))
         // A plan night wants the items still missing a design (#219).
         .filter((it) => !PLAN_ONLY || !(it.plan?.length))
@@ -1639,8 +1641,8 @@ try {
           log(`item #${it.id} "${it.title}" skipped — the "${area}" lane is held by ${holder}`);
           return false;
         });
-      if (!item && PLAN_ONLY && !sprint && n === 0) {
-        log(`no sprint is in progress on ${SLUG} — planning only designs the sprint in progress, so there is nothing to plan.`);
+      if (!item && PLAN_ONLY && !milestone && n === 0) {
+        log(`no milestone is current on ${SLUG} — planning only designs its live slices, so there is nothing to plan.`);
         break;
       }
       if (!item && !PLAN_ONLY && !lane.length && n === 0) {
@@ -1656,7 +1658,7 @@ try {
     if (!item) {
       log(n === 0
         ? (PLAN_ONLY
-          ? `no eligible plan-less item in the sprint in progress on ${SLUG} — nothing to plan.`
+          ? `no eligible plan-less item in the current milestone’s slices on ${SLUG} — nothing to plan.`
           : `no eligible item in the Ready queue on ${SLUG} — nothing to build.`)
         : 'no more eligible items — night complete.');
       break;

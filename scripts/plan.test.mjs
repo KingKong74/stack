@@ -40,7 +40,7 @@ const {
   slipOf, layoutLane, scopeTotals, defaultLen, DUR_OPTIONS, rolledSched, isRolled,
   newItemSched,
   listKeyOf, clusterKeyOf, homeOf, isAutoIdea, isIced, isBoardWork, sliceStateOf, isWorked, isBuilt, inCycle, areaMatches, horizonOf, UNALLOCATED,
-  queueOrder, inActiveSprint, bucketRank,
+  queueOrder, bucketRank,
 } = await import(planUrl.href);
 
 // A Monday, which is what a project's week zero is. Several tests below read a
@@ -983,44 +983,23 @@ test('the window opens around now rather than at week zero', () => {
 // BY. No package can import another, so this is the third spelling of one
 // ordering and these are what keep it honest.
 
-test('the sprint in progress leads, in its own order, and it outranks the priority', () => {
-  const a = item({ title: 'top of the box', bucket: 'lowest', sprintId: 7, sprintRank: 0 });
-  const b = item({ title: 'below it', bucket: 'highest', sprintId: 7, sprintRank: 1 });
-  const c = item({ title: 'uncommitted', bucket: 'highest' });
-  assert.deepEqual(
-    [c, b, a].sort(queueOrder(7)).map((i) => i.title),
-    ['top of the box', 'below it', 'uncommitted'],
-    'a lowest at the top of the running sprint goes before a highest nobody committed to');
+test('current milestone slices lead in slice order then item rank, ignoring sprint metadata', () => {
+  const a = item({ title: 'first slice later item', bucket: 'lowest', sliceId: 12, sliceRank: 9 });
+  const b = item({ title: 'first slice first item', bucket: 'high', sliceId: 12, sliceRank: 0 });
+  const c = item({ title: 'second slice', bucket: 'highest', sliceId: 3, sliceRank: 0 });
+  const d = item({ title: 'outside milestone', bucket: 'highest', sliceId: 6, sprintId: 7, sprintRank: 0 });
+  assert.deepEqual([d, c, a, b].sort(queueOrder([12, 3])).map((it) => it.title),
+    ['first slice first item', 'first slice later item', 'second slice', 'outside milestone']);
 });
-
-// `sprintRank` is 0 on EVERY backlog row. An unguarded compare would therefore
-// float the whole backlog above committed work on the strength of a default,
-// which is the one way this comparator can be quietly wrong.
-test('a rank means nothing outside the sprint in progress', () => {
-  const backlog = item({ title: 'backlog', bucket: 'lowest', sprintId: null, sprintRank: 0 });
-  const planned = item({ title: 'planned box', bucket: 'lowest', sprintId: 8, sprintRank: 0 });
-  const running = item({ title: 'running box', bucket: 'lowest', sprintId: 7, sprintRank: 5 });
-  assert.deepEqual(
-    [backlog, planned, running].sort(queueOrder(7)).map((i) => i.title)[0],
-    'running box',
-    'rank 5 in the running sprint still beats rank 0 in a box nobody started');
-  assert.equal(inActiveSprint(planned, 7), false, 'a planned box is not the sprint in progress');
-  assert.equal(inActiveSprint(running, 7), true);
+test('Ready rank leads even outside the current milestone', () => {
+  const a = item({ title: 'ready second', ready: true, readyRank: 1, sliceId: 12 });
+  const b = item({ title: 'ready first', ready: true, readyRank: 0, sliceId: 6 });
+  const c = item({ title: 'planning', sliceId: 12 });
+  assert.deepEqual([c, a, b].sort(queueOrder([12])).map((it) => it.title), ['ready first', 'ready second', 'planning']);
 });
-
-// A project between sprints is a real state, and on the BOARD it is not an
-// empty one — only the runner reads no active sprint as nothing to do. Here it
-// degrades to a plain priority ordering.
-test('no sprint in progress leaves a plain priority ordering', () => {
-  const rows = [
-    item({ title: 'low', bucket: 'low' }),
-    item({ title: 'highest', bucket: 'highest' }),
-    item({ title: 'ranked in a planned box', bucket: 'lowest', sprintId: 8, sprintRank: 0 }),
-  ];
-  assert.deepEqual(
-    rows.sort(queueOrder(null)).map((i) => i.title),
-    ['highest', 'low', 'ranked in a planned box']);
-  assert.equal(inActiveSprint(rows[0], null), false, 'null means nothing is in progress, never "everything is"');
+test('without current milestone slices, priority wins over historic sprint rank', () => {
+  const rows = [item({ title: 'old sprint', bucket: 'lowest', sprintId: 7, sprintRank: 0 }), item({ title: 'highest', bucket: 'highest' })];
+  assert.deepEqual(rows.sort(queueOrder()).map((it) => it.title), ['highest', 'old sprint']);
 });
 
 test('the bucket rank is the five keys, and an unknown one sorts last', () => {

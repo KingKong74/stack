@@ -51,6 +51,8 @@ test('quiet hours, including a window that wraps midnight', () => {
 
 let a; let b;
 test('setup', async () => {
+  // Keep this suite on the build lane; current milestones can also trigger planning.
+  await call('PATCH', '/settings', { autopilotPlanSweep: false });
   await call('POST', '/ingest', { project: { slug: SLUG, name: SLUG }, session: { summary: 'seed' } });
   // #608 — Ready ⇒ sliced.
   const slice = (await call('POST', `/projects/${SLUG}/slices`, { title: 'loop slice' })).body;

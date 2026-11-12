@@ -97,40 +97,6 @@ export interface Bug {
 // ticked off by whoever builds them (the autopilot works them top-down).
 export interface PlanStep { text: string; done: boolean }
 
-// A SPRINT (#477) — the box the backlog fills and the ONLY box the automation
-// touches. It replaced the desire tier (#227), which was a rank you assigned an
-// item; a sprint is a rank you give it by putting it somewhere, and its place
-// in the box IS its priority, top first.
-//
-// `status` carries the whole contract. At most one sprint per project is
-// 'active' and the DATABASE enforces that, not this type — so a client may
-// safely `find` the active one rather than reducing over candidates.
-export type SprintStatus = 'planned' | 'active' | 'done';
-export interface Sprint {
-  id: number;
-  name: string;
-  status: SprintStatus;
-  position: number;          // order of the boxes themselves, top to bottom
-  /** #621 — the slices it commits to, top first. Its items are those slices'
-   *  items: each row's `sprintId`/`sprintRank` is DERIVED from this by the
-   *  database, and no write sets them directly. */
-  sliceIds: number[];
-  // THE PLANNED WINDOW the owner set, as bare YYYY-MM-DD days (never instants —
-  // a sprint boundary is a day somebody named, and a zone would slide the end
-  // by one for half the world). Both null is the common case: a sprint is a box
-  // of work first and a date range only if somebody says so.
-  //
-  // Distinct from the two stamps below, which are when it ACTUALLY ran. Neither
-  // pair substitutes for the other, and NOTHING GATES ON THE WINDOW — the
-  // runner reads `status`, so a date cannot stop a night at midnight.
-  startsOn: string | null;
-  endsOn: string | null;
-  startedAt: string | null;  // ISO — stamped on start and KEPT past the finish
-  endedAt: string | null;
-  createdAt: string | null;
-  updatedAt: string | null;
-}
-/** The one in progress, or null — which means the automation has nothing to do. */
 // #608 — THE SPINE: project → milestone → slice → item. An item with no slice
 // (`sliceId` null) is in the ICEBOX. At most one milestone is 'active' (the
 // current one), and the database enforces it. A slice carries no status and no
@@ -159,9 +125,6 @@ export interface Slice {
   createdAt: string | null;
   updatedAt: string | null;
 }
-
-export const activeSprint = (list: Sprint[]): Sprint | null =>
-  list.find((s) => s.status === 'active') || null;
 
 export interface RoadmapItem {
   id: number;
@@ -205,10 +168,7 @@ export interface RoadmapItem {
   risk: 'low' | 'normal' | 'high'; // graduated trust (#212): low auto-merges a green run
   riskSource: 'human' | 'auto' | ''; // who set the level (#262) — '' = the default nobody chose
   riskReason: string;                // one line: why the auto level is what it is ('' when none)
-  // #477 — the sprint this was dragged into. null = the BACKLOG, which is the
-  // default and the majority: an item is in a sprint only because somebody put
-  // it there. `sprintRank` is its place in that box, 0 = the top and the first
-  // thing the night takes, and it means NOTHING while sprintId is null.
+  /** Historical compatibility metadata; never used for planning or ordering. */
   sprintId: number | null;
   sprintRank: number;
   // #608 — the slice this row belongs to; null is the ICEBOX (`homeOf`).
@@ -263,7 +223,7 @@ export interface RoadmapItem {
    * device east of Greenwich. Compare it as a string or through `dueState` in
    * lib/ui.ts; never build a Date from it in local time.
    *
-   * IT GATES NOTHING. What the overnight runner takes is decided by the sprint
+   * IT GATES NOTHING. What the overnight runner builds is decided by Ready
    * in progress and its rank (#477); a second, quieter deadline that could
    * reorder the night would be a third answer to a question that has one.
    */
@@ -443,9 +403,8 @@ export interface Activity {
 export interface DebriefBugTop { key: string; title: string; severity: Severity }
 export interface DebriefRoadmapItem {
   id: number; title: string; bucket: Priority; claimedBy: string;
-  // #477 — the sprint's NAME rides this payload (and only this one) because
-  // the hook that reads it has no sprint list to resolve an id against.
-  sprintId: number | null; sprintName: string; inSprint: boolean;
+  sliceId: number | null; sliceTitle: string;
+  milestoneId: number | null; milestoneName: string; inCurrentMilestone: boolean;
 }
 export interface ProjectDebrief {
   slug: string;
@@ -695,47 +654,6 @@ export interface ProjectPulse {
   usage: PulseUsage;
   tests: PulseTests;
   runs: PulseRuns;
-}
-
-// ---- The Planner (POST /api/projects/:slug/sprints/:id/plan) ----
-//
-// A PROPOSAL, and nothing in this shape is a write. "Agents never write
-// sprint_id or sprint_rank" is the standing rule — sprint membership IS what
-// the machine works tonight, so a model that could edit the box would be
-// commissioning its own work. Applying is `putSprintOrder`, the same call a
-// drag makes, pressed by a human.
-export interface PlannedRow {
-  id: number;
-  title: string;
-  area: string;
-  points: number | null;
-  bucket: Priority;
-  dueOn: string | null;
-  /** Coming FROM the backlog, rather than already in the sprint. */
-  adding: boolean;
-  /** Its area is locked by an open claim right now, so it cannot run until
-   *  that branch merges — a FACT off `lanes.js`, not the model's opinion. */
-  laneHeld: boolean;
-  why: string;
-}
-export interface SprintPlan {
-  sprintId: number;
-  sprintName: string;
-  /** The WHOLE intended sprint, top first. Empty is a real answer: a sprint
-   *  already in a sensible shape needs no change, and the prompt invites it. */
-  order: PlannedRow[];
-  /** What applying would push back to the backlog — `PUT /:id/order` treats the
-   *  body as the whole box, so a row the plan omits leaves it. Never a
-   *  surprise: the screen states these before the press. */
-  drops: { id: number; title: string; area: string }[];
-  /** Areas locked by an open claim. Nothing in them can run until a merge. */
-  heldLanes: { area: string; by: string }[];
-  capacity: { target: number; points: number; unsized: number };
-  /** How much of the backlog the model was actually shown, so the screen can
-   *  say so — a capped list read as complete is the #239 trap. */
-  backlogShown: number;
-  backlogTotal: number;
-  summary: string;
 }
 
 // ---- Mission Control: the Agents room (GET /api/agent-profiles) ----

@@ -1001,39 +1001,7 @@ export function clusterKeyOf(it: RoadmapItem, parts: RoadmapItem[]): string {
   return 'planned';
 }
 
-/**
- * THE RUN QUEUE'S ORDER, on the client. Twin of the runner's own sort in
- * `scripts/stack-autopilot.mjs` and of the server's fan-out `ORDER BY` in
- * `routes/autopilot.js` — three halves of one ordering that no package can
- * import from another, which is why this is a third spelling rather than an
- * import.
- *
- * THE SPRINT LEADS, AND ITS ORDER IS THE PRIORITY (#477). A row in the sprint
- * in progress sorts above everything, top of the box first, because that box is
- * the only thing the automation touches and its order is the owner's own hand.
- * `bucket` is the tiebreak now; it used to be the tiebreak under the desire
- * tier, which is gone. Getting this wrong on a board is not cosmetic: the top
- * of To Do is a claim about what the night takes next, and a board that ranks
- * by bucket alone makes that claim falsely.
- *
- * A RANK ONLY MEANS SOMETHING INSIDE THE ACTIVE SPRINT. `sprintRank` defaults
- * to 0 on every backlog row, so comparing it unguarded would float the entire
- * backlog above committed work on the strength of a default — which is why the
- * comparator takes the active sprint's id and reads the rank only for rows that
- * are actually in it.
- *
- * `position` IS NOT IN IT, AND MUST NOT BE ADDED — not because it does not
- * count, but because it is not on the row. `roadmapItemShape` does not serve
- * the column; what it serves instead is ORDER, four arrays already sorted
- * `bucket, position, created_at`. So the third key is the INPUT ORDER, which a
- * stable sort preserves for free, and every caller therefore owes this
- * comparator an array that arrived in the payload's own order. That is exactly
- * how the runner does it (`scripts/stack-autopilot.mjs`: "the array arrives
- * already ordered must-then-should within bucket position, so a stable sort by
- * tier alone leaves an unranked board picking exactly as it always did") — and
- * a `position` field added here without one being served would silently sort
- * every row on 0.
- */
+
 /**
  * THE LINE BETWEEN THE THREE SURFACES, and it lives here so the board, the
  * Icebox and For you's Auto-ideas pane cannot disagree about where a row
@@ -1124,33 +1092,19 @@ export const flatRoadmap = (r: Roadmap): RoadmapItem[] =>
 const BUCKET_RANK: Record<string, number> = { highest: 0, high: 1, medium: 2, low: 3, lowest: 4 };
 export const bucketRank = (b: string): number => BUCKET_RANK[String(b || '')] ?? 4;
 
-/**
- * Is this row in the sprint that is in progress — i.e. is it work the night can
- * actually take? `activeId` null (a project between sprints) makes this false
- * for every row, which is correct and is the state that means the automation
- * has nothing to do.
- */
-export const inActiveSprint = (it: RoadmapItem, activeId: number | null): boolean =>
-  activeId !== null && it.sprintId === activeId;
 
-/**
- * The comparator, curried on the active sprint's id (null = none in progress).
- * Curried rather than reading a module global because the id is a property of
- * the PROJECT and this file is pure — the same board rendered for two projects
- * must not share one.
- *
- * THE READY QUEUE COMES FIRST, by its rank: it is what the automation builds
- * (server/src/routes/ready.js, routes/autopilot.js's fan-out and the runner's
- * pick are the other copies). The sprint in progress is the planning lane and
- * sorts after it.
+/** Ready rank first, then current milestone slice position and item sliceRank,
+ * then bucket. `planningSlices` contains ordered live slice IDs. Ties keep
+ * payload order; historic sprint metadata never participates. Mirrors the
+ * host runner and server planning scope, without changing Ready membership.
  */
-export const queueOrder = (activeId: number | null) => (a: RoadmapItem, b: RoadmapItem): number => {
+export const queueOrder = (planningSlices: readonly number[] = []) => (a: RoadmapItem, b: RoadmapItem): number => {
   if (a.ready !== b.ready) return a.ready ? -1 : 1;
   if (a.ready && b.ready && a.readyRank !== b.readyRank) return a.readyRank - b.readyRank;
-  const ina = inActiveSprint(a, activeId);
-  const inb = inActiveSprint(b, activeId);
-  if (ina !== inb) return ina ? -1 : 1;
-  if (ina && inb && a.sprintRank !== b.sprintRank) return a.sprintRank - b.sprintRank;
+  const ia = a.sliceId === null ? -1 : planningSlices.indexOf(a.sliceId);
+  const ib = b.sliceId === null ? -1 : planningSlices.indexOf(b.sliceId);
+  if ((ia >= 0) !== (ib >= 0)) return ia >= 0 ? -1 : 1;
+  if (ia >= 0 && ib >= 0) return ia - ib || a.sliceRank - b.sliceRank || bucketRank(a.bucket) - bucketRank(b.bucket);
   return bucketRank(a.bucket) - bucketRank(b.bucket);
 };
 

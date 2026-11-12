@@ -8,10 +8,9 @@ import {
 } from '../util.js';
 import {
   bugShape, groupRoadmap, checkShape, activityShape,
-  projectListShape, projectDetailShape, resumeSince, sprintShape, milestoneShape, sliceShape,
+  projectListShape, projectDetailShape, resumeSince, milestoneShape, sliceShape,
 } from '../shape.js';
 import { MILESTONE_ORDER, SLICE_SELECT, SLICE_ORDER } from './spine.js';
-import { SPRINT_SLICES_SQL } from './sprints.js';
 import { charterSummary, CHARTER_SUMMARY_CAP } from '../shape.js';
 import { readUsage, readTests, readRuns, PULSE_DAYS } from '../pulse.js';
 import { readSettings, sessionDefaultLines } from '../settings.js';
@@ -118,7 +117,7 @@ projects.get('/:slug', async (req, res) => {
   const p = rows[0];
 
   const appSettings = await readSettings();
-  const [sessions, bugs, road, checks, sprintRows, weekly, cadence, live, msRows, sliceRows, charterRows, starRows] = await Promise.all([
+  const [sessions, bugs, road, checks, weekly, cadence, live, msRows, sliceRows, charterRows, starRows] = await Promise.all([
     q(
       // `authored` rides along for resumeSince(): which of these pushes actually
       // wrote the resume card, and what has landed since.
@@ -130,12 +129,6 @@ projects.get('/:slug', async (req, res) => {
     q('SELECT * FROM bugs WHERE project_id = $1 ORDER BY created_at DESC', [p.id]),
     q('SELECT * FROM roadmap_items WHERE project_id = $1 ORDER BY bucket, position, created_at', [p.id]),
     q('SELECT * FROM checks WHERE project_id = $1 ORDER BY created_at', [p.id]),
-    // #477 — the sprints, in the same order routes/sprints.js serves them:
-    // live boxes by position, finished ones after and newest first. Two
-    // spellings of one order, because this payload cannot import a route's
-    // handler; `server/test/sprints.test.mjs` holds them in step.
-    q(`SELECT s.*, ${SPRINT_SLICES_SQL} FROM sprints s WHERE s.project_id = $1
-        ORDER BY (s.status = 'done') ASC, s.position ASC, s.id ASC`, [p.id]),
     q(
       `SELECT count(*)::int AS n FROM sessions
         WHERE project_id = $1 AND created_at > now() - interval '7 days'`,
@@ -182,7 +175,7 @@ projects.get('/:slug', async (req, res) => {
       bugs: bugs.rows.map(bugShape),
       roadmap: groupRoadmap(road.rows),
       checks: checks.rows.map(checkShape),
-      sprints: sprintRows.rows.map(sprintShape),
+      sprints: [], // Retired compatibility field; historic rows remain in the database.
       milestones: msRows.rows.map(milestoneShape),
       slices: sliceRows.rows.map(sliceShape),
       charter: charterSummary(charterRows.rows[0]),
@@ -301,25 +294,18 @@ projects.get('/:slug/debrief', async (req, res) => {
       [p.id]
     ),
     q(
-      // What is actually next, which since #477 is the ACTIVE SPRINT read top
-      // to bottom. The sprint's own order leads because that order IS the
-      // priority and it is what the runner picks with; bucket and position are
-      // the tiebreak for everything outside it.
-      //
-      // NOT filtered to the active sprint. A project between sprints has no
-      // active one at all, and a brief that answered "nothing is next" because
-      // nobody has opened a box yet would be worse than useless to the session
-      // reading it — so the backlog still shows, below the committed work,
-      // ordered as it always was. The bucket filter went with the tier: the
-      // sprint decides what runs now, so a medium item somebody dragged to the
-      // top of it belongs at the top of this list too.
-      `SELECT r.id, r.title, r.bucket, r.claimed_by, r.sprint_id, r.sprint_rank,
-              (s.status = 'active') AS in_active_sprint, s.name AS sprint_name
+      // Ready builds, then current milestone slices in their own order.
+      `SELECT r.id, r.title, r.bucket, r.claimed_by, r.slice_id, sl.title AS slice_title,
+              m.id AS milestone_id, m.name AS milestone_name, (m.status = 'active' AND NOT sl.archived) AS in_current_milestone
          FROM roadmap_items r
-         LEFT JOIN sprints s ON s.id = r.sprint_id
-        WHERE r.project_id = $1 AND NOT r.done
-        ORDER BY (s.status = 'active') DESC NULLS LAST,
-                 r.sprint_rank,
+         LEFT JOIN slices sl ON sl.id = r.slice_id
+         LEFT JOIN milestones m ON m.id = sl.milestone_id
+        WHERE r.project_id = $1 AND NOT r.done AND NOT r.archived
+        ORDER BY (r.ready_at IS NOT NULL) DESC, CASE WHEN r.ready_at IS NOT NULL THEN r.ready_rank END,
+                 (m.status = 'active' AND NOT sl.archived) DESC NULLS LAST,
+                 CASE WHEN m.status = 'active' AND NOT sl.archived THEN sl.position END,
+                 CASE WHEN m.status = 'active' AND NOT sl.archived THEN sl.id END,
+                 CASE WHEN m.status = 'active' AND NOT sl.archived THEN r.slice_rank END,
                  CASE r.bucket WHEN 'highest' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END,
                  r.position
         LIMIT 5`,
@@ -356,12 +342,11 @@ projects.get('/:slug/debrief', async (req, res) => {
       title: r.title,
       bucket: r.bucket,
       claimedBy: r.claimed_by || '',
-      // #477 — which sprint this is in, and whether it is the one in progress.
-      // The name rides along HERE and nowhere else: this payload is read by the
-      // SessionStart hook, which has no sprint list to resolve an id against.
-      sprintId: r.sprint_id ?? null,
-      sprintName: r.sprint_name || '',
-      inSprint: !!r.in_active_sprint,
+      sliceId: r.slice_id ?? null,
+      sliceTitle: r.slice_title || '',
+      milestoneId: r.milestone_id ?? null,
+      milestoneName: r.milestone_name || '',
+      inCurrentMilestone: !!r.in_current_milestone,
     })),
     commits: sessions.rows.map(activityShape),
   });

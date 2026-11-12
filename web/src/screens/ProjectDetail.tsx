@@ -682,7 +682,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
             used to hold, so every link to a project's home lands on it. */}
         {tab === 'overview' && (
           <Course slug={slug} name={project.name} items={allRoadmap} milestones={data.milestones} slices={data.slices}
-            sprints={data.sprints} charter={data.charter} resume={project.resume}
+            charter={data.charter} resume={project.resume}
             northStar={data.northStar} phase={data.currentPhase} activity={data.activity}
             lastSlice={data.activity.find((a) => a.sliceId != null)?.sliceId ?? null} />
         )}
@@ -702,23 +702,15 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
             header lists the decisions each wiring made and the one thing no
             browser can still do — give a verdict. */}
         {tab === 'roadmap' && (
-          <Board slug={slug} projectName={project.name} items={allRoadmap} sprints={data.sprints}
+          <Board slug={slug} projectName={project.name} items={allRoadmap}
             milestones={data.milestones} slices={data.slices}
             onRefresh={reread} highlightId={highlightId}
             onAreas={setBoardAreas}
             onEdit={(it) => setRoadModal({ open: true, title: it.title, note: it.note, editing: it })} />
         )}
-        {/* PLANS IS TWO WIRED SUB-VIEWS AND FOUR MOCKUPS (#482), and the tab
-            opens on a wired one. Timeline groups the board's committed work by
-            SPRINT — the run order, top of the box first — and Calendar draws
-            each sprint on the days it runs; Summary, Progress, Releases and
-            Dependencies still draw the kit's rows and each says so on its own
-            sub-tab, which is why the rail's Mock chip came off this row. It
-            takes the same flattened payload the board takes, so one list is
-            partitioned across screens rather than fetches disagreeing, plus `weekZero` — which is what gives the stored
-            schedule (#401) a reader again after #451 took its last one. */}
+        {/* Plans reads the same milestone/slice spine and stored schedule as the board. */}
         {tab === 'plans' && (
-          <Plans items={allRoadmap} sprints={data.sprints} weekZero={project.weekZero}
+          <Plans items={allRoadmap} milestones={data.milestones} slices={data.slices} weekZero={project.weekZero}
             slug={slug} onBoard={() => setTab('roadmap')} />
         )}
 

@@ -98,16 +98,7 @@ export function roadmapItemShape(row) {
     risk: row.risk || 'normal',        // graduated trust (#212): low auto-merges a green run
     riskSource: row.risk_source || '', // 'human' | 'auto' | '' — '' = the default nobody chose (#262)
     riskReason: row.risk_reason || '', // one line: why the auto level is what it is
-    // THE SPRINT (#477), which is what replaced the desire tier. `sprintId`
-    // null = the BACKLOG, and that is the majority state: an item is in a
-    // sprint only because somebody dragged it there. `sprintRank` is its place
-    // in that box top-to-bottom (0 = the top, the first thing the night takes)
-    // and means NOTHING while sprintId is null — read the pair, never the rank
-    // alone. The NAME and STATUS are deliberately NOT here: every screen that
-    // draws a sprint chip has already loaded the project's sprints to draw the
-    // boxes themselves, so it resolves the id against that one list — and a
-    // name carried on the item as well would be a second copy, stale from the
-    // moment somebody renames a sprint, on the very screen that renamed it.
+    // Historic compatibility metadata only; never gates or orders work.
     sprintId: row.sprint_id ?? null,
     sprintRank: Number(row.sprint_rank) || 0,
     // #608 — the SLICE this row belongs to; null is the ICEBOX. `sliceRank` is

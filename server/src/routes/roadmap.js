@@ -23,13 +23,6 @@ const MIN_SCHED_LEN = 15;
 // Called a "risk tier" everywhere until #477, which retired the OTHER tier and
 // left the word ambiguous on a route that has to be read exactly.
 const RISKS = ['low', 'normal', 'high'];
-// THE DESIRE TIER (#227) IS GONE (#477). S/A/B/C was the run queue's primary
-// sort and it is now the item's place inside the sprint it was dragged into —
-// see routes/sprints.js. This route writes `sprint_id` and `sprint_rank` only
-// as a SINGLE-ITEM move (drag one card out of a box, or into the backlog) or
-// as a create filed straight into an open sprint (appended at the bottom); the
-// ordered kind goes through `PUT /sprints/:id/order`, which rewrites a whole
-// box at once and is the only way a rank stops being ambiguous.
 import { roadmapItemShape, groupRoadmap, cleanDate } from '../shape.js';
 import { buildPrompt } from '../prompts.js';
 import { askGemini, geminiEnabled } from '../gemini.js';
@@ -242,23 +235,9 @@ export async function createItem(db, projectId, body) {
     const { rows: par } = await db('SELECT slice_id FROM roadmap_items WHERE id = $1', [parentId]);
     sliceId = par[0]?.slice_id ?? null;
   }
-  // FILING STRAIGHT INTO A SPRINT (owner's decision, 2026-10-10). A plan is
-  // set up and pushed into a sprint in one go, by a human or by a session
-  // acting on one, rather than filed to the backlog and dragged in card by
-  // card. Any OPEN sprint (planned or active) takes it; a finished one is
-  // refused out loud, because a done sprint is the record of what was
-  // committed to. What still stands between a title and a build is APPROVAL:
-  // a held source ('fly', 'plan') stays held in whatever sprint it lands in,
-  // and 'hook' never comes through here at all (only ingest writes it).
-  // Refused rather than downgraded to the backlog: a caller that asked for a
-  // sprint must not be told 201 and find its work somewhere else.
-  // #621 — NO ITEM-LEVEL SPRINT. An item is in a sprint exactly when its
-  // slice is, so `sprintId` is refused out loud: a caller told 201 would
-  // believe the work was committed. File it with `sliceId` instead.
-  if (body?.sprintId !== undefined && body?.sprintId !== null) {
+  if (body?.sprintId !== undefined || body?.sprintRank !== undefined) {
     return { status: 400, body: { error: SPRINT_SLICE_ONLY } };
   }
-  const sprintId = null;
 
   // A planning run that runs twice over the same parent must not file its
   // children twice: an open child with the same title is returned, not copied.
@@ -316,31 +295,15 @@ export async function createItem(db, projectId, body) {
     schedLen = Math.max(MIN_SCHED_LEN, Math.min(SCHED_MINUTES - schedStart, Math.trunc(s.len)));
   }
   const { rows } = await db(
-    // #262 brought risk_source, #334 brought agent_profile, on separate
-    // branches that each rewrote this one statement. Both columns are real;
-    // the merge left two whole INSERTs stacked, which JS read as a tagged
-    // template call rather than a syntax error.
-    // A row is born in the backlog unless the caller named an open sprint
-    // (checked above). It lands at the BOTTOM of the box: the top is a claim
-    // about what gets built first, and a create has no opinion about that.
     `INSERT INTO roadmap_items (project_id, bucket, title, note, position, source, fingerprint, claimed_by, area, plan, risk, risk_source, agent_profile, fly_session,
                                 sched_start_min, sched_len_min, plan_start_min, plan_len_min, sub_area, points, due_on, item_kind, spec, parent_id,
-                                sprint_id, sprint_rank, slice_id, slice_rank)
+                                slice_id, slice_rank)
      VALUES ($1,$2,$3,$4,$5,$13,$6,$7,$8,$9::jsonb,$10,$11,$12,$14,$15,$16,$15,$16,$17,$18,$19,$20,$21::jsonb,$22,
-             $23::bigint, CASE WHEN $23::bigint IS NULL THEN 0
-                          ELSE (SELECT COALESCE(MAX(sprint_rank), -1) + 1 FROM roadmap_items WHERE sprint_id = $23::bigint) END,
-             $24::int, CASE WHEN $24::int IS NULL THEN 0
-                       ELSE (SELECT COALESCE(MAX(slice_rank), -1) + 1 FROM roadmap_items WHERE slice_id = $24::int) END) RETURNING *`,
+             $23::int, CASE WHEN $23::int IS NULL THEN 0
+                       ELSE (SELECT COALESCE(MAX(slice_rank), -1) + 1 FROM roadmap_items WHERE slice_id = $23::int) END) RETURNING *`,
     [projectId, bucket, title, note, pos[0].p, fp, claimedBy, area, JSON.stringify(plan), risk, riskSource, agentProfile, source, flySession,
-      schedStart, schedLen, subArea, points, dueOn, kind, JSON.stringify(spec), parentId, sprintId, sliceId]
+      schedStart, schedLen, subArea, points, dueOn, kind, JSON.stringify(spec), parentId, sliceId]
   );
-  // #621 — a row filed into a committed slice gets its sprint from the
-  // database's AFTER trigger, which RETURNING cannot see. Re-read so the
-  // answer says where the row really is.
-  if (rows[0].slice_id !== null) {
-    const { rows: fresh } = await db('SELECT * FROM roadmap_items WHERE id = $1', [rows[0].id]);
-    return { status: 201, body: roadmapItemShape(fresh[0]) };
-  }
   return { status: 201, body: roadmapItemShape(rows[0]) };
 }
 
@@ -349,11 +312,6 @@ roadmap.post('/', async (req, res) => {
   res.status(out.status).json(out.body);
 });
 
-// POST /batch  -> {items: [...]}: many creates in ONE transaction, each item
-// exactly what POST / takes. All or nothing: a planning run that files half a
-// breakdown leaves a parent that looks planned and isn't. Like POST /, each item
-// may name an open sprint (appended in batch order) but never the Ready queue —
-// see createItem.
 export const BATCH_MAX = 50;
 roadmap.post('/batch', async (req, res) => {
   const items = Array.isArray(req.body?.items) ? req.body.items : null;
@@ -540,7 +498,6 @@ roadmap.patch('/:id', async (req, res) => {
       vals.push(risk, reason);
     }
   }
-  // #621 — a sprint is DERIVED from the slice; a direct write is refused.
   if (req.body?.sprintId !== undefined || req.body?.sprintRank !== undefined) {
     return res.status(400).json({ error: SPRINT_SLICE_ONLY });
   }
@@ -692,11 +649,6 @@ roadmap.patch('/:id', async (req, res) => {
     }
   }
   if (req.body?.dueOn !== undefined) {
-    // #508 — null, '' and anything that is not a real day all CLEAR it. That is
-    // deliberate rather than lax: `cleanDate` is the same validator sprints use
-    // and it already answers "2026-02-31" with null, so the only two outcomes
-    // here are a day Postgres will accept and no day at all. A date nobody can
-    // parse must never become a deadline nobody meant.
     sets.push(`due_on = $${i++}`);
     vals.push(cleanDate(req.body.dueOn));
   }
@@ -715,7 +667,6 @@ roadmap.patch('/:id', async (req, res) => {
     vals
   );
   if (!rows.length) return res.status(404).json({ error: 'No such roadmap item.' });
-  // #621 — a slice move changes the derived sprint after RETURNING; re-read.
   if (req.body?.sliceId !== undefined) {
     const { rows: fresh } = await q('SELECT * FROM roadmap_items WHERE id = $1', [rows[0].id]);
     return res.json(roadmapItemShape(fresh[0]));
@@ -745,17 +696,6 @@ roadmap.post('/suggest-title', async (req, res) => {
   }
 });
 
-// POST /assist  -> Gemini fills the whole item from its note (the modal's ✧
-// button): title, tidied note, area, branch claim, priority and risk.
-// Suggestion only — it prefills the fields and the human saves (or doesn't).
-// 503 with no key.
-//
-// IT DOES NOT PROPOSE A SPRINT, and never will. #277 let it propose a desire
-// tier and #298 then carved S back out again on the grounds that the top of
-// the owner's queue is the rank deciding what the machine works tonight, so a
-// model may argue for it but must never assign it. #477 made that carve-out
-// the whole rule: sprint membership IS what the machine works tonight, so a
-// field that filled it would be the assist commissioning work.
 roadmap.post('/assist', async (req, res) => {
   if (noGemini(res)) return;
   const note = String(req.body?.note || '').trim().slice(0, 4000);

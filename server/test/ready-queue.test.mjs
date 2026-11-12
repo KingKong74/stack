@@ -46,9 +46,9 @@ test('setup', async () => {
   assert.ok(r.status < 300, r.text);
   sliceId = (await call('POST', `/projects/${SLUG}/slices`, { title: 'ready slice' })).body.id;
   a = await item('a'); b = await item('b'); c = await item('c');
-  // #621 — a sprint holds slices, so the sprint-only row has a slice of its own.
-  sprintedSlice = (await call('POST', `/projects/${SLUG}/slices`, { title: 'sprint only' })).body.id;
-  sprinted = await item('in the sprint only', { sliceId: sprintedSlice });
+  // #621 — a sprint holds slices, so the slice-only row has a slice of its own.
+  sprintedSlice = (await call('POST', `/projects/${SLUG}/slices`, { title: 'slice only' })).body.id;
+  sprinted = await item('in the slice only', { sliceId: sprintedSlice });
 });
 
 test('PUT /ready ranks the listed ids and drops the rest', async () => {
@@ -80,10 +80,7 @@ test('a held item is refused out loud and nothing is written', async () => {
   assert.equal((await call('PUT', `/projects/${SLUG}/ready`, { items: [a.id, held.id] })).status, 200);
 });
 
-test('the loop builds Ready rows only, never the sprint', async () => {
-  const sp = (await call('POST', `/projects/${SLUG}/sprints`, { name: 'planning' })).body;
-  await call('PUT', `/projects/${SLUG}/sprints/${sp.id}/slices`, { slices: [sprintedSlice] });
-  await call('PATCH', `/projects/${SLUG}/sprints/${sp.id}`, { status: 'active' });
+test('the loop builds Ready rows only, never the planning lane', async () => {
   await call('PATCH', `/projects/${SLUG}`, { automode: true });
   await call('PATCH', '/settings', { autopilotEnabled: true, autopilotQuiet: '', autopilotRollingTokens: 0 });
   await call('GET', '/autopilot/next?local=2026-09-29T14:01&dow=2');
@@ -91,6 +88,6 @@ test('the loop builds Ready rows only, never the sprint', async () => {
   const list = Array.isArray(jobs) ? jobs : jobs.jobs;
   const built = list.filter((j) => j.kind === 'loop').map((j) => Number(j.itemId)).sort();
   assert.ok(built.includes(a.id), `a Ready row gets a build job (got ${JSON.stringify(built)})`);
-  assert.ok(!built.includes(sprinted.id), 'a sprint-only row gets no build job');
+  assert.ok(!built.includes(sprinted.id), 'a slice-only row gets no build job');
   await call('PATCH', '/settings', { autopilotEnabled: false });
 });

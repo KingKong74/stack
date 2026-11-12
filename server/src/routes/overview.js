@@ -107,11 +107,12 @@ overview.get('/', async (_req, res) => {
     // The cross-project priority rollup. Open, unparked work plus anything closed
     // in the last week (so the board shows movement, not only what's left).
     q(`SELECT r.id, r.project_id, r.bucket, r.title, r.note, r.done, r.source,
-              r.position, r.claimed_by, r.updated_at, r.sprint_rank,
-              (s.status = 'active') AS in_active_sprint
+              r.position, r.claimed_by, r.updated_at, r.slice_rank, sl.position AS slice_position, sl.id AS slice_id,
+              r.ready_at, r.ready_rank, (m.status = 'active' AND NOT sl.archived) AS in_current_milestone
          FROM roadmap_items r
          JOIN projects p ON p.id = r.project_id AND p.deleted_at IS NULL
-         LEFT JOIN sprints s ON s.id = r.sprint_id
+         LEFT JOIN slices sl ON sl.id = r.slice_id
+         LEFT JOIN milestones m ON m.id = sl.milestone_id
         WHERE NOT r.skipped
           AND (NOT r.done OR r.updated_at > now() - interval '7 days')`),
     // This week's closures. Both lean on updated_at, which is the only stamp
@@ -261,7 +262,7 @@ overview.get('/', async (_req, res) => {
   });
 
   // The cross-project priority rollup. Within a bucket the order mirrors the run
-  // queue — the ACTIVE SPRINT first and in its own top-to-bottom order (#477),
+  // queue — Ready first, then current milestone slices in their own order,
   // then board position — so the column reads as what would actually be worked
   // next; done items sink to the bottom.
   //
@@ -271,18 +272,16 @@ overview.get('/', async (_req, res) => {
   // validation too.
   const BUCKETS = ['highest', 'high', 'medium', 'low', 'lowest'];
   const ROLLUP_CAP = 6;
-  // A rank only means something inside the ACTIVE sprint. Every other row —
-  // the backlog, and rows sitting in a sprint nobody has started — reads as
-  // last, because `sprint_rank` defaults to 0 and a raw compare would float
-  // the whole backlog above committed work on the strength of that default.
-  const sprintRank = (r) => (r.in_active_sprint ? (Number(r.sprint_rank) || 0) : Number.MAX_SAFE_INTEGER);
   const roadRows = roadR.rows.filter((r) => byId.has(r.project_id));
   const roadmapBuckets = BUCKETS.map((bucket) => {
     const inBucket = roadRows.filter((r) => r.bucket === bucket);
     const ordered = [...inBucket].sort((a, b) =>
       Number(a.done) - Number(b.done)
-      || Number(!!b.in_active_sprint) - Number(!!a.in_active_sprint)
-      || sprintRank(a) - sprintRank(b)
+      || Number(!!b.ready_at) - Number(!!a.ready_at)
+      || (a.ready_at && b.ready_at ? a.ready_rank - b.ready_rank : 0)
+      || Number(!!b.in_current_milestone) - Number(!!a.in_current_milestone)
+      || (a.in_current_milestone && b.in_current_milestone
+        ? a.slice_position - b.slice_position || a.slice_id - b.slice_id || a.slice_rank - b.slice_rank : 0)
       || (a.position - b.position)
       || (a.id - b.id));
     return {

@@ -86,8 +86,8 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { KitIcon } from './kit/KitIcon';
-import type { BoardArea, BoardList, ItemKind, Milestone, Priority, RoadmapItem, Slice, Sprint, SprintPlan } from '../types';
-import { listKeyOf, clusterKeyOf, queueOrder, isBoardWork, isIced, sliceStateOf, isBuilt } from '../lib/plan';
+import type { BoardArea, BoardList, ItemKind, Milestone, Priority, RoadmapItem, Slice } from '../types';
+import { listKeyOf, clusterKeyOf, queueOrder, isBoardWork, isIced, sliceStateOf, isBuilt, homeOf, bucketRank } from '../lib/plan';
 import { SpineStrip, SliceDialog, MilestoneDialog, SlicePicker, liveSlices, currentMilestone, sliceLabel } from './Spine';
 import { isHeld } from '../lib/approval';
 import { PRIORITY_META, PRIORITY_DEFAULT, priorityMeta, dueRead, ITEM_KIND_LABEL } from '../lib/ui';
@@ -96,9 +96,9 @@ import {
   createArea, patchArea, deleteArea,
   getBoardFolds, setBoardFolds, getBoardView, setBoardView,
   createRoadmapItem, patchRoadmapItem, deleteRoadmapItem,
-  createSprint, patchSprint, putSprintSlices, deleteSprint, putReadyQueue,
+  putReadyQueue,
   createSlice, patchSlice, deleteSlice, createMilestone, patchMilestone, deleteMilestone,
-  startBuild, planSprint,
+  startBuild,
   queueTermLaunch, setStarred,
 } from '../store';
 import { StarMark } from '../components/Star';
@@ -195,16 +195,13 @@ function useLanded(): [number | null, (id: number) => void] {
   return [landedId, land];
 }
 
-export function Board({ slug, projectName, items, sprints, milestones, slices, onRefresh, onEdit, onAreas, highlightId }: {
+export function Board({ slug, projectName, items, milestones, slices, onRefresh, onEdit, onAreas, highlightId }: {
   slug: string;
   projectName: string;
   /** The project payload's own roadmap, flattened and IN PAYLOAD ORDER — see
    *  `queueOrder`, which relies on that order for its last sort key. */
   items: RoadmapItem[];
-  /** The project's sprints, from the same payload (#477). At most one is
-   *  'active' and the database guarantees it, so this screen `find`s the one in
-   *  progress rather than reducing over candidates. */
-  sprints: Sprint[];
+
   /** #608 — the spine, from the same payload. A slice's state is derived from
    *  `items` (`sliceStateOf`), never carried on the slice. */
   milestones: Milestone[];
@@ -228,21 +225,17 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
   const [rows, setRows] = useState<RoadmapItem[]>(items);
   useEffect(() => { setRows(items); }, [items]);
 
-  // Same arrangement for the boxes: seeded from the payload, written through by
-  // every sprint write so a rename or a start lands under the cursor, re-seeded
-  // whenever the payload comes back.
-  const [boxes, setBoxes] = useState<Sprint[]>(sprints);
-  useEffect(() => { setBoxes(sprints); }, [sprints]);
   // #608 — the spine, seeded the same way and written through by its dialogs.
   const [sl, setSl] = useState<Slice[]>(slices);
   useEffect(() => { setSl(slices); }, [slices]);
   const [ms, setMs] = useState<Milestone[]>(milestones);
   useEffect(() => { setMs(milestones); }, [milestones]);
 
-  // THE SPRINT IN PROGRESS, or null. Null is a real and common state — a
-  // project between cycles — and it means the automation has nothing to take,
-  // which the backlog says out loud rather than leaving the board to imply.
-  const activeId = useMemo(() => boxes.find((b) => b.status === 'active')?.id ?? null, [boxes]);
+  const planningSlices = useMemo(() => {
+    const current = ms.find((m) => m.status === 'active');
+    return sl.filter((s) => !s.archived && s.milestoneId === current?.id)
+      .sort((a, b) => a.position - b.position || a.id - b.id).map((s) => s.id);
+  }, [ms, sl]);
 
   const [lists, setLists] = useState<BoardList[] | null>(null);
   // The whole area ROW, not just its name: `dot` is what the section headers
@@ -395,9 +388,9 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
       const bag = m.get(it.parentId);
       if (bag) bag.push(it); else m.set(it.parentId, [it]);
     }
-    for (const bag of m.values()) bag.sort(queueOrder(activeId));
+    for (const bag of m.values()) bag.sort(queueOrder(planningSlices));
     return m;
-  }, [rows, activeId, bview.group]);
+  }, [rows, planningSlices, bview.group]);
   const isPart = (it: RoadmapItem) => it.parentId !== null && partsOf.has(it.parentId);
   const placeOf = (it: RoadmapItem) => clusterKeyOf(it, partsOf.get(it.id) || []);
   // WHAT THE IN REVIEW VERDICT STRIP MAY ANSWER: built and unverdicted (`isBuilt`
@@ -607,11 +600,7 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
       const bag = byKey.get(key);
       if (bag) bag.push(it); else byKey.set(key, [it]);
     }
-    // `queueOrder` is a STABLE sort over payload order — see its header.
-    // Curried on the active sprint (#477), because a rank only means anything
-    // inside the box that is running. An area group is a subsequence of its
-    // column, so it keeps the run order too.
-    for (const bag of byKey.values()) bag.sort(queueOrder(activeId));
+    for (const bag of byKey.values()) bag.sort(queueOrder(planningSlices));
     const cols = (lists || []).map((l) => ({ key: l.key, name: l.name, items: byKey.get(l.key) || [], real: true }));
     const orphans = byKey.get(CATCH_ALL);
     if (orphans?.length) cols.push({ key: CATCH_ALL, name: 'No column', items: orphans, real: false });
@@ -626,7 +615,7 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
           .filter((g) => g.items.length > 0)
         : (col.items.length ? [{ key: '', items: col.items }] : []),
     }));
-  }, [drawn, lists, groupOrder, grouped, activeId, partsOf]);
+  }, [drawn, lists, groupOrder, grouped, planningSlices, partsOf]);
 
   // The chips: every area with cards on the board right now, plus untagged.
   // THE FILTER ROW, AS THE DESIGN HAS IT: every area on the board, each with
@@ -688,17 +677,6 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
   // A switch clears the picks: an area name means nothing as a slice filter.
   const setGroup = (group: BoardGroup) => { closeAll(); setPicked([]); writeView({ group }); };
   const parked = onBoard.filter((it) => it.skipped).length;
-  // What the night would actually take out of the sprint in progress — the
-  // Backlog tab's badge. `runnable` is the client twin of the runner's own
-  // eligibility, so this is the number of items and not the size of the box:
-  // a sprint may legitimately hold parked, claimed and finished work, none of
-  // which is tonight's. 0 with a sprint running is a real and reportable
-  // answer, and it is why the badge is absent rather than zero when NOTHING is
-  // running — those are two different states.
-  const sprintRunnable = activeId === null
-    ? 0
-    : onBoard.filter((it) => it.sprintId === activeId && runnable(it)).length;
-
   // ---- card writes ----------------------------------------------------------
   const setBucket = (it: RoadmapItem, bucket: Priority) =>
     guard(async () => { wrote(await patchRoadmapItem(slug, it.id, { bucket })); });
@@ -758,23 +736,6 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
   // would lose the filing somebody chose.
   const signOff = (it: RoadmapItem) =>
     guard(async () => { wrote(await patchRoadmapItem(slug, it.id, { reviewed: true })); });
-  // ▶ BUILD NOW and + ADD TO SPRINT (#521) — the two ways a card leaves the
-  // board and becomes work, and they are DIFFERENT COMMITMENTS rather than one
-  // action with a delay. Build now queues a job the dispatcher takes on its next
-  // poll; Add to sprint puts the row in the box the NIGHT works from. Both were
-  // reachable only through `./stack` or the API before this, which is the state
-  // CLAUDE.md lists them in.
-  //
-  // NEITHER IS SPRINT-GATED IN THE SAME WAY, and that is the route's rule not
-  // this screen's: what the sprint gates is the automation CHOOSING work, so a
-  // human naming one card is exactly the carve-out `POST /start` documents. A
-  // project with no active sprint can still Build now; only Add has nothing to
-  // add to, and the menu says so instead of offering a dead press.
-  //
-  // A HELD ROW IS REFUSED BY THE SERVER, OUT LOUD (#359), and that refusal is
-  // the reason to press this here: an unattended enqueue drops a held item
-  // silently, and `guard` puts the server's own sentence — which NAMES the hold
-  // — on the board's error line. Nothing here pre-empts it with a guess.
   const buildNow = (it: RoadmapItem) =>
     guard(async () => {
       const job = await startBuild(slug, it.id);
@@ -805,10 +766,6 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
       queueTermLaunch(tmux, launchBrief(slug, it, tmux));
       go.terminal(slug, tmux);
     });
-  // ⇥ QUEUE TO BUILD — the Ready queue is what the automation builds; the
-  // sprint in progress is only planned. The queue is sent WHOLE (see
-  // putReadyQueue), so a join goes at the bottom and a leave keeps the rest in
-  // order. A held row comes back refused, named, on the error line.
   const readyIds = () => rows.filter((x) => x.ready && !x.done)
     .sort((a, b) => a.readyRank - b.readyRank).map((x) => x.id);
   const setReady = (it: RoadmapItem, on: boolean) =>
@@ -824,24 +781,6 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
         : `#${it.id} left the build queue.`);
       onRefresh();
     });
-  // #621 — A SPRINT COMMITS TO SLICES, so "plan this in the sprint" commits the
-  // card's SLICE, at the bottom: every card in it comes along, and the note
-  // says so. A card in no slice cannot join a sprint and is told why.
-  const addToSprint = (it: RoadmapItem, sprintId: number) =>
-    guard(async () => {
-      if (it.sliceId === null) {
-        setErr(`#${it.id} is in no slice, and a sprint commits to slices. Give it a slice from its menu first.`);
-        return;
-      }
-      const box = boxes.find((b) => b.id === sprintId);
-      const next = await putSprintSlices(slug, sprintId, [...(box?.sliceIds || []).filter((x) => x !== it.sliceId), it.sliceId]);
-      setBoxes((bs) => bs.map((b) => (b.id === next.id ? next : b)));
-      const name = sl.find((x) => x.id === it.sliceId)?.title || 'its slice';
-      const n = rows.filter((x) => x.sliceId === it.sliceId && !x.archived).length;
-      setNote(`“${name}” joined ${next.name} at the bottom, with its ${n} card${n === 1 ? '' : 's'}.`);
-      onRefresh();
-    });
-
   const archive = (it: RoadmapItem) =>
     guard(async () => { wrote(await patchRoadmapItem(slug, it.id, { archived: true })); });
   // Complete clears the visible Done cards and their parts by archiving them.
@@ -1218,21 +1157,11 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
           </div>
         </div>
 
-        {/* All three are wired; Development is the project's audit trail
-            (detail/Development.tsx) and polls on its own. Switching tabs
-            changes which is drawn and nothing else — no
-            route key, no fetch.
 
-            THE BACKLOG'S BADGE IS THE SPRINT IN PROGRESS, not a row count, and
-            it is absent when nothing is running. A number here has to agree
-            with the screen behind it (#472's rule, and #477 is the tab that
-            most invites breaking it): "12" over a backlog would be a claim
-            about how much work there is, and what the tab is actually for is
-            what the machine will take. */}
         <div className="k-tabs km-tabs">
           {[
             { value: 'board', label: 'Board', count: shown },
-            { value: 'backlog', label: 'Backlog', count: activeId === null ? undefined : sprintRunnable },
+            { value: 'backlog', label: 'Backlog' },
             { value: 'dev', label: 'Development' },
           ].map((t) => (
             <button key={t.value} className={`k-tab${view === t.value ? ' on' : ''}`}
@@ -1263,11 +1192,8 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
         )}
 
         {view === 'backlog' && (
-          <BacklogView slug={slug} rows={rows} boxes={boxes} slices={sl} activeId={activeId} areas={areas}
-            lists={lists || []}
-            onCreate={() => setDialog(true)} onEdit={onEdit}
-            onBox={(b) => setBoxes((bs) => bs.map((x) => (x.id === b.id ? b : x)))}
-            onWrote={setRows} onRefresh={onRefresh} onError={setErr} />
+          <BacklogView rows={rows} slices={sl} milestones={ms} lists={lists || []}
+            onCreate={() => setDialog(true)} onEdit={onEdit} />
         )}
         {view === 'dev' && <DevelopmentView slug={slug} items={rows} onOpen={onEdit} />}
 
@@ -1363,7 +1289,7 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
 
         {listMode && lists && (
           <BoardListView rows={listRows} sort={bview.sort} show={bview.show} area={listArea}
-            lists={lists} areas={areas} sprints={boxes} activeId={activeId}
+            lists={lists} areas={areas} slices={sl} milestones={ms} planningSlices={planningSlices}
             selected={selected} onOpen={(it) => { setSelected(it.id); onEdit(it); }} />
         )}
 
@@ -1400,7 +1326,6 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
                 parts={partsOf.get(it.id) || null}
                 away={!!focus && focus.id === it.id && focusPhase !== 'measure'}
                 onOpen={(el, edit, editId) => openFocus(it, el, edit, editId)}
-                sprint={boxes.find((b) => b.id === it.sprintId) || null}
                 selected={selected === it.id}
                 onSelect={() => setSelected(it.id)}
                 dragging={dragId === it.id}
@@ -1423,7 +1348,6 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
                 onDue={(v) => setDue(it, v)}
                 onEdit={() => { setCardMenu(null); onEdit(it); }}
                 onSignOff={() => { setCardMenu(null); signOff(it); }}
-                activeSprint={boxes.find((b) => b.id === activeId) || null}
                 onBuildNow={() => { setCardMenu(null); buildNow(it); }}
                 onRun={col.key === 'planned' && !it.done && !String(it.claimedBy || '').trim() && !isHeld(it)
                   ? () => { closeAll(); setCardMenu(null); runInTerminal(it); } : undefined}
@@ -1437,7 +1361,6 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
                   const m = msOfRow(it);
                   return shownMs && m !== null && m !== shownMs.id ? ms.find((x) => x.id === m)?.name || '' : '';
                 })()}
-                onAddToSprint={(sid) => { setCardMenu(null); addToSprint(it, sid); }}
                 onReady={(on) => { setCardMenu(null); setReady(it, on); }}
                 slices={sl} milestones={ms}
                 onSlice={(sid) => { setCardMenu(null); moveSlice(it, sid); }}
@@ -1643,7 +1566,6 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
           columns={(lists || []).map((l) => ({ key: l.key, name: l.name }))}
           colOf={colOf}
           areas={areaOrder.filter((k) => k !== UNTAGGED).map((k) => ({ name: k, dot: areaMeta(k).dot }))}
-          sprintOf={(it) => boxes.find((b) => b.id === it.sprintId) || null}
           phase={focusPhase} onPhase={setFocusPhase}
           onClosed={() => { setFocus(null); setFocusPhase('measure'); }}
           onPatch={focusPatch}
@@ -2051,11 +1973,11 @@ function ClusterParts({ parts, onPart, onMore }: {
 }
 
 function IssueCard({
-  item, sprint, selected, onSelect, dragging, landed, onDragStart, onDragEnd,
+  item, selected, onSelect, dragging, landed, onDragStart, onDragEnd,
   editing, onOpenInline, onInline, onCancelInline,
   priOpen, onPri, onPick, ptsOpen, onPts, onPoints, menuOpen, onMenu,
   onKind, onDue, onEdit, onSignOff, onPark, onArchive, onStar, onDerive, onDelete,
-  activeSprint, onBuildNow, onAddToSprint, onRun, onReady, tint, showArea,
+  onBuildNow, onRun, onReady, tint, showArea,
   parentItem, kids, parts, away, onOpen, slices, milestones, onSlice, verdict, elsewhere,
 }: {
   /** The owner's verdict, drawn only on a card with built work and no verdict
@@ -2089,18 +2011,7 @@ function IssueCard({
    *  the colour says it again. On in flat columns, where colour alone would
    *  leave ten similar dots to tell apart. */
   showArea: boolean;
-  /** The sprint this card is in, resolved from the project's own list, or null
-   *  for the backlog. RESOLVED BY THE CALLER and not carried on the item: a
-   *  name copied onto the row would be stale the moment a box is renamed, on
-   *  the very screen that renames it (#477). */
-  sprint: Sprint | null;
-  /** The project's sprint in progress, or null when none is open (#521). It is
-   *  what "Add to sprint" ADDS TO, and when it is null the menu says there is
-   *  no sprint rather than offering a press with nowhere to land. Resolved by
-   *  the caller for the same reason `sprint` above is. */
-  activeSprint: Sprint | null;
   onBuildNow: () => void;
-  onAddToSprint: (sprintId: number) => void;
   /** Join (true) or leave (false) the Ready queue, which is what the automation builds. */
   onReady: (on: boolean) => void;
   /** #525 — claim this card and open a claude tab already working it. Present
@@ -2272,7 +2183,7 @@ function IssueCard({
         </span>
       </div>
 
-      {(held || item.ready || fly || sprint || kind || due || parentItem || kids || (showArea && item.area) || item.claimedBy || item.skipped || item.reviewTag || sentBack || elsewhere) && (
+      {(held || item.ready || fly || kind || due || parentItem || kids || (showArea && item.area) || item.claimedBy || item.skipped || item.reviewTag || sentBack || elsewhere) && (
         <div className="km-cardtags">
           {/* SENT BACK FROM IN REVIEW, and not yet picked up again: the owner's
               note is the job, so the chip carries it in its title. */}
@@ -2284,13 +2195,7 @@ function IssueCard({
               <KitIcon name="bookmark" size={11} /><span className="v">{elsewhere}</span>
             </span>
           )}
-          {/* HELD IS FIRST, ahead of even the sprint chip, because it OUTRANKS
-              it: a held row in the box in progress still does not run, so a
-              card wearing the sprint's `on` tone and nothing else would be a
-              promise the night does not keep. The word is the one the menu
-              answers with, and the title says who opened it in the words that
-              origin's refusal uses — being told your own session's card was
-              "auto-found on a push" sends you looking through commits for it. */}
+
           {held && (
             <span className="k-tag warning" title={item.source === 'fly'
               ? 'Opened by a live session and not signed off — the autopilot will not take it until you do (card menu → Sign off)'
@@ -2305,36 +2210,9 @@ function IssueCard({
               ready #{item.readyRank + 1}
             </span>
           )}
-          {/* THE SPRINT CHIP (#477). It comes ahead of the area — and second
-              only to a hold, which overrules it — because it is the tag that
-              says whether the machine may touch this item at all — and it wears `on` only for the sprint that is
-              IN PROGRESS. A card in a planned box reads as committed-but-not-yet
-              and must not look like work that is running tonight; the distinction
-              is the whole feature, so it is a different tone rather than a
-              different word somebody has to read. */}
-          {sprint && (
-            <span className={`k-tag km-sprint${sprint.status === 'active' ? ' on' : ''}`}
-              title={sprint.status === 'active'
-                ? `Sprint "${sprint.name}" — in progress, so the automation plans this (it builds only the Ready queue)`
-                : `Sprint "${sprint.name}" — ${sprint.status}, so nothing plans it until this sprint starts`}>
-              <KitIcon name="layers" size={11} /><span className="v">{sprint.name}</span>
-            </span>
-          )}
-          {/* WHERE A CARD CAME FROM, for the one origin nobody typed onto this
-              board: `fly` (#381) is a row a LIVE TERMINAL SESSION opened for
-              work it was in the middle of. It reads on the board exactly like
-              a card somebody wrote by hand, and it is not one — it was filed by
-              a machine mid-flight, so it has a hold to answer while it is
-              unsigned and provenance worth knowing long after.
-              THE CHIP OUTLIVES THE HOLD on purpose: the `held` chip above goes
-              the moment somebody signs the row off, and `flySession` does not
-              (its comment in types.ts says why), so the question "did I ask for
-              this or did a session file it?" stays answerable. `hook` gets no
-              chip of its own — it is the extractor's, and the `held` chip's
-              title already says a push found it.
-              It sits after the sprint because a sprint chip is a claim about
-              what the night does and this one is a claim about the past; the
-              hold, which outranks both, is still first. */}
+
+
+
           {fly && (
             <span className="k-tag mono" title={item.flySession
               ? `Filed by the live session "${item.flySession}" while it worked — not typed onto this board`
@@ -2501,18 +2379,7 @@ function IssueCard({
             </button>
           )}
           <span className="km-menusep" />
-          {/* THE TWO WAYS A CARD BECOMES WORK (#521), and they are separated
-              from Edit/Sign off by a rule because they are the only items in
-              this menu that spend anything.
-              ▶ BUILD NOW queues a job against this one card. Not sprint-gated —
-              see the board's `buildNow`. It is offered on a HELD row too, and
-              deliberately: the server refuses one out loud and names the hold,
-              which is more useful than a hidden button, and Sign off is two
-              rows above it.
-              + ADD TO SPRINT is the commitment, not the trigger. It is absent
-              rather than disabled when the row is already in the box or there
-              is no box — a menu item that cannot do anything is a menu item
-              somebody presses twice — and the line below says which. */}
+
           <button className="km-menuitem" onClick={onBuildNow}
             title="Queues a build for this item now. The dispatcher picks it up on its next poll; runs are serialised per project, so it waits for anything already running.">
             ▶ Build now
@@ -2535,20 +2402,6 @@ function IssueCard({
                 : 'Queues this item to build. The automation builds the Ready queue top first, whenever it has budget.'}>
               {item.ready ? '⇤ Take out of Ready' : '⇥ Queue to build'}
             </button>
-          )}
-          {activeSprint && item.sprintId !== activeSprint.id && item.sliceId !== null ? (
-            <button className="km-menuitem" onClick={() => onAddToSprint(activeSprint.id)}
-              title={`Commits this card's whole slice to ${activeSprint.name}, the planning lane: the automation designs and breaks it down, but never builds from a sprint.`}>
-              ＋ Plan its slice in {activeSprint.name}
-            </button>
-          ) : activeSprint && item.sliceId === null ? (
-            <span className="km-menunote">In no slice, so it cannot join a sprint: a sprint commits to slices.</span>
-          ) : (
-            <span className="km-menunote">
-              {!activeSprint
-                ? 'No sprint in progress, so nothing is being planned.'
-                : 'Already in the sprint in progress.'}
-            </span>
           )}
           <button className="km-menuitem" onClick={onPark}>{item.skipped ? 'Unpark' : 'Park'}</button>
           <span className="km-menusep" />
@@ -2872,10 +2725,7 @@ function CreateDialog({ onClose, onCreate }: {
       <div className="km-dialog" onClick={(e) => e.stopPropagation()}>
         <div className="km-dialog-head">
           <span className="t">Create issue</span>
-          {/* The due date GATES NOTHING and the line says so, because a
-              deadline on a board with an overnight runner on it reads like one
-              that does. What the night takes is the sprint in progress and its
-              rank (#477). */}
+
           <span className="d">
             It lands in To Do, in this bucket, at the end of the queue. A due date is yours to
             watch — it does not change what the autopilot builds.
@@ -2925,1020 +2775,65 @@ function CreateDialog({ onClose, onCreate }: {
   );
 }
 
-/* ==========================================================================
-   BACKLOG — `ui_kits/console/BoardScreen.jsx`'s BacklogView, and the first
-   surface in Stack that decides what the machine works on (#477).
-
-   WHAT THIS SCREEN IS. One flat, ranked list used to be the whole idea, and
-   the mockup's note said the thing that made it wrong: order is the point,
-   but `position` is scoped to the BUCKET, so one list ranking across five
-   buckets could never mean what it looked like it meant. Sprints are the
-   answer. The screen is a stack of BOXES with the backlog underneath, and:
-
-    • ORDER INSIDE A BOX IS THE PRIORITY, top to bottom. That is what replaced
-      the desire tier — the owner's own hand instead of a letter grade, and
-      the same order the runner picks with (`sprintRank`).
-    • THE AUTOMATION ONLY TOUCHES THE BOX IN PROGRESS. Exactly one sprint per
-      project is `active` (the database enforces it), and the nightly fan-out,
-      the plan sweep and the host runner all read only that one. Everything
-      else on this screen — a planned box, the backlog — is inert to the night.
-    • A SPRINT COMMITS TO SLICES (#621). A card's sprint is DERIVED from its
-      slice by the database, so a drag moves the card's WHOLE SLICE: every
-      drop sends the destination sprint's whole slice list through
-      `putSprintSlices`, and nothing here writes an item's sprint or rank. A
-      full list is idempotent, a partial one races the other browser doing
-      the same drag. Inside a box, cards group under their slice's head.
-
-   FIVE THINGS THE WIRING HAD TO DECIDE:
-
-    1. THE BOX IN PROGRESS SAYS SO IN THE HARDEST TERMS THE SCREEN HAS, and
-       the ones that are not say what that costs them. A planned box looks
-       committed — it is full of real work in a real order — and the only
-       thing separating it from tonight's build is one press. If that
-       distinction is subtle, the screen is lying about what the machine is
-       doing, so the running box gets the accent, a live dot and a count of
-       what is genuinely runnable in it, and a planned one is told plainly
-       that nothing in it will be picked up.
-    2. NO SPRINT IN PROGRESS IS A REPORTED STATE, never a quiet one. A project
-       between cycles has an automation that will do nothing tonight, which is
-       indistinguishable from a broken one unless somebody says which it is —
-       the same rule as a NULL verdict. The bar says it and offers the press
-       that fixes it.
-    3. WHAT IS RUNNABLE IS NOT WHAT IS IN THE BOX. Parked, claimed, done and
-       held rows all sit in a sprint perfectly legitimately and none of them
-       is something the night will take, so the count beside a running box is
-       the runner's own predicate (`runnable` below) and never the row count.
-       A "6 to build" over a box holding two buildable items is the badge-lies
-       bug #472 wrote into CLAUDE.md, one screen along.
-    4. A DROP IS OPTIMISTIC AND THEN CORRECTED. The rows move under the cursor
-       and the server's answer is applied over the top — `putSprintOrder`
-       returns the box's REAL membership, which is not always what was sent
-       (a row somebody else moved is dropped rather than failing the reorder).
-       Rendering the request instead of the answer is how two people dragging
-       the same board end up looking at two different boards.
-    5. FINISHING A SPRINT LEAVES ITS UNFINISHED WORK IN IT. No sweep back to
-       the backlog, no carry into the next box. A finished sprint is the
-       record of what was committed to, and a sweep would make every one of
-       them read as though it had shipped everything. Moving the leftovers on
-       is a drag, which is one gesture and is visible.
-   ========================================================================== */
-
-/** Is this row something the overnight runner would actually pick up?
- *
- *  THE CLIENT TWIN of the eligibility in `scripts/stack-autopilot.mjs` and of
- *  the fan-out's WHERE in `routes/autopilot.js` — minus the area lane, which
- *  is about who may run CONCURRENTLY rather than what is runnable at all, and
- *  cannot be answered without the other workers' state.
- *
- *  IT ASKS `isHeld` ITSELF rather than leaning on the SCREEN test. The two used
- *  to be the same question and are not: a held row a session has already worked
- *  is board work now (see `homeOf`'s header), so a twin reading the SCREEN test
- *  would count a row the server still refuses to enqueue. The approval gate is
- *  #359's, and this is where it is asked.
- *
- *  It exists so the count next to the running box is honest. A sprint may
- *  legitimately hold parked, claimed and finished work, and none of it is
- *  something tonight will take. */
-/**
- * WHICH ROWS THE BACKLOG TAB DRAWS AT ALL — one predicate, because the pool and
- * the scope chips' counts must be the same set or a chip counts rows nobody can
- * find under it.
- *
- * A BACKLOG ROW IN THE BOARD'S DONE COLUMN IS NOT DRAWN (#517). "Done" here is
- * the column, not the tick: `listKeyOf` is the client twin of the server's
- * `listFor`, so a row lands in `shipped` by `done`, by a verdict, or by a card
- * somebody dropped on Done — exactly the set the kanban one tab across draws in
- * that column, and a row the owner can see is finished there has nothing left
- * to be planned here. Keyed on `shipped`, never on the name: the keys outlive
- * the names (server/src/lists.js).
- *
- * A SPRINT KEEPS ITS SHIPPED ROWS, and that is deliberate: a box is the record
- * of what was committed to (#477), its header counts "N built" and its squares
- * count the Done column, and dropping the finished work out of the box would
- * make a sprint that delivered read as one that shrank.
- */
-const onBacklogScreen = (it: RoadmapItem): boolean =>
-  !it.archived && isBoardWork(it)
-  && (it.sprintId != null || listKeyOf(it) !== 'shipped');
-
-const runnable = (it: RoadmapItem): boolean =>
-  !it.done && !it.skipped && !it.archived && !it.claimedBy.trim()
-  && isBoardWork(it) && !isHeld(it);
-
-/**
- * THE COLUMN A ROW IS IN, resolved against the board's OWN lanes — its name and
- * its key, or the catch-all when the row derives into a column this board does
- * not have.
- *
- * IT READS `project_lists`, NEVER A HARD-CODED FOUR. Every lane renames and
- * deletes (#428) and new ones are added, so a status tag spelling "In Review"
- * from a constant would disagree with the column the very same card sits in one
- * tab across — which is the "a number and the screen behind it must agree" rule
- * applied to a word. The four default names are seeds, not a vocabulary.
- */
-function columnOf(it: RoadmapItem, lists: BoardList[]): { key: string; name: string } {
-  const derived = listKeyOf(it);
-  const found = lists.find((l) => l.key === derived);
-  return found ? { key: found.key, name: found.name } : { key: CATCH_ALL, name: 'No column' };
-}
-
-/**
- * THE STATUS SQUARES: one per board column, in the board's own order, counting
- * the rows handed to it.
- *
- * ONE PER COLUMN AND NOT A FIXED THREE. A board with four lanes drawn as three
- * squares leaves the fourth counted nowhere — the exact loss `Board.tsx`'s
- * catch-all decision exists to prevent, and worse here because a summary that
- * omits a column reads as a complete census. The catch-all is appended only
- * when something is actually in it: a permanent "No column: 0" is noise on
- * every healthy board, but hiding a non-zero one would hide the cards it is
- * there to find.
- */
-function statusCounts(items: RoadmapItem[], lists: BoardList[]): { key: string; name: string; n: number }[] {
-  const byKey = new Map<string, number>();
-  for (const it of items) {
-    const k = columnOf(it, lists).key;
-    byKey.set(k, (byKey.get(k) || 0) + 1);
-  }
-  const out = lists.map((l) => ({ key: l.key, name: l.name, n: byKey.get(l.key) || 0 }));
-  const orphans = byKey.get(CATCH_ALL) || 0;
-  if (orphans) out.push({ key: CATCH_ALL, name: 'No column', n: orphans });
-  return out;
-}
-
-/** A planned window, in the shortest form that stays unambiguous. */
-function windowLabel(startsOn: string | null, endsOn: string | null): string {
-  const day = (iso: string) => {
-    const d = new Date(`${iso}T00:00:00Z`);
-    return `${d.getUTCDate()} ${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][d.getUTCMonth()]}`;
-  };
-  // HALF A WINDOW IS A REAL STATE and says which half it has. "starts 10 Sep"
-  // is a different claim from "10 Sep — 24 Sep", and rendering the first as the
-  // second with a guessed end would invent a deadline.
-  if (startsOn && endsOn) return `${day(startsOn)} — ${day(endsOn)}`;
-  if (startsOn) return `from ${day(startsOn)}`;
-  if (endsOn) return `until ${day(endsOn)}`;
-  return '';
-}
-
-// ✧ THE PLANNER (#522) — the proposal, and the one press that applies it.
-//
-// IT PROPOSES; THE HUMAN DISPOSES, and here that is structural rather than
-// polite: the route writes nothing, and Apply is `putSprintOrder` — the very
-// call a drag makes. The standing rule is that ordering a box, and moving an
-// existing row between boxes, is the human's: an agent may FILE new work into
-// an open sprint (owner's decision, 2026-10-10) but never rearrange what is
-// already committed.
-//
-// THREE THINGS THIS PANEL MUST SAY THAT THE ORDER ALONE DOES NOT:
-//
-//  · WHAT APPLYING REMOVES. `PUT /:id/order` treats the body as the WHOLE box,
-//    so a row the plan leaves out goes back to the backlog. That is the drag's
-//    own semantics and it is fine — but finding out afterwards is not, so the
-//    drops are listed above the button, not explained after it.
-//  · WHICH ROWS CANNOT RUN ANYWAY. A row whose area is locked by an open claim
-//    is unreachable until that branch merges, however high it sits. That is a
-//    fact off lanes.js, not the model's opinion, so it is drawn as a chip on
-//    the row rather than folded into the reason.
-//  · HOW MUCH OF THE BACKLOG IT ACTUALLY SAW. The list is capped, and a reader
-//    who thinks the model weighed everything will read an omission as a
-//    judgement (#239). One line, under the summary.
-function PlannerPanel({ plan, busy, onApply, onDismiss }: {
-  plan: SprintPlan; busy: boolean; onApply: () => void; onDismiss: () => void;
-}) {
-  const adds = plan.order.filter((r) => r.adding).length;
-  return (
-    <section className="km-plan">
-      <div className="km-planhead">
-        <span className="lbl">✧ Proposed order for {plan.sprintName}</span>
-        <span className="n">
-          {plan.order.length} slice{plan.order.length === 1 ? '' : 's'}
-          {adds > 0 ? ` · ${adds} from the backlog` : ''}
-          {' · '}{plan.capacity.points} of ~{plan.capacity.target} points
-          {plan.capacity.unsized > 0 ? ` · ${plan.capacity.unsized} unsized` : ''}
-        </span>
-        <span className="rule" />
-        <button className="k-btn sm ghost" onClick={onDismiss}>Dismiss</button>
-        <button className="k-btn sm accent" onClick={onApply}
-          disabled={busy || plan.order.length === 0}>
-          {busy ? 'Applying…' : 'Apply this order'}
-        </button>
-      </div>
-
-      {plan.summary && <p className="km-plansay">{plan.summary}</p>}
-
-      {/* THE CAP, STATED. A reader who believes the model saw the whole backlog
-          reads what it left out as a decision. */}
-      {plan.backlogShown < plan.backlogTotal && (
-        <p className="km-plannote">
-          It was shown the {plan.backlogShown} highest-priority backlog rows of {plan.backlogTotal}.
-          Anything below that is lower priority with no nearer deadline, and was not considered.
-        </p>
-      )}
-
-      {plan.heldLanes.length > 0 && (
-        <p className="km-plannote">
-          Locked {plan.heldLanes.length === 1 ? 'area' : 'areas'}:{' '}
-          {plan.heldLanes.map((l) => `${l.area} (${l.by})`).join(', ')} — nothing in{' '}
-          {plan.heldLanes.length === 1 ? 'it' : 'them'} can run until that branch merges and is ticked.
-        </p>
-      )}
-
-      {plan.order.length === 0 ? (
-        <p className="km-plansay">Nothing to change — it reads this sprint as already in a sensible order.</p>
-      ) : (
-        <ol className="km-planlist">
-          {plan.order.map((r, i) => (
-            <li className={`km-planrow${r.adding ? ' adding' : ''}`} key={r.id}>
-              <span className="rank">{i + 1}</span>
-              <span className="body">
-                <span className="line">
-                  <span className="t">{r.title}</span>
-                  <span className="k-tag mono">slice {r.id}</span>
-                  {r.area && <span className="k-tag">{r.area}</span>}
-                  {r.points !== null && <span className="k-tag mono">{r.points}p</span>}
-                  {r.adding && <span className="k-tag success">from backlog</span>}
-                  {/* A FACT, not a finding — see the header. */}
-                  {r.laneHeld && (
-                    <span className="k-tag warning" title="This area is locked by an open branch claim. However high it sits, the runner cannot take it until that branch merges and is ticked.">
-                      lane held
-                    </span>
-                  )}
-                </span>
-                {r.why && <span className="why">{r.why}</span>}
-              </span>
-            </li>
-          ))}
-        </ol>
-      )}
-
-      {plan.drops.length > 0 && (
-        <div className="km-plandrops">
-          <span className="lbl">Applying also returns {plan.drops.length} to the backlog</span>
-          {plan.drops.map((d) => (
-            <span className="row" key={d.id}>
-              <span className="k-tag mono">slice {d.id}</span>{d.title}
-              {d.area && <span className="k-tag">{d.area}</span>}
-            </span>
-          ))}
-        </div>
-      )}
-    </section>
-  );
-}
-
-function BacklogView({
-  slug, rows, boxes, slices, activeId, areas, lists, onCreate, onEdit, onBox, onWrote, onRefresh, onError,
-}: {
-  slug: string;
-  /** #621 — the project's slices: what a sprint commits to, and what a drag
-   *  moves. Each row's sprint is derived from its slice. */
-  slices: Slice[];
-  /** Every roadmap row this screen knows about, in payload order. */
-  rows: RoadmapItem[];
-  boxes: Sprint[];
-  activeId: number | null;
-  areas: BoardArea[];
-  /** The board's OWN columns, in its own order — what a row's status tag and
-   *  the header squares are drawn from. Empty while the shape is still loading,
-   *  which draws no squares rather than four invented ones. */
-  lists: BoardList[];
-  onCreate: () => void;
-  onEdit: (it: RoadmapItem) => void;
-  /** Apply one sprint as the server returned it, ahead of the refresh. */
-  onBox: (b: Sprint) => void;
-  /** Apply a whole new row set at once — what a drop's answer produces. */
-  onWrote: (next: RoadmapItem[]) => void;
-  onRefresh: () => void;
-  onError: (msg: string) => void;
+// Backlog keeps unfinished work under its milestone and slice. Icebox and
+// proposals stay visible as distinct groups; opening an item uses its usual editor.
+function BacklogView({ rows, slices, milestones, lists, onCreate, onEdit }: {
+  rows: RoadmapItem[]; slices: Slice[]; milestones: Milestone[]; lists: BoardList[];
+  onCreate: () => void; onEdit: (it: RoadmapItem) => void;
 }) {
   const [query, setQuery] = useState('');
   const [scope, setScope] = useState('');
-  // The row being dragged, and the box the cursor is over. `overBox` is a
-  // separate piece of state from the drag because a drop target has to light
-  // up before anything is written — an empty box that gives no sign it will
-  // accept the card is a box nobody drops into twice.
-  const [drag, setDrag] = useState<number | null>(null);
-  const [overBox, setOverBox] = useState<string | null>(null);
-  // THE BOARD'S FOUR DRAG STATES, HERE TOO (#498) — dragging, over, dim and
-  // landed, each read off the kanban's own classes in styles.css. `landed` is
-  // fired by the ANSWER (see `useLanded`); the other three by the two above.
-  const [landedId, land] = useLanded();
-  const dragged = drag === null ? null : rows.find((r) => r.id === drag) || null;
-  // Every way a drag can end without a drop — Escape, a release over nothing,
-  // a drop on a surface that refused it — lands here, or the whole screen
-  // stays dimmed around a row nobody is holding.
-  const endDrag = () => { setDrag(null); setOverBox(null); };
-  const leave = (key: string) => setOverBox((k) => (k === key ? null : k));
-  const [naming, setNaming] = useState(false);
-  const [newName, setNewName] = useState('');
-  // The new sprint's planned window. Both optional — a sprint is a box of work
-  // first and a date range only if somebody says so — so the composer opens
-  // with them empty and Open is pressable without them.
-  const [newFrom, setNewFrom] = useState('');
-  const [newTo, setNewTo] = useState('');
-  const [renaming, setRenaming] = useState<number | null>(null);
-  // ✧ THE PLANNER (#522). One proposal at a time, held here rather than on the
-  // box, because it survives the box re-rendering under it and because there is
-  // only ever one sprint in progress to plan.
-  const [plan, setPlan] = useState<SprintPlan | null>(null);
-  const [planning, setPlanning] = useState(false);
-  const [applying, setApplying] = useState(false);
-  // Which box has its date editor open. One at a time, keyed by id.
-  const [dating, setDating] = useState<number | null>(null);
-  // The finish/delete confirm, keyed by sprint id — both are decisions with a
-  // visible consequence, and neither is a browser `confirm()`.
-  const [confirming, setConfirming] = useState<string | null>(null);
-
-  const guard = async (fn: () => Promise<void>) => {
-    try { onError(''); await fn(); }
-    catch (e) { onError((e as Error)?.message || 'Something went wrong.'); }
-  };
-
-  // THE ROWS THIS SCREEN RANKS. Committed work only — an auto-idea belongs to
-  // For you and cannot be dragged into a sprint from here, which is the
-  // same `isBoardWork` line the board above draws (#472, #496). Archived rows
-  // are out, and so is a BACKLOG row sitting in the board's Done column (#517)
-  // — see `onBacklogScreen` for why a sprint keeps its own.
-  const pool = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    return rows
-      .filter(onBacklogScreen)
-      .filter((it) => (scope ? (it.area.trim() || UNTAGGED) === scope : true))
-      .filter((it) => !needle
-        || it.title.toLowerCase().includes(needle)
-        || it.note.toLowerCase().includes(needle)
-        || String(it.id) === needle.replace(/^#/, ''));
-  }, [rows, query, scope]);
-
-  // One bag per box plus the backlog, each in its own order. A sprint's bag is
-  // sorted by `sprintRank` because that IS its order; the backlog's keeps the
-  // payload's (bucket, then position), because nothing has ranked it yet and
-  // priority is the best answer available until somebody does.
-  const bags = useMemo(() => {
-    const byBox = new Map<number, RoadmapItem[]>();
-    const loose: RoadmapItem[] = [];
-    for (const it of pool) {
-      if (it.sprintId == null) { loose.push(it); continue; }
-      const bag = byBox.get(it.sprintId);
-      if (bag) bag.push(it); else byBox.set(it.sprintId, [it]);
+  const open = rows.filter((it) => !it.archived && listKeyOf(it) !== 'shipped');
+  const matches = (it: RoadmapItem) => !query.trim() ||
+    `${it.id} ${it.title} ${it.area}`.toLowerCase().includes(query.trim().toLowerCase());
+  const ordered = [...milestones].sort((a, b) =>
+    Number(b.status === 'active') - Number(a.status === 'active') || a.position - b.position || a.id - b.id);
+  const groups: { key: string; title: string; items: RoadmapItem[]; slice?: Slice; milestone?: Milestone }[] = [];
+  for (const m of ordered) {
+    if (scope && scope !== String(m.id)) continue;
+    for (const slice of slices.filter((s) => s.milestoneId === m.id)
+      .sort((a, b) => a.position - b.position || a.id - b.id)) {
+      groups.push({ key: `slice-${slice.id}`, title: slice.title, slice, milestone: m,
+        items: open.filter((it) => it.sliceId === slice.id && homeOf(it) === 'board' && matches(it))
+          .sort((a, b) => a.sliceRank - b.sliceRank || bucketRank(a.bucket) - bucketRank(b.bucket)) });
     }
-    for (const bag of byBox.values()) bag.sort((a, b) => a.sprintRank - b.sprintRank || a.id - b.id);
-    // #621 — the backlog groups by SLICE too (the unit a drag moves), in the
-    // slices' own order, keeping payload order inside each; unsliced last.
-    const at = new Map(slices.map((x, i) => [x.id, i]));
-    const pos = (it: RoadmapItem) => (it.sliceId === null ? Number.MAX_SAFE_INTEGER : at.get(it.sliceId) ?? Number.MAX_SAFE_INTEGER - 1);
-    const order = new Map(loose.map((it, i) => [it.id, i]));
-    loose.sort((a, b) => pos(a) - pos(b) || (order.get(a.id) as number) - (order.get(b.id) as number));
-    return { byBox, loose };
-  }, [pool, slices]);
-  const sliceName = (id: number | null) => (id === null ? 'No slice' : slices.find((x) => x.id === id)?.title || `Slice ${id}`);
-
-  // A finished box is history: drawn, collapsed, and not a drop target. Live
-  // boxes come first in their own order, which is the order the API serves.
-  const live = boxes.filter((b) => b.status !== 'done');
-  const finished = boxes.filter((b) => b.status === 'done');
-
-  // ---- the writes ----------------------------------------------------------
-
-  /** A DROP MOVES A WHOLE SLICE (#621). A sprint commits to slices, so the
-   *  card in the hand stands for its slice: dropped on a box, the slice goes
-   *  in above the slice of the card it landed on (or at the bottom); dropped
-   *  on the backlog, the slice leaves its sprint. A card in no slice cannot
-   *  join a sprint and the error line says why. Optimistic, then the server's
-   *  answer (`putSprintSlices` returns the real commitment) is applied. */
-  const drop = (destId: number | null, beforeId: number | null) => {
-    const id = drag;
-    setDrag(null); setOverBox(null);
-    if (id == null) return;
-    const moving = rows.find((r) => r.id === id);
-    if (!moving) return;
-    const sid = moving.sliceId;
-    if (sid === null) {
-      onError(`#${id} is in no slice, so it cannot join a sprint: a sprint commits to slices. Give it a slice on the board first.`);
-      return;
-    }
-    if (destId === null) {
-      const src = boxes.find((b) => b.id === moving.sprintId);
-      if (!src || src.status === 'done') return;
-      onWrote(rows.map((r) => (r.sliceId === sid ? { ...r, sprintId: null, sprintRank: 0 } : r)));
-      guard(async () => { onBox(await putSprintSlices(slug, src.id, src.sliceIds.filter((x) => x !== sid))); land(id); onRefresh(); });
-      return;
-    }
-    const dest = boxes.find((b) => b.id === destId);
-    if (!dest) return;
-    const before = beforeId == null ? null : rows.find((r) => r.id === beforeId)?.sliceId ?? null;
-    // Dropped inside its own slice: the slice's place is unchanged, and the
-    // order WITHIN a slice is not a sprint write.
-    if (before === sid && moving.sprintId === destId) return;
-    const current = dest.sliceIds.filter((x) => x !== sid);
-    const k = before === null ? -1 : current.indexOf(before);
-    const ordered = k < 0 ? [...current, sid] : [...current.slice(0, k), sid, ...current.slice(k)];
-    onWrote(rows.map((r) => (r.sliceId === sid ? { ...r, sprintId: destId } : r)));
-    guard(async () => {
-      onBox(await putSprintSlices(slug, destId, ordered));
-      land(id);
-      onRefresh();
-    });
-  };
-
-  const closeComposer = () => { setNaming(false); setNewName(''); setNewFrom(''); setNewTo(''); };
-
-  const addSprint = () => guard(async () => {
-    const name = newName.trim();
-    if (!name) return;
-    // Naming a cycle and saying when it runs is ONE thought, so the window goes
-    // with the create rather than costing a second round trip that every new
-    // sprint would skip.
-    await createSprint(slug, name, { startsOn: newFrom || null, endsOn: newTo || null });
-    closeComposer();
-    onRefresh();
-  });
-
-  const setWindow = (b: Sprint, patch: { startsOn?: string | null; endsOn?: string | null }) =>
-    guard(async () => {
-      // Each end writes on its own. The server refuses a window that would end
-      // before it starts and says both dates in the message, which is the one
-      // date mistake worth refusing rather than storing.
-      await patchSprint(slug, b.id, patch);
-      onRefresh();
-    });
-
-  const setStatus = (b: Sprint, status: Sprint['status']) => guard(async () => {
-    // Starting one FINISHES the incumbent, in the server's own transaction —
-    // one project has at most one sprint in progress and the database says so.
-    // Nothing here sends the second write, and a local optimism that guessed
-    // at it would be a second implementation of that rule.
-    const updated = await patchSprint(slug, b.id, { status });
-    setConfirming(null);
-    onWrote(rows); // no row changed; this just re-renders against the new box
-    void updated;
-    onRefresh();
-  });
-
-  const rename = (b: Sprint, name: string) => guard(async () => {
-    setRenaming(null);
-    if (!name.trim() || name.trim() === b.name) return;
-    await patchSprint(slug, b.id, { name: name.trim() });
-    onRefresh();
-  });
-
-  // ASK. A refusal (no key, a quota) is the board's error line like any other
-  // write — nothing here invents a reason of its own.
-  const askPlan = (b: Sprint) => guard(async () => {
-    setPlanning(true);
-    try { setPlan(await planSprint(slug, b.id)); }
-    finally { setPlanning(false); }
-  });
-  // APPLY, and it is ONE call: `PUT /:id/slices` takes the whole sprint, so it
-  // pulls in the slices the plan added and releases the ones it left out, in a
-  // single transaction (#621: the planner orders slices). Exactly what a drag does, which is the point — there is
-  // no second write path for a machine's suggestion to travel down.
-  const applyPlan = () => guard(async () => {
-    if (!plan) return;
-    setApplying(true);
-    try {
-      onBox(await putSprintSlices(slug, plan.sprintId, plan.order.map((r) => r.id)));
-      setPlan(null);
-      onRefresh();
-    } finally { setApplying(false); }
-  });
-
-  const remove = (b: Sprint) => guard(async () => {
-    // The box goes and the work comes back to the backlog — the server's FK
-    // does it. That is why this confirm says where the items go rather than
-    // warning about losing them: nothing is lost, and a warning that implies
-    // otherwise makes the safe action feel dangerous.
-    await deleteSprint(slug, b.id);
-    setConfirming(null);
-    onRefresh();
-  });
-
-  // ---- the scope chips, the board's own ------------------------------------
-  const chips = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const it of rows.filter(onBacklogScreen)) {
-      const k = it.area.trim() || UNTAGGED;
-      counts.set(k, (counts.get(k) || 0) + 1);
-    }
-    const order = [...areas.map((a) => a.name)];
-    for (const k of counts.keys()) if (k !== UNTAGGED && !order.includes(k)) order.push(k);
-    const out = order.filter((k) => counts.has(k))
-      .map((k) => ({ key: k, name: k, dot: areas.find((a) => a.name === k)?.dot || '', n: counts.get(k) || 0 }));
-    if (counts.has(UNTAGGED)) out.push({ key: UNTAGGED, name: 'No area', dot: '', n: counts.get(UNTAGGED) || 0 });
-    return out;
-  }, [rows, areas]);
-
-  const looseTakes = !!dragged && dragged.sprintId != null;
-  const looseSource = !!dragged && dragged.sprintId == null;
-  const looseOver = overBox === 'loose' && looseTakes;
-
-  const active = boxes.find((b) => b.id === activeId) || null;
-  const activeRunnable = active ? (bags.byBox.get(active.id) || []).filter(runnable).length : 0;
-
-  return (
-    <div className="km-bl">
-      <div className="km-bl-bar">
-        <span className="searchbox sm km-search">
-          <KitIcon name="search" size={14} />
-          <input placeholder="Search backlog" aria-label="Search backlog" value={query}
-            onChange={(e) => setQuery(e.target.value)} />
-        </span>
-        <span className="km-bl-count">
-          {bags.loose.length} in the backlog · {live.length} sprint{live.length === 1 ? '' : 's'} open
-        </span>
-        {naming ? (
-          <span className="km-bl-new">
-            <input autoFocus placeholder="Sprint name" aria-label="New sprint name" value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') addSprint();
-                if (e.key === 'Escape') closeComposer();
-              }} />
-            {/* The window, optional, on the create. Native date inputs: this is
-                a DAY somebody names, and the platform picker already knows how
-                to name one in the reader's own locale. */}
-            <input type="date" className="dt" aria-label="Sprint starts" value={newFrom}
-              onChange={(e) => setNewFrom(e.target.value)} />
-            <span className="sep">→</span>
-            <input type="date" className="dt" aria-label="Sprint ends" value={newTo}
-              onChange={(e) => setNewTo(e.target.value)}
-              // The end cannot precede the start, and saying so in the control
-              // beats a 400 that arrives after the press.
-              min={newFrom || undefined} />
-            <button className="k-btn sm" onClick={addSprint} disabled={!newName.trim()}>Open</button>
-            <button className="k-btn sm ghost" onClick={closeComposer}>Cancel</button>
-          </span>
-        ) : (
-          // `km-newsprint` is a HOOK, not a style — the smoke names it. Its
-          // first spelling was `.k-btn.secondary`, which the harness matched
-          // until this button changed tone, and a test that breaks when a
-          // colour changes is a test nobody trusts.
-          <button className="k-btn sm accent km-newsprint" onClick={() => setNaming(true)}>
-            <KitIcon name="plus" size={14} />New sprint
-          </button>
-        )}
-      </div>
-
-      {/* THE PULL LINE — what the automation will actually take, said before
-          anyone asks, and its no-sprint form is a REPORT rather than a silence
-          (decision 2 above). */}
-      <div className={`km-pull${active ? ' on' : ''}`}>
-        <span className="lbl">{active ? 'In progress' : 'Nothing in progress'}</span>
-        {active ? (
-          <>
-            <span className="ids"><span className="k-tag mono">{active.name}</span></span>
-            <span className="say">
-              The sprint in progress is the planning lane; the autopilot builds the Ready queue —
-              {' '}{activeRunnable} of {(bags.byBox.get(active.id) || []).length} item
-              {(bags.byBox.get(active.id) || []).length === 1 ? '' : 's'} in it {activeRunnable === 1 ? 'is' : 'are'} open
-              {activeRunnable === 0 ? ' (the rest are parked, claimed or already built)' : ''}, top of the box first.
-            </span>
-          </>
-        ) : (
-          <span className="say">
-            No sprint is in progress, so there is nothing to plan. Building is the Ready
-            queue's job.
-          </span>
-        )}
-      </div>
-
-      <div className="im-bar">
-        <GroupFilter noun="areas" options={chips} picked={scope ? [scope] : []} multi={false}
-          onToggle={(k) => setScope(scope === k ? '' : k)} onClear={() => setScope('')} />
-        <span className="km-count">{pool.length} in the backlog</span>
-      </div>
-
-      {/* THE PROPOSAL SITS ABOVE THE BOXES, not inside the one it is about: it
-          names rows from the BACKLOG as well as from the sprint, so drawing it
-          inside the sprint would put backlog rows in a box they are not in
-          yet — which is the one thing this panel must not imply before the
-          press. */}
-      {plan && (
-        <PlannerPanel plan={plan} busy={applying}
-          onApply={applyPlan} onDismiss={() => setPlan(null)} />
-      )}
-
-
-      {live.map((b) => (
-        <SprintBox key={b.id} sprint={b} items={bags.byBox.get(b.id) || []} lists={lists}
-          planning={planning} onPlan={() => askPlan(b)}
-          isActive={b.id === activeId} anyActive={activeId !== null}
-          over={overBox === String(b.id)} dragging={drag} dragged={dragged}
-          landedId={landedId} onDragEnd={endDrag}
-          from={dragged ? (boxes.find((x) => x.id === dragged.sprintId)?.name || 'Backlog') : ''}
-          renaming={renaming === b.id} onRename={(n) => rename(b, n)} onStartRename={() => setRenaming(b.id)}
-          dating={dating === b.id} onDates={() => setDating(dating === b.id ? null : b.id)}
-          onWindow={(patch) => setWindow(b, patch)}
-          confirming={confirming} onConfirm={setConfirming}
-          onStart={() => setStatus(b, 'active')}
-          onFinish={() => setStatus(b, 'done')}
-          onReopen={() => setStatus(b, 'planned')}
-          onDelete={() => remove(b)}
-          onOver={(on) => (on ? setOverBox(String(b.id)) : leave(String(b.id)))}
-          onDrop={(beforeId) => drop(b.id, beforeId)}
-          onGrab={setDrag} onEdit={onEdit} sliceName={sliceName} />
-      ))}
-
-      {/* THE BACKLOG. Everything not committed to a box, in priority order —
-          which is the honest ordering for a list nobody has ranked, and it
-          quietly stops being the ordering that matters the moment a row is
-          dragged upwards into a sprint. */}
-      {/* A drop here is a RELEASE, so only a row that is IN a sprint can make
-          one: a backlog row dropped back on the backlog writes nothing, and —
-          the kanban's rule for the column a card is already in — the one
-          gesture that writes nothing never looks like it did. */}
-      {<section className={`km-batch km-backlog${looseOver ? ' over' : ''}${dragged && !looseOver && !looseSource ? ' dim' : ''}`}
-        onDragOver={(e) => { if (looseTakes) { e.preventDefault(); setOverBox('loose'); } }}
-        onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) leave('loose'); }}
-        onDrop={(e) => { e.preventDefault(); if (looseTakes) drop(null, null); else endDrag(); }}>
-        <div className="km-batchhead">
-          <span className="lbl">Backlog</span>
-          <span className="items">{bags.loose.length} item{bags.loose.length === 1 ? '' : 's'}</span>
-          <span className="rule" />
-          <span className="km-batchsay">Slices in no sprint — the runner never touches these. A drag moves a whole slice</span>
-          {/* The same census the sprint boxes carry. It is worth drawing over
-              the backlog too: a backlog with rows sitting in In Progress is a
-              board where somebody is building work nobody committed to, which
-              is invisible from anywhere else. */}
-          <StatusSquares items={bags.loose} lists={lists} />
-        </div>
-        {looseOver && dragged && (
-          <DropSlot from={boxes.find((x) => x.id === dragged.sprintId)?.name || 'Sprint'} to="Backlog"
-            say={`Drop to take “${sliceName(dragged.sliceId)}” out of the sprint`}
-            note="The runner never touches the backlog" />
-        )}
-        {bags.loose.length === 0 ? (
-          <div className="km-bl-empty">
-            {pool.length === 0 ? 'No committed work on this board yet.' : 'Everything is in a sprint or done.'}
-          </div>
-        ) : bags.loose.map((it, i) => (
-          <Fragment key={it.id}>
-            {(i === 0 || bags.loose[i - 1].sliceId !== it.sliceId) && (
-              <SliceHead name={sliceName(it.sliceId)} rows={bags.loose.filter((x) => x.sliceId === it.sliceId)}
-                loose={it.sliceId === null} />
-            )}
-            <BacklogRow row={it} rank={i + 1} inSprint={false} runs={false} lists={lists}
-              dragging={drag === it.id} landed={landedId === it.id}
-              onGrab={() => setDrag(it.id)} onDragEnd={endDrag}
-              onEdit={() => onEdit(it)} />
-          </Fragment>
-        ))}
-        <button className="km-bl-add" onClick={onCreate}>+ Add to backlog</button>
-      </section>}
-
-      {finished.length > 0 && (
-        <div className="km-batch km-done">
-          <div className="km-batchhead">
-            <span className="lbl">Finished</span>
-            <span className="n">{finished.length}</span>
-            <span className="rule" />
-            <span className="km-batchsay">
-              What was committed to, kept as it ended — unfinished rows stay where they were
-            </span>
-          </div>
-          {finished.map((b) => {
-            const mine = bags.byBox.get(b.id) || [];
-            const left = mine.filter((it) => !it.done).length;
-            return (
-              <div className="km-donerow" key={b.id}>
-                <span className="nm">{b.name}</span>
-                {/* What it was PLANNED to run, kept beside what it landed. */}
-                {windowLabel(b.startsOn, b.endsOn) && (
-                  <span className="km-when">{windowLabel(b.startsOn, b.endsOn)}</span>
-                )}
-                <span className="k-tag">{mine.length - left} built</span>
-                {left > 0 && <span className="k-tag warning">{left} unfinished</span>}
-                <span className="right">
-                  <button className="k-btn sm ghost" onClick={() => setStatus(b, 'planned')}
-                    title="Put this sprint back in play. It does not start it — one press more does that.">
-                    Reopen
-                  </button>
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      )}
+  }
+  if (!scope) {
+    groups.push({ key: 'unsliced', title: 'No slice · work in progress', items: open.filter((it) =>
+      homeOf(it) === 'board' && !slices.some((s) => s.id === it.sliceId) && matches(it)) });
+    groups.push({ key: 'icebox', title: 'Icebox · awaiting a slice', items: open.filter((it) => homeOf(it) === 'icebox' && matches(it)) });
+    groups.push({ key: 'ideas', title: 'Auto-ideas · awaiting sign-off', items: open.filter((it) => homeOf(it) === 'auto' && matches(it)) });
+  }
+  const count = groups.reduce((n, g) => n + g.items.length, 0);
+  return <div className="km-backlog">
+    <div className="km-toolbar">
+      <input className="k-input" aria-label="Search backlog" placeholder="Search backlog…" value={query} onChange={(e) => setQuery(e.target.value)} />
+      <select className="k-select" aria-label="Backlog milestone" value={scope} onChange={(e) => setScope(e.target.value)}>
+        <option value="">Every milestone & Icebox</option>
+        {ordered.map((m) => <option key={m.id} value={m.id}>{m.name}{m.status === 'active' ? ' · Current' : ''}</option>)}
+      </select>
+      <span className="k-tag">{count} unfinished</span>
+      <button className="k-btn sm" onClick={onCreate}>＋ New item</button>
     </div>
-  );
-}
-
-/** One sprint box: a header that owns its lifecycle, and a drop zone. */
-function SprintBox({
-  sprint, items, lists, isActive, anyActive, over, dragging, dragged, from, landedId, onDragEnd,
-  renaming, onRename, onStartRename,
-  dating, onDates, onWindow,
-  confirming, onConfirm, onStart, onFinish, onReopen, onDelete, onOver, onDrop, onGrab, onEdit,
-  planning, onPlan, sliceName,
-}: {
-  sprint: Sprint; items: RoadmapItem[];
-  /** #621 — a slice's title, for the group heads inside the box. */
-  sliceName: (id: number | null) => string;
-  /** The board's own columns — what the header squares count into. */
-  lists: BoardList[];
-  isActive: boolean;
-  /** Is ANY sprint in progress. Starting this one while another runs finishes
-   *  that one, in one transaction — so the button has to say so before it is
-   *  pressed, which it cannot do without knowing. */
-  anyActive: boolean;
-  over: boolean; dragging: number | null;
-  /** The row in flight, and the name of the box it came from ('Backlog' for a
-   *  loose one) — what the drop preview says it is moving from. */
-  dragged: RoadmapItem | null; from: string;
-  landedId: number | null;
-  onDragEnd: () => void;
-  renaming: boolean; onRename: (name: string) => void; onStartRename: () => void;
-  /** Is this box's date editor open, and the toggle for it. */
-  dating: boolean; onDates: () => void;
-  onWindow: (patch: { startsOn?: string | null; endsOn?: string | null }) => void;
-  confirming: string | null; onConfirm: (key: string | null) => void;
-  onStart: () => void; onFinish: () => void; onReopen: () => void; onDelete: () => void;
-  /** ✧ Plan (#522) — offered only on the sprint IN PROGRESS, because the plan
-   *  is about what the night takes next and a planned box has no night. */
-  planning: boolean; onPlan: () => void;
-  onOver: (on: boolean) => void;
-  /** `beforeId` null = the bottom of the box. */
-  onDrop: (beforeId: number | null) => void;
-  onGrab: (id: number) => void;
-  onEdit: (it: RoadmapItem) => void;
-}) {
-  const runs = items.filter(runnable).length;
-  const built = items.filter((it) => it.done).length;
-  const when = windowLabel(sprint.startsOn, sprint.endsOn);
-
-  // EVERY LIVE BOX TAKES A DROP, ITS OWN INCLUDED: inside the box a row came
-  // from, a drop is a REORDER, and a reorder writes the box's order. So the
-  // source box lights like any other target and only the preview is skipped —
-  // "Sprint 4 → Sprint 4" would name a move that is not happening. `dim` is the
-  // kanban's: every box the cursor is not over, bar the one the row came from.
-  const isSource = !!dragged && dragged.sprintId === sprint.id;
-
-  return (
-    <section className={`km-batch km-sprintbox${isActive ? ' on' : ''}${over ? ' over' : ''}${dragged && !over && !isSource ? ' dim' : ''}`}
-      onDragOver={(e) => { e.preventDefault(); onOver(true); }}
-      // A leave only counts when the cursor has left the BOX, not when it
-      // crosses onto one of its own rows — `dragleave` fires on every child
-      // boundary, and the preview below would replay its slot animation on
-      // each one. `relatedTarget` is where the cursor went.
-      onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) onOver(false); }}
-      onDrop={(e) => { e.preventDefault(); onDrop(null); }}>
-      <div className="km-batchhead">
-        {isActive && <span className="km-live" title="In progress — the runner builds this sprint" />}
-        {renaming ? (
-          <InlineTitle initial={sprint.name} onCommit={onRename} onCancel={() => onRename(sprint.name)} />
-        ) : (
-          <button className="lbl km-sprintname" onClick={onStartRename} title="Rename this sprint">
-            {sprint.name}
-          </button>
-        )}
-        <span className="items">{items.length} item{items.length === 1 ? '' : 's'}</span>
-        {/* THE PLANNED WINDOW, and the press that edits it. Absent reads as
-            "undated" rather than as nothing, because a sprint with no dates is
-            a deliberate and common state and an empty gap would look like a
-            control that failed to render. */}
-        <button className={`km-when${when ? '' : ' none'}${dating ? ' on' : ''}`} onClick={onDates}
-          title={when ? 'Change when this sprint runs' : 'Give this sprint a start and end'}>
-          <KitIcon name="calendar" size={12} />{when || 'undated'}
-        </button>
-        {/* The count that matters is the RUNNABLE one, and only on the box that
-            is running — see decision 3. On a planned box the same number would
-            be a promise about a night that is not happening. */}
-        {isActive && <span className="k-tag success">{runs} to build</span>}
-        {built > 0 && <span className="k-tag">{built} built</span>}
-        <span className="rule" />
-
-        {!isActive && (
-          <span className="km-batchsay">Nothing here is picked up until this sprint is in progress</span>
-        )}
-
-        <StatusSquares items={items} lists={lists} />
-
-        <span className="right">
-          {/* ONLY ON THE SPRINT IN PROGRESS. A plan is a claim about what the
-              night takes next, and a planned box has no night — offering it
-              there would be a suggestion about nothing. */}
-          {isActive && (
-            <button className="k-btn sm secondary" onClick={onPlan} disabled={planning}
-              title="Ask for an order for this sprint. It proposes; nothing is written until you apply it.">
-              {planning ? '✧ Planning…' : '✧ Plan'}
-            </button>
-          )}
-          {isActive ? (
-            confirming === `finish:${sprint.id}` ? (
-              <button className="k-btn sm accent" onClick={onFinish}>
-                Finish it? Unfinished items stay in this sprint
-              </button>
-            ) : (
-              <button className="k-btn sm secondary" onClick={() => onConfirm(`finish:${sprint.id}`)}>
-                Finish sprint
-              </button>
-            )
-          ) : sprint.status === 'done' ? (
-            <button className="k-btn sm ghost" onClick={onReopen}>Reopen</button>
-          ) : anyActive ? (
-            confirming === `start:${sprint.id}` ? (
-              <button className="k-btn sm accent" onClick={onStart}>
-                Start it? The sprint in progress is finished
-              </button>
-            ) : (
-              <button className="k-btn sm secondary" onClick={() => onConfirm(`start:${sprint.id}`)}>
-                Start sprint
-              </button>
-            )
-          ) : (
-            <button className="k-btn sm accent" onClick={onStart} disabled={items.length === 0}
-              title={items.length === 0
-                ? 'Put something in it first — an empty sprint gives the runner nothing to do'
-                : 'Make this the sprint in progress — the one the planner works on'}>
-              Start sprint
-            </button>
-          )}
-          {confirming === `del:${sprint.id}` ? (
-            <button className="k-btn sm danger" onClick={onDelete}>
-              Delete? Its {sprint.sliceIds.length} slice{sprint.sliceIds.length === 1 ? '' : 's'} return to the backlog
-            </button>
-          ) : (
-            <button className="k-btn sm ghost" onClick={() => onConfirm(`del:${sprint.id}`)}>Delete</button>
-          )}
-        </span>
+    <p className="km-menunote">Planning follows the current milestone’s slices. Builds take only the Ready queue. Open an item to change its slice.</p>
+    {groups.filter((g) => !query.trim() || g.items.length > 0).map((g) => <section className="km-blbox" key={g.key}>
+      <div className="km-blhead">
+        <span className="lbl">{g.milestone ? `${g.milestone.name} / ` : ''}{g.title}</span>
+        {g.milestone?.status === 'active' && <span className="k-tag info">Current milestone</span>}
+        {g.slice?.archived && <span className="k-tag">Archived slice</span>}
+        <span className="k-tag">{g.items.length}</span>
       </div>
-
-      {dating && (
-        <div className="km-dates">
-          <span className="lbl">Runs</span>
-          <input type="date" className="dt" aria-label={`${sprint.name} starts`}
-            value={sprint.startsOn || ''}
-            onChange={(e) => onWindow({ startsOn: e.target.value || null })} />
-          <span className="sep">→</span>
-          <input type="date" className="dt" aria-label={`${sprint.name} ends`}
-            value={sprint.endsOn || ''}
-            min={sprint.startsOn || undefined}
-            onChange={(e) => onWindow({ endsOn: e.target.value || null })} />
-          {(sprint.startsOn || sprint.endsOn) && (
-            <button className="k-btn sm ghost"
-              onClick={() => onWindow({ startsOn: null, endsOn: null })}>Clear</button>
-          )}
-          {/* WHAT ACTUALLY HAPPENED, beside what was planned — the whole reason
-              the window is a separate pair from the stamps. A sprint that ran a
-              fortnight late says so here and nowhere else. */}
-          {sprint.startedAt && (
-            <span className="say">
-              Actually started {new Date(sprint.startedAt).toISOString().slice(0, 10)}
-              {sprint.endedAt ? `, finished ${new Date(sprint.endedAt).toISOString().slice(0, 10)}` : ''}
-            </span>
-          )}
-          <span className="say dim">Dates are a note to you — they never gate the runner.</span>
-        </div>
-      )}
-
-      {over && dragged && !isSource && (
-        <DropSlot from={from} to={sprint.name}
-          say={dragged.sliceId === null ? 'In no slice, so it cannot join a sprint' : `Drop to commit “${sliceName(dragged.sliceId)}” to this sprint`}
-          note={dragged.sliceId === null ? undefined : 'The whole slice comes along. It goes in at the bottom, or above the slice you drop it on'} />
-      )}
-
-      {items.length === 0 ? (
-        !(over && dragged) && (
-          <div className="km-bl-empty">
-            {dragging !== null ? 'Drop it here to commit it to this sprint' : 'Empty — drag work in from the backlog'}
-          </div>
-        )
-      ) : items.map((it, i) => (
-        <Fragment key={it.id}>
-          {(i === 0 || items[i - 1].sliceId !== it.sliceId) && (
-            <SliceHead name={sliceName(it.sliceId)} rows={items.filter((x) => x.sliceId === it.sliceId)} />
-          )}
-          <BacklogRow row={it} rank={i + 1} inSprint runs={isActive && runnable(it)} lists={lists}
-            dragging={dragging === it.id} landed={landedId === it.id}
-            onGrab={() => onGrab(it.id)} onDragEnd={onDragEnd}
-            onDrop={() => onDrop(it.id)}
-            onEdit={() => onEdit(it)} />
-        </Fragment>
-      ))}
-    </section>
-  );
-}
-
-/** #621 — a slice's head inside a sprint box or the backlog: the unit a drag
- *  moves, with how much of it is built. Unsliced rows say they cannot move. */
-function SliceHead({ name, rows, loose = false }: { name: string; rows: RoadmapItem[]; loose?: boolean }) {
-  const built = rows.filter(isBuilt).length;
-  return (
-    <div className={`km-blslice${loose ? ' loose' : ''}`}>
-      <KitIcon name="layers" size={12} />
-      <span className="nm">{name}</span>
-      <span className="n">{loose ? 'cannot join a sprint until it has a slice' : `${built}/${rows.length} built`}</span>
-    </div>
-  );
-}
-
-/**
- * THE STATUS SQUARES — one per board column, in the board's own order, over
- * whatever set of rows it is handed.
- *
- * A ZERO IS DRAWN, dimmed, and never blanked. The cluster is a CENSUS: the eye
- * reads it as "here is every column and how much is in each", so a column
- * silently missing because it is empty turns "nothing is in review" into "there
- * is no review" — two different boards. Blank space cannot be told apart from a
- * column that was never rendered.
- *
- * It draws nothing at all while `lists` is empty, which is the loading state.
- * Four invented squares would be a claim about a board this component has not
- * read yet, and the names would be seeds rather than the owner's own.
- */
-function StatusSquares({ items, lists }: { items: RoadmapItem[]; lists: BoardList[] }) {
-  if (!lists.length) return null;
-  const counts = statusCounts(items, lists);
-  return (
-    <span className="km-squares" role="group"
-      aria-label={`By column: ${counts.map((c) => `${c.n} ${c.name}`).join(', ')}`}>
-      {counts.map((c) => (
-        <span key={c.key} className={`sq${c.n ? '' : ' zero'}${c.key === CATCH_ALL ? ' orphan' : ''}`}
-          title={`${c.n} in ${c.name}`}>
-          {c.n}
-        </span>
-      ))}
-    </span>
-  );
-}
-
-function BacklogRow({ row, rank, inSprint, runs, lists, dragging, landed, onGrab, onDragEnd, onDrop, onEdit }: {
-  row: RoadmapItem;
-  /** 1-based place in whatever list this is drawn in. Inside a sprint that IS
-   *  the priority; in the backlog it is only a position in a bucket ordering,
-   *  which is why the backlog's rows do not claim a rank means anything. */
-  rank: number;
-  inSprint: boolean;
-  /** Would tonight take this row. Only ever true inside the sprint in
-   *  progress — see `runnable`. */
-  runs: boolean;
-  /** The board's own columns, for the status tag. */
-  lists: BoardList[];
-  dragging: boolean;
-  /** Just dropped, and the server's answer has it here (#498). */
-  landed: boolean;
-  onGrab: () => void;
-  onDragEnd: () => void;
-  /** Dropped ON this row: the dragged card goes in ABOVE it. Absent on a
-   *  backlog row, whose drop is its section's (a release) — so the event is
-   *  left to bubble there rather than swallowed here. */
-  onDrop?: () => void;
-  onEdit: () => void;
-}) {
-  const pri = priorityMeta(row.bucket);
-  const col = columnOf(row, lists);
-  const why = row.done ? 'built'
-    : row.skipped ? 'parked'
-    : row.claimedBy.trim() ? 'claimed'
-    : '';
-
-  return (
-    <div className={`km-blrow${dragging ? ' dragging' : ''}${landed ? ' landed' : ''}${runs ? ' runs' : ''}`}
-      data-hl={row.id}
-      draggable onDragStart={onGrab} onDragEnd={onDragEnd}
-      // NO `dragover` HANDLER HERE, and its absence is the fix: the one this
-      // had stopped propagation, so the box under a row never heard the cursor
-      // was still over it and went dark whenever it crossed onto a row. The
-      // box's own handler accepts the drop for the whole box.
-      onDrop={onDrop && ((e) => { e.preventDefault(); e.stopPropagation(); onDrop(); })}
-      onDoubleClick={onEdit}>
-      <span className="grip" aria-hidden="true">⠿</span>
-      {/* Inside a sprint the number is the ORDER THE NIGHT WORKS IN, so it is
-          labelled as such; in the backlog it is a row count and says nothing. */}
-      <span className="rank" title={inSprint ? `${rank} in this sprint — the runner works top down` : ''}>
-        {rank}
-      </span>
-      <span className="id">#{row.id}</span>
-      <span className="t">{row.title}</span>
-      {/* THE STATUS, read off the BOARD'S OWN COLUMNS and never a hard-coded
-          four — a lane the owner renamed or added shows here under its own
-          name, because a row's status here and the column it sits in one tab
-          across have to be the same word. `.st-<key>` carries the tone, so a
-          custom lane still gets the neutral one rather than no styling. */}
-      {lists.length > 0 && (
-        <span className={`k-tag km-status st-${col.key.trim() || 'none'}`}
-          title={`In the board's "${col.name}" column`}>{col.name}</span>
-      )}
-      {/* THE AREA, and UNTAGGED IS DRAWN rather than left blank (#267). An
-          untagged row is real work and is the one kind that can never hold an
-          overnight lane, so an empty gap here hides exactly the population
-          worth noticing. */}
-      <span className={`k-tag km-area${row.area ? '' : ' none'}`}
-        title={row.area
-          ? `Area "${row.area}" — (project, area) is the overnight lane`
-          : 'No area — untagged work never holds an overnight lane, and never waits on one'}>
-        {row.area || 'no area'}
-      </span>
-      {/* WHY A ROW IN THE SPRINT IS NOT RUNNABLE, said on the row rather than
-          only in the header's count. A parked or claimed item sitting in the
-          box in progress is not a mistake and not a problem; it is just not
-          tonight's, and a screen that shows the count without the reasons
-          leaves somebody hunting for the missing items. */}
-      {why && <span className="k-tag warning">{why}</span>}
-      {inSprint && runs && <span className="k-tag success" title="Open, approved and unclaimed">open</span>}
-      <span className="pri" style={{ color: pri.color }} title={`Priority — ${pri.label}`}>{pri.glyph}</span>
-      {row.estimate !== null && <span className="pts" title="Estimate, in weeks">{row.estimate}w</span>}
-    </div>
-  );
+      {g.items.map((it) => <button type="button" className="km-blrow" key={it.id} data-hl={it.id} onClick={() => onEdit(it)}>
+        <span className="id">#{it.id}</span><span className="t">{it.title}</span>
+        <span className="k-tag">{homeOf(it) === 'board' ? lists.find((l) => l.key === listKeyOf(it))?.name || 'No column' : homeOf(it) === 'auto' ? 'Auto-idea' : 'Icebox'}</span>
+        {isHeld(it) && <span className="k-tag warning">held</span>}
+        {it.ready && <span className="k-tag info">Ready #{it.readyRank + 1}</span>}
+        {it.skipped && <span className="k-tag warning">parked</span>}
+        <span className="k-tag">{it.area || 'no area'}</span>
+        <span className="pri" title={priorityMeta(it.bucket).label}>{priorityMeta(it.bucket).glyph}</span>
+      </button>)}
+      {g.items.length === 0 && <div className="km-colempty">No unfinished items.</div>}
+    </section>)}
+    {groups.length === 0 && <div className="km-colempty">No slices yet. Create a slice on the board, or keep ideas in the Icebox.</div>}
+  </div>;
 }

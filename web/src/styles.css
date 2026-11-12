@@ -7895,13 +7895,13 @@ button.sp-pill { cursor: pointer; }
 
 /* THE BOARD'S LIST VIEW (detail/BoardList.tsx) — one row per item, area as a
    tag. A grid rather than a <table> so a row is one focusable, clickable box;
-   the narrow layout drops the sprint and the two stamps before the title. */
+   the narrow layout drops the two stamps before the title. */
 .km-layout { flex: none; }
 .km-toolbar .k-select { width: auto; flex: none; max-width: 100%; }
 .bl-list { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .bl-row {
   display: grid; align-items: center; gap: var(--space-4);
-  grid-template-columns: 52px minmax(0, 1fr) 140px 150px 32px 36px 150px 72px 72px;
+  grid-template-columns: 52px minmax(160px, 1fr) 110px 120px 28px 32px minmax(140px, 1fr) 66px 66px;
   padding: var(--space-3) var(--space-5);
   background: var(--surface-card); border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md); cursor: pointer;
@@ -7932,8 +7932,8 @@ button.sp-pill { cursor: pointer; }
 .bl-c-pts { text-align: right; font: var(--weight-regular) var(--text-xs)/1 var(--font-mono); color: var(--text-secondary); }
 .bl-c-when { font: var(--type-body-sm); color: var(--text-tertiary); white-space: nowrap; }
 @media (max-width: 1100px) {
-  .bl-row { grid-template-columns: 52px minmax(0, 1fr) 120px 130px 28px 32px; }
-  .bl-c-sprint, .bl-c-when { display: none; }
+  .bl-row { grid-template-columns: 42px minmax(100px, 1fr) 90px 100px 28px 32px minmax(110px, 1fr); }
+  .bl-c-when { display: none; }
 }
 @media (max-width: 640px) {
   .bl-row { grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-2) var(--space-3); }
@@ -9902,3 +9902,14 @@ a.pp-link:hover { text-decoration: underline; }
 
 /* Codex's assigned green follows its asking state through every placement. */
 .runtime-codex { --ask-colour: var(--viz-1); --ask-bg: var(--status-success-bg); }
+
+/* Milestone/slice planning groups share the board's surface tokens. */
+.km-backlog, .km-blbox, .pl-tlgroup { display: flex; flex-direction: column; min-width: 0; gap: var(--space-3); }
+.km-blhead, .pl-grouphead { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3); }
+.km-blhead .lbl, .pl-grouphead .nm { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.km-blbox, .pl-tlgroup { padding: var(--space-4); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); }
+.pl-grouphead { width: 100%; border: 0; background: transparent; color: var(--text-primary); text-align: left; font: inherit; cursor: pointer; }
+.km-backlog button.km-blrow { width: 100%; text-align: left; color: var(--text-primary); cursor: pointer; flex-wrap: wrap; }
+.km-backlog .km-toolbar { flex-wrap: wrap; }
+.km-backlog .km-toolbar .k-input { flex: 1; min-width: 120px; }
+.pl-month { display: inline-flex; align-items: center; gap: var(--space-3); }

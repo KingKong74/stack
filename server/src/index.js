@@ -82,11 +82,7 @@ app.use('/api/projects/:slug/roadmap', requireToken, roadmap);
 // the Plan view's lists. Separate from /roadmap because it is the BOARD's
 // shape rather than its contents.
 app.use('/api/projects/:slug/board', requireToken, board);
-// Sprints (#477) — the backlog's boxes, and the gate on what the night may
-// touch. Its own router rather than part of /board, because /board is the
-// board's SHAPE (lanes, areas, labels) and a sprint is a commitment about its
-// contents; and rather than part of /roadmap, because membership is written by
-// dragging a whole box at a time, not one item at a time.
+// Retired endpoint refuses legacy clients without deleting their history.
 app.use('/api/projects/:slug/sprints', requireToken, sprints);
 // The build queue — see routes/ready.js.
 app.use('/api/projects/:slug/ready', requireToken, ready);

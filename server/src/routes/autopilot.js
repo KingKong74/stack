@@ -342,9 +342,9 @@ autopilotGlobal.delete('/schedule/:id', async (req, res) => {
 // { slug, itemId? }. Idempotent-ish: an already queued/claimed/running job for
 // the same project comes back instead of stacking a duplicate.
 //
-// THE READY AND SPRINT GATES DO NOT APPLY HERE. They gate the automation
+// THE READY AND MILESTONE GATES DO NOT APPLY HERE. They gate the automation
 // CHOOSING work: the fan-out builds only the Ready queue, the plan sweep plans
-// only the sprint in progress. Run now and a calendar row each name one item a
+// only live slices of the current milestone. Run now and a calendar row each name one item a
 // human picked, which is the same commitment queueing it would have been.
 autopilotGlobal.post('/start', async (req, res) => {
   const b = req.body || {};
@@ -781,11 +781,10 @@ autopilotGlobal.get('/next', async (req, res) => {
           WHERE p.automode AND p.deleted_at IS NULL
             AND EXISTS (
               SELECT 1 FROM roadmap_items r
-               -- The sweep plans the SPRINT IN PROGRESS, which is the planning
-               -- lane: the human put these rows there to be designed. It SPENDS
-               -- unattended, so it never plans the unsorted backlog.
-               JOIN sprints sp ON sp.id = r.sprint_id AND sp.project_id = p.id AND sp.status = 'active'
+               JOIN slices sl ON sl.id = r.slice_id AND sl.project_id = p.id AND NOT sl.archived
+               JOIN milestones m ON m.id = sl.milestone_id AND m.project_id = p.id AND m.status = 'active'
                WHERE r.project_id = p.id
+                 AND NOT r.archived
                  AND NOT r.done
                  AND NOT COALESCE(r.skipped, false)
                  AND COALESCE(r.claimed_by, '') = ''
