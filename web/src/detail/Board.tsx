@@ -424,17 +424,28 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
     const s = it.sliceId !== null ? sl.find((x) => x.id === it.sliceId) : undefined;
     return s ? s.milestoneId : null;
   };
-  // BUILT WORK WAITING ON YOUR VERDICT IS IN VIEW WHATEVER MILESTONE IS
-  // (2026-11-11). The milestone strip scopes what is PLANNED; a verdict is owed
-  // on everything built, and scoping it hid ~25 built cards behind a finished
-  // milestone, where nothing on any screen could answer them. Such a card wears
-  // its milestone's name (`sliceLabel`, the `elsewhere` tag) so it reads as a
-  // visitor, not as this milestone's work.
-  const inView = (it: RoadmapItem) => {
-    if (!shownMs) return true;
-    if (awaitsVerdict(it)) return true;
-    const m = msOfRow(it);
-    return m === null ? shownMs.id === (curMs?.id ?? shownMs.id) : m === shownMs.id;
+  // THE BOARD SHOWS ONLY THE VIEWED MILESTONE (owner's call, 2026-11-12):
+  // built cards from other milestones used to visit every view (2026-11-11),
+  // which muddied what each milestone holds. A verdict owed elsewhere is not
+  // hidden, though: the strip counts them and jumps to the nearest milestone
+  // that owes one (`owedAway`), so none sits unanswerable behind a ‹ ›.
+  const homeMs = (it: RoadmapItem) => msOfRow(it) ?? curMs?.id ?? shownMs?.id ?? null;
+  const inView = (it: RoadmapItem) => !shownMs || homeMs(it) === shownMs.id;
+  const owedAway = useMemo(() => {
+    if (!shownMs) return [];
+    return rows.filter((it) => !it.archived && isBoardWork(it) && !isPart(it) && awaitsVerdict(it) && homeMs(it) !== shownMs.id);
+  }, [rows, partsOf, sl, shownMs?.id, curMs?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const jumpToOwed = () => {
+    if (!shownMs || !owedAway.length) return;
+    const at = msOrdered.findIndex((m) => m.id === shownMs.id);
+    const owing = new Set(owedAway.map(homeMs));
+    const next = msOrdered
+      .map((m, i) => ({ m, d: Math.abs(i - at) }))
+      .filter(({ m }) => owing.has(m.id))
+      .sort((a, b) => a.d - b.d)[0];
+    if (!next) return;
+    closeAll(); setPicked([]);
+    setViewMsId(next.m.id);
   };
   const stepMilestone = (dir: -1 | 1) => {
     if (!shownMs) return;
@@ -1266,7 +1277,8 @@ export function Board({ slug, projectName, items, sprints, milestones, slices, o
           onStep={stepMilestone} onCurrent={curMs && shownMs?.id !== curMs.id ? () => { closeAll(); setPicked([]); setViewMsId(null); } : undefined}
           onMilestone={() => { closeAll(); setMsEdit(true); }}
           onNewSlice={() => { closeAll(); setSliceEdit({ slice: null }); }}
-          onIcebox={() => go.detail(slug, 'auto')} milestonesHref={hrefTo.detail(slug, 'milestones')} />
+          onIcebox={() => go.detail(slug, 'auto')} milestonesHref={hrefTo.detail(slug, 'milestones')}
+          owedAway={owedAway.length} onOwedAway={jumpToOwed} />
         <div className="km-toolbar">
           <span className="searchbox sm km-search">
             <KitIcon name="search" size={14} />

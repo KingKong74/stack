@@ -77,7 +77,7 @@ const MS_STATUS: Record<Milestone['status'], { label: string; tone: string }> = 
   done: { label: 'Completed', tone: '' },
 };
 export function SpineStrip({ milestones, slices, iced, onMilestone, onNewSlice, onIcebox, milestonesHref,
-  viewing, position = -1, total = 0, onStep, onCurrent }: {
+  viewing, position = -1, total = 0, onStep, onCurrent, owedAway = 0, onOwedAway }: {
   milestones: Milestone[]; slices: Slice[]; iced: number;
   onMilestone: () => void; onNewSlice: () => void; onIcebox: () => void;
   /** The Milestones tab, where every milestone (not just the current) lives. */
@@ -86,6 +86,9 @@ export function SpineStrip({ milestones, slices, iced, onMilestone, onNewSlice, 
   onStep?: (dir: -1 | 1) => void;
   /** Present while viewing another milestone: back to the current one. */
   onCurrent?: () => void;
+  /** Built cards in OTHER milestones waiting on your verdict; the chip jumps to the nearest. */
+  owedAway?: number;
+  onOwedAway?: () => void;
 }) {
   const cur = viewing === undefined ? currentMilestone(milestones) : viewing;
   const inCur = cur ? slices.filter((s) => s.milestoneId === cur.id && !s.archived).length : 0;
@@ -112,6 +115,12 @@ export function SpineStrip({ milestones, slices, iced, onMilestone, onNewSlice, 
       {cur?.goal.trim() && <span className="km-spine-goal">{cur.goal.trim().split('\n')[0]}</span>}
       {cur?.targetOn && <span className="k-tag" title="A target you set. It gates nothing.">by {cur.targetOn}</span>}
       {milestonesHref && <a className="k-btn sm ghost" href={milestonesHref}>All milestones</a>}
+      {owedAway > 0 && onOwedAway && (
+        <button className="k-btn sm secondary" onClick={onOwedAway}
+          title="Built cards in other milestones are waiting on your verdict. Go to the nearest milestone that has one.">
+          {owedAway} to review elsewhere<KitIcon name="chevron-right" size={12} />
+        </button>
+      )}
       <span className="km-spine-rule" />
       <span className="km-spine-n">{inCur} slice{inCur === 1 ? '' : 's'}</span>
       <button className="k-btn sm secondary" onClick={onNewSlice}
