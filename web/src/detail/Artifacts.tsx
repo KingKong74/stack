@@ -247,7 +247,7 @@ export function Artifacts({ slug, highlightId, onStarred }: { slug: string; high
         </div>
         <div className="ar-rows">
           <div className="ar-grouphead"><span className="l">For sessions</span><span className="n">{lanes.in.length}</span></div>
-          <label className={`ar-drop${over ? ' over' : ''}`} data-hl="files"
+          <label className={`ar-dropzone${over ? ' over' : ''}`} data-hl="files"
             onDragEnter={(e) => { if (hasDragFiles(e)) { e.preventDefault(); setOver(true); } }}
             onDragOver={(e) => { if (hasDragFiles(e)) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } }}
             onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOver(false); }}

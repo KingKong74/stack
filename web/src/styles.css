@@ -8102,15 +8102,15 @@ button.sp-pill { cursor: pointer; }
 .ar-row .t { font: var(--weight-medium) var(--text-sm)/var(--leading-snug) var(--font-sans); color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ar-row .s { font: var(--type-caption); color: var(--text-tertiary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ar-row .meta { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; padding-top: 3px; font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-tertiary); white-space: nowrap; }
-.ar-drop {
+.ar-dropzone {
   display: flex; flex-direction: column; align-items: center; gap: 4px; margin: 0 var(--space-2) var(--space-2);
   padding: var(--space-4) var(--space-3); border: 1px dashed var(--border-strong); border-radius: var(--radius-md);
   background: var(--surface-sunken); text-align: center; cursor: pointer;
 }
-.ar-drop:hover { border-color: var(--text-tertiary); }
-.ar-drop.over { border-style: solid; border-color: var(--action-primary); background: var(--surface-selected); }
-.ar-drop .l { font: var(--type-label); color: var(--text-primary); }
-.ar-drop .h { font: var(--type-caption); color: var(--text-tertiary); }
+.ar-dropzone:hover { border-color: var(--text-tertiary); }
+.ar-dropzone.over { border-style: solid; border-color: var(--action-primary); background: var(--surface-selected); }
+.ar-dropzone .l { font: var(--type-label); color: var(--text-primary); }
+.ar-dropzone .h { font: var(--type-caption); color: var(--text-tertiary); }
 .ar-sync { padding: 0 var(--space-2) var(--space-2); font: var(--type-caption); color: var(--text-tertiary); overflow-wrap: anywhere; }
 .ar-sync.warn { margin: 0 var(--space-2) var(--space-2); padding: var(--space-2); border-radius: var(--radius-sm); background: var(--status-warning-bg); color: var(--status-warning-fg); }
 .ar-sync code, .ar-card .path code { font: var(--weight-regular) var(--text-2xs)/1.4 var(--font-mono); color: var(--text-secondary); }
@@ -8256,11 +8256,6 @@ button.sp-pill { cursor: pointer; }
 .ar-linkopts button:hover { background: var(--surface-hover); }
 .ar-linkopts .t { flex: 1; min-width: 0; font: var(--type-body-sm); color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ar-pick { flex: 1; display: flex; align-items: center; justify-content: center; font: var(--type-body-sm); color: var(--text-tertiary); }
-.ar-drop {
-  position: absolute; inset: var(--space-3); z-index: 50; display: flex; align-items: center; justify-content: center;
-  border: 1px dashed var(--border-focus); border-radius: var(--radius-xl); background: var(--scrim);
-  font: var(--type-heading); color: var(--text-primary); pointer-events: none;
-}
 
 /* ---- Skills & agents (Claude Design "Skills and Agents" v4) ---- */
 .sa { container-type: inline-size; width: 100%; min-width: 0; max-width: 1200px; margin: 0 auto; display: flex; flex-direction: column; gap: var(--space-4); padding-bottom: var(--space-8); }
