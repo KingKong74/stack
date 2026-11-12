@@ -34,6 +34,7 @@ import { homedir, tmpdir } from 'node:os';
 import { join, dirname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadStackEnv, logStderr } from '../hook/stack-post.mjs';
+import { sweepSpecialistLoops } from './lib/specialist-loop-sweep.mjs';
 import { parseBranch } from './lib/lane.mjs';
 
 loadStackEnv();
@@ -68,6 +69,9 @@ const p2 = (n) => String(n).padStart(2, '0');
 const now = new Date();
 const local = `${now.getFullYear()}-${p2(now.getMonth() + 1)}-${p2(now.getDate())}T${p2(now.getHours())}:${p2(now.getMinutes())}`;
 
+const root = process.env.STACK_AUTOPILOT_ROOT || homedir();
+try { await sweepSpecialistLoops({api,root,localMinutes:now.getHours()*60+now.getMinutes()}); } catch { /* unavailable = no new loop runs */ }
+
 let job = null;
 let heldByArea = [];
 try {
@@ -75,8 +79,6 @@ try {
 } catch {
   process.exit(0); // unreachable API = no run, silently (fail safe)
 }
-
-const root = process.env.STACK_AUTOPILOT_ROOT || homedir();
 
 // Defined up here because the branch report and the preview sweep (#208) both
 // run before any job is claimed, and both log.
@@ -363,8 +365,9 @@ if (job.kind === 'specialist') {
   const controller = new AbortController(); let poll;
   try {
     const { spec } = await api('GET', path);
-    await api('POST', `${path}/start`, {});
-    poll = setInterval(() => { api('GET', path).then(r => { if (r.status !== 'running') controller.abort(); }).catch(() => controller.abort()); }, 5000);
+    const localMinutes = () => { const d = new Date(); return d.getHours()*60+d.getMinutes(); };
+    await api('POST', `${path}/start`, {localMinutes:localMinutes()});
+    poll = setInterval(() => { api('GET', `${path}?localMinutes=${localMinutes()}`).then(r => { if (r.status !== 'running' || r.runAllowed === false) controller.abort(); }).catch(() => controller.abort()); }, 5000);
     const { runSpecialistJob } = await import('./lib/specialist-run.mjs');
     const result = await runSpecialistJob({ repo, spec, signal: controller.signal });
     await api('POST', `${path}/result`, { status: 'done', result, detail: result.skipped ? result.reason : `${result.findings.length} findings; diagnostic annotation only` });

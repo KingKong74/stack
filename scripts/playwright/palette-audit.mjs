@@ -134,7 +134,7 @@ const SCREENS = [
   { slug: 'agents-edit', hash: '#/p/{slug}/agents', press: ['.sa .sa-agrow:not(.head) .who'] },
   { slug: 'agents-skills', hash: '#/p/{slug}/agents', press: ['.sa .sa-tabs button:nth-child(2)'] },
   { slug: 'loops', hash: '#/p/{slug}/loops' },
-  { slug: 'loops-event', hash: '#/p/{slug}/loops', press: ['.lp .lp-node.when .lp-seg button:nth-child(2)'] },
+  { slug: 'loops-create', hash: '#/p/{slug}/loops', press: ['.lp .lp-head .lp-primary'] },
   { slug: 'roadmap', hash: '#/p/{slug}/roadmap' },
   // #524 — THE BOARD LANDS WITH EVERY AREA FOLDED, so first paint has no card
   // on it at all. Every screen that measures a card presses Expand all first

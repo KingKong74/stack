@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';
+import { sweepSpecialistLoops } from './lib/specialist-loop-sweep.mjs';
+const head='a'.repeat(40),base='b'.repeat(40); let posts=[];
+const api=async(method,path,body)=>{if(method==='GET')return [{id:'1',slug:'stack',last_head:base}];posts.push({path,body});return {hold:'disabled'};};
+await sweepSpecialistLoops({api,root:'/unused',localMinutes:123,gitRead:(_slug,args)=>args[0]==='rev-parse'?head:''});
+assert.deepEqual(posts[0].body,{head,base,connected:true,localMinutes:123});
+posts=[];
+await sweepSpecialistLoops({api,root:'/unused',localMinutes:123,gitRead:()=>{throw Error('Git unavailable');}});
+assert.deepEqual(posts[0].body,{connected:false,localMinutes:123});
+posts=[];
+await assert.rejects(()=>sweepSpecialistLoops({api:async()=>{throw Error('API unavailable');},root:'/unused'}),/API unavailable/);
+assert.equal(posts.length,0);
+await assert.rejects(()=>sweepSpecialistLoops({api:async()=>[{id:'1',slug:'../escape'}],root:'/unused'}),/identity/);
+console.log('PASS: exact host revisions, failed Git reports unknown, unavailable API enqueues nothing and unsafe slug refusal.');

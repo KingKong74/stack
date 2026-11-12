@@ -115,18 +115,19 @@ export function inQuietHours(quiet, nowMin) {
 // says it), so the screen and the loop can never disagree. Checked in the
 // order a human would fix them. FAIL SAFE: this decides whether to SPEND, so a
 // question it cannot answer reads as a hold, never as a go.
-export async function loopHold(settings, nowMin) {
+export async function loopHold(settings, nowMin, client) {
+  const run = client ? (text,params) => client.query(text,params) : q;
   if (!settings.autopilot_enabled) return 'the autopilot is switched off';
   if (!Number.isFinite(nowMin)) return 'the host clock was not given';
   if (inQuietHours(settings.autopilot_quiet, nowMin)) return `it is quiet hours (${settings.autopilot_quiet})`;
-  const { rows: resume } = await q(
+  const { rows: resume } = await run(
     `SELECT not_before FROM autopilot_jobs
       WHERE kind = 'resume' AND status = 'queued' AND not_before > now()
       ORDER BY not_before LIMIT 1`);
   if (resume.length) return `the usage limit was hit; a resume is booked for ${new Date(resume[0].not_before).toISOString()}`;
   const cap = Number(settings.autopilot_rolling_tokens) || 0;
   if (cap > 0) {
-    const { rows } = await q(
+    const { rows } = await run(
       `SELECT COALESCE(SUM(tokens), 0)::bigint AS spent FROM autopilot_runs
         WHERE finished_at > now() - make_interval(hours => $1)`, [settings.autopilot_rolling_hours || 5]);
     const spent = Number(rows[0].spent);

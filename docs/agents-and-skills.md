@@ -56,3 +56,30 @@ and `head` commit hashes, optional literal `paths` (up to eight), `includeWorkin
 return the same job without rewriting its input. The worker uses `POST .../start` and `.../result`;
 the latter cannot overwrite paused work. Reports are kept in the existing job ledger, not a new
 task system. Automatic specialist schedules are not enabled by these operations.
+
+## Observation policies
+
+Project **Loops** stores real diagnostic policies; the sample merge/prune chains are removed.
+Creating a policy always leaves it disabled. Enabling only allows eligibility checks: it does not
+bypass the global arm switch, quiet hours, usage-limit hold or existing fleet/project claim gates.
+The existing minute dispatcher polls enabled policies, reads exact host Git revisions and queues
+eligible passes through the same diagnostic adapter. There is no second scheduler. A missing API,
+checkout, revision or usage record starts no pass. A first pass compares HEAD with its parent;
+later passes compare the last queued HEAD. Divergent history requires investigation.
+
+Policies show their trigger, literal paths, cooldown, run cap, token budget and last reported stop
+reason. `GET /api/specialist-loops` is the host's aggregate enabled-policy feed. Project endpoints
+under `/api/projects/:slug/specialists/loops` list/create policies, PATCH `{enabled}`, and POST
+`/:id/dry-run` or `/:id/dispatch` with exact base/head, connected and localMinutes. Dry-run changes
+nothing and browser simulation assumes host availability without certifying it. Scope and limits
+are immutable; create a new disabled policy to replace them. Disabling atomically pauses its
+queued/active diagnostics; existing cancellation polling stops an active child.
+
+Each project shares one rolling 24-hour diagnostic population across its policies and manual runs.
+A successful manual pass with the same profile, skill revisions and model must exist in that window.
+A pass reserves 60,000 tokens before starting; actual reported input/output/cache tokens replace
+that reservation on completion. This is a start gate, not a hard per-call token ceiling. Missing,
+partial or negative usage holds further passes. Attempts include failures and pauses. Unchanged
+HEAD, an active diagnostic, cooldown, exhausted caps or three recent failed passes also hold.
+Reports annotate evidence only; they never file fixes, move Ready work, merge or give a verdict.
+No observation policy has been enabled as part of installation or verification.

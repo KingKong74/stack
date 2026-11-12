@@ -36,6 +36,7 @@ import { skills } from './routes/skills.js';
 import { models } from './routes/models.js';
 import { context } from './routes/context.js';
 import { worktrees } from './routes/worktrees.js';
+import { specialistLoopsGlobal } from './routes/specialist-loops.js';
 import { specialists } from './routes/specialists.js';
 import { agentProfiles } from './routes/agent-profiles.js';
 import { attachTerm } from './term.js';
@@ -123,6 +124,7 @@ app.use('/api/context', requireToken, context);
 app.use('/api/agent-profiles', requireToken, agentProfiles);
 app.use('/api/worktrees', requireToken, worktrees);
 app.use('/api/spaces', requireToken, spaces);
+app.use('/api/specialist-loops', requireToken, specialistLoopsGlobal);
 app.use('/api/projects/:slug/specialists', requireToken, specialists);
 app.use('/api/projects', requireToken, projects);
 

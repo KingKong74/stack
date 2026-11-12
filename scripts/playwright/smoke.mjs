@@ -429,16 +429,16 @@ const AGENTS_PANELS = [
 ];
 const LOOPS_PANELS = [
   {
-    id: 'loops-select',
-    label: 'Loops — a row selects that loop',
-    click: '.lp .lp-tlrow:nth-of-type(3)',
-    expect: '.lp .lp-tlrow:nth-of-type(3).on',
+    id: 'loops-create',
+    label: 'Loops — open the disabled observation policy form',
+    click: '.lp .lp-head .lp-primary',
+    expect: '.lp .lp-policy-form',
   },
   {
-    id: 'loops-event',
-    label: 'Loops — the Event trigger swaps the schedule pickers',
-    click: '.lp .lp-node.when .lp-seg button:nth-child(2)',
-    expect: '.lp .lp-node.when select[aria-label="Event"]',
+    id: 'loops-cancel',
+    label: 'Loops — cancel without changing any policy',
+    click: '.lp .lp-head .lp-primary',
+    expect: '.lp .lp-head .lp-primary',
   },
 ];
 

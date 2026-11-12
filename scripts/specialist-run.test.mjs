@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { runSpecialistJob, parseDiagnosticResult } from './lib/specialist-run.mjs';
+import { runSpecialistJob, parseDiagnosticResult, nativeDiagnosticArgs } from './lib/specialist-run.mjs';
 const repo = mkdtempSync(join(tmpdir(), 'stack-diagnostic-'));
 const git = args => { const r = spawnSync('git', ['-C', repo, ...args], { encoding: 'utf8' }); assert.equal(r.status, 0, r.stderr); return r.stdout.trim(); };
 try {
@@ -22,3 +22,9 @@ try {
  assert.throws(() => parseDiagnosticResult(JSON.stringify({ summary: 'invented', findings: [{ title: 'bad', path: 'outside', trigger: 'x', evidence: ['x'] }], read: [], blind: [] }), { read: ['fixture.txt'], blind: [] }), /supplied file scope/);
  console.log('PASS: captured Git provenance, dirty scope, empty-input no-op, stale HEAD refusal and missing/ungrounded output handling.');
 } finally { rmSync(repo, { recursive: true, force: true }); }
+
+const args = nativeDiagnosticArgs('supplied diff', '');
+assert.ok(args[args.indexOf('--system-prompt') + 1].includes('Return one JSON object'));
+assert.equal(args[args.indexOf('--tools') + 1], '');
+assert.equal(args[args.indexOf('--max-turns') + 1], '1');
+assert.ok(args.includes('--strict-mcp-config'));

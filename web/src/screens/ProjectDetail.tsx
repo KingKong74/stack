@@ -500,8 +500,8 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
         // no chip and no count (a count would be the app's, not this
         // project's). Artifacts is wired to this project's artifacts, which
         // are not in the payload, so it shows no count rather than fetch them
-        // for a badge. Loops is a mockup with no backend: it wears the chip,
-        // and shows no number beside real ones in the same rail.
+        // for a badge. Observation policies have their own bounded backend;
+        // their records are loaded inside the view rather than for a rail badge.
         {
           key: 'artifacts', label: 'Artifacts', icon: NavIcons.paperclip,
           menu: placeMenu(hrefTo.detail(slug, 'artifacts'), 'artifacts'), onClick: () => setTab('artifacts'),
@@ -511,7 +511,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
           menu: placeMenu(hrefTo.detail(slug, 'agents'), 'agents'), onClick: () => setTab('agents'),
         },
         {
-          key: 'loops', label: 'Loops', icon: NavIcons.loop, mock: true,
+          key: 'loops', label: 'Loops', icon: NavIcons.loop,
           menu: placeMenu(hrefTo.detail(slug, 'loops'), 'loops'), onClick: () => setTab('loops'),
         },
         {
@@ -749,7 +749,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
           <Starred slug={slug} slices={data.slices} milestones={data.milestones} onChanged={reread} />
         )}
         {tab === 'agents' && <SkillsAgents />}
-        {tab === 'loops' && <Loops />}
+        {tab === 'loops' && <Loops slug={slug} />}
 
         {/* Deleting a project lives in Settings → Projects now. A destructive,
             once-a-year action does not belong at the foot of the screen you

@@ -9917,3 +9917,13 @@ a.pp-link:hover { text-decoration: underline; }
 .terminal-config-body { max-height: 65vh; overflow: auto; overflow-wrap: anywhere; }
 .terminal-config-facts { display: grid; grid-template-columns: minmax(100px, 1fr) minmax(0, 3fr); gap: 8px 16px; }
 .terminal-config-facts dd { margin: 0; }
+
+/* Observation policies use real records, with forms that fit narrow panes. */
+.lp-policy-form { display: flex; flex-direction: column; gap: var(--space-4); max-width: 680px; }
+.lp-policy-form label { display: flex; flex-direction: column; gap: var(--space-2); color: var(--text-secondary); font: var(--type-body-sm); }
+.lp-policy-form input, .lp-policy-form textarea, .lp-policy-form select { width: 100%; min-width: 0; box-sizing: border-box; }
+.lp-policy-form p, .lp-policy-card p { margin: 0; color: var(--text-secondary); font: var(--type-body-sm); overflow-wrap: anywhere; }
+.lp-policy-card { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-4); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); background: var(--surface-card); min-width: 0; }
+.lp-policy-card strong, .lp-policy-form strong { color: var(--text-primary); font: var(--type-label); }
+.lp-policy-card .lp-names span { color: var(--text-secondary); font: var(--type-body-sm); overflow-wrap: anywhere; }
+.lp-loop-message { padding: var(--space-4); color: var(--text-secondary); overflow-wrap: anywhere; }

@@ -1940,3 +1940,17 @@ export function queueSpecialistRun(slug: string, body: { requestId: string; prof
 export function getSpecialistRun(slug: string, id: string): Promise<SpecialistRun> {
   return request(`/projects/${encodeURIComponent(slug)}/specialists/runs/${encodeURIComponent(id)}`);
 }
+
+export interface SpecialistLoopPolicy {
+  id: string; name: string; profile_key: string; enabled: boolean; interval_minutes: number;
+  max_runs_day: number; max_tokens_day: number; paths: string[]; stop_reason: string;
+  last_head: string | null; last_job_id: string | null; last_trigger_at: string | null;
+}
+const specialistLoopsPath = (slug: string) => `/projects/${encodeURIComponent(slug)}/specialists/loops`;
+export const getSpecialistLoops = (slug: string) => request<SpecialistLoopPolicy[]>(specialistLoopsPath(slug));
+export const createSpecialistLoop = (slug: string, body: { name: string; profileKey: string; paths: string[]; intervalMinutes: number; maxRunsDay: number; maxTokensDay: number }) =>
+  request<SpecialistLoopPolicy>(specialistLoopsPath(slug), { method: 'POST', body });
+export const setSpecialistLoopEnabled = (slug: string, id: string, enabled: boolean) =>
+  request<SpecialistLoopPolicy>(`${specialistLoopsPath(slug)}/${encodeURIComponent(id)}`, { method: 'PATCH', body: { enabled } });
+export const evaluateSpecialistLoop = (slug: string, id: string, body: { base: string; head: string; localMinutes: number; connected: boolean }) =>
+  request<{ hold: string; usage: { attempts: number; spent: number | null }; reserveTokens: number }>(`${specialistLoopsPath(slug)}/${encodeURIComponent(id)}/dry-run`, { method: 'POST', body });

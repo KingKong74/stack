@@ -1924,3 +1924,20 @@ CREATE TABLE IF NOT EXISTS terminal_configurations (
 ALTER TABLE autopilot_jobs ADD COLUMN IF NOT EXISTS specialist_spec JSONB;
 ALTER TABLE autopilot_jobs ADD COLUMN IF NOT EXISTS specialist_request_id TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS specialist_request_idx ON autopilot_jobs (project_id, specialist_request_id) WHERE specialist_request_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS specialist_loop_policies (
+  id BIGSERIAL PRIMARY KEY,
+  project_id BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  profile_key TEXT NOT NULL,
+  name TEXT NOT NULL,
+  enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  interval_minutes INTEGER NOT NULL DEFAULT 60 CHECK (interval_minutes BETWEEN 15 AND 10080),
+  max_runs_day INTEGER NOT NULL DEFAULT 2 CHECK (max_runs_day BETWEEN 1 AND 12),
+  max_tokens_day INTEGER NOT NULL DEFAULT 150000 CHECK (max_tokens_day BETWEEN 1000 AND 2000000),
+  paths JSONB NOT NULL DEFAULT '[]'::jsonb,
+  last_head TEXT,
+  last_job_id BIGINT REFERENCES autopilot_jobs(id),
+  last_trigger_at TIMESTAMPTZ,
+  stop_reason TEXT NOT NULL DEFAULT 'disabled',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
