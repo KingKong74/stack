@@ -1,5 +1,7 @@
 import { Router } from 'express';
 import { q } from '../db.js';
+import { skillFile, contentRevision, installationEvidence } from '../skill-installations.js';
+export { skillFile } from '../skill-installations.js';
 
 // The SKILL TREE (roadmap #228) — a managed library of Claude Code skills that
 // Stack owns, so how Claude works across the fleet is tuned from one place
@@ -22,7 +24,7 @@ const SCOPES = ['global', 'project'];
 // The report is a snapshot of somebody's disk, so it is capped on both axes.
 // Bodies ride along so an UNMANAGED skill can be adopted into the library
 // without a second round trip to the host.
-const REPORT_MAX = 60;
+const REPORT_MAX = 200;
 const BODY_MAX = 16_000;
 
 // kebab-case, and it IS a directory name — so this doubles as the guard that
@@ -38,17 +40,12 @@ const shape = (r) => ({
   description: r.description || '',
   body: r.body || '',
   enabled: r.enabled,
-  installedAt: r.installed_at ? new Date(r.installed_at).toISOString() : null,
+  revision: contentRevision(skillFile(r)),
+  installationState: r.enabled ? 'unknown' : 'disabled',
+  installations: [],
+  installedAt: null, // legacy timestamps are not revision evidence
   updatedAt: r.updated_at ? new Date(r.updated_at).toISOString() : null,
 });
-
-// One SKILL.md, exactly as it lands on disk. Frontmatter is YAML, and a
-// description is one line there — newlines would break the block, so they are
-// folded rather than trusted.
-export const skillFile = (s) => {
-  const desc = (s.description || '').replace(/\s+/g, ' ').trim();
-  return `---\nname: ${s.name}\ndescription: ${JSON.stringify(desc)}\n---\n\n${(s.body || '').trim()}\n`;
-};
 
 const readReport = async () => {
   const { rows } = await q('SELECT * FROM skill_reports WHERE only_row');
@@ -84,7 +81,7 @@ const resolveProject = async (slug) => {
 // things you only see by holding the two lists side by side.
 skills.get('/', async (_req, res) => {
   const [rows, report] = await Promise.all([libraryRows(), readReport()]);
-  res.json({ skills: rows.map(shape), report });
+  res.json({ skills: rows.map((r) => ({ ...shape(r), ...installationEvidence(r, report) })), report });
 });
 
 skills.post('/', async (req, res) => {
@@ -185,53 +182,44 @@ skills.get('/work', async (_req, res) => {
   const enabled = rows.filter((r) => r.enabled && !(r.scope === 'project' && !r.slug));
   res.json({
     write: enabled.map((r) => ({
-      id: r.id, name: r.name, ...place(r), content: skillFile(r),
+      id: r.id, name: r.name, ...place(r), runtime: 'claude', content: skillFile(r), revision: contentRevision(skillFile(r)),
       // The host writes only when content differs, and reports back on the
       // ones it actually wrote — so a steady state costs nothing.
-      installed: !!r.installed_at,
+      installed: false, // legacy hint; evidence is re-read from disk every sync
     })),
     keep: enabled.map((r) => ({ name: r.name, ...place(r) })),
   });
 });
 
-// POST /report — the host's snapshot of disk, plus which library ids it just
-// installed. Replaces the report whole, like the branch report (#207).
+// POST /report — a complete disk snapshot with hashes and target identities.
+// Older snapshots cannot replace newer evidence; legacy installed IDs are ignored.
 skills.post('/report', async (req, res) => {
-  const list = (Array.isArray(req.body?.skills) ? req.body.skills : [])
-    .map((s) => (s && typeof s === 'object' ? {
-      name: cleanName(s.name),
-      scope: SCOPES.includes(s.scope) ? s.scope : 'global',
-      slug: String(s.slug || '').slice(0, 80),
-      path: String(s.path || '').slice(0, 300),
-      managed: s.managed === true,
-      description: String(s.description || '').replace(/\s+/g, ' ').slice(0, 1000),
-      body: String(s.body || '').slice(0, BODY_MAX),
-    } : null))
-    .filter((s) => s && s.name)
-    .slice(0, REPORT_MAX);
-
-  const installed = (Array.isArray(req.body?.installed) ? req.body.installed : [])
-    .map((n) => Number(n)).filter((n) => Number.isInteger(n) && n > 0).slice(0, 200);
-  if (installed.length) {
-    await q('UPDATE skills SET installed_at = now() WHERE id = ANY($1)', [installed]);
+  if (!Array.isArray(req.body?.skills) || req.body.skills.length > REPORT_MAX) {
+    return res.status(400).json({ error: 'A complete bounded skill report is required.' });
   }
-  // A skill the host reports as absent is not installed, whatever we thought.
-  // This is what makes the tree honest after somebody deletes a directory by
-  // hand: the row goes back to "not on disk" rather than claiming an install
-  // that no longer exists.
-  const present = list.filter((s) => s.managed).map((s) => `${s.scope}:${s.slug}:${s.name}`);
-  await q(
-    `UPDATE skills SET installed_at = NULL
-      WHERE installed_at IS NOT NULL
-        AND (scope || ':' || COALESCE((SELECT slug FROM projects WHERE id = skills.project_id), '') || ':' || name)
-            <> ALL($1::text[])`,
-    [present]);
-
+  // Missing evidence from an older host stays unknown. Bare installed IDs
+  // deliberately cannot certify any revision.
+  const observed = req.body.observedAt ? Date.parse(req.body.observedAt) : Date.now();
+  if (!Number.isFinite(observed) || observed > Date.now() + 60_000) {
+    return res.status(400).json({ error: 'Invalid observation time.' });
+  }
+  const list = req.body.skills.map((s) => ({
+    name: cleanName(s?.name), scope: SCOPES.includes(s?.scope) ? s.scope : 'global',
+    slug: String(s?.slug || '').slice(0, 80), path: String(s?.path || '').slice(0, 1000),
+    runtime: ['claude', 'codex'].includes(s?.runtime) ? s.runtime : 'unknown',
+    managed: s?.managed === true,
+    skillId: Number.isSafeInteger(s?.skillId) && s.skillId > 0 ? s.skillId : null,
+    revision: /^[a-f0-9]{64}$/.test(s?.revision) ? s.revision : null,
+    description: String(s?.description || '').replace(/\s+/g, ' ').slice(0, 1000),
+    body: String(s?.body || '').slice(0, BODY_MAX),
+  }));
+  if (list.some((s) => !s.name || !s.path)) return res.status(400).json({ error: 'Invalid skill observation.' });
   await q(
     `INSERT INTO skill_reports (only_row, report, detail, reported_at)
-     VALUES (TRUE, $1::jsonb, $2, now())
+     VALUES (TRUE, $1::jsonb, $2, $3)
      ON CONFLICT (only_row) DO UPDATE
-       SET report = EXCLUDED.report, detail = EXCLUDED.detail, reported_at = now()`,
-    [JSON.stringify(list), String(req.body?.detail || '').slice(0, 400)]);
+       SET report = EXCLUDED.report, detail = EXCLUDED.detail, reported_at = EXCLUDED.reported_at
+       WHERE skill_reports.reported_at <= EXCLUDED.reported_at`,
+    [JSON.stringify(list), String(req.body?.detail || '').slice(0, 400), new Date(observed)]);
   res.json({ ok: true, count: list.length });
 });

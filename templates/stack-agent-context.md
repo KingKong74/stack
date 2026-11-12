@@ -20,6 +20,13 @@ claims before choosing board work. Author checkpoint JSON and pipe it to
 `node ~/.stack/stack-checkpoint.mjs`; `/checkpoint` is a Claude command, not a Codex command.
 Reconnect starts set `reattachOnly:true`; missing sessions fail without spawning. `POST /api/terminal/label` accepts `{sid, tmux, prompt}` to retitle a session.
 
+## Skill installation evidence
+
+`GET /api/skills` exposes requested revisions and per-runtime/path evidence. The host
+reports actual disk hashes and marker IDs to `/api/skills/report`, with `observedAt`.
+Bare IDs cannot certify installation; stale (>15m) reports are unknown and older snapshots
+cannot replace newer ones. Installed does not mean invoked. Claude installation only.
+
 ## Trust the injected context
 
 Three Claude Code hooks keep Stack in sync with reality:
@@ -227,12 +234,6 @@ Open roadmap items can carry a claim (`claimedBy` — the branch name, e.g.
     -H "authorization: Bearer $STACK_TOKEN" -H 'content-type: application/json' \
     -d '{"built_note":"<what landed, where, how verified>"}'
   ```
-
-  That is not "leaving it unfinished" — a `built_note` plus a branch claim is
-  exactly what puts the change into the Review queue, and it lands there as
-  work still on a branch so the human reads it BEFORE it merges. Ticking it
-  instead would count unmerged work towards the project's progress and skip the
-  read entirely. Once the human approves it, merging is what ticks it off.
 
   Tick it yourself (`{"done":true,"built_note":"…"}`) only when what you built
   is already on the main branch.

@@ -1702,8 +1702,12 @@ export function setLastViewedProject(slug: string) {
 // reports back what is really on disk — so `installedAt` is a fact from the
 // host, and a skill can be in the library without being anywhere yet.
 
+export type SkillInstallationState = 'installed' | 'pending' | 'conflict' | 'unknown' | 'disabled';
 export interface Skill {
   id: number;
+  revision?: string;
+  installationState?: SkillInstallationState;
+  installations?: { runtime: string; path: string; revision: string | null; requestedRevision: string; observedAt: string | null; state: SkillInstallationState }[];
   name: string;                 // kebab-case; it IS the directory name
   scope: 'global' | 'project';  // ~/.claude, or <repo>/.claude
   slug: string;                 // the project, '' for global

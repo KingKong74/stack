@@ -47,6 +47,9 @@ const installState = (s: Skill, onDisk: boolean): { tone: string; text: string; 
   if (!s.enabled) {
     return { tone: 'off', text: 'disabled', title: 'Kept in the library; the host removes it from disk on its next sync.' };
   }
+  if (s.installationState === 'unknown') return { tone: 'off', text: 'host status unknown', title: 'No fresh revision evidence from the host.' };
+  if (s.installationState === 'conflict') return { tone: 'warn', text: 'installation conflict', title: 'A target is unmanaged or belongs to another skill. Stack will not overwrite it.' };
+  if (s.installationState === 'pending') return { tone: 'wait', text: 'sync pending', title: 'The requested revision is not confirmed on every reported Claude target.' };
   if (s.installedAt && onDisk) {
     return { tone: 'on', text: `installed ${relative(s.installedAt)}`, title: 'On disk on the host, and matching this content.' };
   }
@@ -197,7 +200,7 @@ export default function Skills() {
   const report = data?.report;
   // The host is the only side that can see ~/.claude, so an absent report is a
   // real state with its own sentence — never an empty tree implying no skills.
-  const hostQuiet = !report?.when;
+  const hostQuiet = !report?.when || !Number.isFinite(Date.parse(report.when)) || Date.now() - Date.parse(report.when) > 15 * 60_000;
 
   return (
     <div className="term-screen">
@@ -222,8 +225,8 @@ export default function Skills() {
           <span className={`ddot ${hostQuiet ? '' : 'on'}`} />
           {hostQuiet ? (
             <span>
-              The host has not reported yet. The library below is real; what is on disk is unknown
-              until the dispatcher's next sync — it runs every ~5 minutes, or <code>./stack skills</code> by hand.
+              No fresh host report. The library below is saved; installation status is unknown
+              until the next successful sync — it runs every ~5 minutes, or <code>./stack skills</code> by hand.
             </span>
           ) : (
             <span>

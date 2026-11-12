@@ -98,6 +98,9 @@ function Avatar({ k, name, size }: { k: string; name: string; size?: 'lg' }) {
 // "disabled" is a decision, "not written yet" a wait, "missing" a discrepancy.
 const skillState = (s: Skill, onDisk: boolean): [string, string, string] => {
   if (!s.enabled) return ['disabled', 'neutral', 'Kept in the library. The host removes it from disk on its next sync.'];
+  if (s.installationState === 'unknown') return ['host status unknown', 'neutral', 'No fresh revision evidence from the host. Installation and session usage are unknown.'];
+  if (s.installationState === 'conflict') return ['installation conflict', 'warning', 'A target contains an unmanaged skill or a different owner. Stack will not overwrite it.'];
+  if (s.installationState === 'pending') return ['sync pending', 'info', 'The requested revision has not been confirmed on every reported Claude target.'];
   if (s.installedAt && onDisk) return [`installed ${relative(s.installedAt)}`, 'success', 'On disk on the host, and matching this content.'];
   if (!s.installedAt && onDisk) return ['edited · sync pending', 'info', 'On disk, but the library has changed since. The host rewrites it within ~5 minutes.'];
   if (s.installedAt && !onDisk) return ['missing from disk', 'warning', 'Stack wrote this and the host no longer reports it: deleted by hand, or the project has no checkout on this host.'];
@@ -404,7 +407,7 @@ function AgentEditor({ p, room, models, skills, busy, run, onPick, onBack, onOpe
         </details>
 
         <div className="sa-sect">
-          <Eyebrow aside={`${loaded.length} of ${lib.length} on disk`}>Skills</Eyebrow>
+          <Eyebrow aside={`${loaded.length} of ${lib.length} enabled`}>Skills</Eyebrow>
           <div className="sa-sklist">
             {lib.map((s) => (
               <button key={s.id} className="sa-skitem" onClick={() => onOpenSkill(s.id)} title="Open this skill">
@@ -477,14 +480,14 @@ function SkillList({ data, busy, run, onOpen, onNew }: {
     ...[...new Set(skills.filter((s) => s.scope === 'project').map((s) => s.slug))].sort()
       .map((slug) => ({ scope: 'project' as const, slug, label: slug })),
   ];
-  const hostQuiet = !report.when;
+  const hostQuiet = !report.when || !Number.isFinite(Date.parse(report.when)) || Date.now() - Date.parse(report.when) > 15 * 60_000;
 
   return (<>
     <div className="sa-bar">
       <span className={`sa-dot ${hostQuiet ? 'idle' : 'ok'}`} />
       <span className="tx">
         {hostQuiet
-          ? 'The host has not reported yet. The library below is real; what is on disk is unknown until the next sync (every ~5 minutes, or ./stack skills by hand).'
+          ? 'No fresh host report. The library is saved; installation status is unknown until the host reports again.'
           : <>Host synced <span className="mono">{relative(report.when)}</span>. Edits reach disk on the next sync, within ~5 minutes.</>}
       </span>
       <button className="lp-primary" disabled={busy === 'sk:new'} onClick={onNew}><span className="plus">+</span>New skill</button>
@@ -610,6 +613,17 @@ function SkillEditor({ s, data, projects, busy, run, onPick, onBack, onRemove }:
             onToggle={() => save({ enabled: !s.enabled }, `sk:${s.id}:on`)} />
         </div>
         <span className="note">{title}</span>
+
+        {s.revision && <div className="sa-sect">
+          <Eyebrow>Installation evidence</Eyebrow>
+          <span className="note" title={s.revision}>Requested revision: {s.revision.slice(0, 12)}</span>
+          {(s.installations ?? []).map((target) => <div className="sa-sect" key={`${target.runtime}:${target.path}`}>
+            <span className="note">{target.runtime} · {target.state}</span>
+            <div className="note">{target.path}</div>
+            <span className="note" title={target.revision ?? ''}>Observed revision: {target.revision?.slice(0, 12) ?? 'unknown'}</span>
+          </div>)}
+          {!s.installations?.length && <span className="note">No target observation yet. Installation does not prove session usage.</span>}
+        </div>}
 
         <div className="sa-sect">
           <Eyebrow>Where</Eyebrow>

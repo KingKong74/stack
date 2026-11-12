@@ -20,6 +20,7 @@
 // API, a missing token or a malformed payload does NOTHING. This deletes files.
 
 import { mkdirSync, readdirSync, readFileSync, writeFileSync, existsSync, rmSync, statSync } from 'node:fs';
+import { contentRevision } from '../server/src/skill-installations.js';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { loadStackEnv, logStderr } from '../hook/stack-post.mjs';
@@ -97,6 +98,9 @@ const scanRoot = (root, scope, slug) => {
       slug,
       path,
       managed: existsSync(join(path, MARKER)),
+      runtime: 'claude',
+      skillId: (() => { try { return Number(/^stack skill #(\d+)/.exec(readFileSync(join(path, MARKER), 'utf8'))?.[1]) || null; } catch { return null; } })(),
+      revision: contentRevision(text),
       description: describe(text),
       // The body without its frontmatter — what an unmanaged skill would be
       // adopted WITH, so the library gets the real thing rather than a stub.
@@ -106,24 +110,32 @@ const scanRoot = (root, scope, slug) => {
   return out;
 };
 
-export async function syncSkills({ dry = false } = {}) {
-  if (!API || !TOKEN) { log('no API/token in ~/.stack/env — nothing done'); return null; }
+export async function syncSkills({ dry = false, request = api, resolveRoot = rootFor } = {}) {
+  if (request === api && (!API || !TOKEN)) { log('no API/token in ~/.stack/env — nothing done'); return null; }
 
   let work;
-  try { work = await api('GET', '/api/skills/work'); }
+  try { work = await request('GET', '/api/skills/work'); }
   catch (e) { log(`could not read the library (${e.message}) — nothing done`); return null; }
   if (!work || !Array.isArray(work.write) || !Array.isArray(work.keep)) {
     log('malformed work payload — nothing done');
     return null;
   }
 
-  const installed = [];
+  const valid = (s) => s && /^[a-z0-9][a-z0-9-]{0,63}$/.test(s.name)
+    && ['global', 'project'].includes(s.scope)
+    && (s.scope === 'global' ? !s.slug : typeof s.slug === 'string' && /^[a-z0-9][a-z0-9._-]*$/i.test(s.slug) && !s.slug.includes('..'));
+  if (!work.write.every((s) => valid(s) && (!s.runtime || s.runtime === 'claude') && Number.isSafeInteger(s.id) && s.id > 0 && typeof s.content === 'string'
+      && (!s.revision || s.revision === contentRevision(s.content)))
+    || !work.keep.every(valid)
+    || work.write.some((s) => !work.keep.some((k) => k.name === s.name && k.scope === s.scope && k.slug === s.slug))) {
+    log('invalid work entries — nothing done'); return null;
+  }
   let wrote = 0;
   let removed = 0;
 
   // ---- write the enabled set ----------------------------------------------
   for (const s of work.write) {
-    const root = rootFor(s.scope, s.slug);
+    const root = resolveRoot(s.scope, s.slug);
     if (!root) continue;                     // nowhere to put it on this host
     const dir = join(root, 'skills', s.name);
     const file = join(dir, 'SKILL.md');
@@ -132,17 +144,16 @@ export async function syncSkills({ dry = false } = {}) {
     // Refuse to write over a skill this host did not plant. The library row
     // stays uninstalled and the report shows the collision, which is a truer
     // answer than silently taking ownership of somebody's file.
-    if (current && !existsSync(join(dir, MARKER))) {
+    if (existsSync(dir) && !existsSync(join(dir, MARKER))) {
       log(`skipped ${s.scope}/${s.name}: a skill of that name exists on disk and Stack did not write it`);
       continue;
     }
-    if (current === s.content && s.installed) continue;   // steady state costs nothing
+    if (current === s.content && existsSync(join(dir, MARKER))) continue;   // steady state costs nothing
     if (dry) { log(`would write ${file}`); wrote++; continue; }
     try {
       mkdirSync(dir, { recursive: true });
       writeFileSync(file, s.content, 'utf8');
       writeFileSync(join(dir, MARKER), `stack skill #${s.id}\n`, 'utf8');
-      installed.push(s.id);
       wrote++;
     } catch (e) { log(`could not write ${file}: ${e.message}`); }
   }
@@ -152,20 +163,20 @@ export async function syncSkills({ dry = false } = {}) {
   // does not know what is on disk, and a stale diff would delete a skill that
   // had only just been written.
   const keep = new Set(work.keep.map((k) => `${k.scope}:${k.slug || ''}:${k.name}`));
-  const roots = [{ root: rootFor('global', ''), scope: 'global', slug: '' }];
+  const roots = [{ root: resolveRoot('global', ''), scope: 'global', slug: '' }];
   for (const k of work.keep) {
     if (k.scope !== 'project' || !k.slug) continue;
     if (roots.some((r) => r.slug === k.slug)) continue;
-    const root = rootFor('project', k.slug);
+    const root = resolveRoot('project', k.slug);
     if (root) roots.push({ root, scope: 'project', slug: k.slug });
   }
   // Projects that had skills and no longer do still need sweeping, so any repo
   // the last report mentioned is revisited too.
   let previous = [];
-  try { previous = (await api('GET', '/api/skills')).report?.skills ?? []; } catch { /* report is a nicety here */ }
+  try { previous = (await request('GET', '/api/skills')).report?.skills ?? []; } catch { /* report is a nicety here */ }
   for (const p of previous) {
     if (p.scope !== 'project' || !p.slug || roots.some((r) => r.slug === p.slug)) continue;
-    const root = rootFor('project', p.slug);
+    const root = resolveRoot('project', p.slug);
     if (root) roots.push({ root, scope: 'project', slug: p.slug });
   }
 
@@ -194,11 +205,12 @@ export async function syncSkills({ dry = false } = {}) {
     seen.add(r.root);
     report.push(...scanRoot(r.root, r.scope, r.slug));
   }
+  const observedAt = new Date().toISOString();
   const detail = dry
     ? `dry run — ${wrote} to write, ${removed} to remove`
     : `${wrote} written, ${removed} removed, ${report.length} on disk`;
   if (!dry) {
-    try { await api('POST', '/api/skills/report', { skills: report, installed, detail }); }
+    try { await request('POST', '/api/skills/report', { skills: report, observedAt, detail }); }
     catch (e) { log(`report failed (${e.message})`); }
   }
   log(detail);
