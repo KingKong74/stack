@@ -46,7 +46,7 @@ export async function prepareSessionConfiguration({ name, runtime, cwd, profileK
     for (const key of profileKeys) if (!room.profiles.some(p => p.key === key && p.enabled)) throw Error(`Profile ${key} is missing or disabled.`);
     const chosen = resolveSpawn({ profiles: room.profiles, requested: profileKeys });
     const resolved = chosen.keys.map(key => {
-      const profile = room.profiles.find(p => p.key === key) || { key, ...chosen.agents[key], name: key };
+      const profile = chosen.profiles.find(p => p.key === key);
       const ready = resolveProfileSkills(profile, library.skills, { runtime, slug: snapshot.project });
       for (const s of ready.skillRevisions) if (!snapshot.skills.some(x => x.id === s.id && x.revision === s.revision)) throw Error(`${profile.name}: required skill ${s.name} is not installed for this runtime/checkout.`);
       ready.model = ready.model || room.policy?.executorModel || '';

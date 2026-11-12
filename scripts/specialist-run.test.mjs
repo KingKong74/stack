@@ -12,6 +12,7 @@ try {
  const spec = { base, head, includeWorkingTree: false, prompt: 'Review supplied evidence', note: '', maxSeconds: 10 };
  let calls = 0;
  const invoke = async prompt => { calls++; assert.ok(prompt.includes(head)); assert.ok(prompt.includes('Every tool and MCP server is disabled')); return { text: JSON.stringify({ summary: 'No findings in this scope', findings: [], read: [], blind: [] }) }; };
+ const emptyScope = await runSpecialistJob({ repo, spec: { ...spec, paths: ['not-changed.txt'] }, invoke }); assert.equal(emptyScope.skipped, true); assert.equal(calls, 0);
  const result = await runSpecialistJob({ repo, spec, invoke }); assert.equal(result.findings.length, 0); assert.equal(result.provenance.head, head);
  writeFileSync(join(repo, 'fixture.txt'), 'dirty');
  const dirty = await runSpecialistJob({ repo, spec, invoke }); assert.equal(dirty.provenance.dirty, true); assert.ok(dirty.blind.some(b => b.includes('excluded')));

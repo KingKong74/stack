@@ -5,11 +5,11 @@ import { mkdirSync } from 'node:fs';
 import { agentClaudeArgs, agentScratchDir } from '../../terminal/agent-run.mjs';
 import { runtimeEnv } from '../../terminal/cli-registry.mjs';
 export function collectSpecialistEvidence(repo, spec) {
-  const git = args => { const r = spawnSync('git', ['-C', repo, ...args], { encoding: 'utf8', timeout: 10000, maxBuffer: 4 * 1024 * 1024 }); if (r.status !== 0) throw Error('Could not read the requested Git evidence.'); return r.stdout; };
+  const git = args => { const r = spawnSync('git', ['--literal-pathspecs', '-C', repo, ...args], { encoding: 'utf8', timeout: 10000, maxBuffer: 4 * 1024 * 1024 }); if (r.status !== 0) throw Error('Could not read the requested Git evidence.'); return r.stdout; };
   if (git(['rev-parse', 'HEAD']).trim() !== spec.head) throw Error('Checkout HEAD changed since the run was requested. Request a fresh run.');
   for (const ref of [spec.base, spec.head]) if (!/^[a-f0-9]{40}$/.test(ref)) throw Error('Exact commit hashes are required.');
   const dirty = !!git(['status', '--porcelain']).trim();
-  const args = spec.includeWorkingTree ? [spec.base] : [spec.base, spec.head];
+  const args = [...(spec.includeWorkingTree ? [spec.base] : [spec.base, spec.head]), '--', ...(spec.paths || [])];
   const files = git(['-c', 'core.quotepath=false', 'diff', '--name-only', ...args]).trim().split('\n').filter(Boolean);
   const diff = git(['-c', 'core.quotepath=false', 'diff', '--no-ext-diff', '--no-textconv', ...args]);
   const visibleDiff = diff.slice(0, 40000);

@@ -194,7 +194,7 @@ export function resolveSpawn({ profiles, requested, executorModel = '' } = {}) {
 
   const agents = composeAgents(chosen, { executorModel });
   const keys = chosen.map((p) => p.key).sort();
-  return { agents, keys, fallback, reason };
+  return { agents, keys, fallback, reason, profiles: chosen };
 }
 
 // Merges stored/custom profiles over BUILTIN_PROFILES by key. A stored

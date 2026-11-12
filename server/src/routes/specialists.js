@@ -11,6 +11,8 @@ specialists.use(async (req, res, next) => { req.project = await projectBySlug(re
 specialists.post('/runs', async (req, res) => {
   const b = req.body || {};
   if (!/^[a-f0-9-]{36}$/.test(b.requestId) || !/^[a-f0-9]{40}$/.test(b.head) || !/^[a-f0-9]{40}$/.test(b.base)) return res.status(400).json({ error: 'Provide requestId and exact base/head commit hashes.' });
+  const paths = b.paths ?? [];
+  if (!Array.isArray(paths) || paths.length > 8 || paths.some(p => typeof p !== 'string' || !/^[a-zA-Z0-9_.\/-]{1,200}$/.test(p) || p.startsWith('/') || p.split('/').some(x => !x || x === '.' || x === '..'))) return res.status(400).json({ error: 'Choose up to eight literal relative file paths.' });
   if (b.runtime && b.runtime !== 'claude') return res.status(400).json({ error: 'Diagnostic jobs currently support native Claude only.' });
   if (b.profileKey === 'stack-builder' || b.profileKey === 'executor') return res.status(400).json({ error: 'Use a terminal for implementation. Diagnostic jobs only annotate supplied evidence.' });
   const [stored, library, settings] = await Promise.all([q('SELECT * FROM agent_profiles'),
@@ -23,7 +25,7 @@ specialists.post('/runs', async (req, res) => {
   const spec = { profileKey: p.key, profileName: p.name, profileRevision: prepared.profileRevision, prompt: prepared.prompt,
     model, skills: prepared.skillRevisions,
     base: b.base, head: b.head, includeWorkingTree: b.includeWorkingTree === true,
-    mode: 'evidence-only', grantedTools: [], configuredProfileTools: p.tools,
+    paths, mode: 'evidence-only', grantedTools: [], configuredProfileTools: p.tools,
     maxSeconds: Math.min(180, Math.max(10, Number(b.maxSeconds) || 90)), maxTurns: 1,
     note: String(b.note || '').slice(0, 2000), requestedAt: new Date().toISOString() };
   const { rows } = await q(`INSERT INTO autopilot_jobs (project_id, kind, status, specialist_spec, specialist_request_id, detail)

@@ -5,6 +5,7 @@ import { Modal } from './Modal';
 export function SpecialistDiagnostic({ profileKey, name, project, projects, onClose }: { profileKey: string; name: string; project: string; projects: string[]; onClose: () => void }) {
   const [slug, setSlug] = useState(project);
   const [base, setBase] = useState(''), [head, setHead] = useState(''), [note, setNote] = useState('');
+  const [paths, setPaths] = useState('');
   const [includeWorkingTree, setWorking] = useState(false);
   const [id, setId] = useState<string | null>(null), [run, setRun] = useState<SpecialistRun | null>(null);
   const pendingRequest = useRef<{ input: string; id: string } | null>(null);
@@ -13,9 +14,9 @@ export function SpecialistDiagnostic({ profileKey, name, project, projects, onCl
   useEffect(load, [load]); useAutoRefresh(load, !!id && !['done', 'failed', 'paused'].includes(run?.status || ''));
   const queue = async () => {
     setBusy(true); setError('');
-    const input = JSON.stringify({ slug, profileKey, base, head, includeWorkingTree, note });
+    const input = JSON.stringify({ slug, profileKey, base, head, paths, includeWorkingTree, note });
     if (pendingRequest.current?.input !== input) pendingRequest.current = { input, id: crypto.randomUUID() };
-    try { const queued = await queueSpecialistRun(slug, { requestId: pendingRequest.current.id, profileKey, base, head, includeWorkingTree, note }); setId(queued.id); }
+    try { const queued = await queueSpecialistRun(slug, { requestId: pendingRequest.current.id, profileKey, base, head, paths: paths.split(',').map(p => p.trim()).filter(Boolean), includeWorkingTree, note }); setId(queued.id); }
     catch (e) { setError((e as Error).message || 'Could not queue diagnostic.'); } finally { setBusy(false); }
   };
   return <Modal onClose={onClose} wide>
@@ -29,6 +30,7 @@ export function SpecialistDiagnostic({ profileKey, name, project, projects, onCl
         <label>Head commit <input className="sa-input" aria-label="Diagnostic head commit" value={head} onChange={e => setHead(e.target.value.trim())} /></label>
         <p>Use the full hashes from git rev-parse HEAD^ and HEAD in the target checkout. The host refuses if HEAD changes before the pass starts.</p>
         <label><input type="checkbox" checked={includeWorkingTree} onChange={e => setWorking(e.target.checked)} /> Include uncommitted tracked changes</label>
+        <label>File scope (optional, comma-separated) <input className="sa-input" aria-label="Diagnostic paths" value={paths} onChange={e => setPaths(e.target.value)} /></label>
         <label>Focus <textarea className="sa-input" aria-label="Diagnostic focus" value={note} maxLength={2000} onChange={e => setNote(e.target.value)} /></label>
       </> : <>
         <p>Job #{id} · {run?.status || 'Queued'} · {run?.detail}</p>

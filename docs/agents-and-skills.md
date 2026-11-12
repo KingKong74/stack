@@ -51,7 +51,7 @@ node scripts/stack-specialist-run.mjs --profile stack-reviewer --base HEAD^ --he
 ```
 
 The API is `POST /api/projects/:slug/specialists/runs` with `requestId`, `profileKey`, full `base`
-and `head` commit hashes, optional `includeWorkingTree`, `note` and bounded `maxSeconds`.
+and `head` commit hashes, optional literal `paths` (up to eight), `includeWorkingTree`, `note` and bounded `maxSeconds`.
 `GET .../runs/:id` returns its captured spec, state and structured evidence. Identical request IDs
 return the same job without rewriting its input. The worker uses `POST .../start` and `.../result`;
 the latter cannot overwrite paused work. Reports are kept in the existing job ledger, not a new

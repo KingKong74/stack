@@ -9,7 +9,7 @@ const arg = (key, fallback) => { const i = process.argv.indexOf(`--${key}`); ret
 const project = arg('project', 'stack'), profileKey = arg('profile', 'stack-reviewer');
 const git = ref => { const r = spawnSync('git', ['rev-parse', '--verify', `${ref}^{commit}`], { encoding: 'utf8' }); if (r.status !== 0) throw Error(`Cannot resolve ${ref}`); return r.stdout.trim(); };
 const body = { requestId: arg('request-id', randomUUID()), profileKey, base: git(arg('base', 'HEAD^')), head: git(arg('head', 'HEAD')),
-  includeWorkingTree: process.argv.includes('--include-working-tree'), maxSeconds: Number(arg('seconds', 90)), note: arg('note', '') };
+  paths: arg('paths', '').split(',').map(p => p.trim()).filter(Boolean), includeWorkingTree: process.argv.includes('--include-working-tree'), maxSeconds: Number(arg('seconds', 90)), note: arg('note', '') };
 if (!process.argv.includes('--run')) console.log(JSON.stringify({ dry: true, project, ...body }, null, 2));
 else {
   const r = await fetch(`${process.env.STACK_API.replace(/\/$/, '')}/api/projects/${encodeURIComponent(project)}/specialists/runs`, { method: 'POST', headers: { authorization: `Bearer ${process.env.STACK_TOKEN}`, 'content-type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(10000) });

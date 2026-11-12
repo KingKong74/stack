@@ -39,5 +39,6 @@ try {
  stored = await api('GET', `/${two.id}`); assert.deepEqual(stored.result.findings, []); assert.equal(stored.status, 'done');
  await api('POST', '', { ...body, requestId: randomUUID(), profileKey: 'executor' }, 400);
  await api('POST', '', { ...body, requestId: randomUUID(), head: 'HEAD' }, 400);
+ await api('POST', '', { ...body, requestId: randomUUID(), paths: ['../outside'] }, 400);
  console.log('PASS: immutable/idempotent jobs, exact refs, existing fleet/project gates, authoritative pause, complete result requirements and explicit builder refusal.');
 } finally { await new Promise(r => server.close(r)); await pool.end(); }

@@ -1934,7 +1934,7 @@ export interface SpecialistRun {
   spec: { profileKey: string; base: string; head: string; mode: string };
   result: { skipped?: boolean; reason?: string; summary?: string; findings?: { title: string; path: string; trigger: string; evidence: string[] }[]; read?: string[]; blind?: string[] } | null;
 }
-export function queueSpecialistRun(slug: string, body: { requestId: string; profileKey: string; base: string; head: string; includeWorkingTree: boolean; note: string }): Promise<{ id: string; status: string }> {
+export function queueSpecialistRun(slug: string, body: { requestId: string; profileKey: string; base: string; head: string; paths?: string[]; includeWorkingTree: boolean; note: string }): Promise<{ id: string; status: string }> {
   return request(`/projects/${encodeURIComponent(slug)}/specialists/runs`, { method: 'POST', body });
 }
 export function getSpecialistRun(slug: string, id: string): Promise<SpecialistRun> {
