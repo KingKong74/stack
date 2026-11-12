@@ -6,7 +6,7 @@ import { mkdirSync, readdirSync, readFileSync, writeFileSync, existsSync, rmSync
 import { homedir } from 'node:os';
 import { join, relative } from 'node:path';
 import { contentRevision, bundleRevision, cleanSkillResources } from '../server/src/skill-installations.js';
-import { discoverSkillTargets, safeSkillPath } from './lib/skill-targets.mjs';
+import { discoverSkillTargets, safeSkillPath, ignoreManagedSkill } from './lib/skill-targets.mjs';
 import { loadStackEnv, logStderr } from '../hook/stack-post.mjs';
 loadStackEnv();
 const API = (process.env.STACK_API || '').replace(/\/+$/, '');
@@ -93,6 +93,7 @@ export async function syncSkills({ dry = false, request = api, resolveRoot, reso
           // Validate every destination before touching any member of the bundle.
           const paths = [...resources.map(r => r.path), ...oldPaths].map(p => targetPath(t, s.name, p));
           for (const path of paths) if (existsSync(path) && !lstatSync(path).isFile()) throw Error('Resource is not a plain file');
+          ignoreManagedSkill(t, s.name);
           mkdirSync(dir, { recursive: true }); writeFileSync(file, s.content, { mode: 0o600 });
           for (const r of resources) { const path = targetPath(t, s.name, r.path); mkdirSync(join(path, '..'), { recursive: true }); writeFileSync(path, r.content, { mode: 0o600 }); }
           for (const path of oldPaths.filter(p => !resourcePaths.includes(p))) rmSync(targetPath(t, s.name, path), { force: true });

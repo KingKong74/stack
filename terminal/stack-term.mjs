@@ -58,7 +58,8 @@ import { detectWaiting } from './input-wait.mjs';
 import { parseAutoName, readActivity } from './auto-scan.mjs';
 import { agentScratchDir, agentClaudeArgs } from './agent-run.mjs';
 import { writeDrop, DROP_MAX_BYTES } from './drop-file.mjs';
-import { writeBrief, briefArg, pruneBriefs } from './launch-brief.mjs';
+import { prepareSessionConfiguration, saveSessionConfiguration, readSessionConfiguration, tagSessionConfiguration } from './session-configuration.mjs';
+import { writeBrief, briefArg, pruneBriefs, briefsDir, BRIEF_MAX_CHARS } from './launch-brief.mjs';
 import { listClaudeMd, writeClaudeMd } from './claude-md.mjs';
 import { createEditWatch } from './edit-watch.mjs';
 import { resolvedModelFor } from './session-model.mjs';
@@ -560,6 +561,8 @@ function pushUsage(ws) {
 // replay buffer those frames wait in while the uplink is down. Both come from
 // terminal/out-coalesce.mjs, which carries the reasoning for each.
 const sessions = new Map();
+const pendingStarts = new Map();
+const pendingNames = new Set();
 
 // ---- output buffering + coalescing ----
 //
@@ -702,6 +705,14 @@ function dropFile(m) {
 }
 
 function startSession(msg) {
+  if (pendingStarts.has(msg.sid) || sessions.has(msg.sid)) return;
+  const pending = { cancelled: false, name: null }; pendingStarts.set(msg.sid, pending);
+  startPreparedSession(msg, pending).catch(e => {
+    sendUplink({ t: 'err', sid: msg.sid, msg: `Could not prepare session: ${e.message}` });
+    sendUplink({ t: 'exit', sid: msg.sid, code: 1 });
+  }).finally(() => { pendingStarts.delete(msg.sid); if (pending.name) pendingNames.delete(pending.name); });
+}
+async function startPreparedSession(msg, pending) {
   const { sid } = msg;
   const failUplink = (m) => {
     sendUplink({ t: 'err', sid, msg: m });
@@ -729,6 +740,7 @@ function startSession(msg) {
   let modelTag = ''; // #503 — the provider/model this session runs on ('' = unrecorded)
   let branch = '';   // "Work goes to: New branch" — set when this session runs in its own worktree
   let branchProject = '';
+  let configuration = null;
 
   if (msg.cmd === 'claude' || msg.cmd === 'codex') {
     if (msg.reattachOnly === true && (!tmuxAvailable() || !validName(msg.tmuxSession) || !sessionExists(msg.tmuxSession))) {
@@ -741,7 +753,8 @@ function startSession(msg) {
     const claudeModel = msg.cmd === 'claude' && typeof msg.claudeModel === 'string' && msg.claudeModel ? msg.claudeModel : undefined;
     try { launch = nativeLaunch(msg.cmd, { skipPerms: msg.skipPerms, codexModel, claudeModel }); }
     catch { return failUplink('Invalid agent launch options.'); }
-    const agentCmdWith = (brief = '') => `${launch.command}${brief}`;
+    let agentsArg = '';
+    const agentCmdWith = (brief = '') => `${launch.command}${agentsArg}${brief}`;
     const agentCmd = agentCmdWith();
     if (tmuxAvailable()) {
       // Use a validated name from the browser if provided, otherwise generate one.
@@ -754,6 +767,11 @@ function startSession(msg) {
       // a different thing to be told. Asking after the spawn would always
       // answer yes.
       reattached = sessionExists(tmuxSession);
+      if (!reattached) {
+        if (pendingNames.has(tmuxSession)) return failUplink('This session is already being prepared.');
+        pendingNames.add(tmuxSession); pending.name = tmuxSession;
+      }
+
       // NEW BRANCH: only for a session this call creates. A re-attach keeps
       // whatever tree it is already in, and the start frame (dest included)
       // is re-sent on every reconnect. session-worktree.mjs says why a failure
@@ -776,10 +794,34 @@ function startSession(msg) {
         : launch.tag;
       // A brief only for a session this call CREATES — a re-attach ignores the
       // command, and the start frame is re-sent on every reconnect.
-      const briefFile = !reattached && typeof msg.brief === 'string' ? writeBrief(tmuxSession, msg.brief) : null;
-      if (briefFile) log(`session ${sid}: starting ${tmuxSession} on a brief (${msg.brief.length} chars)`);
+      let initialBrief = typeof msg.brief === 'string' ? msg.brief : '';
+      if (reattached) configuration = readSessionConfiguration(tmuxSession);
+      else {
+        const request = async (method, path, body) => {
+          const response = await fetch(`${API}${path}`, { method, headers: { authorization: `Bearer ${TOKEN}`, 'content-type': 'application/json' },
+            ...(body ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(8000) });
+          if (!response.ok) throw Error(`Configuration HTTP ${response.status}`); return response.json();
+        };
+        const prepared = await prepareSessionConfiguration({ name: tmuxSession, runtime: msg.cmd, cwd, profileKeys: msg.profileKeys, request });
+        if (pending.cancelled) return;
+        if (sessions.size >= MAX_SESSIONS) return failUplink('The session cap was reached while preparing configuration.');
+        if (sessionExists(tmuxSession)) return failUplink('This session was created while configuration was being prepared. Reattach by name.');
+        configuration = prepared.snapshot;
+        initialBrief = [initialBrief, prepared.brief].filter(Boolean).join('\n\n');
+        if (initialBrief.length > BRIEF_MAX_CHARS) return failUplink(`Starting task and context exceed ${BRIEF_MAX_CHARS} characters. Shorten the starting task.`);
+        if (prepared.agents) {
+          const path = writeBrief(tmuxSession, JSON.stringify(prepared.agents), join(briefsDir(), 'profiles'));
+          if (!path) return failUplink('Could not write the selected profile definitions.');
+          agentsArg = ` --agents${briefArg(path)}`;
+        }
+        saveSessionConfiguration(configuration);
+      }
+      const briefFile = !reattached && initialBrief ? writeBrief(tmuxSession, initialBrief) : null;
+      if (!reattached && initialBrief && !briefFile) return failUplink('Could not write the starting context.');
+      if (briefFile) log(`session ${sid}: starting ${tmuxSession} on a brief (${initialBrief.length} chars)`);
       const shellCmd = `/bin/bash -lc "${briefFile ? agentCmdWith(briefArg(briefFile)) : agentCmd}"`;
       argv = sessionArgv(tmuxSession, cwd, shellCmd, { attachOnly: reattached || msg.reattachOnly === true });
+      if (!reattached && configuration) argv.push(';', 'set-option', '-t', `=${tmuxSession}:`, '@stack-configuration', configuration.id);
       log(`session ${sid}: tmux session ${tmuxSession} (${reattached ? 're-attach' : 'new'})`);
       // A session we are CREATING starts out marked fresh — nobody has been
       // near it yet. The mark is set after the spawn below, once the session
@@ -798,6 +840,7 @@ function startSession(msg) {
       // Degrade gracefully when tmux is absent — direct spawn, no persistence.
       // The tag is still computed: there is no session to hang it on, but the
       // browser asked what this tab is on and the answer is known either way.
+      if (msg.profileKeys?.length) return failUplink('Profile delivery requires tmux on this host.');
       modelTag = launch.tag;
       argv = ['/bin/bash', '-lc', agentCmd];
       log(`session ${sid}: tmux not available, running ${msg.cmd} directly`);
@@ -835,6 +878,7 @@ function startSession(msg) {
         // until the shim's `new-session -A` has actually landed.
         setSessionModel(name, modelTag);
         setSessionBranch(name, branch, branchProject);
+        if (configuration) tagSessionConfiguration(name, configuration.id);
       } else if (tries >= 30) {
         clearInterval(tick);
         log(`session ${sid}: tmux session ${name} never appeared — not marked fresh, so the unused reaper will leave it alone`);
@@ -879,7 +923,7 @@ function startSession(msg) {
   // #503 — the ready frame answers "what am I on" for a LIVE tab, so the rail
   // does not have to wait for the next detached push (a minute away) to label a
   // session somebody just opened. Same parsed shape, same null for unrecorded.
-  const readyFrame = { t: 'ready', sid, cwd: cwdLabel, model: describeModelTag(modelTag), cmd: sess.cmd };
+  const readyFrame = { t: 'ready', sid, cwd: cwdLabel, model: describeModelTag(modelTag), cmd: sess.cmd, configuration };
   if (tmuxSession) {
     readyFrame.tmuxSession = tmuxSession;
     readyFrame.reattached = reattached;
@@ -1252,6 +1296,7 @@ function connect() {
     else if (m.t === 'claudeMd') claudeMdRead(m);
     else if (m.t === 'claudeMdWrite') claudeMdWrite(m);
     else if (m.t === 'kill') {
+      const pending = pendingStarts.get(m.sid); if (pending) pending.cancelled = true;
       if (child) child.kill('SIGTERM');
     }
   });
@@ -1264,6 +1309,7 @@ function connect() {
     clearInterval(heartbeat);
     clearInterval(usageTick);
     if (uplink === ws) uplink = null;
+    for (const pending of pendingStarts.values()) pending.cancelled = true;
     // PTY sessions are kept alive — they survive the uplink gap and are
     // re-announced on reconnect.  Only a shell exit or an explicit kill
     // terminates a session.

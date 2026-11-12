@@ -15,5 +15,5 @@ export function resolveProfileSkills(profile, library, { runtime, slug } = {}) {
   if (context.length > 64000) throw Error(`${profile.name}: linked skill context exceeds 64,000 characters. Reduce the linked resources.`);
   return { ...profile, prompt: context ? `${profile.prompt}\n\n${context}` : profile.prompt,
     skillRevisions: selected.map(s => ({ id: s.id, name: s.name, revision: skillRevision(s) })),
-    profileRevision: contentRevision(JSON.stringify({ key: profile.key, prompt: profile.prompt, model: profile.model, tools: profile.tools, skillIds: profile.skillIds || [] })) };
+    profileRevision: contentRevision(JSON.stringify({ key: profile.key, description: profile.description || '', enabled: profile.enabled, prompt: profile.prompt, model: profile.model, tools: profile.tools, skillIds: profile.skillIds || [] })) };
 }

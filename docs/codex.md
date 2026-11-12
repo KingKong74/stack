@@ -16,7 +16,7 @@ instructions. Existing authenticated Codex access is separate from Stack's API c
 | --- | --- |
 | Repository and package rules | AGENTS.md directs Codex to the existing shared guidance. |
 | Launch in Stack Terminal | Select Codex, then open a session; native `codex` runs in tmux. `./stack term --cli codex` also launches natively. |
-| Resume context and branch claims | Read explicitly; no automatic Claude SessionStart injection. |
+| Resume context and branch claims | New Stack Terminal launches receive a capped project brief and claim snapshot when the API is available; other entry points read explicitly. |
 | Rich activity and resume update | Author JSON and invoke the existing checkpoint poster explicitly. |
 | SessionEnd backstop, usage and edit watching | No Codex integration; do not infer zero usage or no active edits. |
 | Mission Control context editor | Lists CLAUDE.md and AGENTS.md live from each checkout, with guarded human saves. |
@@ -29,6 +29,11 @@ new sessions; use `/model` inside an existing session. The limits strip includes
 windows with their reported reset times. Unavailable account data stays unknown. A missing CLI
 or expired login is reported by the native command in its pane. Install/authenticate each CLI on
 the terminal host before using it. Existing sessions retain the process they were started with.
+
+New terminal launches record runtime/version, checkout, branch, working-tree state and supplied
+skill/profile revisions. Required Claude profile skills must resolve and be installed; unsupported
+Codex profile requests fail explicitly. Unprofiled launches can proceed with unknown Stack
+configuration during an API outage. This is launch context, not lifecycle or usage tracking.
 
 Agent tabs retain their tmux identity across page reloads and connection errors. If the daemon
 is restarting, restoration waits for its session list rather than discarding saved tabs or

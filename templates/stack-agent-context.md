@@ -21,6 +21,10 @@ Reconnect starts set `reattachOnly:true`; missing sessions fail without spawning
 Bare IDs cannot certify installation; stale (>15m) reports are unknown and older snapshots
 cannot replace newer ones. Installed does not mean invoked. `runtimes` selects targets; `resources` holds text files. Profiles link `skillIds`.
 
+Terminal launches snapshot supplied skills and optional Claude `profileKeys`. Reconnect reuses
+that snapshot. Missing required skills refuse launch; unprofiled API outages yield unknown
+configuration. Codex profile delegation is unsupported. Supplied is not invoked.
+
 ## Trust the injected context
 
 Three Claude Code hooks keep Stack in sync with reality:
@@ -196,10 +200,7 @@ Open roadmap items can carry a claim (`claimedBy` — the branch name, e.g.
   dependsOn[]}]}]}]}}`. A stable `sourceKey` (e.g. `artifact:6`) makes a
   retry update, never copy; 409 `dismissed` = never re-propose; 409 `edited`
   = the owner owns it, use a new key. Accept and dismiss are the owner's.
-- **A claim is on the ITEM; the collision is on the FILE.** A claim says who
-  owns a roadmap row, not who owns a file — two sessions in one checkout share
-  a dirty tree, so git cannot tell their edits apart. If you are in a shared
-  checkout, prefer a worktree for anything that rewrites a large file.
+- Claims own items, not files. Shared checkouts share a dirty tree; prefer worktrees.
 - If you're one of several parallel sessions and you pick up a roadmap item,
   **claim it first** (your claim label = your branch name):
 

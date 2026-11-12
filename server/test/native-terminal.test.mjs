@@ -119,6 +119,8 @@ test('daemon launches, resizes and reattaches Codex without a gateway', { timeou
     start('codex', 'codex', { skipPerms: true, provider: 'omniroute', model: 'old-gateway-model' });
     const ready = await waitFor((f) => f.t === 'ready' && f.sid === 'codex');
     assert.equal(ready.cmd, 'codex');
+    assert.equal(ready.configuration.state, 'unknown');
+    assert.equal(ready.configuration.runtime, 'codex');
     assert.equal(ready.model.key, 'codex');
     const output = await waitFor((f) => f.t === 'out' && f.sid === 'codex'
       && Buffer.from(f.data, 'base64').toString().includes('SPAWN'));
@@ -131,6 +133,7 @@ test('daemon launches, resizes and reattaches Codex without a gateway', { timeou
     start('attach', 'claude', { tmuxSession: 'stack-term-existing' });
     const attached = await waitFor((f) => f.t === 'ready' && f.sid === 'attach');
     assert.equal(attached.cmd, 'codex');
+    assert.equal(attached.configuration, null);
     assert.equal(attached.model.key, 'codex');
     const attachOutput = await waitFor((f) => f.t === 'out' && f.sid === 'attach'
       && Buffer.from(f.data, 'base64').toString().includes('SPAWN'));
@@ -152,6 +155,10 @@ test('daemon launches, resizes and reattaches Codex without a gateway', { timeou
     assert.match(Buffer.from(selectedOutput.data, 'base64').toString(), /--model gpt-5.3-codex/);
     start('invalid-model', 'codex', { codexModel: 'bad;command' });
     assert.match((await waitFor((f) => f.t === 'err' && f.sid === 'invalid-model')).msg, /Invalid agent launch options/);
+    start('cancelled-config', 'codex');
+    ws.send(JSON.stringify({ t: 'kill', sid: 'cancelled-config' }));
+    await new Promise(r => setTimeout(r, 300));
+    assert.equal(frames.some(f => f.sid === 'cancelled-config' && f.t === 'ready'), false);
     start('bad', 'gemini');
     assert.match((await waitFor((f) => f.t === 'err' && f.sid === 'bad')).msg, /Unknown session type/);
     for (const sid of ['codex', 'attach', 'selected']) ws.send(JSON.stringify({ t: 'kill', sid }));

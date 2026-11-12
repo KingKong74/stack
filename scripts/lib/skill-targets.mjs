@@ -1,6 +1,6 @@
 // Local runtime adapters. Only verified repositories and their registered Git
 // worktrees are targets; every filesystem component under a target is guarded.
-import { lstatSync, realpathSync, readdirSync } from 'node:fs';
+import { lstatSync, realpathSync, readdirSync, readFileSync, appendFileSync, mkdirSync } from 'node:fs';
 import { resolve, join, relative, isAbsolute, sep } from 'node:path';
 import { homedir } from 'node:os';
 import { spawnSync } from 'node:child_process';
@@ -45,4 +45,15 @@ export function discoverSkillTargets(projects, registrations = [], { repoRoot = 
     }
   }
   return targets;
+}
+
+// Generated managed skills stay out of commits without changing .gitignore.
+export function ignoreManagedSkill(target, name) {
+  if (target.scope !== 'project') return;
+  const common = git(target.base, ['rev-parse', '--path-format=absolute', '--git-common-dir']);
+  if (!common) throw Error('Cannot resolve repository excludes');
+  const file = safeSkillPath(common, 'info/exclude');
+  const pattern = `/${relative(target.base, target.root).split(sep).join('/')}/skills/${name}/`;
+  let current = ''; try { current = readFileSync(file, 'utf8'); } catch { /* initialise */ }
+  if (!current.split('\n').includes(pattern)) { mkdirSync(join(file, '..'), { recursive: true }); appendFileSync(file, `\n${pattern}\n`); }
 }

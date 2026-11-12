@@ -33,7 +33,7 @@ import { join } from 'node:path';
 
 // Card title + note + the instructions around them. Far above any real brief,
 // far below anything that would trouble argv's limit once expanded.
-export const BRIEF_MAX_CHARS = 8000;
+export const BRIEF_MAX_CHARS = 32000;
 
 // An hour: a spawn that has not consumed its brief by then never will.
 export const BRIEF_KEEP_MS = 60 * 60 * 1000;
