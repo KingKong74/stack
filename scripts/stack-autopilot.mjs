@@ -199,7 +199,7 @@ async function api(method, path, body) {
 // `fallback: true`, i.e. today's hardcoded behaviour, unchanged.
 async function fetchAgentProfiles() {
   try {
-    const body = await api('GET', '/api/agents');
+    const body = await api('GET', '/api/agent-profiles');
     const profiles = Array.isArray(body?.profiles) ? body.profiles : [];
     if (!profiles.some(p => p.skillIds?.length)) return profiles;
     let library = [];

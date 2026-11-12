@@ -1189,6 +1189,7 @@ function connect() {
     backoff = 5_000;
     uplink = ws;
     log(`connected to ${API}`);
+    sendUplink({ t: 'capabilities', features: ['session-configuration', 'profile-keys'] });
 
     // Re-announce any sessions that survived the uplink gap, then flush their
     // buffered output so browsers can re-attach and catch up.

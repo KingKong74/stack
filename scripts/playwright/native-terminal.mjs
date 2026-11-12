@@ -34,7 +34,7 @@ const server = createServer((req, res) => {
       : path.startsWith('/api/terminal/configurations/') ? { snapshot: [...configurations.values()].find(c => c.id === path.split('/').at(-1)), changes: [], connected: hostConnected }
       : path === '/api/health' ? { version: 'fixture', ok: true }
       : path === '/api/terminal/detached' ? { connected: hostConnected, sessions: hostConnected ? [...sessions.values()] : [] }
-      : path === '/api/terminal/agent' ? { connected: true }
+      : path === '/api/terminal/agent' ? { connected: true, capabilities: ['session-configuration', 'profile-keys'] }
       : path === '/api/settings' ? { termIdleHours: 0 }
       : path === '/api/terminal/usage' ? { tokensToday: 0, tokenBudget: 0 }
       : path === '/api/overview' ? { resume: null, attention: {}, activity: [], presence: [], claims: [] }

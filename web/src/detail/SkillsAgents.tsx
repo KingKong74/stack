@@ -42,6 +42,7 @@ import {
 } from '../store';
 import { useAutoRefresh } from '../lib/autoRefresh';
 import { hrefTo } from '../lib/route';
+import { SpecialistDiagnostic } from '../components/SpecialistDiagnostic';
 import { ConfirmModal } from '../components/ConfirmModal';
 
 type SaTab = 'agents' | 'skills';
@@ -206,7 +207,7 @@ export function SkillsAgents() {
       {tab === 'agents' && (!room
         ? <div className="sa-loading">Loading the profiles…</div>
         : agent
-          ? <AgentEditor p={agent} room={room} models={models} skills={skills} busy={busy} run={run}
+          ? <AgentEditor p={agent} room={room} models={models} skills={skills} projects={projects} busy={busy} run={run}
               onPick={setAgOpen} onBack={() => setAgOpen(null)} onOpenSkill={openSkill}
               onNewSkill={() => newSkill(`${agent.key}-skill`)} />
           : <AgentList room={room} busy={busy} run={run} onOpen={setAgOpen} />)}
@@ -322,10 +323,11 @@ function Caps({ tools }: { tools: string[] }) {
   );
 }
 
-function AgentEditor({ p, room, models, skills, busy, run, onPick, onBack, onOpenSkill, onNewSkill }: {
-  p: AgentProfile; room: AgentProfilesRoom; models: ModelsRoom | null; skills: SkillsData | null; busy: string; run: Run;
+function AgentEditor({ p, room, models, skills, projects, busy, run, onPick, onBack, onOpenSkill, onNewSkill }: {
+  p: AgentProfile; room: AgentProfilesRoom; models: ModelsRoom | null; skills: SkillsData | null; projects: string[]; busy: string; run: Run;
   onPick: (k: string) => void; onBack: () => void; onOpenSkill: (id: number) => void; onNewSkill: () => void;
 }) {
+  const [diagnostic, setDiagnostic] = useState(false);
   const used = room.usage[p.key] ?? 0;
   const save = (patch: Parameters<typeof patchAgentProfile>[1], token = `${p.key}:edit`) =>
     void run(token, () => patchAgentProfile(p.key, patch));
@@ -444,6 +446,10 @@ function AgentEditor({ p, room, models, skills, busy, run, onPick, onBack, onOpe
             </div>
           ))}
         </div>
+
+        <button className="lp-btn" disabled={['executor', 'stack-builder'].includes(p.key) || !p.enabled}
+          title="Queue a tool-free annotation; use a terminal for implementation" onClick={() => setDiagnostic(true)}>Run diagnostic</button>
+        {diagnostic && <SpecialistDiagnostic profileKey={p.key} name={p.name} project={lib.find(s => linked.includes(s.id) && s.scope === 'project')?.slug || projects[0] || ''} projects={projects} onClose={() => setDiagnostic(false)} />}
 
         {p.builtin
           ? <span className="note">Built-in profiles can be turned off, not deleted.</span>

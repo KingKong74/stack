@@ -24,6 +24,8 @@ import { previewLines, cleanBranch, cleanProject } from './term-preview.js';
 // Mission Control asks whether the host daemon is on the line — module-level
 // so a route can read it without holding the relay.
 let agentConnected = false;
+let agentCapabilities = [];
+export const termCapabilities = () => [...agentCapabilities];
 export const termAgentConnected = () => agentConnected;
 
 // Live-session metadata for Mission Control (#120): what each open terminal
@@ -431,7 +433,7 @@ export function attachTerm(httpServer) {
   function acceptAgent(ws) {
     if (agent) { send(agent, { t: 'err', msg: 'Replaced by a newer daemon connection.' }); agent.close(); }
     agent = ws;
-    agentConnected = true;
+    agentConnected = true; agentCapabilities = [];
     agentSend = (obj) => send(agent, obj);
     console.log('[term] daemon connected');
     // #518 — A BROWSER SOCKET THE NEW DAEMON DOES NOT KNOW IS A FROZEN PANE.
@@ -462,6 +464,8 @@ export function attachTerm(httpServer) {
     ws.on('message', (raw) => {
       let m;
       try { m = JSON.parse(raw.toString()); } catch { return; }
+
+      if (m.t === 'capabilities') { agentCapabilities = Array.isArray(m.features) ? m.features.filter(f => ['session-configuration', 'profile-keys'].includes(f)) : []; return; }
 
       // hello — the daemon re-announces sessions that survived an uplink gap.
       // Each sid in the list is a PTY that kept running while we were
@@ -634,7 +638,7 @@ export function attachTerm(httpServer) {
     });
     ws.on('close', () => {
       if (agent === ws) {
-        agent = null; agentConnected = false; agentSend = null; detachedSessions = [];
+        agent = null; agentConnected = false; agentCapabilities = []; agentSend = null; detachedSessions = [];
         // No daemon, no claim. Stale edits would keep a collision warning on
         // screen for a host nobody can see any more — worse than silence,
         // because it reads as current.

@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { configurationChanges } from '../terminal-configurations.js';
 import { mergeProfiles } from '../agent-profiles.js';
 import { q } from '../db.js';
-import { termAgentConnected, termSessions, termTails, termDetached, termDetachedTails, setDetachedLabel, killDetachedTmux, keepTmuxSession, answerTmuxPrompt, viewAutoPane } from '../term.js';
+import { termCapabilities, termAgentConnected, termSessions, termTails, termDetached, termDetachedTails, setDetachedLabel, killDetachedTmux, keepTmuxSession, answerTmuxPrompt, viewAutoPane } from '../term.js';
 import { askGemini, geminiEnabled } from '../gemini.js';
 import { readSettings } from '../settings.js';
 import { titleLabel, labelRequest } from '../term-label.js';
@@ -56,7 +56,7 @@ terminal.get('/configurations/:id', async (req, res) => {
 });
 
 terminal.get('/agent', (_req, res) => {
-  res.json({ connected: termAgentConnected() });
+  res.json({ connected: termAgentConnected(), capabilities: termCapabilities() });
 });
 
 // GET /api/terminal/detached — surviving tmux sessions with no client attached

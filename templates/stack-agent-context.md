@@ -15,15 +15,17 @@ claims before choosing board work. Author checkpoint JSON and pipe it to
 `node ~/.stack/stack-checkpoint.mjs`; `/checkpoint` is a Claude command, not a Codex command.
 Reconnect starts set `reattachOnly:true`; missing sessions fail without spawning. `POST /api/terminal/label` accepts `{sid, tmux, prompt}` to retitle a session.
 
-## Skill installation evidence
+## Agent configuration and diagnostics
 
-`GET /api/skills` exposes requested revisions and target evidence. The host reports disk hashes and marker IDs to `/api/skills/report` with `observedAt`.
-Bare IDs cannot certify installation; stale (>15m) reports are unknown and older snapshots
-cannot replace newer ones. Installed does not mean invoked. `runtimes` selects targets; `resources` holds text files. Profiles link `skillIds`.
-
-Terminal launches snapshot supplied skills and optional Claude `profileKeys`. Reconnect reuses
-that snapshot. Missing required skills refuse launch; unprofiled API outages yield unknown
-configuration. Codex profile delegation is unsupported. Supplied is not invoked. `GET /terminal/configurations/:id` compares the immutable snapshot.
+Skills expose target evidence and content revisions covering `resources`; `runtimes` selects
+Claude/Codex. The host reports disk hashes/marker IDs to `/api/skills/report` with `observedAt`.
+Bare IDs never certify installation; stale (>15m) evidence is unknown. Profiles link `skillIds`.
+Terminal `profileKeys` are Claude-only; required skills must resolve. Reconnect preserves the
+launch snapshot. `GET /terminal/configurations/:id` compares it with the current library.
+Supplied or installed does not mean invoked. Unsupported host capabilities are explicit.
+`POST /projects/:slug/specialists/runs` queues a bounded tool-free diagnostic with exact
+base/head hashes and an idempotent requestId. `GET .../runs/:id` returns evidence, never a
+human verdict. The existing dispatcher runs these passes; no loop is enabled by creating one.
 
 ## Trust the injected context
 
@@ -232,10 +234,8 @@ Open roadmap items can carry a claim (`claimedBy` — the branch name, e.g.
 
   Tick it yourself (`{"done":true,"built_note":"…"}`) only when what you built
   is already on the main branch.
-- **Manual execution sessions report usage like autopilot runs do.** When you
-  complete a roadmap item outside the autopilot, also land a run-ledger
-  row so the Reviews view shows the same branch/commits/tokens chip for manual
-  work (tokens/cost optional — include them when you know them):
+- **Record manual work in the run ledger** so Reviews can show its actual branch,
+  commits and evidence. Include tokens/cost only when known:
 
   ```bash
   curl -s -X POST "$STACK_API/api/projects/<slug>/autopilot/runs" \

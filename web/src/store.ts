@@ -846,7 +846,7 @@ export function setTermFolded(projects: string[]) {
   try { localStorage.setItem(TERM_FOLDED_KEY, JSON.stringify(projects.slice(0, 200))); } catch { /* private mode: this tab only */ }
 }
 
-export async function getTerminalAgent(): Promise<{ connected: boolean }> {
+export async function getTerminalAgent(): Promise<{ connected: boolean; capabilities?: string[] }> {
   return request<{ connected: boolean }>('/terminal/agent');
 }
 
@@ -1927,4 +1927,16 @@ export const dismissProposition = (slug: string, id: number) =>
 
 export async function getTerminalConfiguration(id: string): Promise<{ snapshot: import('./types').SessionConfiguration; changes: string[]; connected: boolean }> {
   return request(`/terminal/configurations/${encodeURIComponent(id)}`);
+}
+
+export interface SpecialistRun {
+  id: string; status: string; detail: string;
+  spec: { profileKey: string; base: string; head: string; mode: string };
+  result: { skipped?: boolean; reason?: string; summary?: string; findings?: { title: string; path: string; trigger: string; evidence: string[] }[]; read?: string[]; blind?: string[] } | null;
+}
+export function queueSpecialistRun(slug: string, body: { requestId: string; profileKey: string; base: string; head: string; includeWorkingTree: boolean; note: string }): Promise<{ id: string; status: string }> {
+  return request(`/projects/${encodeURIComponent(slug)}/specialists/runs`, { method: 'POST', body });
+}
+export function getSpecialistRun(slug: string, id: string): Promise<SpecialistRun> {
+  return request(`/projects/${encodeURIComponent(slug)}/specialists/runs/${encodeURIComponent(id)}`);
 }

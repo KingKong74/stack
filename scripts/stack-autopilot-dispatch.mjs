@@ -356,6 +356,25 @@ if (!existsSync(join(repo, '.git'))) {
   process.exit(0);
 }
 
+// Diagnostics share the queue's fleet/project gates but can only annotate
+// immutable evidence. A pause is authoritative even if the model finishes late.
+if (job.kind === 'specialist') {
+  const path = `/api/projects/${encodeURIComponent(job.slug)}/specialists/runs/${job.id}`;
+  const controller = new AbortController(); let poll;
+  try {
+    const { spec } = await api('GET', path);
+    await api('POST', `${path}/start`, {});
+    poll = setInterval(() => { api('GET', path).then(r => { if (r.status !== 'running') controller.abort(); }).catch(() => controller.abort()); }, 5000);
+    const { runSpecialistJob } = await import('./lib/specialist-run.mjs');
+    const result = await runSpecialistJob({ repo, spec, signal: controller.signal });
+    await api('POST', `${path}/result`, { status: 'done', result, detail: result.skipped ? result.reason : `${result.findings.length} findings; diagnostic annotation only` });
+  } catch (e) {
+    log(`specialist job #${job.id}: ${e.message}`);
+    try { await api('POST', `${path}/result`, { status: 'failed', detail: e.message }); } catch { /* paused/finished stays authoritative */ }
+  } finally { clearInterval(poll); }
+  process.exit(0);
+}
+
 // A merge job (#154 — Mission Control's ⇥ Merge button) is handled right here,
 // not by the runner: fetch, merge --no-ff origin/<branch> into main in a
 // throwaway worktree, push main, delete the remote lane branch on success.

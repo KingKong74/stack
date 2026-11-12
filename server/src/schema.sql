@@ -1920,3 +1920,7 @@ CREATE TABLE IF NOT EXISTS terminal_configurations (
   snapshot JSONB NOT NULL,
   reported_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+ALTER TABLE autopilot_jobs ADD COLUMN IF NOT EXISTS specialist_spec JSONB;
+ALTER TABLE autopilot_jobs ADD COLUMN IF NOT EXISTS specialist_request_id TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS specialist_request_idx ON autopilot_jobs (project_id, specialist_request_id) WHERE specialist_request_id IS NOT NULL;

@@ -305,6 +305,8 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   const [sessions, setSessions] = useState<Sess[]>([]);
   const [profileKeys, setProfileKeys] = useState<string[]>([]);
   const [configurationOpen, setConfigurationOpen] = useState(false);
+  const [hostCapabilities, setHostCapabilities] = useState<string[]>([]);
+  const [launchError, setLaunchError] = useState('');
   // A mirror of `sessions` for the async restore (#486) to read. The adoption
   // pass resolves after its own round trip, by which time the `sessions` it
   // closed over at mount is empty — and deciding "is this already open" from a
@@ -994,7 +996,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
 
   const [hostConnected, setHostConnected] = useState<boolean | null>(null);
   const loadHost = () => {
-    getTerminalAgent().then((r) => setHostConnected(r.connected)).catch(() => setHostConnected(null));
+    getTerminalAgent().then(r => { setHostConnected(r.connected); setHostCapabilities(r.connected ? r.capabilities || [] : []); }).catch(() => { setHostConnected(null); setHostCapabilities([]); });
   };
   useEffect(() => { if (visible) loadHost(); }, [visible]); // eslint-disable-line react-hooks/exhaustive-deps
   useAutoRefresh(loadHost, visible);
@@ -1157,6 +1159,8 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
     setTilePeek(null);
   };
   const startSession = (kind?: Sess['cmd']) => {
+    if ((kind || mode) === 'claude' && profileKeys.length && !hostCapabilities.includes('profile-keys')) { setLaunchError('Host profile delivery is unavailable. Restart the updated terminal daemon or clear the profile selection.'); return; }
+    setLaunchError('');
     const id = openSession(undefined, kind);
     if (view === 'swarm') openWin(id);
   };
@@ -1786,13 +1790,14 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                         {!usage?.codex?.models?.length && <span className="tv-dim">catalogue unavailable</span>}
                       </div>
                     </div>
-                    <TerminalProfilePicker value={profileKeys} onChange={setProfileKeys} runtime={mode} />
+                    <TerminalProfilePicker supported={hostCapabilities.includes('profile-keys')} value={profileKeys} onChange={setProfileKeys} runtime={mode} />
                     <span className="tv-dim">A session already running keeps its model; use /model inside it.</span>
                   </div>
                 </div>
               </>
             )}
           </div>
+          {launchError && <span role="alert" className="tv-dim">{launchError}</span>}
           <button className="tv-btn" onClick={() => setConfigurationOpen(true)} title="Inspect the active session's launch configuration">Configuration</button>
           {brief && (
             <button className="tv-btn" onClick={pasteBrief}

@@ -4,15 +4,15 @@ import { getAgentProfiles, getTerminalConfiguration } from '../store';
 import { useAutoRefresh } from '../lib/autoRefresh';
 import { Modal } from './Modal';
 
-export function TerminalProfilePicker({ value, onChange, runtime }: { value: string[]; onChange: (keys: string[]) => void; runtime: string }) {
+export function TerminalProfilePicker({ value, onChange, runtime, supported }: { value: string[]; onChange: (keys: string[]) => void; runtime: string; supported: boolean }) {
   const [profiles, setProfiles] = useState<AgentProfile[]>([]);
   const [error, setError] = useState('');
   useEffect(() => { getAgentProfiles().then(r => setProfiles(r.profiles)).catch(() => setError('Profile catalogue unavailable.')); }, []);
   return <div className="grp">
     <span className="cap">Spawn profiles for new Claude sessions</span>
-    <span className="tv-dim">{runtime === 'claude' ? 'Selected profiles are available for delegation; a builder is included. Existing sessions keep their launch configuration.' : 'Codex receives compatible skills; Stack spawn profiles are supported by Claude only.'}</span>
+    <span className="tv-dim">{!supported ? 'Host profile delivery is unavailable. Restart the updated terminal daemon before selecting profiles.' : runtime === 'claude' ? 'Selected profiles are available for delegation; a builder is included. Existing sessions keep their launch configuration.' : 'Codex receives compatible skills; Stack spawn profiles are supported by Claude only.'}</span>
     {error && <span className="tv-dim">{error}</span>}
-    {runtime === 'claude' && profiles.filter(p => p.enabled).map(p => <label key={p.key} className="tv-dim">
+    {runtime === 'claude' && supported && profiles.filter(p => p.enabled).map(p => <label key={p.key} className="tv-dim">
       <input type="checkbox" checked={value.includes(p.key)} disabled={!value.includes(p.key) && value.length >= 6}
         onChange={() => onChange(value.includes(p.key) ? value.filter(k => k !== p.key) : [...value, p.key])} /> {p.name}
     </label>)}

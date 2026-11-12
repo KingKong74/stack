@@ -1,0 +1,43 @@
+// Fresh throwaway DB; diagnostic execution is never invoked by these API tests.
+import assert from 'node:assert/strict';
+import express from 'express';
+import { randomUUID } from 'node:crypto';
+import { pool, migrate, q } from '../src/db.js';
+import { specialists } from '../src/routes/specialists.js';
+import { CLAIM_NEXT_SQL } from '../src/routes/autopilot.js';
+if (!process.env.DATABASE_URL) throw Error('Throwaway DATABASE_URL required');
+await migrate();
+const slug = `diagnostic-${randomUUID().slice(0, 8)}`;
+const project = (await q('INSERT INTO projects (slug,name) VALUES ($1,$1) RETURNING id', [slug])).rows[0];
+const skill = (await q("INSERT INTO skills(name,scope,project_id,body) VALUES('diagnostic-fixture','project',$1,'Original workflow') RETURNING id", [project.id])).rows[0];
+const key = `diagnostic-${randomUUID().slice(0, 8)}`;
+await q("INSERT INTO agent_profiles(key,name,prompt,tools,skill_ids) VALUES($1,'Diagnostic','Original role','[\"Read\"]',$2::jsonb)", [key, JSON.stringify([skill.id])]);
+const app = express(); app.use(express.json()); app.use('/projects/:slug/specialists', specialists);
+const server = app.listen(0, '127.0.0.1'); await new Promise(r => server.once('listening', r));
+const path = `/projects/${slug}/specialists/runs`;
+const api = async (method, suffix, body, status = 200) => { const r = await fetch(`http://127.0.0.1:${server.address().port}${path}${suffix}`, { method, headers: { 'content-type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}) }); assert.equal(r.status, status, await r.clone().text()); return r.json(); };
+try {
+ const body = { requestId: randomUUID(), profileKey: key, base: 'a'.repeat(40), head: 'b'.repeat(40) };
+ const one = await api('POST', '', body, 201);
+ assert.equal((await api('POST', '', { ...body, note: 'Retry must not rewrite input' }, 201)).id, one.id);
+ await q('UPDATE agent_profiles SET prompt = $1 WHERE key = $2', ['New prompt', key]);
+ let stored = await api('GET', `/${one.id}`); assert.ok(stored.spec.prompt.includes('Original role')); assert.deepEqual(stored.spec.grantedTools, []);
+ await api('POST', `/${one.id}/start`, {}, 409);
+ let claim = await q(CLAIM_NEXT_SQL, [1, []]); assert.equal(String(claim.rows[0].id), one.id);
+ await api('POST', `/${one.id}/start`, {});
+ const two = await api('POST', '', { ...body, requestId: randomUUID() }, 201);
+ claim = await q(CLAIM_NEXT_SQL, [1, []]); assert.equal(claim.rowCount, 0, 'fleet/project gates still apply');
+ await q("UPDATE autopilot_jobs SET status='paused' WHERE id=$1", [one.id]);
+ const result = { summary: '', findings: [], read: ['fixture'], blind: ['No commands ran'], provenance: { head: body.head, base: body.base } };
+ await api('POST', `/${one.id}/result`, { status: 'done', result }, 409);
+ stored = await api('GET', `/${one.id}`); assert.equal(stored.status, 'paused'); assert.equal(stored.result, null);
+ claim = await q(CLAIM_NEXT_SQL, [1, []]); assert.equal(String(claim.rows[0].id), two.id);
+ await api('POST', `/${two.id}/start`, {});
+ await api('POST', `/${two.id}/result`, { status: 'done', result: null }, 400);
+ await api('POST', `/${two.id}/result`, { status: 'done', result: { ...result, provenance: { head: 'c'.repeat(40), base: body.base } } }, 409);
+ await api('POST', `/${two.id}/result`, { status: 'done', result });
+ stored = await api('GET', `/${two.id}`); assert.deepEqual(stored.result.findings, []); assert.equal(stored.status, 'done');
+ await api('POST', '', { ...body, requestId: randomUUID(), profileKey: 'executor' }, 400);
+ await api('POST', '', { ...body, requestId: randomUUID(), head: 'HEAD' }, 400);
+ console.log('PASS: immutable/idempotent jobs, exact refs, existing fleet/project gates, authoritative pause, complete result requirements and explicit builder refusal.');
+} finally { await new Promise(r => server.close(r)); await pool.end(); }

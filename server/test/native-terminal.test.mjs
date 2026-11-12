@@ -22,7 +22,7 @@ test('terminal API exposes host status and retires gateway/catalogue endpoints',
     server.listen(0, '127.0.0.1');
     await once(server, 'listening');
     const base = `http://127.0.0.1:${server.address().port}/api/terminal`;
-    assert.deepEqual(await (await fetch(`${base}/agent`)).json(), { connected: false });
+    assert.deepEqual(await (await fetch(`${base}/agent`)).json(), { connected: false, capabilities: [] });
     for (const path of ['gateway', 'models']) assert.equal((await fetch(`${base}/${path}`)).status, 404);
   } finally {
     await new Promise((r) => server.close(r));
