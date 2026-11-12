@@ -94,7 +94,7 @@ The block is a snapshot. For the current state at any moment, read the API:
 ## Shared files
 
 `~/.stack/files/<slug>/inbox/` holds copies of files the owner shared; read them there.
-To hand the owner a file, write it to `…/outbox/` (plain name, 10 MB max).
+To hand the owner a file, write it to `~/.stack/files/<slug>/outbox/` (plain name, 10 MB max).
 
 ## Auth
 
