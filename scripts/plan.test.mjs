@@ -771,12 +771,12 @@ test('clearing the verdict returns the card to the lane its state puts it in', (
 // Auto-ideas pane, so what these pin is the two failures it can have: a row on
 // TWO screens is acted on twice, and a row on NONE has silently vanished.
 
-test("a held row nobody has worked is a session's idea, not the board's", () => {
-  assert.equal(homeOf(item({ source: 'fly', reviewed: false })), 'auto');
-  assert.equal(homeOf(item({ source: 'hook', reviewed: false })), 'auto');
-  assert.equal(homeOf(item({ source: 'plan', reviewed: false, parentId: 4 })), 'auto');
-  assert.equal(isAutoIdea(item({ source: 'hook', reviewed: false })), true);
-  assert.equal(isBoardWork(item({ source: 'hook', reviewed: false })), false);
+test("an unsliced held row nobody has worked is a session's idea, not the board's", () => {
+  assert.equal(homeOf(item({ source: 'fly', reviewed: false, sliceId: null })), 'auto');
+  assert.equal(homeOf(item({ source: 'hook', reviewed: false, sliceId: null })), 'auto');
+  assert.equal(homeOf(item({ source: 'plan', reviewed: false, parentId: 4, sliceId: null })), 'auto');
+  assert.equal(isAutoIdea(item({ source: 'hook', reviewed: false, sliceId: null })), true);
+  assert.equal(isBoardWork(item({ source: 'hook', reviewed: false, sliceId: null })), false);
 });
 
 test('#608 — a sliced row is board work; an unsliced kept row is in the Icebox', () => {
@@ -788,8 +788,10 @@ test('#608 — a sliced row is board work; an unsliced kept row is in the Icebox
   assert.equal(homeOf(item({ sliceId: null, committed: true })), 'icebox', '`committed` is retired: the slice decides');
 });
 
-test('#608 — a held row waits for a sign-off even when it inherited a slice', () => {
-  assert.equal(homeOf(item({ source: 'plan', reviewed: false, parentId: 4, sliceId: 7 })), 'auto');
+test('a held row in a slice is on the board (2026-11-12): its milestone shows its own to-dos', () => {
+  assert.equal(homeOf(item({ source: 'plan', reviewed: false, parentId: 4, sliceId: 7 })), 'board');
+  assert.equal(homeOf(item({ source: 'hook', reviewed: false, sliceId: 7 })), 'board');
+  assert.equal(isAutoIdea(item({ source: 'plan', reviewed: false, sliceId: 7 })), false, 'never on two screens');
 });
 
 test('#608 — WORKED work is never iced: an unsliced claimed or built row stays on the board', () => {
@@ -837,7 +839,8 @@ test('a held row somebody has WORKED is board work, sign-off or no sign-off', ()
 
 test('every row is on exactly one of the three screens', () => {
   const rows = [
-    item(), item({ sliceId: null }), item({ source: 'hook', reviewed: false }), item({ parentId: 3 }),
+    item(), item({ sliceId: null }), item({ source: 'hook', reviewed: false, sliceId: null }),
+    item({ source: 'hook', reviewed: false }), item({ parentId: 3 }),
     item({ source: 'fly', reviewed: false, claimedBy: 'feat/9-x' }),
     item({ source: 'fly', reviewed: false, builtNote: 'x' }),
     item({ source: 'hook', reviewed: true, committed: false }),

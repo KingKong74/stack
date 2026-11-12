@@ -456,9 +456,10 @@ export function Board({ slug, projectName, items, milestones, slices, onRefresh,
     const needle = query.trim().toLowerCase();
     return rows
       .filter((it) => !it.archived)
-      // #472 — THE BOARD DRAWS COMMITTED WORK. An untouched held row is For
-      // you's Auto-ideas pane (#496); `homeOf` in lib/plan.ts is the one line
-      // between the two screens, so both cannot claim the same row. A row
+      // #472 — THE BOARD DRAWS COMMITTED WORK. An unsliced, untouched held row
+      // is For you's Auto-ideas pane (#496); a SLICED held row is drawn here
+      // with its `held` chip (2026-11-12). `homeOf` in lib/plan.ts is the one
+      // line between the screens, so both cannot claim the same row. A row
       // somebody has CLAIMED OR BUILT is committed work whatever its sign-off
       // says, and lands here.
       .filter((it) => isBoardWork(it))
@@ -725,8 +726,9 @@ export function Board({ slug, projectName, items, milestones, slices, onRefresh,
     guard(async () => { wrote(await patchRoadmapItem(slug, it.id, { skipped: !it.skipped })); });
   // THE SIGN-OFF IS BACK ON THIS SCREEN, because a held row can be on it again:
   // a `fly` or `hook` row a session claimed or built is committed work and is
-  // drawn here (`homeOf` in lib/plan.ts), while STILL being held out of the
-  // overnight runner by #359. Auto-ideas' Promote cannot see it any more, so
+  // drawn here (`homeOf` in lib/plan.ts), and so is a held row filed into a
+  // slice, while STILL being held out of the runner by #359. Auto-ideas'
+  // Promote cannot see either, so
   // without this the hold would be unanswerable from any browser — which is the
   // state #444 left and #359 called out by name.
   //
@@ -2367,9 +2369,9 @@ function IssueCard({
           </button>
           {/* SIGN OFF IS HERE AGAIN, and only on a card that is actually held.
               #472 took it off this screen because no held row was drawn here
-              any more; a held row a session has claimed or built IS drawn here
-              now (`homeOf` in lib/plan.ts), and Auto-ideas' Promote (#496)
-              cannot reach it, because it reads the rows nobody has worked. The wording says
+              any more; a held row a session has claimed, built or sliced IS
+              drawn here now (`homeOf` in lib/plan.ts), and Auto-ideas' Promote
+              (#496) cannot reach it, because it reads only unsliced, unworked rows. The wording says
               what it releases, because "approve" on a change that is already
               built reads as a verdict, which this is emphatically not. */}
           {held && (

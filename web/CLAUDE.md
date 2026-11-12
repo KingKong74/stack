@@ -30,9 +30,10 @@ its file: `lib/branch.ts`, `lib/plan.ts`, `lib/quality.ts`, `lib/termClipboard.t
 on two screens gets acted on twice; a row on none has silently vanished.
 
 - **Auto-ideas** (For you → Ideas & Icebox): a held row (`hook`/`fly`/`plan`, not signed off) that
-  nobody has worked. Promote sends `{reviewed:true, parentId:null}` plus the picked `sliceId`.
+  nobody has worked and that is in no slice. Promote sends `{reviewed:true, parentId:null}` plus the picked `sliceId`.
 - **Icebox** (#608, same pane): signed off or manual, in no slice.
-- **Board**: sliced rows, grouped by slice by default. **Once anybody has worked a row** (a claim, a
+- **Board**: sliced rows, held or not (a held card wears the `held` chip and signs off from its
+  menu), grouped by slice by default. **Once anybody has worked a row** (a claim, a
   `built_note` or a tick: `isWorked`), it's board work whatever its sign-off or slice says (an
   unsliced one sits in a "No slice" group). Its hold then only gates the runner, and the board shows
   it (the `held` chip, answered from the card menu).

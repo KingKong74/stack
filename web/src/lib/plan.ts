@@ -1008,16 +1008,19 @@ export function clusterKeyOf(it: RoadmapItem, parts: RoadmapItem[]): string {
  * belongs. A row on two is a row you act on twice; a row on none is work that
  * has silently vanished, which is the worst of the three.
  *
- *  • `'auto'`: NOBODY HAS SAID YES. A HELD row (`hook`, `fly` or `plan`) that
- *    nobody has signed off and nobody has worked. It is a session's own output,
- *    not the owner's plan, so it sits in FOR YOU → AUTO-IDEAS (#496), and the
- *    runner leaves it alone (#359). Tested before the slice, so a plan piece
- *    that inherited its parent's slice still waits for a sign-off.
+ *  • `'auto'`: NOBODY HAS SAID YES, AND IT IS IN NO SLICE. A HELD row (`hook`,
+ *    `fly` or `plan`) that nobody has signed off, worked or sliced. It is a
+ *    session's own output, not the owner's plan, so it sits in FOR YOU →
+ *    AUTO-IDEAS (#496), and the runner leaves it alone (#359).
  *  • `'icebox'` (#608): SAID YES TO, NOT YET SHAPED. A signed-off or hand-typed
  *    row with no slice. Capture stays cheap (nothing needs a slice to be
  *    written) and the board stays clean. It replaces `committed` (#496), which
  *    nothing reads any more: "keep this idea, not yet" is exactly the Icebox.
- *  • `'board'`: IN A SLICE, or being worked.
+ *  • `'board'`: IN A SLICE, or being worked. A HELD row in a slice is board
+ *    work too (owner's call, 2026-11-12): a planner files its pieces into the
+ *    milestone's slices, and hiding them in Auto-ideas left each milestone's
+ *    board blank of its own to-dos. The card wears the `held` chip and its
+ *    menu signs it off; the hold still gates the runner and Ready.
  *
  * BEING WORKED IS ITSELF THE COMMITMENT: `isWorked` is tested FIRST, so a row a
  * session claimed or built is on the board whatever its sign-off or slice says.
@@ -1032,9 +1035,8 @@ export type Home = 'auto' | 'icebox' | 'board';
 
 export const homeOf = (it: RoadmapItem): Home => {
   if (isWorked(it)) return 'board';
-  if (isHeld(it)) return 'auto';
-  if (it.sliceId == null) return 'icebox';
-  return 'board';
+  if (it.sliceId != null) return 'board';
+  return isHeld(it) ? 'auto' : 'icebox';
 };
 
 /** A session's own idea, waiting in For you → Auto-ideas. */
