@@ -1,6 +1,7 @@
 // Project-specific roles; generic fleet-wide executor/reviewer stay independent.
 import { readFileSync } from 'node:fs';
 export const STACK_SPECIALISTS = [
+  { key: 'stack-exterminator', name: 'Stack Exterminator', skill: 'stack-bug-triage', description: 'Investigate bounded reproductions in a disposable worktree and deduplicate bug proposals. Bash can write; fixes are separate Builder work.', tools: ['Read', 'Grep', 'Glob', 'Bash'] },
   { key: 'stack-devils-advocate', name: "Stack Devil's Advocate", skill: 'stack-challenge', description: 'Challenge open assumptions and recovery paths with concrete counterexamples, without relitigating settled owner choices.', tools: ['Read', 'Grep', 'Glob'] },
   { key: 'stack-architect', name: 'Stack Code Architect', skill: 'stack-architecture', description: 'Trace package boundaries, shared contracts and migration behaviour in a Stack design or change.', tools: ['Read', 'Grep', 'Glob'] },
   { key: 'stack-builder', name: 'Stack Builder', skill: 'stack-build', description: 'Implement an owner-scoped Stack change and return verification evidence.', tools: ['Read', 'Grep', 'Glob', 'Edit', 'Write', 'Bash'] },

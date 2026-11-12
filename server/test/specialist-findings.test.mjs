@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';
+import { findingIdentity, triageFindings } from '../src/specialist-findings.js';
+const finding = { title: 'Report certifies stale revision', path: 'server/src/routes/skills.js', trigger: 'Delayed installation acknowledgement', revision: 'abc', line: 15 };
+assert.equal(findingIdentity('stack', finding), findingIdentity('STACK', { ...finding, title: 'Different wording', revision: 'def', line: 400, trigger: '  delayed   installation acknowledgement ' }));
+const result = triageFindings('stack', [finding, { ...finding, title: 'Retitled' }, { ...finding, trigger: 'A distinct trigger' }]);
+assert.equal(result.proposed.length, 2); assert.equal(result.duplicates.length, 1);
+assert.equal(triageFindings('stack', [finding], [{ ...finding, id: 5 }]).duplicates[0].existingId, 5);
+assert.notEqual(findingIdentity('other', finding), findingIdentity('stack', finding));
+assert.throws(() => findingIdentity('stack', { title: 'No evidence' }));
+console.log('PASS: stable issue identity, in-run/existing duplicate detection, distinct triggers and project isolation.');
