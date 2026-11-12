@@ -1608,6 +1608,15 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
               {board ? NavIcons.board : <span aria-hidden="true">←</span>}
             </a>
           )}
+          {/* The file exchange: what this project's sessions were handed, and
+              what they handed back (detail/Artifacts.tsx). Only with a project. */}
+          {board && (
+            <a className="btn-repo btn-ico" href={hrefTo.detail(board.project.id, 'artifacts', 'files')}
+              title={`${crumbName(board.project.name)}'s files: share with sessions, download what they made`}
+              aria-label={`${crumbName(board.project.name)}'s files`}>
+              {NavIcons.paperclip}
+            </a>
+          )}
           <a className="btn-repo btn-ico" href={hrefTo.control} title="Mission Control" aria-label="Mission Control">{NavIcons.gauge}</a>
         </>} />
 

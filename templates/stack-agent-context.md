@@ -90,15 +90,11 @@ The block is a snapshot. For the current state at any moment, read the API:
 
 - `GET /api/projects/<slug>/artifacts` — docs, plans, designs, links and files
   kept beside the work (`…/artifacts/<id>/file` is the bytes). Write only when asked.
-- `GET /api/spaces` — areas, hubs' workflows, the wishlist. **Report each run
-  of a hub workflow you run**: `POST /api/spaces/workflows/<id>/runs {"ok":bool}`.
 
-**Repo instructions belong to the repo.** Mission Control → Context reads
-CLAUDE.md and AGENTS.md live from disk. Only a human Save writes them, guarded
-by the opened hash. Stack stores no copy and never syncs one back on a schedule.
+## Shared files
 
-The base URL and slug for the project you're in are stamped at the bottom of this
-file when it was exported (or are blank in the generic template).
+`~/.stack/files/<slug>/inbox/` holds copies of files the owner shared; read them there.
+To hand the owner a file, write it to `…/outbox/` (plain name, 10 MB max).
 
 ## Auth
 

@@ -6,7 +6,7 @@ import type {
   SchedSpan, ProjectPulse, BoardShape, BoardList, BoardArea, ItemKind,
   AgentProfile, AgentProfilesRoom, ModelsRoom, ContextRoom, ClaudeMdRead,
   ProjectKind, Spaces, SpaceArea, Workflow, WishIdea, IdeaStage,
-  Artifact, ArtifactType, Proposition,
+  Artifact, ArtifactType, Proposition, FilesStatus,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -1859,8 +1859,11 @@ export const setStarred = (slug: string, kind: StarKind, id: number, starred: bo
 export const ARTIFACT_FILE_CAP = 10 * 1024 * 1024;
 type ArtifactFields = Partial<{
   type: ArtifactType; title: string; body: string; url: string; tags: string[]; links: number[];
-  status: AdrStatus; sliceId: number | null; board: NoteBoard;
+  status: AdrStatus; sliceId: number | null; board: NoteBoard; exchange: '' | 'in';
 }>;
+// THE FILE EXCHANGE (server/src/routes/files.js): whether the host daemon has
+// polled lately, i.e. whether a file shared now will reach the sessions.
+export const getFilesStatus = () => request<FilesStatus>('/files/status');
 // #616 — the spine's docs (charter, architecture, design, ADRs), oldest first so an
 // ADR's number is its place. The plain list above leaves them out.
 // The Notes view's loose ideas (detail/Notes.tsx), oldest first like the rest.

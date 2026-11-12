@@ -21,7 +21,7 @@
 //
 // Test against the current repo:  node stack-session-start.mjs --demo
 
-import { readFileSync, existsSync, writeFileSync } from 'node:fs';
+import { readFileSync, existsSync, writeFileSync, readdirSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -115,7 +115,23 @@ const bullets = (arr, max = 5) =>
 
 // Compose the injected block from a project detail payload. `spine` is the
 // spine section (#616, ./spine-block.mjs), already built, or [] without it.
-function buildBlock(p, spine = []) {
+// THE FILE EXCHANGE (terminal/file-sync.mjs): the host folders the terminal
+// daemon syncs with the project's Artifacts. Said only when the folder
+// exists, i.e. a daemon on this host has synced at least once; otherwise the
+// outbox would be a promise nobody keeps. Read off the local disk, never the
+// payload (no artifact rides it).
+function filesLines(slug) {
+  const root = join(homedir(), '.stack', 'files', slug);
+  if (!slug || !existsSync(root)) return [];
+  let shared = [];
+  try { shared = readdirSync(join(root, 'inbox')).filter((n) => !n.startsWith('.')); } catch { /* none yet */ }
+  const list = shared.slice(0, 8).map((n) => `\`${n}\``).join(', ') + (shared.length > 8 ? `, and ${shared.length - 8} more` : '');
+  return ['', '**Shared files**',
+    `- From the owner: \`${join(root, 'inbox')}\` — ${shared.length ? list : 'empty right now'}. Read them there; they are copies.`,
+    `- For the owner: write a file into \`${join(root, 'outbox')}\` (plain name: letters, digits, \`. _ -\`; 10 MB max) and Stack puts it on the project's Artifacts tab to download. Rewriting the same name updates it.`];
+}
+
+function buildBlock(p, spine = [], slug = '') {
   const lines = [];
   lines.push(`# Stack — where you left off: ${p.name || 'this project'}`);
 
@@ -194,6 +210,8 @@ function buildBlock(p, spine = []) {
     }
   }
 
+  lines.push(...filesLines(slug));
+
   lines.push('', 'This reflects the live Stack state — trust it rather than reconstructing context from scratch.');
   lines.push(
     'When you wrap up meaningful work, run `/checkpoint` to author a rich resume update ' +
@@ -253,7 +271,7 @@ function buildBlock(p, spine = []) {
     let spine = [];
     try { spine = (await import('./spine-block.mjs')).spineLines(project, branch); }
     catch (e) { log(`no spine section: ${e.message}`); }
-    done(buildBlock(project, spine));
+    done(buildBlock(project, spine, slug));
   } catch (e) {
     await ping;
     clearTimeout(timer);

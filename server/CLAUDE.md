@@ -4,7 +4,7 @@ The root `CLAUDE.md` holds the cross-package rules (mirrored predicates, run gat
 directions). This file holds what applies only here. These file headers carry their own rules; read
 one before editing its file: `routes/ingest.js` (the most invariants: read it first),
 `routes/checks.js`, `routes/worktrees.js`, `routes/terminal.js`, `routes/autopilot.js`,
-`routes/context.js`, `prompts.js`, `agent-profiles.js`, `pulse.js`, `lanes.js`.
+`routes/context.js`, `routes/files.js`, `prompts.js`, `agent-profiles.js`, `pulse.js`, `lanes.js`.
 
 ## Structure
 

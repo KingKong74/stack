@@ -26,6 +26,12 @@
 //    too. A converted note is kept, tagged `converted` and `became:<kind>:<id>`.
 //    Its `board` (schema.sql) is where it sits on the tab's canvas; a PATCH
 //    of `board` alone is a move, not an edit, and leaves updated_at alone.
+//  • THE FILE EXCHANGE (routes/files.js): `exchange` is '' (kept here),
+//    'in' (shared with the project's sessions) or 'out' (handed back by one).
+//    This route writes only '' and 'in'; 'out' is written by routes/files.js
+//    alone, because it means "a session made this", and a hand-made row
+//    claiming that would be a lie. `hostName` is the one name the file has
+//    on the host, so the screen and the daemon can never disagree on it.
 //  • `links` ARE roadmap_items IDS IN THIS PROJECT. A write keeps only the ids
 //    that are, so an artifact cannot point at another project's row; a row
 //    deleted later simply drops out of the read.
@@ -52,7 +58,7 @@ export const SPINE_TYPES = ['charter', 'architecture', 'design_doc', 'adr', 'not
 export const ADR_STATUSES = ['proposed', 'accepted', 'superseded'];
 export const FILE_CAP = 10 * 1024 * 1024;
 const INLINE_IMAGES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
-export const ARTIFACT_COLS = 'id, type, title, body, url, tags, links, origin, status, slice_id, file_name, file_mime, file_size, starred_at, board, created_at, updated_at';
+export const ARTIFACT_COLS = 'id, type, title, body, url, tags, links, origin, status, slice_id, file_name, file_mime, file_size, starred_at, board, exchange, created_at, updated_at';
 const COLS = ARTIFACT_COLS;
 
 export const artifactShape = (r) => ({
@@ -73,12 +79,33 @@ export const artifactShape = (r) => ({
   starredAt: r.starred_at ?? null,
   // A note's place on the Notes canvas; {} = never placed.
   board: r.board && typeof r.board === 'object' && !Array.isArray(r.board) ? r.board : {},
+  // The file exchange (routes/files.js): '' | 'in' | 'out', and the file's
+  // name in the host's inbox/outbox folder ('' when it has none there).
+  exchange: r.exchange || '',
+  hostName: hostNameOf(r),
   file: r.file_size > 0 || r.file_name
     ? { name: r.file_name, size: Number(r.file_size), mime: r.file_mime, image: INLINE_IMAGES.has(r.file_mime) }
     : null,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
 });
+
+// The name a file has on the host. An inbox copy is `<id>-<safe name>`: the
+// id makes it unique without a collision dance, and the rest is reduced to
+// characters that cannot mean anything but a filename (the daemon re-checks
+// it against the same shape before it writes). An outbox file keeps the name
+// the session gave it, which the fingerprint carries.
+export const safeFileName = (name) => {
+  const s = String(name || '').split(/[\\/]/).pop()
+    .replace(/[^A-Za-z0-9._-]+/g, '-').replace(/-{2,}/g, '-').replace(/-+\./g, '.').replace(/\.{2,}/g, '.')
+    .replace(/^[.-]+/, '').slice(0, 80).replace(/[.-]+$/, '');
+  return s || 'file';
+};
+export function hostNameOf(r) {
+  if (r.exchange === 'in' && (r.file_size > 0 || r.file_name)) return `${r.id}-${safeFileName(r.file_name)}`;
+  if (r.exchange === 'out') return safeFileName(r.file_name);
+  return '';
+}
 
 export const NOTE_KINDS = ['note', 'idea', 'question', 'bug'];
 const num = (v, lo, hi) => (v !== null && v !== '' && Number.isFinite(Number(v))
@@ -116,6 +143,13 @@ async function readFields(body, projectId, { partial }) {
     const tags = (Array.isArray(body?.tags) ? body.tags : [])
       .map((t) => String(t ?? '').trim().slice(0, 80)).filter(Boolean);
     f.tags = JSON.stringify([...new Set(tags)].slice(0, 20));
+  }
+  // Only '' and 'in' from here (see the header), and only on a type that can
+  // carry a file the plain list draws.
+  if (has('exchange')) {
+    const want = body.exchange === 'in' ? 'in' : '';
+    if (f.type && SPINE_TYPES.includes(f.type) && want) throw Object.assign(new Error('Only a plain file can be shared with sessions.'), { status: 400 });
+    f.exchange = want;
   }
   if (!partial || has('board')) f.board = JSON.stringify(cleanBoard(body?.board));
   if (!partial || has('links')) {

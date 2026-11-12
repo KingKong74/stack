@@ -867,7 +867,7 @@ export interface Artifact {
   tags: string[];
   links: number[];
   /** {} by hand; a captured plan-mode plan says where it came from. */
-  origin: { kind?: 'plan-mode' | 'checkpoint'; sessionId?: string; branch?: string; commit?: string; planFile?: string };
+  origin: { kind?: 'plan-mode' | 'checkpoint' | 'session-outbox'; sessionId?: string; branch?: string; commit?: string; planFile?: string };
   file: { name: string; size: number; mime: string; image: boolean } | null;
   /** #616 — an ADR's status; '' on every other type. */
   status: AdrStatus | '';
@@ -877,9 +877,17 @@ export interface Artifact {
   starredAt?: string | null;
   /** A note's place on the Notes canvas; {} = never placed. Absent from an older server. */
   board?: NoteBoard;
+  /** The file exchange (server/src/routes/files.js): '' kept here, 'in' shared WITH
+   *  sessions, 'out' handed back BY one. Absent from an older server. */
+  exchange?: '' | 'in' | 'out';
+  /** The file's name in ~/.stack/files/<slug>/{inbox,outbox}; '' when it has none. */
+  hostName?: string;
   createdAt: string;
   updatedAt: string;
 }
+
+/** GET /api/files/status: whether the host daemon has synced lately. */
+export interface FilesStatus { lastSyncAt: string | null; live: boolean; staleAfterSec: number }
 
 export type NoteKind = 'note' | 'idea' | 'question' | 'bug';
 /** Where a note sits on the Notes canvas (routes/artifacts.js `cleanBoard`). */

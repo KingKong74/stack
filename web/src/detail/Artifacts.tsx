@@ -15,17 +15,27 @@
 //     letters typed since. Pending saves flush when the tab closes.
 //  3. DELETE IS REAL, so a row with anything in it asks first.
 //
+//  4. THE FILE EXCHANGE (2026-11-13; server/src/routes/files.js). The list
+//     is three sections: For sessions (shared IN, mirrored by the host daemon
+//     into ~/.stack/files/<slug>/inbox), From sessions (handed back OUT
+//     through the outbox) and Docs & files (kept here). The drop zone shares;
+//     Upload keeps. Whether the host can see a share is only what the daemon
+//     last said: no recent sync reads "Stack cannot see the host", never as
+//     delivered. The list re-reads on the auto-refresh so a session's file
+//     appears, but a row with a pending save keeps the local copy (rule 2).
+//
 // Every body reads through components/Markdown.tsx (plan-mode plans are
 // Claude's markdown, and a hand-written doc reads fine through it too).
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Artifact as Art } from '../types';
+import { useCallback, useEffect, useRef, useState, type DragEvent as ReactDragEvent } from 'react';
+import type { Artifact as Art, FilesStatus } from '../types';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { Markdown } from '../components/Markdown';
 import {
   getArtifacts, createArtifact, patchArtifact, deleteArtifact, uploadArtifactFile,
-  getArtifactFileUrl, downloadArtifactFile, ARTIFACT_FILE_CAP, setStarred,
+  getArtifactFileUrl, downloadArtifactFile, ARTIFACT_FILE_CAP, setStarred, getFilesStatus,
 } from '../store';
+import { useAutoRefresh } from '../lib/autoRefresh';
 import { StarButton, StarMark } from '../components/Star';
 
 type Fields = Partial<Pick<Art, 'title' | 'body' | 'url'>>;
@@ -45,6 +55,11 @@ const ago = (ms: number) => {
   if (d < 86_400_000) return `${Math.round(d / 3_600_000)}h ago`;
   return `${Math.round(d / 86_400_000)}d ago`;
 };
+type Lane = 'in' | 'out' | 'kept';
+const laneOf = (a: Art): Lane => (a.exchange === 'in' ? 'in' : a.exchange === 'out' ? 'out' : 'kept');
+const hostDir = (slug: string, lane: 'in' | 'out') => `~/.stack/files/${slug}/${lane === 'in' ? 'inbox' : 'outbox'}`;
+const hasDragFiles = (e: ReactDragEvent) => [...e.dataTransfer.types].includes('Files');
+
 /** A plan opens on its own `# Title`, which the page already draws. */
 const dropTitle = (a: Art) => {
   const m = a.body.match(/^\s*#\s+(.*)\n?/);
@@ -78,6 +93,9 @@ export function Artifacts({ slug, highlightId, onStarred }: { slug: string; high
   const [sel, setSel] = useState<number | null>(null);
   const [editing, setEditing] = useState(false);
   const [confirming, setConfirming] = useState<Art | null>(null);
+  const [sync, setSync] = useState<FilesStatus | 'unknown' | null>(null);
+  const [over, setOver] = useState(false);
+  const [copied, setCopied] = useState('');
   const artsRef = useRef<Art[]>([]);
   artsRef.current = arts ?? [];
 
@@ -94,6 +112,21 @@ export function Artifacts({ slug, highlightId, onStarred }: { slug: string; high
       .catch((e) => { if (live) { setArts([]); setErr(errText(e)); } });
     return () => { live = false; };
   }, [slug]);
+
+  const readSync = useCallback(() => {
+    getFilesStatus().then(setSync).catch(() => setSync('unknown'));
+  }, []);
+  useEffect(readSync, [readSync]);
+  // A session's file arriving, or a share being picked up. A row with a save
+  // still pending keeps the local copy, so nothing typed is rolled back.
+  useAutoRefresh(() => {
+    readSync();
+    getArtifacts(slug).then((xs) => setArts((cur) => {
+      if (!cur) return xs;
+      const mine = new Map(cur.map((x) => [x.id, x]));
+      return xs.map((x) => (pending.current.has(x.id) ? mine.get(x.id) ?? x : x));
+    })).catch(() => { /* the next tick tries again */ });
+  });
 
   // Saves, debounced per artifact and merged, so a word typed is one PATCH.
   const pending = useRef(new Map<number, { patch: Fields; t: number }>());
@@ -129,14 +162,14 @@ export function Artifacts({ slug, highlightId, onStarred }: { slug: string; high
   });
   // One at a time: a create then an upload, and a failed upload takes its
   // empty row back out rather than leaving "Untitled file".
-  const addFiles = (files: FileList | null) => {
+  const addFiles = (files: FileList | null, exchange: '' | 'in' = '') => {
     const list = [...(files || [])];
     if (!list.length) return;
     void work(async () => {
       for (const f of list) {
         if (f.size > ARTIFACT_FILE_CAP) { setErr(`${f.name} is over the ${ARTIFACT_FILE_CAP / 1048576} MB cap.`); continue; }
         const img = PREVIEWABLE.has(f.type);
-        const a = await createArtifact(slug, { type: img ? 'design' : 'file', title: img ? f.name.replace(/\.[^.]+$/, '') : f.name });
+        const a = await createArtifact(slug, { type: img ? 'design' : 'file', title: img ? f.name.replace(/\.[^.]+$/, '') : f.name, exchange });
         try {
           const up = await uploadArtifactFile(slug, a.id, f);
           setArts((xs) => [up, ...(xs ?? [])]);
@@ -156,11 +189,42 @@ export function Artifacts({ slug, highlightId, onStarred }: { slug: string; high
     });
   };
 
-  const list = [...(arts ?? [])].sort((a, b) => atOf(b) - atOf(a));
+  const share = (a: Art, on: boolean) => void work(async () => {
+    const up = await patchArtifact(slug, a.id, { exchange: on ? 'in' : '' });
+    setArts((xs) => (xs ?? []).map((x) => (x.id === a.id ? up : x)));
+  });
+  const copyPath = (p: string) => {
+    void navigator.clipboard?.writeText(p).then(() => { setCopied(p); window.setTimeout(() => setCopied(''), 1500); })
+      .catch(() => setErr('The browser would not copy that. Select the path and copy it by hand.'));
+  };
+  const onDrop = (e: ReactDragEvent) => {
+    e.preventDefault(); setOver(false);
+    addFiles(e.dataTransfer.files, 'in');
+  };
+
+  const sorted = [...(arts ?? [])].sort((a, b) => atOf(b) - atOf(a));
+  const lanes: Record<Lane, Art[]> = { in: [], out: [], kept: [] };
+  for (const a of sorted) lanes[laneOf(a)].push(a);
+  const list = [...lanes.in, ...lanes.out, ...lanes.kept];
   const cur = list.find((a) => a.id === sel) ?? list[0] ?? null;
+  const live = sync !== null && sync !== 'unknown' && sync.live;
+
+  const row = (a: Art) => (
+    <button key={a.id} className={`ar-row${a.id === cur?.id ? ' on' : ''}`} data-hl={`doc-${a.id}`}
+      onClick={() => { setSel(a.id); setEditing(false); }}>
+      <span className="ar-badge">{labelOf(a).slice(0, 3).toUpperCase()}</span>
+      <span className="main">
+        <span className="t">{a.title || untitled(a)}</span>
+        {a.file && laneOf(a) !== 'kept' && <span className="s">{a.hostName || a.file.name} · {fmtSize(a.file.size)}</span>}
+      </span>
+      <span className="meta">{a.starredAt && <StarMark size={11} />}<span>{ago(atOf(a))}</span></span>
+    </button>
+  );
 
   return (
-    <div className="ar">
+    // A file let go anywhere else on the screen must not navigate the tab to it.
+    <div className="ar" onDragOver={(e) => { if (hasDragFiles(e)) e.preventDefault(); }}
+      onDrop={(e) => { if (hasDragFiles(e)) { e.preventDefault(); setOver(false); } }}>
       <section className="ar-list">
         <div className="ar-listhead">
           <div className="ar-titlerow">
@@ -170,7 +234,7 @@ export function Artifacts({ slug, highlightId, onStarred }: { slug: string; high
             </div>
             <label className="ar-edit" style={{ display: 'inline-flex', alignItems: 'center', cursor: 'pointer' }}>
               Upload
-              <input type="file" multiple hidden onChange={(e) => { addFiles(e.target.files); e.target.value = ''; }} />
+              <input type="file" multiple hidden onChange={(e) => { addFiles(e.target.files, ''); e.target.value = ''; }} />
             </label>
             <button className="ar-new" onClick={addDoc}><span className="plus">+</span>New doc</button>
           </div>
@@ -181,20 +245,34 @@ export function Artifacts({ slug, highlightId, onStarred }: { slug: string; high
             </div>
           )}
         </div>
-        <div className="ar-rows" style={{ paddingTop: 'var(--space-3)' }}>
-          {list.map((a) => (
-            <button key={a.id} className={`ar-row${a.id === cur?.id ? ' on' : ''}`} data-hl={`doc-${a.id}`}
-              onClick={() => { setSel(a.id); setEditing(false); }}>
-              <span className="ar-badge">{labelOf(a).slice(0, 3).toUpperCase()}</span>
-              <span className="main"><span className="t">{a.title || untitled(a)}</span></span>
-              <span className="meta">{a.starredAt && <StarMark size={11} />}<span>{ago(atOf(a))}</span></span>
-            </button>
-          ))}
-          {arts && list.length === 0 && (
-            <div className="ar-empty">
-              <span className="l">No artifacts in this project yet</span>
-              <span>Use New doc or Upload.</span>
-            </div>
+        <div className="ar-rows">
+          <div className="ar-grouphead"><span className="l">For sessions</span><span className="n">{lanes.in.length}</span></div>
+          <label className={`ar-drop${over ? ' over' : ''}`} data-hl="files"
+            onDragEnter={(e) => { if (hasDragFiles(e)) { e.preventDefault(); setOver(true); } }}
+            onDragOver={(e) => { if (hasDragFiles(e)) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } }}
+            onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOver(false); }}
+            onDrop={onDrop}>
+            <span className="l">{over ? 'Drop to share' : 'Drop files for sessions'}</span>
+            <span className="h">or click to choose · up to {ARTIFACT_FILE_CAP / 1048576} MB each</span>
+            <input type="file" multiple hidden onChange={(e) => { addFiles(e.target.files, 'in'); e.target.value = ''; }} />
+          </label>
+          <div className={`ar-sync${sync !== null && !live ? ' warn' : ''}`} role="status">
+            {sync === null ? 'Checking the host…'
+              : live ? <>Sessions read them from <code>{hostDir(slug, 'in')}</code></>
+                : <>Stack cannot see the host: the terminal daemon {sync !== 'unknown' && sync.lastSyncAt ? `last synced ${ago(Date.parse(sync.lastSyncAt))}` : 'has not synced since the server started'}. Shared files wait here until it does.</>}
+          </div>
+          {lanes.in.map(row)}
+
+          <div className="ar-grouphead"><span className="l">From sessions</span><span className="n">{lanes.out.length}</span></div>
+          {lanes.out.map(row)}
+          {lanes.out.length === 0 && (
+            <div className="ar-sync">A session hands you a file by writing it into <code>{hostDir(slug, 'out')}</code>. It shows up here to download.</div>
+          )}
+
+          <div className="ar-grouphead"><span className="l">Docs &amp; files</span><span className="n">{lanes.kept.length}</span></div>
+          {lanes.kept.map(row)}
+          {arts && lanes.kept.length === 0 && (
+            <div className="ar-sync">Nothing kept here yet. Use New doc or Upload.</div>
           )}
         </div>
       </section>
@@ -202,8 +280,13 @@ export function Artifacts({ slug, highlightId, onStarred }: { slug: string; high
       <section className="ar-view">
         {cur ? (<>
           <div className="ar-viewbar">
-            <span className="when">{labelOf(cur)} · edited {ago(atOf(cur))}</span>
+            <span className="when">
+              {laneOf(cur) === 'in' ? 'Shared with sessions' : laneOf(cur) === 'out' ? 'From a session' : labelOf(cur)} · {laneOf(cur) === 'out' ? 'written' : 'edited'} {ago(atOf(cur))}
+            </span>
             <span className="rc-grow" />
+            {cur.file && (laneOf(cur) === 'in'
+              ? <button className="ar-edit" onClick={() => share(cur, false)} title="Take it out of the sessions' inbox; it stays here">Stop sharing</button>
+              : <button className="ar-edit" onClick={() => share(cur, true)} title="Copy it into this project's sessions' inbox">Share with sessions</button>)}
             <StarButton on={!!cur.starredAt} onToggle={() => star(cur)} what="this doc" />
             <button className="ar-discard" onClick={() => (isBlank(cur) ? remove(cur) : setConfirming(cur))}>Delete</button>
             <button className={`ar-edit${editing ? ' on' : ''}`} onClick={() => setEditing(!editing)}>
@@ -227,11 +310,21 @@ export function Artifacts({ slug, highlightId, onStarred }: { slug: string; high
               {cur.file?.image && (
                 <div className="ar-well"><ArtImage slug={slug} a={cur} /></div>
               )}
-              {cur.file && !cur.file.image && (
+              {cur.file && (
                 <div className="ar-card">
                   <div className="main">
                     <span className="fname">{cur.file.name}</span>
                     <span className="path">{fmtSize(cur.file.size)}</span>
+                    {laneOf(cur) !== 'kept' && cur.hostName && (() => {
+                      const p = `${hostDir(slug, laneOf(cur) as 'in' | 'out')}/${cur.hostName}`;
+                      return (
+                        <span className="path">
+                          {laneOf(cur) === 'in' ? (live ? 'On the host at ' : 'Will land on the host at ') : 'Written by a session at '}
+                          <code>{p}</code>{' '}
+                          <button className="ar-copy" onClick={() => copyPath(p)}>{copied === p ? 'Copied' : 'Copy path'}</button>
+                        </span>
+                      );
+                    })()}
                   </div>
                   <button className="ar-open" onClick={() => { const f = cur.file!; void work(() => downloadArtifactFile(slug, cur.id, f.name)); }}>
                     Download ↓

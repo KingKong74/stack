@@ -58,6 +58,7 @@ import { detectWaiting } from './input-wait.mjs';
 import { parseAutoName, readActivity } from './auto-scan.mjs';
 import { agentScratchDir, agentClaudeArgs } from './agent-run.mjs';
 import { writeDrop, DROP_MAX_BYTES } from './drop-file.mjs';
+import { syncFiles } from './file-sync.mjs';
 import { prepareSessionConfiguration, saveSessionConfiguration, readSessionConfiguration, tagSessionConfiguration } from './session-configuration.mjs';
 import { writeBrief, briefArg, pruneBriefs, briefsDir, BRIEF_MAX_CHARS } from './launch-brief.mjs';
 import { listClaudeMd, writeClaudeMd } from './claude-md.mjs';
@@ -449,6 +450,31 @@ setInterval(gcOrphans, 10 * 60_000);
 gcOrphans(); // and once at startup — reboots are when corpses accumulate
 // #525 — a launch brief a spawn never consumed (launch-brief.mjs). Same cadence.
 setInterval(() => { const n = pruneBriefs(); if (n) log(`briefs: pruned ${n} unconsumed`); }, 10 * 60_000);
+
+// ---- the file exchange: ~/.stack/files/<slug>/{inbox,outbox} (file-sync.mjs)
+// Mirrors what the owner shared into each inbox and sends what sessions left
+// in each outbox. One pass at a time; its own deletions fail safe.
+let filesBusy = false;
+let filesLastNotes = ''; // a note repeats every pass while true; log it once
+const filesApi = (path, init = {}) => fetch(`${API}${path}`, {
+  ...init,
+  headers: { ...(init.headers || {}), authorization: `Bearer ${TOKEN}` },
+  signal: AbortSignal.timeout(60_000),
+});
+async function filesPass() {
+  if (filesBusy) return;
+  filesBusy = true;
+  try {
+    const r = await syncFiles({ api: filesApi });
+    if (r.downloaded || r.removed || r.uploaded) log(`files: ${r.downloaded} in, ${r.removed} unshared, ${r.uploaded} sent`);
+    const notes = r.notes.join('\n');
+    if (notes && notes !== filesLastNotes) for (const n of r.notes) log(n);
+    filesLastNotes = notes;
+  } catch (e) { log(`files: pass failed: ${e.message}`); }
+  finally { filesBusy = false; }
+}
+setInterval(filesPass, 20_000);
+setTimeout(filesPass, 5_000);
 
 // (#287) Idle reaper — the second half of a ladder the daemon only had the
 // first half of.

@@ -130,3 +130,41 @@ test('delete', async () => {
   assert.equal((await call('DELETE', `${base(SLUG)}/${ids.doc}`)).status, 404);
   assert.equal((await call('GET', `${base(SLUG)}/abc/file`)).status, 400);
 });
+
+// THE FILE EXCHANGE (routes/files.js): share in, hand back out.
+test('the file exchange', async () => {
+  const before = (await call('GET', '/files/status')).body;
+  assert.equal(typeof before.live, 'boolean');
+
+  // Sharing: '' and 'in' only; 'out' cannot be claimed by hand.
+  const a = (await call('POST', base(SLUG), { type: 'file', title: 'brief', exchange: 'in' })).body;
+  assert.equal(a.exchange, 'in');
+  await call('PUT', `${base(SLUG)}/${a.id}/file`, new TextEncoder().encode('read me'),
+    { 'content-type': 'text/plain', 'x-file-name': encodeURIComponent('my brief (v2).txt') });
+  const forged = (await call('PATCH', `${base(SLUG)}/${a.id}`, { exchange: 'out' })).body;
+  assert.equal(forged.exchange, '', 'a hand write cannot claim a session made it');
+  await call('PATCH', `${base(SLUG)}/${a.id}`, { exchange: 'in' });
+
+  const sync = (await call('GET', '/files/sync')).body;
+  assert.ok(sync.projects.includes(SLUG));
+  const mine = sync.inbox.find((e) => e.id === a.id);
+  assert.deepEqual([mine.slug, mine.hostName, mine.size], [SLUG, `${a.id}-my-brief-v2.txt`, 7]);
+  assert.ok(!JSON.stringify(sync).includes('read me'), 'the sync list carries no bytes');
+  assert.equal((await call('GET', '/files/status')).body.live, true, 'a poll marks the host live');
+
+  // Handing back: one row per name, identical bytes are a no-op, new bytes update it.
+  const put = (bytes, name = 'report.md') => call('PUT', `/files/${SLUG}/out/${name}`, new TextEncoder().encode(bytes), { 'content-type': 'text/markdown' });
+  const first = await put('v1');
+  assert.equal(first.status, 201, first.text);
+  assert.deepEqual([first.body.exchange, first.body.hostName, first.body.title], ['out', 'report.md', 'report.md']);
+  const again = await put('v1');
+  assert.equal(again.status, 200);
+  assert.equal(again.body.id, first.body.id);
+  const v2 = await put('version two');
+  assert.equal(v2.body.id, first.body.id);
+  assert.equal(v2.body.file.size, 11);
+  assert.equal((await put('x', '..%2Fescape')).status, 400, 'a path is not an outbox name');
+  assert.equal((await call('PUT', `/files/no-such-${SLUG}/out/a.txt`, new TextEncoder().encode('x'))).status, 404);
+  const list = (await call('GET', base(SLUG))).body;
+  assert.equal(list.filter((x) => x.exchange === 'out').length, 1);
+});

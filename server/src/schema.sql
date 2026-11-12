@@ -1941,3 +1941,11 @@ CREATE TABLE IF NOT EXISTS specialist_loop_policies (
   stop_reason TEXT NOT NULL DEFAULT 'disabled',
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- THE FILE EXCHANGE (routes/files.js): which way a file artifact travels
+-- between the owner and the project's sessions. '' = kept here only;
+-- 'in' = shared WITH sessions (the host daemon mirrors it into
+-- ~/.stack/files/<slug>/inbox); 'out' = handed back BY a session (the daemon
+-- uploaded it from ~/.stack/files/<slug>/outbox, fingerprint 'out:<name>').
+ALTER TABLE artifacts ADD COLUMN IF NOT EXISTS exchange TEXT NOT NULL DEFAULT '';
+CREATE INDEX IF NOT EXISTS artifacts_exchange_idx ON artifacts (exchange) WHERE exchange <> '';
