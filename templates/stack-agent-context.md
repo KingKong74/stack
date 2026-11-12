@@ -22,10 +22,9 @@ Reconnect starts set `reattachOnly:true`; missing sessions fail without spawning
 
 ## Skill installation evidence
 
-`GET /api/skills` exposes requested revisions and per-runtime/path evidence. The host
-reports actual disk hashes and marker IDs to `/api/skills/report`, with `observedAt`.
+`GET /api/skills` exposes requested revisions and per-runtime/path evidence. The host reports disk hashes and marker IDs to `/api/skills/report` with `observedAt`.
 Bare IDs cannot certify installation; stale (>15m) reports are unknown and older snapshots
-cannot replace newer ones. Installed does not mean invoked. Claude installation only.
+cannot replace newer ones. Installed does not mean invoked. `runtimes` selects Claude/Codex targets.
 
 ## Trust the injected context
 

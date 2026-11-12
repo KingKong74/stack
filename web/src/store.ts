@@ -1706,6 +1706,7 @@ export type SkillInstallationState = 'installed' | 'pending' | 'conflict' | 'unk
 export interface Skill {
   id: number;
   revision?: string;
+  runtimes?: ('claude' | 'codex')[];
   installationState?: SkillInstallationState;
   installations?: { runtime: string; path: string; revision: string | null; requestedRevision: string; observedAt: string | null; state: SkillInstallationState }[];
   name: string;                 // kebab-case; it IS the directory name
@@ -1722,11 +1723,12 @@ export interface Skill {
 // shows it so it can be adopted rather than silently overwritten.
 export interface SkillOnDisk {
   name: string; scope: 'global' | 'project'; slug: string;
+  runtime?: 'claude' | 'codex' | 'unknown';
   path: string; managed: boolean; description: string; body: string;
 }
 export interface SkillReport { skills: SkillOnDisk[]; detail: string; when: string | null }
 export interface SkillsData { skills: Skill[]; report: SkillReport }
-export type SkillInput = Partial<Pick<Skill, 'name' | 'scope' | 'slug' | 'description' | 'body' | 'enabled'>>;
+export type SkillInput = Partial<Pick<Skill, 'name' | 'scope' | 'slug' | 'description' | 'body' | 'enabled' | 'runtimes'>>;
 
 export async function getSkills(): Promise<SkillsData> {
   return request<SkillsData>('/skills');

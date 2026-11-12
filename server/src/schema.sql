@@ -1907,3 +1907,6 @@ CREATE INDEX IF NOT EXISTS artifacts_starred_idx     ON artifacts (project_id, s
 -- `board` alone leaves updated_at alone. A cluster is a key its members share;
 -- its name rides each member, and a rename writes them all.
 ALTER TABLE artifacts ADD COLUMN IF NOT EXISTS board JSONB NOT NULL DEFAULT '{}'::jsonb;
+
+-- Runtime compatibility is explicit; existing Claude installs do not spread to Codex.
+ALTER TABLE skills ADD COLUMN IF NOT EXISTS runtimes JSONB NOT NULL DEFAULT '["claude"]'::jsonb;

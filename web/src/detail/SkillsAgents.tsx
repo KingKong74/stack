@@ -100,7 +100,7 @@ const skillState = (s: Skill, onDisk: boolean): [string, string, string] => {
   if (!s.enabled) return ['disabled', 'neutral', 'Kept in the library. The host removes it from disk on its next sync.'];
   if (s.installationState === 'unknown') return ['host status unknown', 'neutral', 'No fresh revision evidence from the host. Installation and session usage are unknown.'];
   if (s.installationState === 'conflict') return ['installation conflict', 'warning', 'A target contains an unmanaged skill or a different owner. Stack will not overwrite it.'];
-  if (s.installationState === 'pending') return ['sync pending', 'info', 'The requested revision has not been confirmed on every reported Claude target.'];
+  if (s.installationState === 'pending') return ['sync pending', 'info', 'The requested revision has not been confirmed on every reported target for the selected runtimes.'];
   if (s.installedAt && onDisk) return [`installed ${relative(s.installedAt)}`, 'success', 'On disk on the host, and matching this content.'];
   if (!s.installedAt && onDisk) return ['edited · sync pending', 'info', 'On disk, but the library has changed since. The host rewrites it within ~5 minutes.'];
   if (s.installedAt && !onDisk) return ['missing from disk', 'warning', 'Stack wrote this and the host no longer reports it: deleted by hand, or the project has no checkout on this host.'];
@@ -624,6 +624,17 @@ function SkillEditor({ s, data, projects, busy, run, onPick, onBack, onRemove }:
           </div>)}
           {!s.installations?.length && <span className="note">No target observation yet. Installation does not prove session usage.</span>}
         </div>}
+
+        <div className="sa-sect">
+          <Eyebrow>Runtimes</Eyebrow>
+          {(['claude', 'codex'] as const).map(runtime => {
+            const runtimes = s.runtimes ?? ['claude']; const on = runtimes.includes(runtime);
+            return <label key={runtime} className="note"><input type="checkbox" checked={on}
+              disabled={busy === `sk:${s.id}` || (on && runtimes.length === 1)}
+              onChange={() => save({ runtimes: on ? runtimes.filter(x => x !== runtime) : [...runtimes, runtime] })} /> {runtime === 'claude' ? 'Claude · .claude/skills' : 'Codex · .agents/skills'}</label>;
+          })}
+          <span className="note">Only selected runtimes receive this skill. Installation does not start or restart a session.</span>
+        </div>
 
         <div className="sa-sect">
           <Eyebrow>Where</Eyebrow>

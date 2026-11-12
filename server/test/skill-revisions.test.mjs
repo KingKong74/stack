@@ -37,12 +37,18 @@ try {
  assert.equal(data.skills[0].installations[1].runtime, 'codex');
  const row = { ...skill, body: 'Version B' };
  assert.equal(installationEvidence(row, { when: new Date(now - REPORT_TTL_MS - 1).toISOString(), skills: [current] }, now).installationState, 'unknown');
- await api('POST', '/skills/report', { skills: [{ ...current, revision: undefined, runtime: undefined }], installed: [skill.id] });
  // use a newer timestamp so the legacy snapshot is actually accepted
  await api('POST', '/skills/report', { observedAt: new Date(now + 4).toISOString(), skills: [{ ...current, revision: undefined, runtime: undefined }], installed: [skill.id] });
  data = await api('GET', '/skills'); assert.equal(data.skills[0].installationState, 'unknown'); assert.equal(data.skills[0].installedAt, null);
  await api('POST', '/skills/report', { skills: [{}] }, 400);
  await api('POST', '/skills/report', { observedAt: 'invalid', skills: [] }, 400);
+ await api('PATCH', `/skills/${skill.id}`, { runtimes: ['invalid'] }, 400);
+ await api('PATCH', `/skills/${skill.id}`, { runtimes: ['claude', 'codex'] });
+ await api('POST', '/skills/report', { observedAt: new Date(now + 5).toISOString(), skills: [current] });
+ data = await api('GET', '/skills'); assert.equal(data.skills[0].installationState, 'pending');
+ await api('POST', '/skills/report', { observedAt: new Date(now + 6).toISOString(), skills: [current, { ...other, revision: second.revision }] });
+ data = await api('GET', '/skills'); assert.equal(data.skills[0].installationState, 'installed');
+ assert.deepEqual(data.skills[0].runtimes, ['claude', 'codex']);
  await api('PATCH', `/skills/${skill.id}`, { enabled: false });
  data = await api('GET', '/skills'); assert.equal(data.skills[0].installationState, 'disabled');
  console.log('PASS: exact revisions, delayed and out-of-order reports, independent runtime/path observations, conflicts, stale and legacy evidence, validation and disable.');

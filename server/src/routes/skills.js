@@ -20,6 +20,7 @@ export { skillFile } from '../skill-installations.js';
 // the ones it did not create.
 export const skills = Router();
 
+const cleanRuntimes = (v) => Array.isArray(v) && v.length > 0 && v.every(x => ['claude', 'codex'].includes(x)) ? [...new Set(v)] : null;
 const SCOPES = ['global', 'project'];
 // The report is a snapshot of somebody's disk, so it is capped on both axes.
 // Bodies ride along so an UNMANAGED skill can be adopted into the library
@@ -40,6 +41,7 @@ const shape = (r) => ({
   description: r.description || '',
   body: r.body || '',
   enabled: r.enabled,
+  runtimes: r.runtimes || ['claude'],
   revision: contentRevision(skillFile(r)),
   installationState: r.enabled ? 'unknown' : 'disabled',
   installations: [],
@@ -85,6 +87,8 @@ skills.get('/', async (_req, res) => {
 });
 
 skills.post('/', async (req, res) => {
+  const runtimes = req.body?.runtimes === undefined ? ['claude'] : cleanRuntimes(req.body.runtimes);
+  if (!runtimes) return res.status(400).json({ error: 'Choose Claude, Codex or both.' });
   const name = cleanName(req.body?.name);
   if (!name) return res.status(400).json({ error: 'A skill needs a name.' });
   const scope = SCOPES.includes(req.body?.scope) ? req.body.scope : 'global';
@@ -94,12 +98,12 @@ skills.post('/', async (req, res) => {
   }
   try {
     const { rows } = await q(
-      `INSERT INTO skills (name, scope, project_id, description, body, enabled)
-       VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+      `INSERT INTO skills (name, scope, project_id, description, body, enabled, runtimes)
+       VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb) RETURNING *`,
       [name, scope, project?.id ?? null,
         String(req.body?.description || '').slice(0, 1000),
         String(req.body?.body || '').slice(0, 100_000),
-        req.body?.enabled !== false]);
+        req.body?.enabled !== false, JSON.stringify(runtimes)]);
     res.status(201).json(shape({ ...rows[0], slug: project?.slug ?? '' }));
   } catch (e) {
     // The partial unique indexes: one skill of a name per place.
@@ -137,6 +141,11 @@ skills.patch('/:id', async (req, res) => {
     }
     sets.push(`scope = $${i++}`); vals.push(req.body.scope);
     sets.push(`project_id = $${i++}`); vals.push(project?.id ?? null);
+  }
+  if (req.body?.runtimes !== undefined) {
+    const runtimes = cleanRuntimes(req.body.runtimes);
+    if (!runtimes) return res.status(400).json({ error: 'Choose Claude, Codex or both.' });
+    sets.push(`runtimes = $${i++}::jsonb`); vals.push(JSON.stringify(runtimes));
   }
   if (!sets.length) return res.status(400).json({ error: 'Nothing to update.' });
   // Any edit to WHAT gets written invalidates the install: the row no longer
@@ -177,17 +186,20 @@ skills.delete('/:id', async (req, res) => {
 // does not know what is on disk, and a diff computed from a stale report would
 // delete a skill that had only just been written.
 skills.get('/work', async (_req, res) => {
-  const rows = await libraryRows();
+  const [rows, projectRows, registrationRows] = await Promise.all([libraryRows(),
+    q('SELECT slug, repo FROM projects WHERE deleted_at IS NULL'),
+    q('SELECT path, repo FROM worktrees WHERE released_at IS NULL')]);
   const place = (r) => (r.scope === 'project' ? { scope: 'project', slug: r.slug || '' } : { scope: 'global', slug: '' });
   const enabled = rows.filter((r) => r.enabled && !(r.scope === 'project' && !r.slug));
   res.json({
-    write: enabled.map((r) => ({
-      id: r.id, name: r.name, ...place(r), runtime: 'claude', content: skillFile(r), revision: contentRevision(skillFile(r)),
+    projects: projectRows.rows, checkouts: registrationRows.rows,
+    write: enabled.flatMap((r) => (r.runtimes || ['claude']).map(runtime => ({
+      id: r.id, name: r.name, ...place(r), runtime, content: skillFile(r), revision: contentRevision(skillFile(r)),
       // The host writes only when content differs, and reports back on the
       // ones it actually wrote — so a steady state costs nothing.
       installed: false, // legacy hint; evidence is re-read from disk every sync
-    })),
-    keep: enabled.map((r) => ({ name: r.name, ...place(r) })),
+    }))),
+    keep: enabled.flatMap((r) => (r.runtimes || ['claude']).map(runtime => ({ name: r.name, ...place(r), runtime }))),
   });
 });
 
@@ -208,6 +220,8 @@ skills.post('/report', async (req, res) => {
     slug: String(s?.slug || '').slice(0, 80), path: String(s?.path || '').slice(0, 1000),
     runtime: ['claude', 'codex'].includes(s?.runtime) ? s.runtime : 'unknown',
     managed: s?.managed === true,
+    status: ['missing', 'error'].includes(s?.status) ? s.status : null,
+    error: String(s?.error || '').slice(0, 300),
     skillId: Number.isSafeInteger(s?.skillId) && s.skillId > 0 ? s.skillId : null,
     revision: /^[a-f0-9]{64}$/.test(s?.revision) ? s.revision : null,
     description: String(s?.description || '').replace(/\s+/g, ' ').slice(0, 1000),

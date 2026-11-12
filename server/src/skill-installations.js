@@ -15,17 +15,19 @@ export function installationEvidence(skill, report, now = Date.now()) {
   const installations = matching.map((s) => ({
     runtime: s.runtime || 'unknown', path: s.path, revision: s.revision || null,
     requestedRevision: revision, observedAt: report.when,
-    state: !fresh || !s.runtime || !s.revision ? 'unknown'
+    state: !fresh || !s.runtime || s.runtime === 'unknown' || s.status === 'error' ? 'unknown'
+      : s.status === 'missing' ? 'pending'
+      : !s.revision ? 'unknown'
       : !s.managed || s.skillId !== skill.id ? 'conflict'
       : s.revision === revision ? 'installed' : 'pending',
   }));
-  // Currently Stack installs Claude skills only. Other runtime observations
-  // remain separate evidence; they cannot certify the Claude target.
-  const targets = installations.filter((s) => s.runtime === 'claude');
+  // Every requested runtime needs evidence; one runtime cannot certify another.
+  const runtimes = skill.runtimes || ['claude'];
+  const targets = installations.filter((s) => runtimes.includes(s.runtime));
   const installationState = !skill.enabled ? 'disabled' : !fresh ? 'unknown'
     : targets.some((s) => s.state === 'conflict') ? 'conflict'
     : targets.some((s) => s.state === 'unknown') || (!targets.length && installations.some((s) => s.state === 'unknown')) ? 'unknown'
-    : targets.length && targets.every((s) => s.state === 'installed') ? 'installed' : 'pending';
+    : runtimes.every(r => targets.some(t => t.runtime === r)) && targets.every((s) => s.state === 'installed') ? 'installed' : 'pending';
   return { revision, installations, installationState,
     installedAt: installationState === 'installed' ? report.when : null };
 }

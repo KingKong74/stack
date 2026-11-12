@@ -49,7 +49,7 @@ const installState = (s: Skill, onDisk: boolean): { tone: string; text: string; 
   }
   if (s.installationState === 'unknown') return { tone: 'off', text: 'host status unknown', title: 'No fresh revision evidence from the host.' };
   if (s.installationState === 'conflict') return { tone: 'warn', text: 'installation conflict', title: 'A target is unmanaged or belongs to another skill. Stack will not overwrite it.' };
-  if (s.installationState === 'pending') return { tone: 'wait', text: 'sync pending', title: 'The requested revision is not confirmed on every reported Claude target.' };
+  if (s.installationState === 'pending') return { tone: 'wait', text: 'sync pending', title: 'The requested revision is not confirmed on every reported target for the selected runtimes.' };
   if (s.installedAt && onDisk) {
     return { tone: 'on', text: `installed ${relative(s.installedAt)}`, title: 'On disk on the host, and matching this content.' };
   }
