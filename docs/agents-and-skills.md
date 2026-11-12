@@ -72,7 +72,7 @@ reason. `GET /api/specialist-loops` is the host's aggregate enabled-policy feed.
 under `/api/projects/:slug/specialists/loops` list/create policies, PATCH `{enabled}`, and POST
 `/:id/dry-run` or `/:id/dispatch` with exact base/head, connected and localMinutes. Dry-run changes
 nothing and browser simulation assumes host availability without certifying it. Scope and limits
-are immutable; create a new disabled policy to replace them. Disabling atomically pauses its
+are immutable; create a new disabled policy to replace them. DELETE removes only disabled policies and retains their diagnostic ledger. Disabling atomically pauses its
 queued/active diagnostics; existing cancellation polling stops an active child.
 
 Each project shares one rolling 24-hour diagnostic population across its policies and manual runs.
@@ -83,3 +83,26 @@ partial or negative usage holds further passes. Attempts include failures and pa
 HEAD, an active diagnostic, cooldown, exhausted caps or three recent failed passes also hold.
 Reports annotate evidence only; they never file fixes, move Ready work, merge or give a verdict.
 No observation policy has been enabled as part of installation or verification.
+
+### Controlled pilot and repair handoff
+
+Run `scripts/specialist-loop-pilot.test.mjs` with DATABASE_URL pointing at a fresh throwaway
+Postgres database (unset STACK_API). It exercises actual policy routes, temporary Git commits,
+the host sweep, existing claim SQL and result recording. Native output is injected: this check
+proves orchestration, not account availability or model judgement. It covers dispatcher restarts,
+repeated heads, cooldown, global disarm, empty selected input, disabling queued work and late
+results. A failed/paused call without usage blocks another attempt instead of treating it as free.
+
+Before owner activation, deploy the checked server/web revision, verify the host terminal's
+capabilities, and complete a manual diagnostic for each intended profile. Check that the stored
+base/head, profile/skills, supplied files and blind spots match what actually ran. Native output
+may contain hypotheses, which remain qualifications beside each finding; a completed call is not
+a human verdict or a passing verification suite. A narrow diff can leave important helpers unseen.
+Use the eligibility simulation, then inspect the host's real stop reason before choosing to enable.
+
+Begin with one Reviewer or Exterminator policy, explicit literal paths, a long cooldown and a small
+attempt cap. Keep automatic fixes out of this pilot. To repair a substantiated finding, the owner
+creates or approves a scoped item in the existing planning/Ready workflow. The existing Builder
+runner then applies its normal approval, slice, claim, verification and review gates. Observation
+reports themselves cannot commission that work. Retain the original run ID/revisions as evidence;
+repeated reports of the same trigger do not authorise additional fixes.

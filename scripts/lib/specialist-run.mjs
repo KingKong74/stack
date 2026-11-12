@@ -26,7 +26,7 @@ export function parseDiagnosticResult(text, evidence) {
   if (!text?.trim()) throw Error('No model read was returned.');
   const r = JSON.parse(text.trim().replace(/^```(?:json)?\s*|\s*```$/g, ''));
   if (typeof r.summary !== 'string' || r.summary.length > 4000 || !Array.isArray(r.findings) || r.findings.length > 12 || !Array.isArray(r.read) || !Array.isArray(r.blind) || r.blind.length > 50 || [...r.read, ...r.blind].some(v => typeof v !== 'string' || v.length > 1000)) throw Error('Invalid diagnostic result shape.');
-  for (const f of r.findings) if (typeof f.title !== 'string' || !f.title || typeof f.path !== 'string' || typeof f.trigger !== 'string' || !f.trigger || !Array.isArray(f.evidence) || !f.evidence.length || f.evidence.some(e => typeof e !== 'string') || !evidence.read.includes(f.path)) throw Error('A finding lacks grounded evidence within the supplied file scope.');
+  for (const f of r.findings) if (typeof f.title !== 'string' || !f.title || typeof f.path !== 'string' || typeof f.trigger !== 'string' || !f.trigger || !Array.isArray(f.evidence) || !f.evidence.length || f.evidence.some(e => typeof e !== 'string') || ['expected', 'actual'].some(k => f[k] !== undefined && (typeof f[k] !== 'string' || f[k].length > 4000)) || !evidence.read.includes(f.path)) throw Error('A finding lacks grounded evidence within the supplied file scope.');
   return { summary: r.summary, findings: r.findings, read: evidence.read, blind: [...new Set([...evidence.blind, ...r.blind.map(String)])], provenance: { ...evidence, diff: undefined } };
 }
 export async function runSpecialistJob({ repo, spec, signal, invoke }) {

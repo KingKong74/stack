@@ -2,7 +2,7 @@
 # Working with my projects through Stack
 
 Stack is my self-hosted project command centre: resume cards, activity, bugs,
-roadmap and sticky notes. State is managed.
+roadmap and sticky notes.
 
 ## Codex sessions
 
@@ -20,10 +20,9 @@ Claude/Codex. The host reports disk hashes/marker IDs to `/api/skills/report` wi
 Bare IDs never certify installation; stale (>15m) evidence is unknown. Profiles link `skillIds`.
 Terminal `profileKeys` are Claude-only; required skills must resolve. Reconnect preserves the
 launch snapshot. `GET /terminal/configurations/:id` compares it with the current library.
-Supplied or installed does not mean invoked. Unsupported hosts are explicit.
+Supplied or installed does not mean invoked.
 `POST /projects/:slug/specialists/runs` queues a bounded tool-free diagnostic with exact
-base/head hashes and an idempotent requestId. `GET .../runs/:id` returns evidence, never a
-human verdict. Observation policies at `.../specialists/loops` start disabled. The existing
+base/head hashes and an idempotent requestId. `GET .../runs/:id` returns evidence and claim qualifications, never a verdict. Observation policies at `.../specialists/loops` start disabled; delete only when disabled. The existing
 dispatcher enforces host, manual-proof, cooldown and budget holds; `/:id/dry-run` never queues.
 
 ## Trust the injected context

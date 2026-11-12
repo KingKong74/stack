@@ -20,6 +20,7 @@ try {
  const context={base:'a'.repeat(40),head:'b'.repeat(40),connected:true,localMinutes:720};
  assert.equal((await api('POST',`/loops/${policy.id}/dispatch`,context)).hold,'disabled');
  await api('PATCH',`/loops/${policy.id}`,{enabled:true});
+ await api('DELETE',`/loops/${policy.id}`,undefined,409);
  assert.match((await api('POST',`/loops/${policy.id}/dry-run`,context)).hold,/manual/);
  const manual=await api('POST','/runs',{...context,requestId:randomUUID(),profileKey:key},201);
  const usage={input_tokens:100,output_tokens:100,cache_read_input_tokens:0,cache_creation_input_tokens:0};
@@ -58,5 +59,12 @@ try {
  await api('POST','/loops',{...b,paths:['../outside']},400);
  await api('POST','/loops',{...b,maxRunsDay:999},400);
  await api('PATCH',`/loops/${policy.id}`,{enabled:true,maxRunsDay:999},400);
- console.log('PASS: creation disabled, manual proof, mutation-free dry-run, atomic duplicate refusal, tool-free immutable scope, failed usage hold and disable.');
+ await q("INSERT INTO specialist_loop_policies(project_id,profile_key,name) SELECT $1,$2,'Limit fixture' FROM generate_series(1,30)",[project.id,key]);
+ const creationRace = await Promise.all(Array.from({length:8},()=>fetch(`http://127.0.0.1:${server.address().port}/projects/${slug}/specialists/loops`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(b),signal:AbortSignal.timeout(10000)}).then(r=>r.status)));
+ assert.equal(creationRace.filter(s=>s===201).length,1);
+ assert.equal(creationRace.filter(s=>s===409).length,7);
+ assert.equal((await q('SELECT count(*)::int n FROM specialist_loop_policies WHERE project_id=$1',[project.id])).rows[0].n,32);
+ await api('DELETE',`/loops/${policy.id}`);
+ assert.equal((await q('SELECT count(*)::int n FROM autopilot_jobs WHERE id=$1',[job.id])).rows[0].n,1,'removing policy preserves its diagnostic ledger');
+ console.log('PASS: creation disabled, manual proof, mutation-free dry-run, atomic duplicate refusal, tool-free immutable scope, failed usage hold disable and atomic 32-policy creation cap.');
 } finally {await new Promise(r=>server.close(r));await pool.end();}

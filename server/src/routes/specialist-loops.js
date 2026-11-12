@@ -52,12 +52,20 @@ specialistLoops.get('/', async (req, res) => {
   res.json(rows);
 });
 specialistLoops.post('/', async (req, res) => {
-  let c, spec; try { c = clean(req.body || {}); spec = await prepare(req.body || {}, req.params.slug); } catch(e) { return res.status(400).json({error:e.message}); }
-  const { rows } = await q(`INSERT INTO specialist_loop_policies(project_id,profile_key,name,interval_minutes,max_runs_day,max_tokens_day,paths)
-    SELECT $1,$2,$3,$4,$5,$6,$7::jsonb WHERE (SELECT count(*) FROM specialist_loop_policies WHERE project_id=$1)<32 RETURNING ${columns}`,
-    [req.project.id,spec.profileKey,c.name,c.intervalMinutes,c.maxRunsDay,c.maxTokensDay,JSON.stringify(spec.paths)]);
-  if (!rows.length) return res.status(409).json({error:'Limit of 32 policies per project.'});
-  res.status(201).json(rows[0]);
+  let c; try { c = clean(req.body || {}); } catch(e) { return res.status(400).json({error:e.message}); }
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    // Serialise creation too: two creators at count 31 must not both pass 32.
+    await client.query('SELECT id FROM projects WHERE id=$1 FOR UPDATE',[req.project.id]);
+    let spec; try { spec = await prepare(req.body || {},req.params.slug,client); } catch(e) { await client.query('ROLLBACK'); return res.status(400).json({error:e.message}); }
+    const { rows } = await client.query(`INSERT INTO specialist_loop_policies(project_id,profile_key,name,interval_minutes,max_runs_day,max_tokens_day,paths)
+      SELECT $1,$2,$3,$4,$5,$6,$7::jsonb WHERE (SELECT count(*) FROM specialist_loop_policies WHERE project_id=$1)<32 RETURNING ${columns}`,
+      [req.project.id,spec.profileKey,c.name,c.intervalMinutes,c.maxRunsDay,c.maxTokensDay,JSON.stringify(spec.paths)]);
+    await client.query('COMMIT');
+    if (!rows.length) return res.status(409).json({error:'Limit of 32 policies per project.'});
+    res.status(201).json(rows[0]);
+  } catch(e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }
 });
 specialistLoops.patch('/:id', async (req, res) => {
   if (!/^\d+$/.test(req.params.id) || typeof req.body?.enabled !== 'boolean' || Object.keys(req.body).some(k=>k!=='enabled')) return res.status(400).json({error:'Only an explicit enabled boolean may be changed; create a new policy to change its scope.'});
@@ -115,3 +123,11 @@ export async function observationRunHold(projectId, spec, localMinutes) {
   const n = localMinutes === undefined ? NaN : Number(localMinutes);
   return loopHold(await readSettings(),Number.isInteger(n)&&n>=0&&n<1440?n:NaN);
 }
+
+specialistLoops.delete('/:id', async (req,res) => {
+  if (!/^\d+$/.test(req.params.id)) return res.status(400).json({error:'Invalid policy ID.'});
+  const r = await q('DELETE FROM specialist_loop_policies WHERE id=$1 AND project_id=$2 AND NOT enabled RETURNING id',[req.params.id,req.project.id]);
+  if (!r.rowCount) return res.status(409).json({error:'Disable an existing policy before removing it.'});
+  // The diagnostic ledger keeps its captured policy ID, input and results.
+  res.json({ok:true});
+});

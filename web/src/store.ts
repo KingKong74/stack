@@ -1932,7 +1932,7 @@ export async function getTerminalConfiguration(id: string): Promise<{ snapshot: 
 export interface SpecialistRun {
   id: string; status: string; detail: string;
   spec: { profileKey: string; base: string; head: string; mode: string };
-  result: { skipped?: boolean; reason?: string; summary?: string; findings?: { title: string; path: string; trigger: string; evidence: string[] }[]; read?: string[]; blind?: string[] } | null;
+  result: { skipped?: boolean; reason?: string; summary?: string; findings?: { title: string; path: string; trigger: string; evidence: string[]; expected?: string; actual?: string }[]; read?: string[]; blind?: string[] } | null;
 }
 export function queueSpecialistRun(slug: string, body: { requestId: string; profileKey: string; base: string; head: string; paths?: string[]; includeWorkingTree: boolean; note: string }): Promise<{ id: string; status: string }> {
   return request(`/projects/${encodeURIComponent(slug)}/specialists/runs`, { method: 'POST', body });
@@ -1954,3 +1954,5 @@ export const setSpecialistLoopEnabled = (slug: string, id: string, enabled: bool
   request<SpecialistLoopPolicy>(`${specialistLoopsPath(slug)}/${encodeURIComponent(id)}`, { method: 'PATCH', body: { enabled } });
 export const evaluateSpecialistLoop = (slug: string, id: string, body: { base: string; head: string; localMinutes: number; connected: boolean }) =>
   request<{ hold: string; usage: { attempts: number; spent: number | null }; reserveTokens: number }>(`${specialistLoopsPath(slug)}/${encodeURIComponent(id)}/dry-run`, { method: 'POST', body });
+export const deleteSpecialistLoop = (slug: string, id: string) =>
+  request<{ ok: boolean }>(`${specialistLoopsPath(slug)}/${encodeURIComponent(id)}`, { method: 'DELETE' });

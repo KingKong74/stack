@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { getSpecialistRun, queueSpecialistRun, hangupAutopilotJob, type SpecialistRun } from '../store';
 import { useAutoRefresh } from '../lib/autoRefresh';
+import { SpecialistEvidence } from './SpecialistEvidence';
 import { Modal } from './Modal';
 export function SpecialistDiagnostic({ profileKey, name, project, projects, onClose }: { profileKey: string; name: string; project: string; projects: string[]; onClose: () => void }) {
   const [slug, setSlug] = useState(project);
@@ -34,11 +35,7 @@ export function SpecialistDiagnostic({ profileKey, name, project, projects, onCl
         <label>Focus <textarea className="sa-input" aria-label="Diagnostic focus" value={note} maxLength={2000} onChange={e => setNote(e.target.value)} /></label>
       </> : <>
         <p>Job #{id} · {run?.status || 'Queued'} · {run?.detail}</p>
-        {run?.result?.skipped ? <p>Skipped: {run.result.reason}</p> : run?.result ? <>
-          <p>{run.result.summary}</p>
-          {(run.result.findings || []).map((f, i) => <p key={i}><strong>{f.title}</strong><br />{f.path} · {f.trigger}<br />{f.evidence.join('; ')}</p>)}
-          {!!run.result.blind?.length && <><h4>Blind spots</h4><ul>{run.result.blind.map(b => <li key={b}>{b}</li>)}</ul></>}
-        </> : <p>No completed diagnostic read is available.</p>}
+        {run ? <SpecialistEvidence run={run} /> : <p>No completed diagnostic read is available.</p>}
         {!['done', 'failed', 'paused'].includes(run?.status || '') && <button className="btn-cancel" onClick={() => { void hangupAutopilotJob(id).then(load).catch(() => setError('Could not pause the run.')); }}>Pause run</button>}
       </>}
     </div>

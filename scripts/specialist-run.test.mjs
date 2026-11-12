@@ -28,3 +28,5 @@ assert.ok(args[args.indexOf('--system-prompt') + 1].includes('Return one JSON ob
 assert.equal(args[args.indexOf('--tools') + 1], '');
 assert.equal(args[args.indexOf('--max-turns') + 1], '1');
 assert.ok(args.includes('--strict-mcp-config'));
+
+assert.throws(() => parseDiagnosticResult(JSON.stringify({summary:'Malformed annotation',findings:[{title:'x',path:'fixture.txt',trigger:'x',evidence:['x'],actual:{claim:'not text'}}],read:[],blind:[]}),{read:['fixture.txt'],blind:[]}), /grounded evidence/);

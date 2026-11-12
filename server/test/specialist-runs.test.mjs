@@ -34,6 +34,7 @@ try {
  claim = await q(CLAIM_NEXT_SQL, [1, []]); assert.equal(String(claim.rows[0].id), two.id);
  await api('POST', `/${two.id}/start`, {});
  await api('POST', `/${two.id}/result`, { status: 'done', result: null }, 400);
+ await api('POST', `/${two.id}/result`, {status:'done',result:{...result,findings:[{title:'x',path:'fixture',trigger:'x',evidence:['x'],actual:{claim:'not text'}}]}},400);
  await api('POST', `/${two.id}/result`, { status: 'done', result: { ...result, provenance: { head: 'c'.repeat(40), base: body.base } } }, 409);
  await api('POST', `/${two.id}/result`, { status: 'done', result });
  stored = await api('GET', `/${two.id}`); assert.deepEqual(stored.result.findings, []); assert.equal(stored.status, 'done');

@@ -1,9 +1,10 @@
 // Real observation policies only. The existing dispatcher owns execution and
 // all claim gates. Never present diagnostic output as a verdict or a fix.
 import { useEffect, useState } from 'react';
-import { createSpecialistLoop, evaluateSpecialistLoop, getAgentProfiles, getSpecialistLoops, getSpecialistRun, setSpecialistLoopEnabled } from '../store';
+import { createSpecialistLoop, deleteSpecialistLoop, evaluateSpecialistLoop, getAgentProfiles, getSpecialistLoops, getSpecialistRun, setSpecialistLoopEnabled } from '../store';
 import type { SpecialistLoopPolicy, SpecialistRun } from '../store';
 import type { AgentProfile } from '../types';
+import { SpecialistEvidence } from '../components/SpecialistEvidence';
 import { useAutoRefresh } from '../lib/autoRefresh';
 
 export function Loops({ slug }: { slug: string }) {
@@ -71,7 +72,7 @@ export function Loops({ slug }: { slug: string }) {
         </div>
         <p>{p.enabled ? 'Enabled' : 'Disabled'} · {p.stop_reason || 'Awaiting host check'}</p>
         <p>{p.max_runs_day} attempts / 24h · {p.max_tokens_day.toLocaleString()} token budget · {p.paths.length ? p.paths.join(', ') : 'All changed tracked files'}</p>
-        <div className="lp-acts"><button className="lp-btn" onClick={() => { setSelected(String(p.id)); setEvaluation(''); setReport(null); }}>Evaluate eligibility</button>
+        <div className="lp-acts">{!p.enabled && <button className="lp-btn" disabled={busy} onClick={() => void act(async () => { await deleteSpecialistLoop(slug, String(p.id)); if (selected === String(p.id)) { setSelected(''); setReport(null); } await load(); })}>Remove disabled policy</button>}<button className="lp-btn" onClick={() => { setSelected(String(p.id)); setEvaluation(''); setReport(null); }}>Evaluate eligibility</button>
           {p.last_job_id && <button className="lp-btn" disabled={busy} onClick={() => void act(async () => { setSelected(String(p.id)); setReport(await getSpecialistRun(slug, String(p.last_job_id))); })}>Read latest run #{p.last_job_id}</button>}
         </div>
       </article>)}
@@ -84,9 +85,7 @@ export function Loops({ slug }: { slug: string }) {
         <label>Head commit<input className="lp-text" required pattern="[a-f0-9]{40}" value={head} onChange={e => setHead(e.target.value)} /></label>
         <button className="lp-btn" disabled={busy}>Evaluate without running</button>{evaluation && <p role="status">{evaluation}</p>}
       </form>}
-      {report && <div className="lp-policy-card"><strong>Run #{report.id} · {report.status}</strong><p>{report.detail}</p><p>{report.result?.summary || report.result?.reason || 'No completed diagnostic evidence.'}</p>
-        {report.result?.findings?.map((f, i) => <p key={i}>{f.title} · {f.path} · {f.trigger}</p>)}
-        {report.result?.blind?.map((b, i) => <p key={i}>Blind spot: {b}</p>)}
+      {report && <div className="lp-policy-card"><strong>Run #{report.id} · {report.status}</strong><p>{report.detail}</p><SpecialistEvidence run={report} />
       </div>}
     </div>
   </section>;

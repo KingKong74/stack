@@ -18,7 +18,7 @@ try {
   if (path === '/api/skills') return route.fulfill({ json: { skills: [], report: { skills: [], when: null, detail: '' } } });
   if (path.includes('/specialists/runs')) {
    if (req.method() === 'POST') { const b = req.postDataJSON(); assert.equal(b.profileKey, 'stack-reviewer'); assert.equal(b.head, 'b'.repeat(40)); writes++; return route.fulfill({ json: { id: '1234', status: 'queued' } }); }
-   return route.fulfill({ json: { id: '1234', status: 'done', detail: 'Diagnostic only', result: { summary: 'Fixture read completed', findings: [], read: ['fixture.ts'], blind: ['No tests executed'] } } });
+   return route.fulfill({ json: { id: '1234', status: 'done', detail: 'Diagnostic only', result: { summary: 'Fixture read completed', findings: [{title:'Fixture hypothesis',path:'fixture.ts',trigger:'Supplied scope',evidence:['Fixture evidence'],expected:'Fixture expectation',actual:'Hypothesis: omitted source might matter'}], read: ['fixture.ts'], blind: ['No tests executed'] } } });
   }
   if (req.method() !== 'GET') return route.abort(); return route.continue();
  });
@@ -29,6 +29,7 @@ try {
  await page.getByLabel('Diagnostic base commit').fill('a'.repeat(40)); await page.getByLabel('Diagnostic head commit').fill('b'.repeat(40));
  await page.getByRole('button', { name: 'Queue diagnostic' }).click();
  await page.getByText('Fixture read completed', { exact: true }).waitFor(); assert.equal(writes, 1);
+ await page.getByText('Reported actual: Hypothesis: omitted source might matter', {exact:true}).waitFor();
  await page.getByText('No tests executed', { exact: true }).waitFor();
  console.log('PASS: diagnostic preflight, exact scope submission, bounded mocked write and honest results/blind spots.');
 } finally { await browser.close(); }

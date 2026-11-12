@@ -46,7 +46,7 @@ specialists.post('/runs/:id/result', async (req, res) => {
   const strings = v => Array.isArray(v) && v.length <= 200 && v.every(x => typeof x === 'string' && x.length <= 2000);
   if (status === 'done' && (!result || !result.provenance || !/^[a-f0-9]{40}$/.test(result.provenance.head) || !/^[a-f0-9]{40}$/.test(result.provenance.base)
     || (result.skipped ? typeof result.reason !== 'string' : typeof result.summary !== 'string' || !Array.isArray(result.findings) || result.findings.length > 12 || !strings(result.read) || !strings(result.blind)
-      || result.findings.some(f => !f || !['title', 'path', 'trigger'].every(k => typeof f[k] === 'string' && f[k].length > 0 && f[k].length <= 2000) || !strings(f.evidence) || !f.evidence.length))
+      || result.findings.some(f => !f || !['title', 'path', 'trigger'].every(k => typeof f[k] === 'string' && f[k].length > 0 && f[k].length <= 2000) || !strings(f.evidence) || !f.evidence.length || ['expected','actual'].some(k => f[k] !== undefined && (typeof f[k] !== 'string' || f[k].length > 4000))))
     || JSON.stringify(result).length > 18000)) return res.status(400).json({ error: 'A complete bounded diagnostic result is required.' });
   const r = await q(`UPDATE autopilot_jobs SET status = $1, advice = $2, detail = $3, finished_at = now()
     WHERE id = $4 AND project_id = $5 AND kind = 'specialist' AND status IN ('claimed', 'running') AND ($6::text IS NULL OR specialist_spec->>'head' = $6) AND ($7::text IS NULL OR specialist_spec->>'base' = $7) RETURNING id`,
