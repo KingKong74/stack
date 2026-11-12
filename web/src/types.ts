@@ -680,6 +680,7 @@ export interface AgentProfile {
   enabled: boolean;
   /** A built-in cannot be DELETED, only reset: resolveSpawn needs 'executor'. */
   builtin: boolean;
+  skillIds?: number[];
 }
 export interface AgentProfilePolicy {
   /** What a profile with `model: ''` inherits. '' = the CLI's own default. */

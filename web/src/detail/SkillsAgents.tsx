@@ -26,11 +26,8 @@
 //     profile that can do nothing is a no-op), so the cell refuses first.
 //  3. AN UNMANAGED SKILL IS NEVER TOUCHED. Copy to library creates a disabled
 //     copy under a new name; the original remains outside Stack management.
-//  4. A SKILL IS NOT SCOPED TO AGENTS. The design's per-agent checklist and
-//     "Loaded by" chips have no column and nothing on the host that would
-//     honour them, so they draw as what is true: every enabled skill is on
-//     disk for every session. Wiring them needs a skills→agents column AND a
-//     spawn that passes it; don't draw live checkboxes before both exist.
+//  4. LINKS ARE REQUIRED WORKFLOWS, not runtime visibility restrictions.
+//     Explicit profile skill IDs are resolved by the launch/automation adapter.
 //
 // Text fields are drafts that save when they lose focus (the design saved per
 // keystroke, which would be one PATCH per letter and a host re-sync each).
@@ -339,7 +336,7 @@ function AgentEditor({ p, room, models, skills, busy, run, onPick, onBack, onOpe
     { label: 'Other', tools: room.knownTools.filter((t) => !known.has(t)) },
   ].filter((g) => g.tools.length);
   const lib = skills?.skills ?? [];
-  const loaded = lib.filter((s) => s.enabled);
+  const linked = p.skillIds ?? [];
 
   return (
     <div className="sa-edit">
@@ -407,21 +404,23 @@ function AgentEditor({ p, room, models, skills, busy, run, onPick, onBack, onOpe
         </details>
 
         <div className="sa-sect">
-          <Eyebrow aside={`${loaded.length} of ${lib.length} enabled`}>Skills</Eyebrow>
+          <Eyebrow aside={`${linked.length} linked`}>Skills</Eyebrow>
           <div className="sa-sklist">
             {lib.map((s) => (
-              <button key={s.id} className="sa-skitem" onClick={() => onOpenSkill(s.id)} title="Open this skill">
-                <span className={`sa-check${s.enabled ? ' on' : ''}`}>{s.enabled ? '✓' : ''}</span>
+              <div key={s.id} className="sa-skitem">
+                <input type="checkbox" aria-label={`Link ${s.name} to ${p.name}`} checked={linked.includes(s.id)} disabled={busy === `${p.key}:skills`}
+                  onChange={() => save({ skillIds: linked.includes(s.id) ? linked.filter(id => id !== s.id) : [...linked, s.id] }, `${p.key}:skills`)} />
                 <span className="tx">
                   <span className={`n${s.enabled ? '' : ' off'}`}>{s.name}</span>
                   <span className="d">{s.description || 'No description'}</span>
                 </span>
+                <button className="lp-btn" onClick={() => onOpenSkill(s.id)}>Edit</button>
                 <span className="scope">{s.scope === 'project' ? s.slug : 'global'}</span>
-              </button>
+              </div>
             ))}
             <button className="sa-sknew" disabled={busy === 'sk:new'} onClick={onNewSkill}>+ New skill</button>
           </div>
-          <span className="note">Skills are not scoped to agents: an enabled skill is on disk for every session, this agent's included.</span>
+          <span className="note">Linked skills are required workflows when this profile runs. Missing, disabled or incompatible links stop the run. Other installed skills remain discoverable by the runtime.</span>
         </div>
 
         <div className="sa-sect">
@@ -624,6 +623,16 @@ function SkillEditor({ s, data, projects, busy, run, onPick, onBack, onRemove }:
           </div>)}
           {!s.installations?.length && <span className="note">No target observation yet. Installation does not prove session usage.</span>}
         </div>}
+
+        <div className="sa-sect">
+          <Eyebrow>Text resources</Eyebrow>
+          <Draft area rows={6} className="sa-input" aria-label="Skill resources JSON" value={JSON.stringify(s.resources ?? [], null, 2)}
+            onSave={(value) => { void run(`sk:${s.id}`, async () => {
+              let resources; try { resources = JSON.parse(value); } catch { throw new Error('Resources must be a JSON array of {path, content} objects.'); }
+              await patchSkill(s.id, { resources });
+            }); }} />
+          <span className="note">Up to 20 text files under scripts/, references/ or assets/. Paths are relative to the skill directory. Files are installed, never executed by sync.</span>
+        </div>
 
         <div className="sa-sect">
           <Eyebrow>Runtimes</Eyebrow>

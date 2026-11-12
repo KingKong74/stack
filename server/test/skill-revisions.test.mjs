@@ -2,11 +2,12 @@
 import assert from 'node:assert/strict';
 import express from 'express';
 import { pool, migrate } from '../src/db.js';
+import { agentProfiles } from '../src/routes/agent-profiles.js';
 import { skills } from '../src/routes/skills.js';
 import { installationEvidence, REPORT_TTL_MS } from '../src/skill-installations.js';
 if (!process.env.DATABASE_URL) throw Error('A throwaway DATABASE_URL is required');
 await migrate();
-const app = express(); app.use(express.json()); app.use('/skills', skills);
+const app = express(); app.use(express.json()); app.use('/skills', skills); app.use('/profiles', agentProfiles);
 const server = app.listen(0, '127.0.0.1'); await new Promise(r => server.once('listening', r));
 const base = `http://127.0.0.1:${server.address().port}`;
 async function api(method, path, body, status = 200) {
@@ -49,6 +50,13 @@ try {
  await api('POST', '/skills/report', { observedAt: new Date(now + 6).toISOString(), skills: [current, { ...other, revision: second.revision }] });
  data = await api('GET', '/skills'); assert.equal(data.skills[0].installationState, 'installed');
  assert.deepEqual(data.skills[0].runtimes, ['claude', 'codex']);
+ await api('PATCH', `/skills/${skill.id}`, { resources: [{ path: 'scripts/../escape', content: 'no' }] }, 400);
+ const resourceEdit = await api('PATCH', `/skills/${skill.id}`, { resources: [{ path: 'references/test.md', content: 'Resource body' }] });
+ assert.notEqual(resourceEdit.revision, second.revision);
+ const profile = await api('POST', '/profiles', { key: 'linked-fixture', prompt: 'Read', tools: ['Read'], skillIds: [skill.id] }, 201);
+ assert.deepEqual(profile.skillIds, [skill.id]);
+ const linked = await api('GET', '/profiles'); assert.deepEqual(linked.profiles.find(p => p.key === 'linked-fixture').skillIds, [skill.id]);
+ await api('PATCH', '/profiles/linked-fixture', { skillIds: ['invalid'] }, 400);
  await api('PATCH', `/skills/${skill.id}`, { enabled: false });
  data = await api('GET', '/skills'); assert.equal(data.skills[0].installationState, 'disabled');
  console.log('PASS: exact revisions, delayed and out-of-order reports, independent runtime/path observations, conflicts, stale and legacy evidence, validation and disable.');

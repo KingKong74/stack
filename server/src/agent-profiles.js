@@ -101,9 +101,12 @@ export function normaliseProfile(input) {
     tools = KNOWN_TOOLS.filter((t) => requested.has(t));
   }
 
+  const rawSkills = src.skillIds ?? [];
+  if (!Array.isArray(rawSkills) || rawSkills.length > 20 || rawSkills.some(id => !Number.isSafeInteger(id) || id <= 0)) throw Error('Profile skills must be up to 20 valid skill IDs.');
+  const skillIds = [...new Set(rawSkills)];
   const enabled = typeof src.enabled === 'boolean' ? src.enabled : true;
 
-  return { key: rawKey, name, description, prompt, model, tools, enabled };
+  return { key: rawKey, name, description, prompt, model, tools, enabled, skillIds };
 }
 
 // Builds the object Claude Code's `--agents` flag takes:
@@ -113,6 +116,7 @@ export function composeAgents(profiles, { executorModel = '' } = {}) {
   if (!Array.isArray(profiles)) return out;
   for (const p of profiles) {
     if (!p || p.enabled === false) continue;
+    if (p.skillError) throw Error(p.skillError);
     const model = (p.model && p.model.trim()) || (executorModel && executorModel.trim()) || undefined;
     out[p.key] = {
       description: p.description || '',

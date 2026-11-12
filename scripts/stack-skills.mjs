@@ -5,7 +5,7 @@
 import { mkdirSync, readdirSync, readFileSync, writeFileSync, existsSync, rmSync, lstatSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, relative } from 'node:path';
-import { contentRevision } from '../server/src/skill-installations.js';
+import { contentRevision, bundleRevision, cleanSkillResources } from '../server/src/skill-installations.js';
 import { discoverSkillTargets, safeSkillPath } from './lib/skill-targets.mjs';
 import { loadStackEnv, logStderr } from '../hook/stack-post.mjs';
 loadStackEnv();
@@ -25,15 +25,26 @@ const valid = s => s && /^[a-z0-9][a-z0-9-]{0,63}$/.test(s.name) && ['claude', '
   && ['global', 'project'].includes(s.scope) && (s.scope === 'global' ? !s.slug
     : typeof s.slug === 'string' && /^[a-z0-9][a-z0-9._-]*$/i.test(s.slug) && !s.slug.includes('..'));
 const targetPath = (t, ...parts) => safeSkillPath(t.base, ...[relative(t.base, t.root), 'skills', ...parts].filter(Boolean));
-const markerId = path => { try { return Number(/^stack skill #(\d+)\s*$/.exec(readFileSync(path, 'utf8'))?.[1]) || null; } catch { return null; } };
+function markerInfo(path) {
+  const text = readFileSync(path, 'utf8'); const match = /^stack skill #(\d+)(?:\r?\n|$)/.exec(text);
+  if (!match) throw Error('Invalid ownership marker');
+  const tail = text.slice(match[0].length).trim();
+  const paths = tail ? JSON.parse(tail).resources : [];
+  cleanSkillResources(paths.map(path => ({ path, content: '' })));
+  return { id: Number(match[1]), paths };
+}
+const markerId = path => { try { return markerInfo(path).id; } catch { return null; } };
+
 function scan(t) {
   let entries; try { entries = readdirSync(targetPath(t), { withFileTypes: true }); } catch { return []; }
   return entries.filter(e => e.isDirectory() && /^[a-z0-9][a-z0-9-]{0,63}$/.test(e.name)).flatMap(e => {
     try {
       const path = targetPath(t, e.name); const bytes = readFileSync(targetPath(t, e.name, 'SKILL.md'));
-      const text = bytes.toString('utf8'); const skillId = markerId(targetPath(t, e.name, MARKER));
+      const text = bytes.toString('utf8'); const marker = targetPath(t, e.name, MARKER);
+      const skillId = markerId(marker);
+      const resources = skillId ? markerInfo(marker).paths.map(path => ({ path, content: readFileSync(targetPath(t, e.name, path), 'utf8') })) : [];
       return [{ name: e.name, runtime: t.runtime, scope: t.scope, slug: t.slug, path,
-        managed: !!skillId, skillId, revision: contentRevision(bytes),
+        managed: !!skillId, skillId, revision: resources.length ? bundleRevision(text, resources) : contentRevision(bytes),
         description: /^description:\s*(.+)$/m.exec(text)?.[1]?.replace(/^"|"$/g, '').slice(0, 1000) || '',
         body: text.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, '').trim().slice(0, 16_000) }];
     } catch { return []; }
@@ -42,9 +53,11 @@ function scan(t) {
 export async function syncSkills({ dry = false, request = api, resolveRoot, resolveTargets = discoverSkillTargets, onlyCwd } = {}) {
   if (request === api && (!API || !TOKEN)) { log('no API/token — nothing done'); return null; }
   let work; try { work = await request('GET', '/api/skills/work'); } catch (e) { log(`library unavailable (${e.message}) — nothing done`); return null; }
+  try { for (const s of work?.write || []) cleanSkillResources(s.resources); }
+  catch { log('invalid resources — nothing done'); return null; }
   if (!work || !Array.isArray(work.write) || !Array.isArray(work.keep)
     || !work.keep.every(valid) || !work.write.every(s => valid(s) && Number.isSafeInteger(s.id) && s.id > 0
-      && typeof s.content === 'string' && (!s.revision || s.revision === contentRevision(s.content)))
+      && typeof s.content === 'string' && (!s.revision || s.revision === bundleRevision(s.content, s.resources || [])))
     || work.write.some(s => !work.keep.some(k => key(k) === key(s)))) { log('invalid work — nothing done'); return null; }
   let targets;
   try {
@@ -67,8 +80,24 @@ export async function syncSkills({ dry = false, request = api, resolveRoot, reso
         const dir = targetPath(t, s.name); const file = targetPath(t, s.name, 'SKILL.md'); const marker = targetPath(t, s.name, MARKER);
         if (existsSync(dir) && !markerId(marker)) { errors.set(s.name, 'Unmanaged directory; not overwritten.'); continue; }
         let current; try { current = readFileSync(file, 'utf8'); } catch { /* new file */ }
-        if (current === s.content && markerId(marker) === s.id) continue;
-        if (!dry) { mkdirSync(dir, { recursive: true }); writeFileSync(file, s.content, { mode: 0o600 }); writeFileSync(marker, `stack skill #${s.id}\n`, { mode: 0o600 }); }
+        const resources = cleanSkillResources(s.resources);
+        const oldPaths = markerId(marker) ? markerInfo(marker).paths : [];
+        const resourcePaths = resources.map(r => r.path);
+        let matches = current === s.content && markerId(marker) === s.id && JSON.stringify([...oldPaths].sort()) === JSON.stringify([...resourcePaths].sort());
+        for (const r of resources) {
+          try { if (readFileSync(targetPath(t, s.name, r.path), 'utf8') !== r.content) matches = false; }
+          catch { matches = false; }
+        }
+        if (matches) continue;
+        if (!dry) {
+          // Validate every destination before touching any member of the bundle.
+          const paths = [...resources.map(r => r.path), ...oldPaths].map(p => targetPath(t, s.name, p));
+          for (const path of paths) if (existsSync(path) && !lstatSync(path).isFile()) throw Error('Resource is not a plain file');
+          mkdirSync(dir, { recursive: true }); writeFileSync(file, s.content, { mode: 0o600 });
+          for (const r of resources) { const path = targetPath(t, s.name, r.path); mkdirSync(join(path, '..'), { recursive: true }); writeFileSync(path, r.content, { mode: 0o600 }); }
+          for (const path of oldPaths.filter(p => !resourcePaths.includes(p))) rmSync(targetPath(t, s.name, path), { force: true });
+          writeFileSync(marker, `stack skill #${s.id}\n${JSON.stringify({ resources: resourcePaths })}\n`, { mode: 0o600 });
+        }
         wrote++;
       } catch (e) { errors.set(s.name, e.message); }
     }

@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, readFileSync, writeFileSync, mkdirSync, existsSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { syncSkills } from './stack-skills.mjs';
-import { skillFile, contentRevision } from '../server/src/skill-installations.js';
+import { skillFile, contentRevision, bundleRevision } from '../server/src/skill-installations.js';
 const root = mkdtempSync(join(tmpdir(), 'stack-skill-test-'));
 const content = skillFile({ name: 'example', body: 'Original' });
 let work = { write: [{ id: 81, name: 'example', scope: 'global', slug: '', runtime: 'claude', content, revision: contentRevision(content) }], keep: [{ name: 'example', scope: 'global', slug: '' }] };
@@ -21,6 +21,12 @@ try {
  assert.equal(report.skills[0].skillId, 81); assert.equal(report.skills[0].runtime, 'claude');
  assert.ok(report.observedAt); assert.equal(report.installed, undefined);
  report = null; const steady = await run(); assert.equal(steady.wrote, 0); assert.ok(report.skills[0].revision);
+ const resources = [{ path: 'references/check.md', content: 'Verify the actual diff' }];
+ work.write[0] = { ...work.write[0], resources, revision: bundleRevision(content, resources) };
+ await run(); assert.equal(readFileSync(join(root, 'skills/example/references/check.md'), 'utf8'), resources[0].content);
+ assert.equal(report.skills[0].revision, bundleRevision(content, resources));
+ work.write[0] = { ...work.write[0], resources: [], revision: contentRevision(content) };
+ await run(); assert.equal(existsSync(join(root, 'skills/example/references/check.md')), false);
  writeFileSync(join(root, 'skills/example/SKILL.md'), 'Hand edit'); await run();
  assert.equal(report.skills[0].revision, contentRevision(content));
  mkdirSync(join(root, 'skills/foreign')); writeFileSync(join(root, 'skills/foreign/SKILL.md'), 'Keep me');

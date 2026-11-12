@@ -1910,3 +1910,6 @@ ALTER TABLE artifacts ADD COLUMN IF NOT EXISTS board JSONB NOT NULL DEFAULT '{}'
 
 -- Runtime compatibility is explicit; existing Claude installs do not spread to Codex.
 ALTER TABLE skills ADD COLUMN IF NOT EXISTS runtimes JSONB NOT NULL DEFAULT '["claude"]'::jsonb;
+
+ALTER TABLE skills ADD COLUMN IF NOT EXISTS resources JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE agent_profiles ADD COLUMN IF NOT EXISTS skill_ids JSONB NOT NULL DEFAULT '[]'::jsonb;

@@ -29,8 +29,12 @@ const server = createServer(async (req, res) => {
     if (path === '/api/agent-profiles' && req.method === 'POST') {
      assert.ok(body.prompt.trim()); assert.equal(body.enabled, false);
      payload = { ...body, builtin: false }; profiles.profiles.push(payload);
+    } else if (path.startsWith('/api/agent-profiles/') && req.method === 'PATCH') {
+     assert.deepEqual(body.skillIds, [90001]);
+     payload = profiles.profiles.find(p => p.key === path.split('/').at(-1)); Object.assign(payload, body);
     } else if (path === '/api/skills/90001' && req.method === 'PATCH') {
-     assert.equal(body.scope, 'project'); assert.equal(body.slug, 'fixture-other');
+     if (body.resources) assert.deepEqual(body.resources, [{ path: 'references/check.md', content: 'Check evidence' }]);
+     else { assert.equal(body.scope, 'project'); assert.equal(body.slug, 'fixture-other'); }
      Object.assign(skills[0], body); payload = skills[0];
     } else if (path === '/api/skills' && req.method === 'POST') {
      assert.equal(body.name, 'foreign-copy'); assert.equal(body.enabled, false); assert.equal(body.body, foreign.body);
@@ -58,15 +62,19 @@ try {
  await page.getByRole('button', { name: '+ New', exact: true }).click();
  await page.locator('.sa-edit .sa-body').waitFor();
  assert.equal(writes[0].body.enabled, false);
+ await Promise.all([page.waitForResponse(r => r.url().includes('/agent-profiles/') && r.request().method() === 'PATCH'), page.getByLabel('Link fixture-skill to New agent').click()]);
+ await page.waitForFunction(() => document.querySelector('input[aria-label="Link fixture-skill to New agent"]')?.checked);
  await page.getByRole('tab', { name: /Skills/ }).click();
  await page.locator('.sa-skrow').filter({ hasText: 'fixture-skill' }).click();
  await Promise.all([page.waitForResponse(r => r.url().endsWith('/skills/90001') && r.request().method() === 'PATCH'), page.getByLabel('Project', { exact: true }).selectOption('fixture-other')]);
+ await page.getByLabel('Skill resources JSON').fill(JSON.stringify([{ path: 'references/check.md', content: 'Check evidence' }]));
+ await Promise.all([page.waitForResponse(r => r.url().endsWith('/skills/90001') && r.request().method() === 'PATCH'), page.getByLabel('Skill resources JSON').press('Tab')]);
  await page.getByRole('button', { name: '← All skills' }).click();
  await page.getByRole('button', { name: 'Copy to library', exact: true }).click();
  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
  assert.equal(writes.filter(w => w.path === '/api/skills').length, 0);
  await page.getByRole('button', { name: 'Copy to library', exact: true }).click();
  await Promise.all([page.waitForResponse(r => r.url().endsWith('/skills') && r.request().method() === 'POST'), page.getByRole('button', { name: 'Create disabled copy', exact: true }).click()]);
- assert.equal(writes.length, 3); assert.equal(foreign.managed, false);
+ assert.equal(writes.length, 5); assert.equal(foreign.managed, false);
  console.log('PASS: disabled agent creation, project selection, copy cancellation and confirmed disabled copy; all writes isolated.');
 } finally { await browser.close(); server.close(); }

@@ -1,0 +1,16 @@
+import assert from 'node:assert/strict';
+import { resolveProfileSkills } from '../src/profile-skills.js';
+import { cleanSkillResources, skillRevision } from '../src/skill-installations.js';
+import { normaliseProfile, composeAgents } from '../src/agent-profiles.js';
+const profile = normaliseProfile({ key: 'fixture', prompt: 'Read carefully.', tools: ['Read'], skillIds: [1, 1] });
+assert.deepEqual(profile.skillIds, [1]);
+assert.throws(() => normaliseProfile({ ...profile, skillIds: ['1'] }), /skill IDs/);
+const skill = { id: 1, name: 'fixture', body: 'Check contracts', enabled: true, scope: 'project', slug: 'stack', runtimes: ['claude', 'codex'], resources: [{ path: 'references/check.md', content: 'Check evidence' }] };
+const ready = resolveProfileSkills(profile, [skill], { runtime: 'claude', slug: 'stack' });
+assert.ok(ready.prompt.includes('Check evidence')); assert.equal(ready.skillRevisions[0].revision, skillRevision(skill));
+assert.notEqual(skillRevision(skill), skillRevision({ ...skill, resources: [{ path: 'references/check.md', content: 'New evidence' }] }));
+for (const [library, runtime, slug, message] of [[[], 'claude', 'stack', /missing/], [[{ ...skill, enabled: false }], 'claude', 'stack', /disabled/], [[{ ...skill, runtimes: ['claude'] }], 'codex', 'stack', /does not support/], [[skill], 'claude', 'other', /belongs to project/]]) assert.throws(() => resolveProfileSkills(profile, library, { runtime, slug }), message);
+assert.throws(() => composeAgents([{ ...profile, skillError: 'Missing required skill' }]), /Missing required/);
+for (const path of ['../escape', '/absolute', 'scripts/../../escape', 'scripts/.hidden', 'SKILL.md', 'scripts//x']) assert.throws(() => cleanSkillResources([{ path, content: '' }]));
+assert.throws(() => cleanSkillResources([{ path: 'scripts/x', content: '' }, { path: 'scripts/x', content: '' }]));
+console.log('PASS: explicit skill IDs, complete bundle revisions, required-skill refusal, safe paths and profile composition.');

@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { q } from '../db.js';
-import { skillFile, contentRevision, installationEvidence } from '../skill-installations.js';
+import { skillFile, skillRevision, cleanSkillResources, installationEvidence } from '../skill-installations.js';
 export { skillFile } from '../skill-installations.js';
 
 // The SKILL TREE (roadmap #228) — a managed library of Claude Code skills that
@@ -42,7 +42,8 @@ const shape = (r) => ({
   body: r.body || '',
   enabled: r.enabled,
   runtimes: r.runtimes || ['claude'],
-  revision: contentRevision(skillFile(r)),
+  resources: r.resources || [],
+  revision: skillRevision(r),
   installationState: r.enabled ? 'unknown' : 'disabled',
   installations: [],
   installedAt: null, // legacy timestamps are not revision evidence
@@ -87,6 +88,7 @@ skills.get('/', async (_req, res) => {
 });
 
 skills.post('/', async (req, res) => {
+  let resources; try { resources = cleanSkillResources(req.body?.resources); } catch (e) { return res.status(400).json({ error: e.message }); }
   const runtimes = req.body?.runtimes === undefined ? ['claude'] : cleanRuntimes(req.body.runtimes);
   if (!runtimes) return res.status(400).json({ error: 'Choose Claude, Codex or both.' });
   const name = cleanName(req.body?.name);
@@ -98,12 +100,12 @@ skills.post('/', async (req, res) => {
   }
   try {
     const { rows } = await q(
-      `INSERT INTO skills (name, scope, project_id, description, body, enabled, runtimes)
-       VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb) RETURNING *`,
+      `INSERT INTO skills (name, scope, project_id, description, body, enabled, runtimes, resources)
+       VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb) RETURNING *`,
       [name, scope, project?.id ?? null,
         String(req.body?.description || '').slice(0, 1000),
         String(req.body?.body || '').slice(0, 100_000),
-        req.body?.enabled !== false, JSON.stringify(runtimes)]);
+        req.body?.enabled !== false, JSON.stringify(runtimes), JSON.stringify(resources)]);
     res.status(201).json(shape({ ...rows[0], slug: project?.slug ?? '' }));
   } catch (e) {
     // The partial unique indexes: one skill of a name per place.
@@ -146,6 +148,10 @@ skills.patch('/:id', async (req, res) => {
     const runtimes = cleanRuntimes(req.body.runtimes);
     if (!runtimes) return res.status(400).json({ error: 'Choose Claude, Codex or both.' });
     sets.push(`runtimes = $${i++}::jsonb`); vals.push(JSON.stringify(runtimes));
+  }
+  if (req.body?.resources !== undefined) {
+    let resources; try { resources = cleanSkillResources(req.body.resources); } catch (e) { return res.status(400).json({ error: e.message }); }
+    sets.push(`resources = $${i++}::jsonb`); vals.push(JSON.stringify(resources));
   }
   if (!sets.length) return res.status(400).json({ error: 'Nothing to update.' });
   // Any edit to WHAT gets written invalidates the install: the row no longer
@@ -194,7 +200,7 @@ skills.get('/work', async (_req, res) => {
   res.json({
     projects: projectRows.rows, checkouts: registrationRows.rows,
     write: enabled.flatMap((r) => (r.runtimes || ['claude']).map(runtime => ({
-      id: r.id, name: r.name, ...place(r), runtime, content: skillFile(r), revision: contentRevision(skillFile(r)),
+      id: r.id, name: r.name, ...place(r), runtime, content: skillFile(r), resources: r.resources || [], revision: skillRevision(r),
       // The host writes only when content differs, and reports back on the
       // ones it actually wrote — so a steady state costs nothing.
       installed: false, // legacy hint; evidence is re-read from disk every sync

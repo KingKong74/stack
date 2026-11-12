@@ -59,6 +59,7 @@ function rowToProfile(row) {
     model: row.model,
     tools: row.tools || [],
     enabled: row.enabled,
+    skillIds: row.skill_ids || [],
   };
 }
 
@@ -71,11 +72,11 @@ async function loadStored() {
 // shape POST/PATCH hand back.
 async function upsert(profile) {
   await q(
-    `INSERT INTO agent_profiles (key, name, description, prompt, model, tools, enabled, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, now())
+    `INSERT INTO agent_profiles (key, name, description, prompt, model, tools, enabled, skill_ids, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, now())
      ON CONFLICT (key) DO UPDATE SET
-       name = $2, description = $3, prompt = $4, model = $5, tools = $6, enabled = $7, updated_at = now()`,
-    [profile.key, profile.name, profile.description, profile.prompt, profile.model, JSON.stringify(profile.tools), profile.enabled]
+       name = $2, description = $3, prompt = $4, model = $5, tools = $6, enabled = $7, skill_ids = $8, updated_at = now()`,
+    [profile.key, profile.name, profile.description, profile.prompt, profile.model, JSON.stringify(profile.tools), profile.enabled, JSON.stringify(profile.skillIds)]
   );
   const stored = await loadStored();
   return mergeProfiles(stored).find((p) => p.key === profile.key);

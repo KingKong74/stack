@@ -8,7 +8,7 @@ export const skillFile = (s) => {
   return `---\nname: ${s.name}\ndescription: ${JSON.stringify(desc)}\n---\n\n${(s.body || '').trim()}\n`;
 };
 export function installationEvidence(skill, report, now = Date.now()) {
-  const revision = contentRevision(skillFile(skill));
+  const revision = skillRevision(skill);
   const age = now - Date.parse(report.when);
   const fresh = Number.isFinite(age) && age >= -60_000 && age <= REPORT_TTL_MS;
   const matching = report.skills.filter((s) => s.name === skill.name && s.scope === skill.scope && s.slug === (skill.slug || ''));
@@ -31,3 +31,20 @@ export function installationEvidence(skill, report, now = Date.now()) {
   return { revision, installations, installationState,
     installedAt: installationState === 'installed' ? report.when : null };
 }
+
+// Text resources only; no absolute paths, traversal, reserved files or binary payloads.
+export function cleanSkillResources(value = []) {
+  if (!Array.isArray(value) || value.length > 20) throw Error('A skill supports up to 20 text resources.');
+  const seen = new Set(); let size = 0;
+  return value.map(r => {
+    if (!r || typeof r.path !== 'string' || !/^(scripts|references|assets)\/[a-zA-Z0-9_./-]+$/.test(r.path)
+      || r.path.length > 200 || r.path.split('/').some(p => !p || p === '.' || p === '..' || p.startsWith('.'))
+      || seen.has(r.path) || typeof r.content !== 'string' || Buffer.byteLength(r.content) > 32768) throw Error('Invalid or duplicate skill resource path/content.');
+    seen.add(r.path); size += Buffer.byteLength(r.content);
+    if (size > 262144) throw Error('Skill resources exceed 256 KiB.');
+    return { path: r.path, content: r.content };
+  }).sort((a, b) => a.path.localeCompare(b.path));
+}
+export const bundleRevision = (content, resources = []) => resources.length
+  ? contentRevision(JSON.stringify([content, cleanSkillResources(resources)])) : contentRevision(content);
+export const skillRevision = s => bundleRevision(skillFile(s), s.resources || []);

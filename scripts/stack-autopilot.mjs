@@ -108,6 +108,7 @@ import { autoVerdict, declaredFiles } from './lib/autoverdict.mjs';
 // branches called their module `agents`, and this is the one about what a run
 // hands to `claude --agents`. GET /api/agent-profiles already merges stored
 // profiles over the builtins server-side, so this script only needs resolveSpawn.
+import { resolveProfileSkills } from '../server/src/profile-skills.js';
 import { resolveSpawn } from '../server/src/agent-profiles.js';
 
 loadStackEnv();
@@ -199,7 +200,14 @@ async function api(method, path, body) {
 async function fetchAgentProfiles() {
   try {
     const body = await api('GET', '/api/agents');
-    return Array.isArray(body?.profiles) ? body.profiles : [];
+    const profiles = Array.isArray(body?.profiles) ? body.profiles : [];
+    if (!profiles.some(p => p.skillIds?.length)) return profiles;
+    let library = [];
+    try { library = (await api('GET', '/api/skills')).skills || []; } catch { /* linked profiles refuse below */ }
+    return profiles.map(p => {
+      try { return resolveProfileSkills(p, library, { runtime: 'claude', slug: SLUG }); }
+      catch (e) { return { ...p, skillError: e.message }; }
+    });
   } catch (e) {
     log(`could not read agent profiles (${e.message}) — using the built-in executor.`);
     return [];

@@ -1707,6 +1707,7 @@ export interface Skill {
   id: number;
   revision?: string;
   runtimes?: ('claude' | 'codex')[];
+  resources?: { path: string; content: string }[];
   installationState?: SkillInstallationState;
   installations?: { runtime: string; path: string; revision: string | null; requestedRevision: string; observedAt: string | null; state: SkillInstallationState }[];
   name: string;                 // kebab-case; it IS the directory name
@@ -1728,7 +1729,7 @@ export interface SkillOnDisk {
 }
 export interface SkillReport { skills: SkillOnDisk[]; detail: string; when: string | null }
 export interface SkillsData { skills: Skill[]; report: SkillReport }
-export type SkillInput = Partial<Pick<Skill, 'name' | 'scope' | 'slug' | 'description' | 'body' | 'enabled' | 'runtimes'>>;
+export type SkillInput = Partial<Pick<Skill, 'name' | 'scope' | 'slug' | 'description' | 'body' | 'enabled' | 'runtimes' | 'resources'>>;
 
 export async function getSkills(): Promise<SkillsData> {
   return request<SkillsData>('/skills');
@@ -1789,7 +1790,7 @@ export async function getAgentProfiles(): Promise<AgentProfilesRoom> {
  * edits alone.
  */
 export async function patchAgentProfile(key: string, patch: Partial<Pick<AgentProfile,
-  'name' | 'description' | 'prompt' | 'model' | 'tools' | 'enabled'>>): Promise<AgentProfile> {
+  'name' | 'description' | 'prompt' | 'model' | 'tools' | 'enabled' | 'skillIds'>>): Promise<AgentProfile> {
   return request<AgentProfile>(`/agent-profiles/${encodeURIComponent(key)}`, { method: 'PATCH', body: patch });
 }
 

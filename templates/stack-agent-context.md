@@ -1,9 +1,4 @@
-<!--
-  Stack — portable agent operating manual.
-  This file is the single source of truth. If the API or hook contract changes,
-  update THIS file (it is exported verbatim by scripts/stack-context.mjs).
-  Pipe it into a project's CLAUDE.md or your global ~/.claude/CLAUDE.md.
--->
+<!-- Stack portable agent manual, exported verbatim by scripts/stack-context.mjs. Update API/hook contracts here. -->
 # Working with my projects through Stack
 
 Stack is my self-hosted project command centre: resume cards, activity, bugs,
@@ -22,9 +17,9 @@ Reconnect starts set `reattachOnly:true`; missing sessions fail without spawning
 
 ## Skill installation evidence
 
-`GET /api/skills` exposes requested revisions and per-runtime/path evidence. The host reports disk hashes and marker IDs to `/api/skills/report` with `observedAt`.
+`GET /api/skills` exposes requested revisions and target evidence. The host reports disk hashes and marker IDs to `/api/skills/report` with `observedAt`.
 Bare IDs cannot certify installation; stale (>15m) reports are unknown and older snapshots
-cannot replace newer ones. Installed does not mean invoked. `runtimes` selects Claude/Codex targets.
+cannot replace newer ones. Installed does not mean invoked. `runtimes` selects targets; `resources` holds text files. Profiles link `skillIds`.
 
 ## Trust the injected context
 
