@@ -48,11 +48,11 @@ export const BUILTIN_PROFILES = Object.freeze([
   {
     key: 'reviewer',
     name: 'Reviewer',
-    description: 'The reviewer — reads the change and reports what is wrong with specifics. It never writes: no Edit or Write tool, so nothing it says can land without a human or the executor acting on it.',
+    description: 'The reviewer — reads changes and reports specific findings. Bash can write: run command checks only in an isolated worktree; no human verdict is granted.',
     prompt: 'You are the reviewer reading one change in a git worktree. '
       + 'Read the diff and the files it touches, check it against what it claims to do, and report back BRIEFLY — '
       + 'what is wrong, with the specific file and line, and what is missing. Do not fix anything and do not edit any '
-      + 'file; you have no write access and nothing you say should assume you used it. '
+      + 'file. Bash can write: run only scoped verification in an isolated worktree and report what actually ran. '
       + 'If the change looks right, say so plainly rather than inventing a finding.',
     model: '',
     tools: ['Read', 'Grep', 'Glob', 'Bash'],
@@ -173,6 +173,11 @@ export function resolveSpawn({ profiles, requested, executorModel = '' } = {}) {
   }
 
   let fallback = false;
+  if (chosen.length && !chosen.some(p => p.tools?.includes('Edit') || p.tools?.includes('Write'))) {
+    chosen = chosen.filter(p => p.key !== 'executor');
+    chosen.push(BUILTIN_PROFILES.find(p => p.key === 'executor'));
+    fallback = true; reason += '; no writable builder selected — including the built-in executor';
+  }
   if (chosen.length === 0) {
     chosen = [BUILTIN_PROFILES.find((p) => p.key === 'executor')];
     fallback = true;
