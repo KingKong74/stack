@@ -24,8 +24,8 @@
 //     session and the EXECUTOR is the subagent (#285).
 //  2. THE LAST TOOL CANNOT BE REVOKED. The engine refuses an empty grant (a
 //     profile that can do nothing is a no-op), so the cell refuses first.
-//  3. AN UNMANAGED SKILL IS NEVER TOUCHED. Adopt copies it into the library;
-//     the file on disk is unchanged until the library's copy is edited.
+//  3. AN UNMANAGED SKILL IS NEVER TOUCHED. Copy to library creates a disabled
+//     copy under a new name; the original remains outside Stack management.
 //  4. A SKILL IS NOT SCOPED TO AGENTS. The design's per-agent checklist and
 //     "Loaded by" chips have no column and nothing on the host that would
 //     honour them, so they draw as what is true: every enabled skill is on
@@ -254,7 +254,7 @@ function AgentList({ room, busy, run, onOpen }: {
     const key = `agent-${n}`;
     const tools = ['Read', 'Grep', 'Glob'].filter((t) => knownTools.includes(t));
     void run('new', async () => {
-      await createAgentProfile({ key, name: 'New agent', description: '', prompt: '', model: '', tools: tools.length ? tools : knownTools.slice(0, 1) });
+      await createAgentProfile({ key, name: 'New agent', description: 'A new role to configure before enabling.', prompt: 'Describe this role, its scope, constraints and verification requirements before enabling it.', enabled: false, model: '', tools: tools.length ? tools : knownTools.slice(0, 1) });
       onOpen(key);
     });
   };
@@ -460,7 +460,15 @@ function SkillList({ data, busy, run, onOpen, onNew }: {
   data: SkillsData; busy: string; run: Run; onOpen: (id: number) => void; onNew: () => void;
 }) {
   const { skills, report } = data;
+  const [copy, setCopy] = useState<SkillsData['report']['skills'][number] | null>(null);
   const disk = report.skills;
+  const copyName = (name: string, scope: string, slug: string) => {
+    const taken = new Set([...skills, ...disk].filter((s) => s.scope === scope && s.slug === slug).map((s) => s.name));
+    const base = name.slice(0, 48);
+    let candidate = `${base}-copy`, n = 2;
+    while (taken.has(candidate)) candidate = `${base}-copy-${n++}`;
+    return candidate;
+  };
   const onDisk = new Set(disk.map(diskKey));
   const managed = new Set(skills.map(diskKey));
   const unmanaged = disk.filter((d) => !d.managed && !managed.has(diskKey(d)));
@@ -522,6 +530,22 @@ function SkillList({ data, busy, run, onOpen, onNew }: {
       );
     })}
 
+    {copy && (
+      <ConfirmModal title="Copy unmanaged skill to library?" confirmLabel="Create disabled copy"
+        body={<>Creates <code>{copyName(copy.name, copy.scope, copy.slug)}</code> in {copy.scope === 'project' ? copy.slug : 'global'} scope, disabled.
+          The original <code>{copy.path}</code> stays unmanaged and may still be discovered by Claude.
+          Review the copied instructions before enabling it; enabling the copy makes a separate skill available.</>}
+        onCancel={() => setCopy(null)}
+        onConfirm={() => {
+          const source = copy; setCopy(null);
+          void run(`copy:${diskKey(source)}`, async () => {
+            const s = await createSkill({ name: copyName(source.name, source.scope, source.slug), scope: source.scope,
+              slug: source.slug, description: source.description, body: source.body, enabled: false });
+            onOpen(s.id);
+          });
+        }} />
+    )}
+
     {unmanaged.length > 0 && (
       <div className="sa-group">
         <div className="sa-grouphead">
@@ -536,12 +560,8 @@ function SkillList({ data, busy, run, onOpen, onNew }: {
                 <span className="d">{d.description || 'No description in its frontmatter.'}</span>
               </div>
               <span className="k" title={d.path}>{place(d.scope, d.slug)}</span>
-              <button className="lp-btn" disabled={busy === `adopt:${diskKey(d)}`}
-                title="Copy into the library so it can be edited and toggled here. The file is untouched until you change it."
-                onClick={() => void run(`adopt:${diskKey(d)}`, async () => {
-                  const s = await createSkill({ name: d.name, scope: d.scope, slug: d.slug, description: d.description, body: d.body });
-                  onOpen(s.id);
-                })}>Adopt</button>
+              <button className="lp-btn" onClick={() => setCopy(d)}
+                title="Preview a disabled library copy under a new name. The original stays unmanaged.">Copy to library</button>
             </div>
           ))}
         </div>
@@ -600,7 +620,7 @@ function SkillEditor({ s, data, projects, busy, run, onPick, onBack, onRemove }:
             ))}
           </div>
           {s.scope === 'project' && (
-            <select className="lp-select mono sm" value={s.slug} aria-label="Project" onChange={(e) => save({ slug: e.target.value })}>
+            <select className="lp-select mono sm" value={s.slug} aria-label="Project" onChange={(e) => save({ scope: 'project', slug: e.target.value })}>
               {(projects.includes(s.slug) ? projects : [s.slug, ...projects]).map((p) => <option key={p} value={p}>{p}</option>)}
             </select>
           )}
