@@ -620,12 +620,10 @@ export function Board({ slug, projectName, items, milestones, slices, onRefresh,
       groups: grouped
         ? groupOrder
           .map((k) => ({ key: k, items: col.items.filter((it) => groupKey(it) === k) }))
-          // Keep empty areas discoverable once, in the first column.
-          .filter((g) => g.items.length > 0 || (!bySlice && !searching
-            && col.key === lists?.[0]?.key && (!picked.length || picked.includes(g.key))))
+          .filter((g) => g.items.length > 0)
         : (col.items.length ? [{ key: '', items: col.items }] : []),
     }));
-  }, [drawn, lists, groupOrder, grouped, planningSlices, partsOf, bySlice, searching, picked]);
+  }, [drawn, lists, groupOrder, grouped, planningSlices, partsOf]);
 
   // The chips: every area with cards on the board right now, plus untagged.
   // THE FILTER ROW, AS THE DESIGN HAS IT: every area on the board, each with
@@ -1215,6 +1213,37 @@ export function Board({ slug, projectName, items, milestones, slices, onRefresh,
           onNewSlice={() => { closeAll(); setSliceEdit({ slice: null }); }}
           onIcebox={() => go.detail(slug, 'auto')} milestonesHref={hrefTo.detail(slug, 'milestones')}
           owedAway={owedAway.length} onOwedAway={jumpToOwed} />
+        {!listMode && !bySlice && (
+          <section className="km-areas" aria-label="Project areas">
+            <div className="km-areas-head">
+              <div><h2>Areas</h2><p>Select an area to focus the board.</p></div>
+              <button className={`k-btn sm secondary${picked.length ? '' : ' on'}`}
+                aria-pressed={picked.length === 0} onClick={clearPicked}>All areas</button>
+              <AddArea onAdd={addArea} />
+            </div>
+            <div className="km-area-grid">
+              {chips.map((area) => {
+                const selected = picked.includes(area.key);
+                const description = areas.find((a) => a.name === area.key)?.description;
+                return <button key={area.key} className={`km-area-card${selected ? ' selected' : ''}`}
+                  aria-pressed={selected} aria-label={`Show ${area.name}`}
+                  onClick={() => {
+                    closeAll();
+                    setPicked(selected && picked.length === 1 ? [] : [area.key]);
+                    unfoldArea(area.key);
+                  }}>
+                  <span className="km-area-title">
+                    {area.dot && <span className="km-dot" style={{ background: area.dot }} />}
+                    <span>{area.name}</span>
+                    {selected && <KitIcon name="check" size={14} />}
+                  </span>
+                  {description && <span className="km-area-description">{description}</span>}
+                  <span className="km-area-count">{area.n} board item{area.n === 1 ? '' : 's'}</span>
+                </button>;
+              })}
+            </div>
+          </section>
+        )}
         <div className="km-toolbar">
           <span className="searchbox sm km-search">
             <KitIcon name="search" size={14} />
@@ -1248,7 +1277,7 @@ export function Board({ slug, projectName, items, milestones, slices, onRefresh,
 
           {/* THE GROUP FILTER — slices or areas, whichever the board groups
               by. Gone in the list and when nothing is grouped. */}
-          {!listMode && grouped && (
+          {!listMode && grouped && bySlice && (
             <GroupFilter noun={bySlice ? 'slices' : 'areas'} options={chips} picked={picked} multi
               onToggle={pickArea} onClear={clearPicked} />
           )}
@@ -1287,7 +1316,7 @@ export function Board({ slug, projectName, items, milestones, slices, onRefresh,
 
           {/* #473 — registering an area. It lives in the toolbar rather than the
               filter row, which holds the areas and nothing else (Board v5). */}
-          {!listMode && <AddArea onAdd={addArea} />}
+          {!listMode && bySlice && <AddArea onAdd={addArea} />}
 
           <span className="km-count">
             {listMode

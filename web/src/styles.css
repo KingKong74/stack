@@ -4403,6 +4403,22 @@ body[data-mc-full] .totop { display: none; }
 .km-banner { align-items: center; }
 .km-banner .k-btn { flex: none; }
 
+/* Areas stay visible above the board, including those with no cards. */
+.km-areas { display: flex; flex-direction: column; gap: var(--space-4); }
+.km-areas-head { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
+.km-areas-head > div { flex: 1; min-width: 180px; }
+.km-areas-head h2 { margin: 0; font: var(--type-body); font-weight: var(--weight-semibold); color: var(--text-primary); }
+.km-areas-head p { margin: var(--space-1) 0 0; font: var(--type-caption); color: var(--text-secondary); }
+.km-area-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(210px, 100%), 1fr)); gap: var(--space-3); }
+.km-area-card { display: flex; flex-direction: column; align-items: stretch; gap: var(--space-3); min-width: 0; padding: var(--space-5); text-align: left; font: inherit; color: var(--text-primary); background: var(--surface-card); border: 1px solid var(--border-default); border-radius: var(--radius-md); cursor: pointer; }
+.km-area-card:hover { background: var(--surface-hover); }
+.km-area-card.selected { background: var(--surface-selected); border-color: var(--border-focus); }
+.km-area-card:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 3px; }
+.km-area-title { display: flex; align-items: center; gap: var(--space-3); font-weight: var(--weight-semibold); }
+.km-area-title > span:not(.km-dot) { flex: 1; overflow-wrap: anywhere; }
+.km-area-description { color: var(--text-secondary); font: var(--type-caption); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
+.km-area-count { margin-top: auto; color: var(--text-secondary); font: var(--type-caption); }
+
 /* ---- the toolbar ---- */
 .km-toolbar { display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap; }
 .km-avatars { display: inline-flex; align-items: center; flex: none; }
