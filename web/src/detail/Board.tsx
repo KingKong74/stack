@@ -358,10 +358,15 @@ export function Board({ slug, projectName, items, milestones, slices, onRefresh,
   // AREAS OR LIST (owner's request, 2026-10-10). Areas is the lane-steering
   // layout below; List (detail/BoardList.tsx) is the finder: every row, area
   // as a tag, sortable, ideas included. Device-local per project, like folds.
-  const [bview, setBview] = useState<BoardView>(() => getBoardView(slug));
+  const [savedView, setBview] = useState<BoardView>(() => getBoardView(slug));
+  // Projects organised only by area have nothing useful to group by slice.
+  // Keep the preference so adding slices restores the owner's chosen view.
+  const hasSlices = sl.some((s) => !s.archived);
+  const bview: BoardView = savedView.group === 'slice' && !hasSlices
+    ? { ...savedView, group: 'area' } : savedView;
   useEffect(() => { setBview(getBoardView(slug)); }, [slug]);
   const writeView = (patch: Partial<BoardView>) => {
-    const next = { ...bview, ...patch }; setBview(next); setBoardView(slug, next);
+    const next = { ...savedView, ...patch }; setBview(next); setBoardView(slug, next);
   };
   const [listArea, setListArea] = useState('');
   const listMode = bview.layout === 'list';
@@ -588,6 +593,8 @@ export function Board({ slug, projectName, items, milestones, slices, onRefresh,
 
   // ---- the columns, with the AREAS GROUPED INSIDE THEM (Board v5) -----------
   //
+  const searching = !!query.trim();
+
   // The columns lead and each one groups its cards by area, so a glance across
   // the top reads the board's state and a glance down a column reads which
   // lanes it is spread over. `grouped` off draws each column as one flat list.
@@ -613,10 +620,12 @@ export function Board({ slug, projectName, items, milestones, slices, onRefresh,
       groups: grouped
         ? groupOrder
           .map((k) => ({ key: k, items: col.items.filter((it) => groupKey(it) === k) }))
-          .filter((g) => g.items.length > 0)
+          // Keep empty areas discoverable once, in the first column.
+          .filter((g) => g.items.length > 0 || (!bySlice && !searching
+            && col.key === lists?.[0]?.key && (!picked.length || picked.includes(g.key))))
         : (col.items.length ? [{ key: '', items: col.items }] : []),
     }));
-  }, [drawn, lists, groupOrder, grouped, planningSlices, partsOf]);
+  }, [drawn, lists, groupOrder, grouped, planningSlices, partsOf, bySlice, searching, picked]);
 
   // The chips: every area with cards on the board right now, plus untagged.
   // THE FILTER ROW, AS THE DESIGN HAS IT: every area on the board, each with
@@ -657,7 +666,6 @@ export function Board({ slug, projectName, items, milestones, slices, onRefresh,
   // one writes a fold whose effect you cannot see. Nothing stored is touched:
   // the folds come straight back when the box is cleared, which is why this is
   // a read-time override rather than a write.
-  const searching = !!query.trim();
   // Folds store the OPEN areas (an area lands folded, #524), so a search reads
   // every area as open rather than none as folded.
   const areaOpen = (key: string) => searching || folds.open.includes(key);
@@ -1259,7 +1267,7 @@ export function Board({ slug, projectName, items, milestones, slices, onRefresh,
             <select className="k-select sm km-grouped" aria-label="Group cards by" value={bview.group}
               title="What each column groups its cards by"
               onChange={(e) => setGroup(e.target.value as BoardGroup)}>
-              <option value="slice">Grouped by slice</option>
+              <option value="slice" disabled={!hasSlices}>Grouped by slice</option>
               <option value="area">Grouped by area</option>
               <option value="none">Not grouped</option>
             </select>
