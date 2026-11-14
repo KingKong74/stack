@@ -1566,28 +1566,25 @@ a.tab { display: inline-block; }
     radial-gradient(ellipse 38% 42% at 42% 30%, var(--blue-tint), transparent 70%),
     radial-gradient(ellipse 26% 30% at 60% 46%, var(--lime-tint), transparent 70%); }
 
-/* The terminal. Every measure is in character cells (1ch wide, one line
-   tall), because that is tmux's only unit. `.swarm-term` is the tmux window
-   the panes tile onto; `.swarm-win` is the coordinate space they move in. */
-.swarm-term { position: absolute; inset: 6px; border: 1px solid var(--border-default); border-radius: var(--radius-md); pointer-events: none; }
-.swarm-win { position: absolute; inset: 11px; font-size: 12px; line-height: 1.3; }
-.swarm-pane { position: absolute; display: flex; box-sizing: border-box; min-width: 0; }
-.swarm-card { flex: 1; min-width: 0; display: flex; flex-direction: column; border: 1px solid; overflow: hidden; }
-.swarm-card-head { flex: none; display: flex; align-items: center; gap: 10px; padding: 0 12px; box-sizing: border-box; overflow: hidden; background: var(--surface-raised); border-bottom: 1px solid var(--border-subtle); white-space: nowrap; }
+/* The sessions. Each is a terminal window (the design's frame and header)
+   holding one tmux session; `.swarm-win` is the space the windows move in. */
+.swarm-win { position: absolute; inset: 6px; font-size: 12px; line-height: 1.3; }
+.swarm-pane { position: absolute; display: flex; box-sizing: border-box; min-width: 0; padding: 5px; }
+.swarm-card { flex: 1; min-width: 0; display: flex; flex-direction: column; border: 1px solid; border-radius: var(--radius-lg); overflow: hidden; }
+.swarm-card-head { flex: none; height: 32px; display: flex; align-items: center; gap: 10px; padding: 0 12px; box-sizing: border-box; overflow: hidden; background: var(--surface-raised); border-bottom: 1px solid var(--border-subtle); white-space: nowrap; }
 .swarm-card-dot { width: 7px; height: 7px; flex: none; border-radius: var(--radius-pill); }
 .swarm-card-name { flex: none; font: var(--weight-semibold) var(--text-xs)/1 var(--font-mono); color: var(--text-primary); }
 .swarm-card-task { flex: none; font: var(--weight-medium) var(--text-xs)/1 var(--font-mono); color: var(--text-link); }
 .swarm-card-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; font: var(--type-caption); color: var(--text-secondary); }
 .swarm-card-branch { font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-tertiary); }
 .swarm-card-pill { flex: none; font: var(--weight-medium) var(--text-2xs)/1 var(--font-sans); padding: 3px 8px; border-radius: var(--radius-sm); }
-.swarm-card-term { flex: 1; min-height: 0; display: flex; }
-.swarm-sep { flex: none; width: 1ch; background: linear-gradient(currentColor, currentColor) center / 1px 100% no-repeat; }
-.swarm-pane-main { flex: 1; min-width: 0; display: flex; flex-direction: column; box-sizing: border-box; }
-.swarm-rule { flex: none; white-space: pre; overflow: hidden; }
-.swarm-body { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; }
+.swarm-body { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; padding: 8px 10px 2px; }
 .swarm-line { flex: none; white-space: pre-wrap; word-break: break-all; }
 .swarm-cur { display: inline-block; width: 1ch; height: 1.15em; vertical-align: text-bottom; }
-.swarm-status { flex: none; display: flex; height: 22px; align-items: center; padding: 0 6px; font-size: 12px; white-space: pre; overflow: hidden; }
+.swarm-tmux { flex: none; display: flex; height: 1.3em; padding: 0 4px; white-space: pre; overflow: hidden; }
+.swarm-status { flex: none; display: flex; align-items: center; gap: 16px; height: 26px; padding: 0 16px; background: var(--surface-raised); border-top: 1px solid var(--border-subtle); font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-tertiary); white-space: nowrap; overflow: hidden; }
+.swarm-status .on { color: var(--text-primary); }
+.swarm-status-chip { color: var(--text-inverse); background: var(--lime-500); padding: 3px 6px; border-radius: var(--radius-xs); font-weight: var(--weight-semibold); }
 .swarm-status-fill { flex: 1; }
 
 .swarm-orbit { position: absolute; inset: 0; cursor: pointer; }

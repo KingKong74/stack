@@ -10,22 +10,20 @@ import { GIT_BASH_THEME as A, TERM_FONT } from '../lib/termWire';
 // choreography is the design's, frame for frame: pop in at a scatter, glide
 // into the tiled layout, shrink onto the orbit.
 //
-// THE SESSIONS ARE DRAWN AS TMUX, NOT AS CARDS. The design floated each session
-// in its own rounded window; the owner asked for them to look like the real
-// thing (2026-11-15), because a real Stack session IS a tmux pane in an xterm.
-// So this follows tmux's own rules, and they are not decoration:
+// EVERY SESSION IS A TERMINAL, start to finish. The owner asked for the
+// sessions to look like real tmux terminals (2026-11-15), and for them to stay
+// terminals once tiled, not melt into one bare grid. A Stack terminal is its
+// own tmux session in an xterm, so each window is exactly that:
 //
-//  · Floating, each session is its own terminal window; once tiled they are
-//    panes of ONE tmux window (main-vertical for three, tiled for four).
-//  · Pane borders are one character cell wide. `pane-border-status top` puts a
-//    title line above every pane: index (reversed when active), then the title.
-//    Only the ACTIVE pane's border is green, and only the active pane has a
-//    cursor.
-//  · The status line is tmux's default: green, `[session] 0:window*` on the
-//    left, `"pane title" %H:%M %d-%b-%y` on the right.
+//  · A window: rounded frame, the design's header bar (status dot, agent, task,
+//    title, branch, status pill), focus border on whichever moved last. The
+//    frame stays when tiled; tiling only moves and resizes the windows.
+//  · Inside, a tmux session: the git-bash prompt, the program's output, a
+//    cursor, and tmux's default green status line at the foot,
+//    `[session] 0:program*` left and `"host" %H:%M %d-%b-%y` right.
 //  · Colours are the real terminal's: GIT_BASH_THEME and TERM_FONT from
 //    lib/termWire.ts, never Stack's UI palette. The UI palette is only the
-//    chrome around the terminal (header, orbit, chips).
+//    chrome around the terminal (header bars, orbit, chips).
 
 type Seg = { text: string; color: string };
 type Kind = 'cmd' | 'out' | 'dim' | 'add' | 'del' | 'ok' | 'err';
@@ -182,7 +180,6 @@ const easeInOut = (p: number) => (p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p 
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const pad = (n: number) => String(n).padStart(2, '0');
 const tmuxClock = (d: Date) => `${pad(d.getHours())}:${pad(d.getMinutes())} ${pad(d.getDate())}-${MON[d.getMonth()]}-${pad(d.getFullYear() % 100)}`;
-const RULE = '─'.repeat(600);
 // The pop-up header's status pill: [background, foreground], the design's pairs.
 const STATUS: Record<string, [string, string]> = {
   spawning: ['var(--status-neutral-bg)', 'var(--status-neutral-fg)'],
@@ -248,13 +245,9 @@ export function SwarmDemo({ onClose, sessions = 3, speed = 1 }: { onClose: () =>
 
   const count = agents.filter((_, i) => t >= spawnAt(i)).length;
   const tile = TILE[n];
-  // The tmux window behind the panes: in as they tile, out as they close.
-  const tiled = easeInOut(clamp((t - tileStart) / 800));
-  const closing = easeInOut(clamp((t - minStart) / 900));
 
-  // The active pane follows the newest output, the way a watcher would
-  // select-pane onto whatever just moved. Before work starts it is the
-  // newest split, as tmux leaves it.
+  // The focused window follows the newest output; before work starts it is
+  // the newest window.
   let active = count - 1;
   let latest = -1;
   agents.forEach((a, i) => {
@@ -289,7 +282,10 @@ export function SwarmDemo({ onClose, sessions = 3, speed = 1 }: { onClose: () =>
         { segs: [seg('$ ', C.fg)], cursor: true, blink: true },
       );
     }
-    // The design's choreography: pop in at the scatter, glide into the tmux
+    // tmux names the window after the program in the foreground.
+    const running = local < a.end ? [...vis].reverse().find((l) => l.type === 'cmd')?.text?.split(' ')[0] : undefined;
+    const program = running || 'bash';
+    // The design's choreography: pop in at the scatter, glide into the tiled
     // layout, then shrink onto this agent's spot on the orbit.
     const p = clamp((t - spawnAt(i)) / 420);
     const tp = easeInOut(clamp((t - tileStart - i * 80) / 800));
@@ -298,29 +294,21 @@ export function SwarmDemo({ onClose, sessions = 3, speed = 1 }: { onClose: () =>
     const target = [cx - 8, cy - 5, 16, 10];
     const [left, top, width, height] = SPAWN[i].map((v, k) => lerp(lerp(v, tile[i][k], tp), target[k], mp));
     return {
-      a, i, lines, status, left, top, width, height, tp, tile: tile[i],
+      a, i, lines, status, program, left, top, width, height, tp,
       opacity: Math.min(1, p * 2.5) * (1 - clamp((mp - 0.55) / 0.45)),
       scale: 0.86 + 0.14 * easeOutBack(p),
       z: tp > 0 ? 1 : i + 1,
     };
   });
 
-  const act = panes[active];
-  // A separator is drawn by the pane to its right; it is green when either
-  // pane it divides is the active one (tmux colours the active pane's edge).
-  const sepActive = (p: typeof panes[number]) => {
-    if (p.i === active) return true;
-    if (!act) return false;
-    const [al, at, aw, ah] = act.tile, [pl, pt, , ph] = p.tile;
-    return Math.abs(al + aw - pl) < 0.01 && at < pt + ph && pt < at + ah;
-  };
+  const clock = tmuxClock(new Date());
 
   const showOrbit = t > minStart + 300;
   const angle = (i: number) => base(i) + Math.max(0, t - orbitStart) * W;
   const pulse = (t % 2400) / 2400;
 
   const narration = t < tileStart ? `Spawning ${n} agents into the swarm`
-    : t < workStart ? 'Tiling sessions into tmux'
+    : t < workStart ? 'Tiling sessions'
     : t < minStart ? 'Each agent works in its own git worktree'
     : !done ? 'Sessions closing'
     : `${n} branches ready for review`;
@@ -337,26 +325,19 @@ export function SwarmDemo({ onClose, sessions = 3, speed = 1 }: { onClose: () =>
       </div>
 
       <div className="swarm-stage">
-        <div className="swarm-term" style={{ opacity: tiled * (1 - closing), background: A.background }} />
         <div className="swarm-win" style={{ color: A.foreground, fontFamily: TERM_FONT }}>
             {panes.map((p) => {
               if (p.opacity <= 0) return null;
               const on = p.i === active;
-              const edge = on ? A.green : A.foreground;
               return (
                 <div key={p.a.name} className="swarm-pane"
                   style={{ left: p.left + '%', top: p.top + '%', width: p.width + '%', height: p.height + '%',
-                    padding: 5 * (1 - p.tp), opacity: p.opacity, transform: `scale(${p.scale})`, zIndex: p.z }}>
-                  {/* FLOATING it is the design's pop-up session: a rounded window
-                      with its own header bar. As it tiles, the header folds
-                      away, the corners square off, and tmux's border line and
-                      one-cell separator take over. */}
+                    opacity: p.opacity, transform: `scale(${p.scale})`, zIndex: p.z }}>
                   <div className="swarm-card" style={{
                     background: A.background,
-                    borderColor: `color-mix(in srgb, ${on ? 'var(--border-focus)' : 'var(--border-default)'} ${(1 - p.tp) * 100}%, transparent)`,
-                    borderRadius: `calc(var(--radius-lg) * ${1 - p.tp})`,
+                    borderColor: on ? 'var(--border-focus)' : 'var(--border-default)',
                     boxShadow: p.tp < 1 ? 'var(--shadow-lg)' : 'none' }}>
-                    <div className="swarm-card-head" style={{ height: 32 * (1 - p.tp), opacity: 1 - p.tp }}>
+                    <div className="swarm-card-head">
                       <span className="swarm-card-dot" style={{ background: STATUS[p.status][1] }} />
                       <span className="swarm-card-name">{p.a.name}</span>
                       <span className="swarm-card-task">{p.a.task}</span>
@@ -365,27 +346,20 @@ export function SwarmDemo({ onClose, sessions = 3, speed = 1 }: { onClose: () =>
                       <span className="swarm-card-branch">⎇ {p.a.branch}</span>
                       <span className="swarm-card-pill" style={{ background: STATUS[p.status][0], color: STATUS[p.status][1] }}>{p.status}</span>
                     </div>
-                    <div className="swarm-card-term">
-                      {p.tile[0] > 0 && <div className="swarm-sep" style={{ opacity: p.tp, color: sepActive(p) ? A.green : A.foreground }} />}
-                      <div className="swarm-pane-main" style={{ padding: `${8 * (1 - p.tp)}px ${12 * (1 - p.tp) + 2}px ${10 * (1 - p.tp)}px` }}>
-                        {/* pane-border-status top: '#{?pane_active,#[reverse],}#{pane_index}#[default] "#{pane_title}"' */}
-                        <div className="swarm-rule" style={{ color: edge, height: `${1.3 * p.tp}em`, opacity: p.tp }}>
-                          {'─'}
-                          <span style={on ? { background: A.green, color: A.background } : undefined}>{p.i}</span>
-                          <span style={{ color: on ? A.brightWhite : A.foreground }}>{` "${p.a.name} ${p.a.task} ${p.a.title}" `}</span>
-                          <span style={{ color: p.status === 'in review' ? A.brightGreen : p.status === 'working' ? A.brightYellow : A.brightBlack }}>{`[${p.status}]`}</span>
-                          {' '}{RULE}
+                    <div className="swarm-body">
+                      {p.lines.map((l, k) => (
+                        <div key={k} className="swarm-line">
+                          {l.segs.map((s, j) => <span key={j} style={{ color: s.color }}>{s.text}</span>)}
+                          {l.cursor && (!l.blink || blinkOn) && <span className="swarm-cur" style={{ background: A.cursor }} />}
+                          {'\u200b'}
                         </div>
-                        <div className="swarm-body">
-                          {p.lines.map((l, k) => (
-                            <div key={k} className="swarm-line">
-                              {l.segs.map((s, j) => <span key={j} style={{ color: s.color }}>{s.text}</span>)}
-                              {l.cursor && on && (!l.blink || blinkOn) && <span className="swarm-cur" style={{ background: A.cursor }} />}
-                              {'\u200b'}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
+                      ))}
+                    </div>
+                    {/* this session's tmux status line */}
+                    <div className="swarm-tmux" style={{ background: A.green, color: A.background }}>
+                      <span>{`[${p.a.name}] 0:${p.program}*`}</span>
+                      <span className="swarm-status-fill" />
+                      <span>{`"stack" ${clock}`}</span>
                     </div>
                   </div>
                 </div>
@@ -436,11 +410,14 @@ export function SwarmDemo({ onClose, sessions = 3, speed = 1 }: { onClose: () =>
         )}
       </div>
 
-      {/* tmux's default status line */}
-      <div className="swarm-status" style={{ background: A.green, color: A.background, fontFamily: TERM_FONT }}>
-        <span>{'[stack] 0:swarm*'}</span>
+      {/* the design's foot bar: one tab per session, the focused one starred */}
+      <div className="swarm-status">
+        <span className="swarm-status-chip">stack</span>
+        {agents.map((a, i) => (
+          <span key={a.name} className={i === active && t < minStart ? 'on' : ''}>{`${i}:${a.name}${i === active && t < minStart ? '*' : ''}`}</span>
+        ))}
         <span className="swarm-status-fill" />
-        <span>{`"${act ? `${act.a.name} ${act.a.task}` : 'stack'}" ${tmuxClock(new Date())}`}</span>
+        <span>{`⎇ main · ${t > workStart ? n : 0} worktrees`}</span>
       </div>
     </div>
   );
