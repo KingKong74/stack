@@ -4505,12 +4505,7 @@ body[data-mc-full] .totop { display: none; }
 .km-composer-pick button.on { background: var(--surface-selected); }
 
 /* ---- the lanes ---- */
-/* THE COLUMNS FILL THE SCREEN (owner's call, 2026-11-14): the board's page
-   reaches the bottom of the viewport, the lanes take what is left under the
-   toolbar, and every column runs to the same floor however few cards it has. */
-.con-main > .con-inner:has(> .km) { min-height: 100%; }
-.con-inner > .km { flex: 1; }
-.km-cols { display: flex; flex: 1; gap: var(--space-5); align-items: stretch; overflow-x: auto; padding-bottom: var(--space-4); }
+.km-cols { display: flex; gap: var(--space-5); align-items: flex-start; overflow-x: auto; padding-bottom: var(--space-4); }
 .km-col {
   /* Board v5 — the columns SHARE THE WIDTH rather than sitting at a fixed
      272px with dead space beside them; `--column-w` is now the floor, below
@@ -4650,8 +4645,10 @@ body[data-mc-full] .totop { display: none; }
 }
 .km-grouphead .km-foldbtn { width: 18px; height: 18px; }
 .km-grouphead .nm {
+  /* WRAPS, never ellipsed (owner's call, 2026-11-15): a slice's name is what
+     the card is, and "5. Manual specialist…" said nothing. */
   font: var(--type-caption); color: var(--text-secondary);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
+  min-width: 0; overflow-wrap: anywhere; text-wrap: pretty;
 }
 .km-grouphead .k-tag { flex: none; }
 .km-grouphead .rule { flex: 1; min-width: var(--space-4); height: 1px; background: var(--border-subtle); }
@@ -5047,7 +5044,7 @@ body[data-mc-full] .totop { display: none; }
    not as a border that failed to match. Full strength on hover. */
 .km-card.tinted { border-top-width: 2px; }
 .km-card.tinted:hover { border-top-color: var(--km-tint) !important; }
-.km-card > .t { font: var(--type-body-sm); color: var(--text-primary); text-wrap: pretty; }
+.km-card > .t { font: var(--type-body-sm); color: var(--text-primary); text-wrap: pretty; overflow-wrap: anywhere; }
 /* A CLUSTER (a card with parts) reads as bulkier than a task at a glance: two
    plates stacked behind it, a heavier title, and its parts inside. A task stays
    the plain single card. The plates are box-shadows, so they take no layout
