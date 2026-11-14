@@ -192,6 +192,7 @@ type Line = { segs: Seg[]; cursor?: boolean; blink?: boolean };
 export function SwarmDemo({ onClose, sessions = 3, speed = 1 }: { onClose: () => void; sessions?: 3 | 4; speed?: number }) {
   const [{ t, exitAt }, setClock] = useState<{ t: number; exitAt: number | null }>({ t: 0, exitAt: null });
   const raf = useRef(0);
+  const [spin, setSpin] = useState(0);
   const exitRef = useRef<number | null>(null);
   const tRef = useRef(0);
   const closeRef = useRef(onClose);
@@ -306,6 +307,9 @@ export function SwarmDemo({ onClose, sessions = 3, speed = 1 }: { onClose: () =>
   const showOrbit = t > minStart + 300;
   const angle = (i: number) => base(i) + Math.max(0, t - orbitStart) * W;
   const pulse = (t % 2400) / 2400;
+  // Clicking the orbit returns to sign-in, and the mark plays the title card's
+  // plate shift on the way out (`.tcard-mark.play` in styles.css).
+  const leave = () => { setSpin((k) => k + 1); close(); };
 
   const narration = t < tileStart ? `Spawning ${n} agents into the swarm`
     : t < workStart ? 'Tiling sessions'
@@ -368,12 +372,12 @@ export function SwarmDemo({ onClose, sessions = 3, speed = 1 }: { onClose: () =>
         </div>
 
         {showOrbit && (
-          <div className="swarm-orbit" onClick={close} title="Back to sign in" style={{ opacity: clamp((t - minStart - 300) / 600) }}>
+          <div className="swarm-orbit" onClick={leave} title="Back to sign in" style={{ opacity: clamp((t - minStart - 300) / 600) }}>
             <div className="swarm-ring" />
             <div className="swarm-ring dashed" />
             <div className="swarm-logo" style={{ transform: `translate(-50%, -50%) scale(${1 + 0.12 * Math.sin(Math.PI * clamp(ep / 0.5)) - 0.33 * reveal})` }}>
               <div className="swarm-pulse" style={{ transform: `scale(${1 + pulse * 0.6})`, opacity: 1 - pulse }} />
-              <StackMark size={96} />
+              <span key={spin} className={`swarm-mark${spin ? ' play' : ''}`}><StackMark size={96} /></span>
             </div>
             <div className="swarm-ready" style={{ opacity: 1 - clamp(ep / 0.3) }}>
               <span className="swarm-ready-title">{n} branches ready for review</span>

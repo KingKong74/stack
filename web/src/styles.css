@@ -1535,11 +1535,11 @@ a.tab { display: inline-block; }
    first. Plates are the 2nd–4th rects of StackMark at this size. */
 @keyframes titlePlate { 0% { transform: translateX(0); } 35%, 60% { transform: translateX(var(--dx)); } 100% { transform: translateX(0); } }
 @keyframes titlePop { 0%, 100% { transform: scale(1); } 20% { transform: scale(.94); } 55% { transform: scale(1.04); } }
-.tcard-mark.play svg { animation: titlePop 700ms var(--ease-out); }
-.tcard-mark.play rect + rect { transform-box: fill-box; animation: titlePlate 700ms var(--ease-standard) both; }
-.tcard-mark.play rect:nth-of-type(2) { --dx: -9px; }
-.tcard-mark.play rect:nth-of-type(3) { --dx: 9px; animation-delay: 90ms; }
-.tcard-mark.play rect:nth-of-type(4) { --dx: 9px; animation-delay: 180ms; }
+.tcard-mark.play svg, .swarm-mark.play svg { animation: titlePop 700ms var(--ease-out); }
+.tcard-mark.play rect + rect, .swarm-mark.play rect + rect { transform-box: fill-box; animation: titlePlate 700ms var(--ease-standard) both; }
+.tcard-mark.play rect:nth-of-type(2), .swarm-mark.play rect:nth-of-type(2) { --dx: -9px; }
+.tcard-mark.play rect:nth-of-type(3), .swarm-mark.play rect:nth-of-type(3) { --dx: 9px; animation-delay: 90ms; }
+.tcard-mark.play rect:nth-of-type(4), .swarm-mark.play rect:nth-of-type(4) { --dx: 9px; animation-delay: 180ms; }
 
 /* "Show me how it works" — components/SwarmDemo.tsx carries the notes. The
    chrome is Stack's palette; the terminal inside takes GIT_BASH_THEME inline,
@@ -1591,6 +1591,7 @@ a.tab { display: inline-block; }
 .swarm-ring { position: absolute; left: 20%; top: 22%; width: 60%; height: 44%; border: 1px solid var(--border-subtle); border-radius: 50%; }
 .swarm-ring.dashed { left: 30%; top: 29%; width: 40%; height: 30%; border-style: dashed; opacity: .6; }
 .swarm-logo { position: absolute; left: 50%; top: 44%; z-index: 50; width: 96px; height: 96px; }
+.swarm-mark { display: block; }
 .swarm-logo svg { position: relative; display: block; filter: drop-shadow(0 12px 24px rgb(0 0 0 / .45)); }
 .swarm-pulse { position: absolute; inset: 0; border-radius: var(--radius-2xl); border: 1px solid var(--border-accent); }
 .swarm-ready { position: absolute; left: 50%; bottom: 4%; transform: translateX(-50%); z-index: 70; display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; }

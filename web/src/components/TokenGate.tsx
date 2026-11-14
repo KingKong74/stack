@@ -111,7 +111,8 @@ export function TokenGate() {
 
         <span className="tcard-foot">self-hosted · kept in this browser</span>
       </div>
-      {demo > 0 && <SwarmDemo key={demo} onClose={() => setDemo(0)} />}
+      {/* Back from the demo, the mark plays again to land the return. */}
+      {demo > 0 && <SwarmDemo key={demo} onClose={() => { setDemo(0); play(); }} />}
     </div>
   );
 }
