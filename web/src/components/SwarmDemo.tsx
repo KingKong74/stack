@@ -183,6 +183,12 @@ const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct
 const pad = (n: number) => String(n).padStart(2, '0');
 const tmuxClock = (d: Date) => `${pad(d.getHours())}:${pad(d.getMinutes())} ${pad(d.getDate())}-${MON[d.getMonth()]}-${pad(d.getFullYear() % 100)}`;
 const RULE = '─'.repeat(600);
+// The pop-up header's status pill: [background, foreground], the design's pairs.
+const STATUS: Record<string, [string, string]> = {
+  spawning: ['var(--status-neutral-bg)', 'var(--status-neutral-fg)'],
+  working: ['var(--status-info-bg)', 'var(--status-info-fg)'],
+  'in review': ['var(--status-success-bg)', 'var(--status-success-fg)'],
+};
 
 type Line = { segs: Seg[]; cursor?: boolean; blink?: boolean };
 
@@ -340,29 +346,46 @@ export function SwarmDemo({ onClose, sessions = 3, speed = 1 }: { onClose: () =>
               return (
                 <div key={p.a.name} className="swarm-pane"
                   style={{ left: p.left + '%', top: p.top + '%', width: p.width + '%', height: p.height + '%',
-                    opacity: p.opacity, transform: `scale(${p.scale})`, zIndex: p.z, background: A.background,
+                    padding: 5 * (1 - p.tp), opacity: p.opacity, transform: `scale(${p.scale})`, zIndex: p.z }}>
+                  {/* FLOATING it is the design's pop-up session: a rounded window
+                      with its own header bar. As it tiles, the header folds
+                      away, the corners square off, and tmux's border line and
+                      one-cell separator take over. */}
+                  <div className="swarm-card" style={{
+                    background: A.background,
+                    borderColor: `color-mix(in srgb, ${on ? 'var(--border-focus)' : 'var(--border-default)'} ${(1 - p.tp) * 100}%, transparent)`,
+                    borderRadius: `calc(var(--radius-lg) * ${1 - p.tp})`,
                     boxShadow: p.tp < 1 ? 'var(--shadow-lg)' : 'none' }}>
-                  {/* Floating, each session is its own terminal window; tiled,
-                      the frame gives way to tmux's one-cell separators. */}
-                  <div className="swarm-frame" style={{ opacity: 1 - p.tp, borderColor: on ? A.green : 'var(--border-default)' }} />
-                  {p.tile[0] > 0 && <div className="swarm-sep" style={{ opacity: p.tp, color: sepActive(p) ? A.green : A.foreground }} />}
-                  <div className="swarm-pane-main">
-                    {/* pane-border-status top: '#{?pane_active,#[reverse],}#{pane_index}#[default] "#{pane_title}"' */}
-                    <div className="swarm-rule" style={{ color: edge }}>
-                      {'─'}
-                      <span style={on ? { background: A.green, color: A.background } : undefined}>{p.i}</span>
-                      <span style={{ color: on ? A.brightWhite : A.foreground }}>{` "${p.a.name} ${p.a.task} ${p.a.title}" `}</span>
-                      <span style={{ color: p.status === 'in review' ? A.brightGreen : p.status === 'working' ? A.brightYellow : A.brightBlack }}>{`[${p.status}]`}</span>
-                      {' '}{RULE}
+                    <div className="swarm-card-head" style={{ height: 32 * (1 - p.tp), opacity: 1 - p.tp }}>
+                      <span className="swarm-card-dot" style={{ background: STATUS[p.status][1] }} />
+                      <span className="swarm-card-name">{p.a.name}</span>
+                      <span className="swarm-card-task">{p.a.task}</span>
+                      <span className="swarm-card-title">{p.a.title}</span>
+                      <span className="swarm-status-fill" />
+                      <span className="swarm-card-branch">⎇ {p.a.branch}</span>
+                      <span className="swarm-card-pill" style={{ background: STATUS[p.status][0], color: STATUS[p.status][1] }}>{p.status}</span>
                     </div>
-                    <div className="swarm-body">
-                      {p.lines.map((l, k) => (
-                        <div key={k} className="swarm-line">
-                          {l.segs.map((s, j) => <span key={j} style={{ color: s.color }}>{s.text}</span>)}
-                          {l.cursor && on && (!l.blink || blinkOn) && <span className="swarm-cur" style={{ background: A.cursor }} />}
-                          {'​'}
+                    <div className="swarm-card-term">
+                      {p.tile[0] > 0 && <div className="swarm-sep" style={{ opacity: p.tp, color: sepActive(p) ? A.green : A.foreground }} />}
+                      <div className="swarm-pane-main" style={{ padding: `${8 * (1 - p.tp)}px ${12 * (1 - p.tp) + 2}px ${10 * (1 - p.tp)}px` }}>
+                        {/* pane-border-status top: '#{?pane_active,#[reverse],}#{pane_index}#[default] "#{pane_title}"' */}
+                        <div className="swarm-rule" style={{ color: edge, height: `${1.3 * p.tp}em`, opacity: p.tp }}>
+                          {'─'}
+                          <span style={on ? { background: A.green, color: A.background } : undefined}>{p.i}</span>
+                          <span style={{ color: on ? A.brightWhite : A.foreground }}>{` "${p.a.name} ${p.a.task} ${p.a.title}" `}</span>
+                          <span style={{ color: p.status === 'in review' ? A.brightGreen : p.status === 'working' ? A.brightYellow : A.brightBlack }}>{`[${p.status}]`}</span>
+                          {' '}{RULE}
                         </div>
-                      ))}
+                        <div className="swarm-body">
+                          {p.lines.map((l, k) => (
+                            <div key={k} className="swarm-line">
+                              {l.segs.map((s, j) => <span key={j} style={{ color: s.color }}>{s.text}</span>)}
+                              {l.cursor && on && (!l.blink || blinkOn) && <span className="swarm-cur" style={{ background: A.cursor }} />}
+                              {'\u200b'}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
