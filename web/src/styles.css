@@ -4505,7 +4505,12 @@ body[data-mc-full] .totop { display: none; }
 .km-composer-pick button.on { background: var(--surface-selected); }
 
 /* ---- the lanes ---- */
-.km-cols { display: flex; gap: var(--space-5); align-items: flex-start; overflow-x: auto; padding-bottom: var(--space-4); }
+/* THE COLUMNS FILL THE SCREEN (owner's call, 2026-11-14): the board's page
+   reaches the bottom of the viewport, the lanes take what is left under the
+   toolbar, and every column runs to the same floor however few cards it has. */
+.con-main > .con-inner:has(> .km) { min-height: 100%; }
+.con-inner > .km { flex: 1; }
+.km-cols { display: flex; flex: 1; gap: var(--space-5); align-items: stretch; overflow-x: auto; padding-bottom: var(--space-4); }
 .km-col {
   /* Board v5 — the columns SHARE THE WIDTH rather than sitting at a fixed
      272px with dead space beside them; `--column-w` is now the floor, below
@@ -4599,16 +4604,6 @@ body[data-mc-full] .totop { display: none; }
   border: 1px solid var(--border-focus); border-radius: var(--radius-sm);
   font: var(--type-label); outline: none;
 }
-.km-addcol {
-  width: var(--column-w); flex: 0 0 auto; min-height: 44px;
-  display: flex; align-items: center; justify-content: center; gap: 8px;
-  border: 1px dashed var(--border-default); border-radius: var(--radius-lg);
-  background: transparent; cursor: pointer; padding: var(--space-4);
-  color: var(--text-tertiary); font: var(--type-label);
-  transition: var(--transition-control);
-}
-.km-addcol:hover { color: var(--text-primary); border-color: var(--border-focus); }
-.km-addcol.open { cursor: default; }
 
 /* ---- THE FOLDS (#510 area sections, #511 columns) ----------------------
    One block for both. */
@@ -9811,17 +9806,12 @@ button.ar-open:hover { background: var(--surface-hover); }
 }
 
 /* ==========================================================================
-   PROPOSITIONS (detail/Propositions.tsx) — the board's first column and the
-   detail dialog. A tile is a button, so it is reachable and opens by keyboard.
+   PROPOSITIONS (detail/Propositions.tsx) — the plans section of the board's
+   Propositions tab, and the detail dialog. A tile is a button, so it is reachable and opens by keyboard.
    ========================================================================== */
-.pp-col {
-  /* Not a `.km-col`: it is no list, takes no drop, and every query that walks
-     the delivery columns must not find it. It wears their shape. */
-  flex: 1 0 var(--column-w); min-width: var(--column-w);
-  background: var(--surface-sunken); border: 1px dashed var(--border-subtle);
-  border-radius: var(--radius-lg); padding: var(--space-4);
-  display: flex; flex-direction: column; gap: var(--space-4);
-}
+.pp-view { display: flex; flex-direction: column; gap: var(--space-7); }
+.pp-sec { display: flex; flex-direction: column; gap: var(--space-4); }
+.pp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); gap: var(--space-4); }
 .pp-lede { font: var(--type-caption); color: var(--text-tertiary); padding: 0 4px; }
 .pp-tile {
   display: flex; flex-direction: column; gap: var(--space-2); text-align: left; min-width: 0;

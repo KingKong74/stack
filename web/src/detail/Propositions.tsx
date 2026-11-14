@@ -1,5 +1,5 @@
-// THE PROPOSITIONS COLUMN — proposed packages of work (server/src/routes/
-// propositions.js), drawn first on the board, before the delivery columns.
+// PROPOSED PLANS — packages of work (server/src/routes/propositions.js), drawn
+// at the top of the board's Propositions tab, above held ideas and the Icebox.
 //
 // A PROPOSITION IS NOT WORK. None of its nodes is a roadmap row, so nothing
 // here is a card, takes a drop, counts toward progress or can be queued; the
@@ -36,9 +36,11 @@ function stateOf(p: Proposition): { label: string; tone: string } {
   return { label: 'Proposed', tone: 'warning' };
 }
 
-/** The column itself. Fetches its own rows: propositions are not in the payload. */
-export function PropositionsColumn({ slug, milestones, onAccepted }: {
+/** The section itself. Fetches its own rows: propositions are not in the payload. */
+export function PropositionsSection({ slug, milestones, onAccepted, onCount }: {
   slug: string; milestones: Milestone[]; onAccepted: () => void;
+  /** Reports the live (still proposed) count, for the tab's badge. */
+  onCount?: (n: number) => void;
 }) {
   const [rows, setRows] = useState<Proposition[] | null>(null);
   const [err, setErr] = useState('');
@@ -52,26 +54,31 @@ export function PropositionsColumn({ slug, milestones, onAccepted }: {
   const live = (rows || []).filter((p) => p.status === 'proposed');
   const done = (rows || []).filter((p) => p.status !== 'proposed');
   const open = (rows || []).find((p) => p.id === openId) || null;
+  useEffect(() => { if (rows) onCount?.(live.length); }, [rows, live.length, onCount]);
   const put = (p: Proposition) => setRows((rs) => (rs || []).map((x) => (x.id === p.id ? p : x)));
   return (
-    <section className="pp-col" aria-label="Propositions">
-      <div className="km-colhead">
-        <span className="nm">Propositions</span>
-        <span className="lim">{live.length}</span>
+    <section className="pp-sec" aria-label="Proposed plans">
+      <div className="ai-headrow">
+        <span className="ai-h">Proposed plans</span>
+        <span className="co-num">{live.length}</span>
       </div>
-      <span className="pp-lede">Proposed work, not yet on the board. Open one to inspect it, then accept what you want.</span>
+      <span className="ai-lede">Agent plans, not yet on the board. Open one to inspect it, then accept what you want.</span>
       {err && <div className="km-err" role="alert">{err}</div>}
-      {rows === null && !err && <span className="km-colempty">Reading…</span>}
+      {rows === null && !err && <span className="im-empty">Reading…</span>}
       {rows !== null && live.length === 0 && (
-        <span className="km-colempty">No propositions. When an agent proposes a plan, it waits here for you.</span>
+        <span className="im-empty">No plans waiting. When an agent proposes one, it lands here for you.</span>
       )}
-      {live.map((p) => <PropositionTile key={p.id} p={p} onOpen={() => setOpenId(p.id)} />)}
+      {live.length > 0 && (
+        <div className="pp-grid">{live.map((p) => <PropositionTile key={p.id} p={p} onOpen={() => setOpenId(p.id)} />)}</div>
+      )}
       {done.length > 0 && (
         <button className="km-clearpick pp-settled" aria-expanded={settled} onClick={() => setSettled(!settled)}>
           {settled ? 'Hide' : 'Show'} settled ({done.length})
         </button>
       )}
-      {settled && done.map((p) => <PropositionTile key={p.id} p={p} onOpen={() => setOpenId(p.id)} />)}
+      {settled && (
+        <div className="pp-grid">{done.map((p) => <PropositionTile key={p.id} p={p} onOpen={() => setOpenId(p.id)} />)}</div>
+      )}
       {open && (
         <PropositionDetail slug={slug} p={open} milestones={milestones}
           onClose={() => {

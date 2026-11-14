@@ -46,8 +46,8 @@ const stamp = (iso: string | null) => (iso ? Date.parse(iso) || 0 : 0);
 /** Where a row is worked, in the words the rest of the app uses. */
 function whereOf(it: RoadmapItem): { label: string; tone: string; title: string } {
   const home = homeOf(it);
-  if (home === 'auto') return { label: 'Auto-idea', tone: 'warning', title: 'Held for your sign-off in For you → Auto-ideas' };
-  if (home === 'icebox') return { label: 'Icebox', tone: '', title: 'Kept, in no slice yet (For you → Ideas & Icebox)' };
+  if (home === 'auto') return { label: 'Auto-idea', tone: 'warning', title: 'Held for your sign-off in Board → Propositions' };
+  if (home === 'icebox') return { label: 'Icebox', tone: '', title: 'Kept, in no slice yet (Board → Propositions → Icebox)' };
   return { label: 'Board', tone: 'info', title: 'Committed work, on the board' };
 }
 

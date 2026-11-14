@@ -378,7 +378,7 @@ const ROADMAP_PANELS = [
     id: 'board-list-back', label: 'Board — return to card layout',
     click: '.km-layout button:nth-child(1)', expect: '.km-cols',
   },
-  // THESE THREE MUST COME LAST, and not for tidiness: the presses above all
+  // THESE FOUR MUST COME LAST, and not for tidiness: the presses above all
   // name `.km-col`, which only exists while the Board tab is the one drawn.
   // Switch tabs first and every one of them reports a control it cannot
   // reach — a true finding about a harness that ordered itself wrongly, and a
@@ -386,18 +386,26 @@ const ROADMAP_PANELS = [
   {
     id: 'board-backlog-tab',
     label: 'Board — Backlog tab',
-    click: '.km-tabs .k-tab:nth-child(2)',
+    click: '.km-tabs .k-tab:has-text("Backlog")',
     expect: '.km-backlog input[aria-label="Search backlog"]',
   },
   {
     id: 'board-dev-tab',
     label: 'Board — Development tab',
-    click: '.km-tabs .k-tab:nth-child(3)',
+    click: '.km-tabs .k-tab:has-text("Development")',
     // The ledger, not a row: the tab reads live data, and a project with no
     // sessions yet is a real state. `.km-devledger.ready` is drawn once the
     // read has answered, never while it is still loading. There is no fold
     // press, since whether a row exists to fold depends on the data.
     expect: '.km-dev .km-devledger.ready',
+  },
+  {
+    // Ideas, the Icebox and agent plans (route key `auto`). Last, because
+    // pressing it rewrites the route to `auto`.
+    id: 'board-propositions-tab',
+    label: 'Board — Propositions tab',
+    click: '.km-tabs .k-tab:has-text("Propositions")',
+    expect: '.pp-view .pp-sec',
   },
 ];
 
@@ -621,7 +629,7 @@ export const SCREENS = [
   // here are two tabs of ONE screen (For you) reached by two routes, and both
   // are walked on purpose: the route is the contract, and a strip that stopped
   // honouring one of its keys would still render perfectly on the other.
-  { id: 'project-auto', label: 'Project — Ideas & Icebox', path: '#/p/<slug>/auto' },
+  { id: 'project-auto', label: 'Project — Board → Propositions', path: '#/p/<slug>/auto' },
   // #616 — the spine's two docs. Read screens: a press would open an editor,
   // and an editor's Save writes, so only first paint is walked here.
   { id: 'project-charter', label: 'Project — Charter', path: '#/p/<slug>/charter' },

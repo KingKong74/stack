@@ -30,7 +30,7 @@ import { Starred } from '../detail/Starred';
 import { Notes } from '../detail/Notes';
 import { Course } from '../detail/Course';
 import { Milestones, MilestoneSummary } from '../detail/Milestones';
-import { newItemSched, flatRoadmap, isAutoIdea, isIced, isBoardWork } from '../lib/plan';
+import { newItemSched, flatRoadmap, isBoardWork } from '../lib/plan';
 import { PRIORITY_DEFAULT, crumbName } from '../lib/ui';
 
 // Quality is retired. Its URLs, and the older bugs/audit URLs, land on Course.
@@ -44,7 +44,7 @@ import { PRIORITY_DEFAULT, crumbName } from '../lib/ui';
 type Tab = 'overview' | 'roadmap' | 'activity' | 'auto' | 'plans'
   | 'artifacts' | 'agents' | 'loops' | 'charter' | 'milestones' | 'architecture' | 'design' | 'notes' | 'starred';
 /** The keys that land on the For-you screen, in strip order. */
-const FORYOU_TABS: Tab[] = ['overview', 'activity', 'auto'];
+const FORYOU_TABS: Tab[] = ['overview', 'activity'];
 const isForYou = (t: Tab) => FORYOU_TABS.includes(t);
 /** The keys that land on the Charter screen (owner's call, 2026-11-09): the
  *  charter, the milestones, the architecture and the design are ONE rail row with a strip,
@@ -57,7 +57,7 @@ const isSpine = (t: Tab) => SPINE_TABS.includes(t);
  *  would stack a second one above them. The board is wired now (#443's mockup
  *  is Board.tsx) and still draws its own head, so it stays on this list: what
  *  the list means is "brings a heading", never "is a mockup". */
-const isMockTab = (t: Tab) => t === 'roadmap'
+const isMockTab = (t: Tab) => t === 'roadmap' || t === 'auto'
   || t === 'artifacts' || t === 'agents' || t === 'loops';
 // The four readings of a project. `navSections` below is the ONE list of them
 // — #432 moved them from a horizontal strip into the console's left rail, and
@@ -274,24 +274,8 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
     () => [...new Set([...allRoadmap.map((i) => i.area), ...boardAreas])].filter(Boolean).sort(),
     [allRoadmap, boardAreas],
   );
-  // #472, #496 — THE TWO POPULATIONS, off ONE list and by one function, so
-  // the counts on this screen partition the project rather than overlapping.
-  // `homeOf` in lib/plan.ts is that function; nothing here may re-derive a
-  // screen's rows from `source`, `reviewed` or `parentId` directly.
-  // A session's own ideas, waiting in For you → Auto-ideas. THE STRIP'S COUNT
-  // IS THIS, and it is real now — the pane behind it draws these same rows.
-  const autoIdeaRows = useMemo(
-    () => allRoadmap.filter((i) => !i.archived && isAutoIdea(i)), [allRoadmap]);
-  // #608 — the third population: kept rows in no slice, drawn in the Icebox
-  // section of the same pane, so the pane's count is both.
-  const icedRows = useMemo(
-    () => allRoadmap.filter((i) => !i.archived && isIced(i)), [allRoadmap]);
-  // THE REVIEW QUEUE IS BACK, and `autoIdeaRows` above is it (#496). It is
-  // every 'hook' and 'fly' row no human has signed off and no session has
-  // worked — held from the overnight runner by `lib/approval.ts` until
-  // somebody promotes one — and For you's Auto-ideas pane both draws it and
-  // answers it. #444 had culled the only screen that could, which left the
-  // hold unanswerable from any browser for six issues.
+  // Propositions (ideas, the Icebox and agent plans) is a Board tab now; the
+  // Board counts its own rows off `homeOf`, so nothing here re-derives them.
 
   const guard = async (fn: () => Promise<void>) => {
     try { setActionError(''); await fn(); }
@@ -580,7 +564,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
             that said so was the terminal screen itself — the one you go to once
             you already suspect it. components/Asking.tsx owns the rule,
             including why the rows are NOT scoped to this project. */}
-        <ConsoleNav active={isForYou(tab) ? 'overview' : isSpine(tab) ? 'charter' : tab} sections={navSections}
+        <ConsoleNav active={isForYou(tab) ? 'overview' : isSpine(tab) ? 'charter' : tab === 'auto' ? 'roadmap' : tab} sections={navSections}
           footer={<TerminalNavFoot slug={slug} />} />
 
       {/* No `wide` modifier any more (#483): the console fills its column on
@@ -646,25 +630,14 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
             left: `⌨` in the topbar and the rail's footer open one in this
             project's directory, unprimed and belonging to nobody. */}
 
-        {/* FOR YOU — the kit's ForYouScreen: one strip, three panes. The strip
-            writes the ROUTE key (see the Tab union), so a deep link into any of
-            the three still lands where it always did and every `hl` keeps its
-            meaning. Auto-ideas wears its count because that count is the whole
-            reason to press it; Overview and Activity carry none. */}
+        {/* FOR YOU — one strip, two panes (Course and Activity). The strip
+            writes the ROUTE key, so each keeps its deep link and `hl`. Ideas
+            and the Icebox moved to the board's Propositions tab. */}
         {isForYou(tab) && (
           <TabStrip<Tab>
-            // THE MOCK CHIP IS ON THE SUB-TAB, NOT THE RAIL ROW (#496). One
-            // of these three panes is still the console kit's, and a chip over
-            // the whole screen would warn about the two real ones — the same
-            // finest-grain rule Plans' sub-tabs follow.
-            //
-            // AUTO-IDEAS' COUNT IS REAL, and it is the same rows the pane
-            // draws: a row's number and the screen behind it must agree, and
-            // this is now the third count on this screen read off `homeOf`.
             tabs={[
               { key: 'overview', label: 'Course' },
               { key: 'activity', label: 'Activity' },
-              { key: 'auto', label: 'Ideas & Icebox', count: autoIdeaRows.length + icedRows.length },
             ]}
             active={tab} onPick={setTab} />
         )}
@@ -686,7 +659,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
             northStar={data.northStar} phase={data.currentPhase} activity={data.activity}
             lastSlice={data.activity.find((a) => a.sliceId != null)?.sliceId ?? null} />
         )}
-        {(tab === 'activity' || tab === 'auto') && (
+        {tab === 'activity' && (
           <ForYou pane={tab} slug={slug} items={allRoadmap}
             slices={data.slices} milestones={data.milestones}
             activity={data.activity} onRefresh={reread} highlightId={highlightId}
@@ -701,8 +674,11 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
             too, and Development reads the host's branch report. Board.tsx's
             header lists the decisions each wiring made and the one thing no
             browser can still do — give a verdict. */}
-        {tab === 'roadmap' && (
-          <Board slug={slug} projectName={project.name} items={allRoadmap}
+        {/* `auto` is the board's Propositions tab: the old Ideas & Icebox route
+            key, kept so every deep link and `hl` still lands on its row. */}
+        {(tab === 'roadmap' || tab === 'auto') && (
+          <Board slug={slug} propositions={tab === 'auto'}
+            onRoute={(t) => { if (t !== tab) setTab(t); }} projectName={project.name} items={allRoadmap}
             milestones={data.milestones} slices={data.slices}
             onRefresh={reread} highlightId={highlightId}
             onAreas={setBoardAreas}

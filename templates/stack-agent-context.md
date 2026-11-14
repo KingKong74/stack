@@ -115,7 +115,7 @@ fingerprint of their title. So:
 ## Suggest the tests this session showed were missing (#500)
 
 `extract.tests` on a checkpoint files what nothing checks yet. It lands in
-**For you → Auto-ideas**, held from the autopilot until the owner keeps,
+**Board → Propositions**, held from the autopilot until the owner keeps,
 promotes or dismisses it — never straight onto the board.
 
 ```json

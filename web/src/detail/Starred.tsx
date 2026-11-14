@@ -6,7 +6,7 @@
 //    the thing stands now (a card's state and slice, a doc's kind) and links to
 //    its own screen, with `hl` naming it so that screen scrolls to it.
 //  • A CARD LINKS TO WHERE `homeOf` DRAWS IT (lib/plan.ts): the board, or
-//    Ideas & Icebox. A link to the board for an iced card would land on nothing.
+//    its Propositions tab (`auto`). A board link for an iced card lands on nothing.
 //  • UNSTAR KEEPS THE ROW until you leave the screen, drawn faint with its star
 //    empty, so a slip of the hand is one press to undo. Nothing here sorts,
 //    ranks or runs work: a star is not priority.

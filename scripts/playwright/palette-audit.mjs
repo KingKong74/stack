@@ -159,7 +159,7 @@ const SCREENS = [
   { slug: 'board-sliceedit', hash: '#/p/{slug}/roadmap', press: ['.km-grouphead [aria-label^="Edit slice"]'] },
   { slug: 'board-milestone', hash: '#/p/{slug}/roadmap', press: ['.km-spine-ms'] },
   // #616 — Charter and Architecture: docs, component cards, ADR rows and
-  // their status tags, all on --surface-raised. (The Ideas & Icebox pane is
+  // their status tags, all on --surface-raised. (The board's Propositions tab is
   // the existing `auto` row further down.)
   { slug: 'charter', hash: '#/p/{slug}/charter' },
   { slug: 'milestones', hash: '#/p/{slug}/milestones' },
@@ -181,8 +181,8 @@ const SCREENS = [
   // audit had never measured anything over. `drag` below is what gets there.
   { slug: 'board-drag', hash: '#/p/{slug}/roadmap', press: [OPEN_BOARD], drag: true },
   { slug: 'board-list', hash: '#/p/{slug}/roadmap', press: ['.km-layout button:nth-child(2)'] },
-  { slug: 'board-backlog', hash: '#/p/{slug}/roadmap', press: ['.km-tabs .k-tab:nth-child(2)'] },
-  { slug: 'board-dev', hash: '#/p/{slug}/roadmap', press: ['.km-tabs .k-tab:nth-child(3)'] },
+  { slug: 'board-backlog', hash: '#/p/{slug}/roadmap', press: ['.km-tabs .k-tab:has-text("Backlog")'] },
+  { slug: 'board-dev', hash: '#/p/{slug}/roadmap', press: ['.km-tabs .k-tab:has-text("Development")'] },
   { slug: 'activity', hash: '#/p/{slug}/activity' },
   { slug: 'auto', hash: '#/p/{slug}/auto' },
   { slug: 'plans', hash: '#/p/{slug}/plans' },

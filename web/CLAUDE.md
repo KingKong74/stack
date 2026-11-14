@@ -16,8 +16,9 @@ its file: `lib/branch.ts`, `lib/plan.ts`, `lib/quality.ts`, `lib/termClipboard.t
   401, which clears the token and returns to the gate.
 - **`lib/route.ts` is a hash router, and the tab decides what `hl` means.** A tab that doesn't use a
   highlight ignores it rather than 404ing. Legacy route spellings fall through to Overview.
-- **For you is three route keys on one screen** (`overview` = Course, the project home since #622;
-  `activity`; `auto`), switched by a strip that writes the key. Don't collapse them into component state.
+- **For you is two route keys on one screen** (`overview` = Course, the project home since #622;
+  `activity`), switched by a strip that writes the key. `auto` is the board's Propositions tab: Board
+  writes it back through `onRoute`, so its links survive. Don't collapse route keys into component state.
 - **A recurring re-fetch goes through `lib/autoRefresh.ts`.** One device-local setting governs every
   screen that polls the host, and it also stops a hidden tab polling — except `whileHidden`, whose
   one caller is the #519 notifier while desktop notifications are on (its job is the unwatched tab).
@@ -29,7 +30,7 @@ its file: `lib/branch.ts`, `lib/plan.ts`, `lib/quality.ts`, `lib/termClipboard.t
 `homeOf` (`lib/plan.ts`) is the one function that decides, returning `auto | icebox | board`. A row
 on two screens gets acted on twice; a row on none has silently vanished.
 
-- **Auto-ideas** (For you → Ideas & Icebox): a held row (`hook`/`fly`/`plan`, not signed off) that
+- **Auto-ideas** (Board → Propositions, route key `auto`): a held row (`hook`/`fly`/`plan`, not signed off) that
   nobody has worked and that is in no slice. Promote sends `{reviewed:true, parentId:null}` plus the picked `sliceId`.
 - **Icebox** (#608, same pane): signed off or manual, in no slice.
 - **Board**: sliced rows, held or not (a held card wears the `held` chip and signs off from its

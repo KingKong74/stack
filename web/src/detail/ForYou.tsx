@@ -1,4 +1,6 @@
-// THE FOR-YOU SCREEN IS COURSE AND TWO WIRED PANES (#444, #496, #622). The
+// THE FOR-YOU SCREEN IS COURSE AND ACTIVITY (#444, #622). The Auto-ideas pane
+// below is drawn by the board's Propositions tab (Board.tsx, route key `auto`),
+// under the agent plans; it lives here because its rules are written here. The
 // `overview` key draws detail/Course.tsx, the project home, which replaced the
 // kit's Overview mockup described below; ProjectDetail renders it directly.
 //

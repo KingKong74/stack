@@ -62,16 +62,17 @@
 //     because this lane exists.
 //
 // 12. THE BOARD DRAWS SLICED WORK (#608). A kept row in no slice is in the
-//     ICEBOX (For you, beside Auto-ideas), not here; `homeOf` decides. Worked
+//     ICEBOX (the Propositions tab, beside the ideas), not in the columns; `homeOf` decides. Worked
 //     rows are the exception and stay, in a "No slice" group, because in-flight
 //     work must never vanish. A new card is born in the one picked slice, or
 //     the current milestone's only slice; with neither it goes to the Icebox,
 //     and the note line says so rather than letting the card vanish silently.
 //     The strip above the toolbar is the milestone (detail/Spine.tsx).
-// 13. THE PROPOSITIONS COLUMN COMES FIRST (detail/Propositions.tsx). It holds
-//     proposals, not cards: no drop, no `project_lists` key, nothing counted
-//     in "on the board". An accept makes ordinary sliced rows, which then
-//     appear in the delivery columns; the tile only points at them.
+// 13. PROPOSITIONS IS ITS OWN TAB (owner's call, 2026-11-14), not a column:
+//     agent plans (detail/Propositions.tsx), then held ideas and the Icebox
+//     (ForYou's pane). Its route key is `auto`, so old Ideas & Icebox links
+//     land here. The columns are the delivery lists only, and they are fixed
+//     from this screen: there is no Add column (the API still takes one).
 //
 // THE CARD MENU: Park/Unpark, Archive, Delete (a `hook` row's delete tombstones
 // its fingerprint, so it has no undo), and Sign off on a held card. Edit item…
@@ -87,12 +88,12 @@ import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, use
 import { createPortal } from 'react-dom';
 import { KitIcon } from './kit/KitIcon';
 import type { BoardArea, BoardList, ItemKind, Milestone, Priority, RoadmapItem, Slice } from '../types';
-import { listKeyOf, clusterKeyOf, queueOrder, isBoardWork, isIced, sliceStateOf, isBuilt, homeOf, bucketRank } from '../lib/plan';
+import { listKeyOf, clusterKeyOf, queueOrder, isBoardWork, isIced, isAutoIdea, sliceStateOf, isBuilt, homeOf, bucketRank } from '../lib/plan';
 import { SpineStrip, SliceDialog, MilestoneDialog, SlicePicker, liveSlices, currentMilestone, sliceLabel } from './Spine';
 import { isHeld } from '../lib/approval';
 import { PRIORITY_META, PRIORITY_DEFAULT, priorityMeta, dueRead, ITEM_KIND_LABEL } from '../lib/ui';
 import {
-  getBoardShape, createList, patchList, deleteList,
+  getBoardShape, patchList, deleteList, getPropositions,
   createArea, patchArea, deleteArea,
   getBoardFolds, setBoardFolds, getBoardView, setBoardView,
   createRoadmapItem, patchRoadmapItem, deleteRoadmapItem,
@@ -108,7 +109,8 @@ import { newTermName, termClaim, launchBrief } from '../lib/termLaunch';
 import type { BoardFolds, BoardView, BoardSort, BoardShow, BoardGroup } from '../store';
 import { BoardListView, SORT_LABEL, SHOW_LABEL } from './BoardList';
 import { BoardFocus, type FocusOpen, type FocusPhase } from './BoardFocus';
-import { PropositionsColumn } from './Propositions';
+import { PropositionsSection } from './Propositions';
+import { ForYou } from './ForYou';
 
 // The five priorities, their glyphs and their tones come from `lib/ui.ts` —
 // ONE list, shared with the ＋ dock. This file carried its own copy of it while
@@ -195,7 +197,7 @@ function useLanded(): [number | null, (id: number) => void] {
   return [landedId, land];
 }
 
-export function Board({ slug, projectName, items, milestones, slices, onRefresh, onEdit, onAreas, highlightId }: {
+export function Board({ slug, projectName, items, milestones, slices, onRefresh, onEdit, onAreas, highlightId, propositions = false, onRoute }: {
   slug: string;
   projectName: string;
   /** The project payload's own roadmap, flattened and IN PAYLOAD ORDER — see
@@ -215,8 +217,24 @@ export function Board({ slug, projectName, items, milestones, slices, onRefresh,
    *  one registered a moment ago and used by nothing yet gets offered too. */
   onAreas?: (names: string[]) => void;
   highlightId: string | null;
+  /** The route asked for the Propositions tab (route key `auto`). */
+  propositions?: boolean;
+  /** Keep the route in step with the Propositions tab, so a reload or a link
+   *  lands where the owner is. The other three tabs share `roadmap`. */
+  onRoute?: (tab: 'roadmap' | 'auto') => void;
 }) {
-  const [view, setView] = useState('board');
+  const [view, setViewState] = useState(propositions ? 'propositions' : 'board');
+  useEffect(() => {
+    setViewState((v) => (propositions ? 'propositions' : v === 'propositions' ? 'board' : v));
+  }, [propositions]);
+  const setView = (v: string) => { setViewState(v); onRoute?.(v === 'propositions' ? 'auto' : 'roadmap'); };
+  // The tab's count: live agent plans plus held ideas plus the Icebox. Plans
+  // are not in the payload, so the count reads them once and the section
+  // reports every change after that.
+  const [propLive, setPropLive] = useState(0);
+  useEffect(() => {
+    getPropositions(slug).then((r) => setPropLive(r.filter((p) => p.status === 'proposed').length)).catch(() => {});
+  }, [slug]);
 
   // The rows this screen draws. Seeded from the payload and re-seeded whenever
   // it changes, but written THROUGH by every mutation below so a card moves
@@ -524,6 +542,7 @@ export function Board({ slug, projectName, items, milestones, slices, onRefresh,
     return inCur.length === 1 ? inCur[0] : null;
   })();
   const icedCount = rows.filter((it) => !it.archived && isIced(it)).length;
+  const ideaCount = rows.filter((it) => !it.archived && isAutoIdea(it)).length;
 
   // Registered areas first, in the board's own order, then any area that
   // exists only because some row mentions it — `area` is a free string and a
@@ -988,8 +1007,6 @@ export function Board({ slug, projectName, items, milestones, slices, onRefresh,
     });
   const dropCol = (key: string) =>
     guard(async () => { await deleteList(slug, key); await loadShape(); onRefresh(); });
-  const addCol = (name: string) =>
-    guard(async () => { await createList(slug, name); await loadShape(); });
 
   // ---- area writes (#473) ---------------------------------------------------
   //
@@ -1169,6 +1186,7 @@ export function Board({ slug, projectName, items, milestones, slices, onRefresh,
         <div className="k-tabs km-tabs">
           {[
             { value: 'board', label: 'Board', count: shown },
+            { value: 'propositions', label: 'Propositions', count: propLive + ideaCount + icedCount },
             { value: 'backlog', label: 'Backlog' },
             { value: 'dev', label: 'Development' },
           ].map((t) => (
@@ -1204,6 +1222,13 @@ export function Board({ slug, projectName, items, milestones, slices, onRefresh,
             onCreate={() => setDialog(true)} onEdit={onEdit} />
         )}
         {view === 'dev' && <DevelopmentView slug={slug} items={rows} onOpen={onEdit} />}
+        {view === 'propositions' && (
+          <div className="pp-view">
+            <PropositionsSection slug={slug} milestones={ms} onAccepted={onRefresh} onCount={setPropLive} />
+            <ForYou pane="auto" slug={slug} items={rows} slices={sl} milestones={ms} activity={[]}
+              onRefresh={onRefresh} onEdit={onEdit} highlightId={highlightId} />
+          </div>
+        )}
 
         {view === 'board' && <>
         <SpineStrip milestones={ms} slices={sl} iced={icedCount}
@@ -1211,7 +1236,7 @@ export function Board({ slug, projectName, items, milestones, slices, onRefresh,
           onStep={stepMilestone} onCurrent={curMs && shownMs?.id !== curMs.id ? () => { closeAll(); setPicked([]); setViewMsId(null); } : undefined}
           onMilestone={() => { closeAll(); setMsEdit(true); }}
           onNewSlice={() => { closeAll(); setSliceEdit({ slice: null }); }}
-          onIcebox={() => go.detail(slug, 'auto')} milestonesHref={hrefTo.detail(slug, 'milestones')}
+          onIcebox={() => { closeAll(); setView('propositions'); }} milestonesHref={hrefTo.detail(slug, 'milestones')}
           owedAway={owedAway.length} onOwedAway={jumpToOwed} />
         {!listMode && !bySlice && (
           <section className="km-areas" aria-label="Project areas">
@@ -1341,9 +1366,6 @@ export function Board({ slug, projectName, items, milestones, slices, onRefresh,
         )}
 
         <div className="km-cols">
-          {/* PROPOSITIONS FIRST (detail/Propositions.tsx): proposed work, not
-              cards. It takes no drop and is not a `project_lists` column. */}
-          <PropositionsColumn slug={slug} milestones={ms} onAccepted={onRefresh} />
           {columns.map((col, ci) => {
             const colFolded = foldedColumns.includes(col.key);
             const dragged = dragId === null ? null : rows.find((x) => x.id === dragId) || null;
@@ -1569,8 +1591,6 @@ export function Board({ slug, projectName, items, milestones, slices, onRefresh,
               </div>
             );
           })}
-
-          {lists && <AddColumn onAdd={addCol} />}
         </div>
         </>}
         </>}
@@ -2583,7 +2603,7 @@ function Composer({ onClose, onAdd }: { onClose: () => void; onAdd: (text: strin
 /**
  * ＋ NEW AREA — #473's first half, in the board's toolbar.
  *
- * Shaped exactly like `AddColumn` below it, and deliberately so: they are the
+ * Shaped like the old Add column button, and deliberately so: they are the
  * same gesture on the same screen (name a thing, press Enter), and two
  * different affordances for one gesture is how a board stops being learnable.
  *
@@ -2703,30 +2723,6 @@ export function AreaMenu({ name, count, holder, dot, palette, open, onOpen, onRe
         </Popover>
       )}
     </span>
-  );
-}
-
-function AddColumn({ onAdd }: { onAdd: (name: string) => void }) {
-  const [open, setOpen] = useState(false);
-  const [name, setName] = useState('');
-  const commit = () => { const n = name.trim(); setOpen(false); setName(''); if (n) onAdd(n); };
-  if (!open) {
-    return (
-      <button className="km-addcol" onClick={(e) => { e.stopPropagation(); setOpen(true); }}>
-        <KitIcon name="plus" size={14} />Add column
-      </button>
-    );
-  }
-  return (
-    <div className="km-addcol open" onClick={(e) => e.stopPropagation()}>
-      <input className="km-colname" autoFocus value={name} placeholder="Column name" aria-label="New column name"
-        onChange={(e) => setName(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') commit();
-          else if (e.key === 'Escape') { setOpen(false); setName(''); }
-        }} />
-    </div>
   );
 }
 
