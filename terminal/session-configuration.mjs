@@ -1,6 +1,8 @@
 // A launch snapshot records supplied configuration, never model invocation.
 // Stored outside repositories and keyed to a tmux option so an external session
 // reusing an old name cannot inherit an unrelated snapshot. No credentials stored.
+// It injects no starting prompt: Claude's SessionStart hook already supplies the
+// resume card, and a prepended brief reads as a message the owner typed.
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -22,7 +24,7 @@ export async function prepareSessionConfiguration({ name, runtime, cwd, profileK
   const snapshot = { id: randomUUID(), sessionName: name, runtime, runtimeVersion: version(runtime), cwd, checkout: root,
     branch: git(cwd, ['branch', '--show-current']) || null, head: git(cwd, ['rev-parse', 'HEAD']) || null,
     dirty: dirtyState(cwd),
-    project: null, createdAt: new Date().toISOString(), state: 'prepared', contextDelivery: 'unknown', profiles: [], skills: [], blind: [] };
+    project: null, createdAt: new Date().toISOString(), state: 'prepared', contextDelivery: 'none', profiles: [], skills: [], blind: [] };
   let work, library, room;
   try {
     [work, library, room] = await Promise.all([request('GET', '/api/skills/work'), request('GET', '/api/skills'), request('GET', '/api/agent-profiles')]);
@@ -30,7 +32,7 @@ export async function prepareSessionConfiguration({ name, runtime, cwd, profileK
   } catch (e) {
     if (profileKeys.length) throw Error(`Required configuration unavailable: ${e.message}`);
     snapshot.state = 'unknown'; snapshot.blind.push('Stack configuration could not be read; repository/runtime defaults still apply.');
-    return { snapshot, brief: '', agents: null };
+    return { snapshot, agents: null };
   }
   const targets = discoverSkillTargets(work.projects, [...(work.checkouts || []), { repo: root, path: root }], { repoRoot, home });
   snapshot.project = targets.find(t => t.base === root && t.scope === 'project')?.slug || null;
@@ -56,19 +58,9 @@ export async function prepareSessionConfiguration({ name, runtime, cwd, profileK
     agents = Object.fromEntries(resolved.map(p => [p.key, { description: p.description || '', prompt: p.prompt, ...(p.model ? { model: p.model } : {}), tools: p.tools }]));
     if (JSON.stringify(agents).length > 32000) throw Error('Selected profile definitions exceed 32,000 characters. Select fewer profiles.');
   }
-  let context = '';
-  if (snapshot.project) {
-    try {
-      const p = await request('GET', `/api/projects/${encodeURIComponent(snapshot.project)}`);
-      const claims = Object.values(p.roadmap || {}).flat().filter(i => !i.done && !i.archived && i.claimedBy).map(i => ({ id: i.id, claim: i.claimedBy }));
-      context = `Stack starting context (summary capped at 1,200 characters, directives at 20 × 500, claims at 60; read live state for full context):\n${JSON.stringify({ project: snapshot.project, summary: String(p.summary || '').slice(0, 1200), directives: (p.directives || []).slice(0, 20).map(d => String(d).slice(0, 500)), claims: claims.slice(0, 60), claimsTotal: claims.length })}\nRead AGENTS.md/CLAUDE.md and package guidance. Respect other sessions' claims; do not write Ready membership or human verdicts. Use the authored checkpoint poster for handoff; do not invent usage.`;
-      snapshot.contextDelivery = 'supplied';
-    } catch { snapshot.blind.push('Project resume/directives/claims could not be read. Read live state before selecting board work.'); }
-  }
-  if (agents) context += '\nSelected spawn profiles are available for bounded delegation. Availability is not proof of invocation.\n';
   if (runtime === 'codex') snapshot.blind.push('Stack spawn profiles are not supplied to Codex. Automatic usage/edit tracking is not integrated.');
   snapshot.configurationRevision = contentRevision(JSON.stringify({ profiles: snapshot.profiles, skills: snapshot.skills }));
-  return { snapshot, brief: context, agents };
+  return { snapshot, agents };
 }
 function configPath(name, home) { if (!validName(name)) throw Error('Invalid session name'); return safeSkillPath(home, '.stack/session-config', `${name}.json`); }
 export function saveSessionConfiguration(snapshot, home = homedir()) {

@@ -16,7 +16,7 @@ instructions. Existing authenticated Codex access is separate from Stack's API c
 | --- | --- |
 | Repository and package rules | AGENTS.md directs Codex to the existing shared guidance. |
 | Launch in Stack Terminal | Select Codex, then open a session; native `codex` runs in tmux. `./stack term --cli codex` also launches natively. |
-| Resume context and branch claims | New Stack Terminal launches receive a capped project brief and claim snapshot when the API is available; other entry points read explicitly. |
+| Resume context and branch claims | Not injected at launch; read the resume card and claims explicitly (`./stack`, or the API). |
 | Rich activity and resume update | Author JSON and invoke the existing checkpoint poster explicitly. |
 | SessionEnd backstop, usage and edit watching | No Codex integration; do not infer zero usage or no active edits. |
 | Mission Control context editor | Lists CLAUDE.md and AGENTS.md live from each checkout, with guarded human saves. |

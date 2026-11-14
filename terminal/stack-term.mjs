@@ -60,7 +60,7 @@ import { agentScratchDir, agentClaudeArgs } from './agent-run.mjs';
 import { writeDrop, DROP_MAX_BYTES } from './drop-file.mjs';
 import { syncFiles } from './file-sync.mjs';
 import { prepareSessionConfiguration, saveSessionConfiguration, readSessionConfiguration, tagSessionConfiguration } from './session-configuration.mjs';
-import { writeBrief, briefArg, pruneBriefs, briefsDir, BRIEF_MAX_CHARS } from './launch-brief.mjs';
+import { writeBrief, briefArg, pruneBriefs, briefsDir } from './launch-brief.mjs';
 import { listClaudeMd, writeClaudeMd } from './claude-md.mjs';
 import { createEditWatch } from './edit-watch.mjs';
 import { resolvedModelFor } from './session-model.mjs';
@@ -833,8 +833,6 @@ async function startPreparedSession(msg, pending) {
         if (sessions.size >= MAX_SESSIONS) return failUplink('The session cap was reached while preparing configuration.');
         if (sessionExists(tmuxSession)) return failUplink('This session was created while configuration was being prepared. Reattach by name.');
         configuration = prepared.snapshot;
-        initialBrief = [initialBrief, prepared.brief].filter(Boolean).join('\n\n');
-        if (initialBrief.length > BRIEF_MAX_CHARS) return failUplink(`Starting task and context exceed ${BRIEF_MAX_CHARS} characters. Shorten the starting task.`);
         if (prepared.agents) {
           const path = writeBrief(tmuxSession, JSON.stringify(prepared.agents), join(briefsDir(), 'profiles'));
           if (!path) return failUplink('Could not write the selected profile definitions.');
@@ -843,7 +841,7 @@ async function startPreparedSession(msg, pending) {
         saveSessionConfiguration(configuration);
       }
       const briefFile = !reattached && initialBrief ? writeBrief(tmuxSession, initialBrief) : null;
-      if (!reattached && initialBrief && !briefFile) return failUplink('Could not write the starting context.');
+      if (!reattached && initialBrief && !briefFile) return failUplink('Could not write the starting task.');
       if (briefFile) log(`session ${sid}: starting ${tmuxSession} on a brief (${initialBrief.length} chars)`);
       const shellCmd = `/bin/bash -lc "${briefFile ? agentCmdWith(briefArg(briefFile)) : agentCmd}"`;
       argv = sessionArgv(tmuxSession, cwd, shellCmd, { attachOnly: reattached || msg.reattachOnly === true });

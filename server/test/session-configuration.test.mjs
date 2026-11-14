@@ -13,14 +13,13 @@ g(['-c', 'user.name=Fixture', '-c', 'user.email=f@f', 'commit', '--allow-empty',
 const skill = { id: 1, name: 'fixture', scope: 'project', slug: 'fixture', body: 'Verify evidence', enabled: true, runtimes: ['claude', 'codex'] };
 const profiles = [{ key: 'executor', name: 'Builder', description: 'Build', prompt: 'Implement scoped changes', model: '', enabled: true, tools: ['Read', 'Write'], skillIds: [1] }];
 const request = async (_method, path) => path === '/api/skills/work' ? { projects: [{ slug: 'fixture', repo: 'fixture/project' }], checkouts: [] }
- : path === '/api/skills' ? { skills: [skill] } : path === '/api/agent-profiles' ? { profiles, policy: { executorModel: 'sonnet' } }
- : { summary: 'Fixture summary', directives: ['Respect claims'], roadmap: { medium: [{ id: 2, claimedBy: 'other' }] } };
+ : path === '/api/skills' ? { skills: [skill] } : path === '/api/agent-profiles' ? { profiles, policy: { executorModel: 'sonnet' } } : null;
 const sync = async () => ({ observations: [{ skillId: 1, runtime: 'claude', managed: true, revision: skillRevision(skill), path: join(cwd, '.claude/skills/fixture') }, { skillId: 1, runtime: 'codex', managed: true, revision: skillRevision(skill), path: join(cwd, '.agents/skills/fixture') }] });
 try {
  const prepared = await prepareSessionConfiguration({ name: 'stack-term-fixture', runtime: 'claude', cwd, profileKeys: ['executor'], home, repoRoot: home, request, sync });
  assert.equal(prepared.snapshot.project, 'fixture'); assert.equal(prepared.snapshot.dirty, false);
  assert.equal(prepared.snapshot.profiles[0].model, 'sonnet'); assert.ok(prepared.agents.executor.prompt.includes('Verify evidence'));
- assert.ok(prepared.brief.includes('other')); assert.equal(prepared.snapshot.contextDelivery, 'supplied');
+ assert.equal('brief' in prepared, false); assert.equal(prepared.snapshot.contextDelivery, 'none');
  saveSessionConfiguration(prepared.snapshot, home);
  assert.deepEqual(readSessionConfiguration('stack-term-fixture', home, prepared.snapshot.id), prepared.snapshot);
  assert.equal(readSessionConfiguration('stack-term-fixture', home, 'different-launch-id'), null);
@@ -31,5 +30,5 @@ try {
  await assert.rejects(() => prepareSessionConfiguration({ name: 'stack-term-x', runtime: 'claude', cwd, profileKeys: ['executor'], home, repoRoot: home, request, sync: async () => null }), /not installed/);
  const codex = await prepareSessionConfiguration({ name: 'stack-term-codex', runtime: 'codex', cwd, home, repoRoot: home, request, sync });
  assert.equal(codex.snapshot.skills.length, 1); assert.equal(codex.agents, null); assert.ok(codex.snapshot.blind.some(x => x.includes('not supplied')));
- console.log('PASS: exact snapshots, project claims/context, persisted identity, offline/required failures and explicit Codex limitations.');
+ console.log('PASS: exact snapshots, no injected starting context, persisted identity, offline/required failures and explicit Codex limitations.');
 } finally { rmSync(home, { recursive: true, force: true }); }
