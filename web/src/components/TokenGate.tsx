@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { setToken, verifyToken, loginWithPin } from '../store';
 import { PRODUCT_NAME } from '../lib/ui';
 import { StackMark } from './Brandmark';
+import { SwarmDemo } from './SwarmDemo';
 
 // FIRST LOAD — the title card, and the gate on it.
 //
@@ -16,6 +17,9 @@ import { StackMark } from './Brandmark';
 // drawn by StackMark like every other logo; only the wrapper animates, and the
 // wrapper's key is bumped to restart it.
 //
+// "SHOW ME HOW IT WORKS" opens SwarmDemo (Claude Design 62ed3498, "Stack
+// Login"): a tmux walkthrough of agents working tasks in their own worktrees.
+//
 // The gate behaves as before: sign in with the access PIN set in Settings
 // (the server mints this browser its own revocable token), or paste the shared
 // API token. Either way the token is kept in localStorage and sent on every
@@ -27,6 +31,7 @@ export function TokenGate() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [spin, setSpin] = useState(0);
+  const [demo, setDemo] = useState(0); // 0 = closed; bumped to remount = replay
   const played = useRef(false);
 
   const play = () => setSpin((s) => s + 1);
@@ -99,8 +104,14 @@ export function TokenGate() {
           </button>
         </form>
 
+        <button type="button" className="tcard-demo" onClick={() => setDemo((d) => d + 1)}>
+          <span className="tcard-demo-play" aria-hidden>▶</span>
+          Show me how it works
+        </button>
+
         <span className="tcard-foot">self-hosted · kept in this browser</span>
       </div>
+      {demo > 0 && <SwarmDemo key={demo} onClose={() => setDemo(0)} />}
     </div>
   );
 }

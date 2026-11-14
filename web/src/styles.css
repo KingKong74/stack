@@ -1540,6 +1540,67 @@ a.tab { display: inline-block; }
 .tcard-mark.play rect:nth-of-type(3) { --dx: 9px; animation-delay: 90ms; }
 .tcard-mark.play rect:nth-of-type(4) { --dx: 9px; animation-delay: 180ms; }
 
+/* "Show me how it works" — components/SwarmDemo.tsx carries the notes. The
+   chrome is Stack's palette; the terminal inside takes GIT_BASH_THEME inline,
+   because it is drawn as the real terminal, not as UI. */
+.tcard-demo { all: unset; cursor: pointer; display: flex; align-items: center; gap: 10px; margin-top: -8px; padding: 8px 16px 8px 10px; border-radius: var(--radius-pill); border: 1px solid var(--border-default); color: var(--text-secondary); font: var(--type-label); transition: var(--transition-control); }
+.tcard-demo:hover { background: var(--surface-hover); color: var(--text-primary); border-color: var(--border-strong); }
+.tcard-demo:focus-visible { box-shadow: var(--ring-focus); }
+.tcard-demo-play { width: 22px; height: 22px; border-radius: var(--radius-pill); background: var(--lime-tint); color: var(--text-accent); display: flex; align-items: center; justify-content: center; font-size: 9px; padding-left: 2px; box-sizing: border-box; }
+
+.swarm { position: fixed; inset: 0; z-index: 100; display: flex; flex-direction: column; background: var(--surface-sunken); color: var(--text-primary); }
+.swarm-head { height: 48px; flex: none; display: flex; align-items: center; gap: 16px; padding: 0 20px; border-bottom: 1px solid var(--border-subtle); background: var(--surface-canvas); }
+.swarm-head svg { flex: none; }
+.swarm-head-name { font: var(--type-heading); }
+.swarm-head-count { font: var(--weight-medium) var(--text-xs)/1 var(--font-mono); color: var(--text-tertiary); white-space: nowrap; }
+.swarm-head-narr { flex: 1; min-width: 0; text-align: center; font: var(--type-body-sm); color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.swarm-ghost, .swarm-primary { all: unset; cursor: pointer; font: var(--type-label); padding: 6px 12px; border-radius: var(--radius-md); white-space: nowrap; transition: var(--transition-control); }
+.swarm-ghost { border: 1px solid var(--border-default); }
+.swarm-ghost:hover { background: var(--surface-hover); }
+.swarm-primary { background: var(--action-primary); color: var(--white); }
+.swarm-primary:hover { background: var(--action-primary-hover); }
+.swarm-ghost:focus-visible, .swarm-primary:focus-visible { box-shadow: var(--ring-focus); }
+.swarm-stage { flex: 1; position: relative; min-height: 0; }
+
+/* The terminal: one xterm-sized box, tmux inside it. Every measure is in
+   character cells (1ch wide, 1 line tall) because that is tmux's only unit. */
+.swarm-term { position: absolute; inset: 12px; display: flex; flex-direction: column; padding: 4px; border: 1px solid var(--border-default); border-radius: var(--radius-md); font-size: 12px; line-height: 1.3; overflow: hidden; }
+.swarm-win { flex: 1; position: relative; min-height: 0; }
+.swarm-pane { position: absolute; display: flex; min-width: 0; }
+.swarm-sep { flex: none; width: 1ch; background: linear-gradient(currentColor, currentColor) center / 1px 100% no-repeat; }
+.swarm-pane-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.swarm-rule { flex: none; height: 1.3em; white-space: pre; overflow: hidden; }
+.swarm-body { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; }
+.swarm-line { flex: none; white-space: pre-wrap; word-break: break-all; }
+.swarm-cur { display: inline-block; width: 1ch; height: 1.15em; vertical-align: text-bottom; }
+.swarm-status { flex: none; display: flex; height: 1.3em; white-space: pre; overflow: hidden; }
+.swarm-status-fill { flex: 1; }
+
+.swarm-orbit { position: absolute; inset: 0; cursor: pointer; }
+.swarm-ring { position: absolute; left: 20%; top: 22%; width: 60%; height: 44%; border: 1px solid var(--border-subtle); border-radius: 50%; }
+.swarm-ring.dashed { left: 30%; top: 29%; width: 40%; height: 30%; border-style: dashed; opacity: .6; }
+.swarm-logo { position: absolute; left: 50%; top: 44%; z-index: 50; width: 96px; height: 96px; }
+.swarm-logo svg { position: relative; display: block; filter: drop-shadow(0 12px 24px rgb(0 0 0 / .45)); }
+.swarm-pulse { position: absolute; inset: 0; border-radius: var(--radius-2xl); border: 1px solid var(--border-accent); }
+.swarm-ready { position: absolute; left: 50%; bottom: 4%; transform: translateX(-50%); z-index: 70; display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; }
+.swarm-ready-title { font: var(--type-title); }
+.swarm-ready-commits { font: var(--weight-regular) var(--text-xs)/1.4 var(--font-mono); color: var(--text-tertiary); }
+.swarm-ready-back { margin-top: 4px; font: var(--type-label); color: var(--text-link); padding: 8px 16px; border: 1px solid var(--border-default); border-radius: var(--radius-pill); background: var(--surface-canvas); }
+.swarm-chip { position: absolute; display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; min-width: 190px; background: var(--grey-1000); border: 1px solid var(--border-default); border-radius: var(--radius-lg); box-shadow: var(--shadow-md); }
+.swarm-chip-row { display: flex; align-items: center; gap: 10px; }
+.swarm-dot { width: 7px; height: 7px; border-radius: var(--radius-pill); background: var(--status-success-fg); }
+.swarm-chip-name { font: var(--weight-semibold) var(--text-xs)/1 var(--font-mono); white-space: nowrap; }
+.swarm-chip-task { font: var(--weight-medium) var(--text-xs)/1 var(--font-mono); color: var(--text-link); }
+.swarm-chip-badge { font: var(--weight-medium) var(--text-2xs)/1 var(--font-sans); padding: 3px 7px; border-radius: var(--radius-sm); background: var(--status-success-bg); color: var(--status-success-fg); white-space: nowrap; }
+.swarm-chip-meta { display: flex; gap: 10px; font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-tertiary); white-space: nowrap; }
+.swarm-chip-commit { color: var(--text-accent); }
+@media (max-width: 640px) {
+  .swarm-head { gap: 10px; padding: 0 12px; }
+  .swarm-head-count, .swarm-head-narr { display: none; }
+  .swarm-head-name { flex: 1; }
+  .swarm-term { inset: 6px; font-size: 10px; }
+}
+
 /* `.gate` is a centring wrapper and `.gate-card` its card. screens/Showcase.tsx
    uses both for its "Nothing here" card. */
 .gate { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
