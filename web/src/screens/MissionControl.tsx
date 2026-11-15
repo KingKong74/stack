@@ -178,7 +178,7 @@ export function MissionControl() {
                 <span className="dot" />
                 {spawns
                   ? <>Director · Claude Code <code>{agents.policy.advisorModel}</code> · {plural(live, 'profile')} on</>
-                  : <>No advisor set: <code>no subagents spawn</code></>}
+                  : <>No advisor set: <code>no autopilot subagents</code></>}
               </span>
             )}
             <a className="k-btn sm secondary" href={hrefTo.settings}>Settings</a>
@@ -295,13 +295,39 @@ function Agents({ room, onChanged, onOpen }: {
       {/* THE FRAME, FIRST: with no advisor nothing below spawns at all. */}
       {!policy.spawnsAgents && (
         <div className="mc-banner warning">
-          Nothing on this tab spawns. A run passes <code>--agents</code> only when an advisor model is
+          Autopilot delegation is off. An autopilot run passes <code>--agents</code> only when an advisor model is
           set; with none, it is one model on the executor and the director does its own building. Set
           one on the Models tab.
         </div>
       )}
       {defaultSpawn.fallback && (
         <div className="mc-banner info">A run naming no profile fell back to the built-in executor: {defaultSpawn.reason}</div>
+      )}
+
+      <div className="mc-sechead">
+        <div>
+          <h2>Utilisation · last {room.utilisation?.windowDays ?? 30} days</h2>
+          <p>Recorded Claude delegations and started specialist diagnostics, matched by profile key.
+            Session dates indicate when delegations were recorded. Codex and unreported activity are unknown;
+            supplied profiles and open assignments do not count as use. Tokens and cost cannot be attributed per profile.</p>
+        </div>
+        <button className="k-btn secondary" onClick={onChanged}>Refresh usage</button>
+      </div>
+      {!room.utilisation?.profiles ? <p role="status">Utilisation data unavailable. Refresh to try again.</p> : (
+        <div className="mc-footnotes">
+          {room.profiles.map(p => {
+            const u = room.utilisation.profiles?.[p.key];
+            return <div key={p.key}>
+              <span className="t">{p.name}</span>
+              <span className="b">{u
+                ? <>{plural(u.calls, 'delegation')} · {plural(u.diagnostics, 'diagnostic attempt')}<br />
+                    Diagnostics: {u.completed} completed · {u.failed} failed · {u.diagnostics - u.completed - u.failed} other or in progress<br />
+                    Projects: {u.projects.join(', ')}<br />
+                    Last recorded: <time dateTime={u.lastAt}>{new Date(u.lastAt).toLocaleString('en-AU')}</time></>
+                : 'No use recorded in this window. This does not establish that the agent was unused.'}</span>
+            </div>;
+          })}
+        </div>
       )}
 
       <div className="mc-sechead">
@@ -364,7 +390,7 @@ function Agents({ room, onChanged, onOpen }: {
       <div className="mc-footnotes">
         <div>
           <span className="t">Open items, not spawn history</span>
-          <span className="b">Counts are open items that would spawn a profile. Stack doesn't record which subagents a run actually used, so a "last run" here would be invented.</span>
+          <span className="b">Counts are open items that would spawn a profile. Recorded activity is shown separately above; assignments are not evidence of use.</span>
         </div>
         <div>
           <span className="t">There's always a builder</span>

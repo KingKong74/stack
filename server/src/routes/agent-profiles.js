@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { q } from '../db.js';
 import { KNOWN_TOOLS, normaliseProfile, mergeProfiles, resolveSpawn } from '../agent-profiles.js';
 import { readSettings } from '../settings.js';
+import { UTILISATION_SQL, shapeUtilisation } from '../agent-utilisation.js';
 
 // THE AGENTS SURFACE — app-wide, no slug (a profile is a spawn-time choice, not
 // a per-project one). Mounted at /api/agent-profiles, read by Mission Control's
@@ -85,7 +86,7 @@ async function upsert(profile) {
 // GET / -> the builtins merged with any stored overrides, plus the frame the
 // room cannot render honestly without (see the header).
 agentProfiles.get('/', async (_req, res) => {
-  const [stored, settings, useRows] = await Promise.all([
+  const [stored, settings, useRows, utilisation] = await Promise.all([
     loadStored(),
     readSettings(),
     q(
@@ -94,6 +95,7 @@ agentProfiles.get('/', async (_req, res) => {
         WHERE p.deleted_at IS NULL AND NOT r.done AND NOT r.archived
         GROUP BY 1`
     ).then((r) => r.rows).catch(() => []),
+    q(UTILISATION_SQL).then(r => shapeUtilisation(r.rows)).catch(() => null),
   ]);
   const profiles = mergeProfiles(stored);
   const executorModel = settings.autopilot_executor_model || '';
@@ -103,6 +105,7 @@ agentProfiles.get('/', async (_req, res) => {
   const spawn = resolveSpawn({ profiles, executorModel });
   res.json({
     profiles,
+    utilisation: { windowDays: 30, profiles: utilisation },
     knownTools: KNOWN_TOOLS,
     usage: Object.fromEntries(useRows.map((r) => [r.key, r.n])),
     policy: {

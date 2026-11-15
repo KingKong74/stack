@@ -21,6 +21,9 @@ Bare IDs never certify installation; stale (>15m) evidence is unknown. Profiles 
 Terminal `profileKeys` are Claude-only; required skills must resolve. Reconnect preserves the
 launch snapshot. `GET /terminal/configurations/:id` compares it with the current library.
 Supplied or installed does not mean invoked.
+`GET /agent-profiles` includes `utilisation`: 30-day Claude delegation counts and started diagnostic outcomes by exact profile key,
+projects and latest record date. `profiles: null` means unavailable; missing keys mean no recorded use, not proven
+inactivity. Session dates are recording dates; profile-level tokens/cost and Codex usage are unknown.
 `POST /projects/:slug/specialists/runs` queues a bounded tool-free diagnostic with exact
 base/head hashes and an idempotent requestId. `GET .../runs/:id` returns evidence and claim qualifications, never a verdict. Observation policies at `.../specialists/loops` start disabled; delete only when disabled. The existing
 dispatcher enforces host, manual-proof, cooldown and budget holds; `/:id/dry-run` never queues.

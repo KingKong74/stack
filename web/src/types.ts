@@ -695,7 +695,12 @@ export interface AgentProfilePolicy {
    */
   spawnsAgents: boolean;
 }
+export interface AgentUtilisation {
+  calls: number; diagnostics: number; completed: number; failed: number;
+  projects: string[]; lastAt: string;
+}
 export interface AgentProfilesRoom {
+  utilisation: { windowDays: number; profiles: Record<string, AgentUtilisation> | null };
   profiles: AgentProfile[];
   /** The whole tool vocabulary. A grant outside it is a 400, not a silent drop. */
   knownTools: string[];
