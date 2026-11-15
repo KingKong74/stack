@@ -2052,50 +2052,52 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                 <span className="tv-counts">
                   {projectTiles.length} sessions · <span className="asking">{projectTiles.filter((t) => t.st === 'asking' && !t.seen).length} asking</span>{seenCount ? ` (${seenCount} seen)` : ''} · <span className="working">{projectTiles.filter((t) => t.st === 'working').length} working</span>
                 </span>
-                <span className="tv-hint">{projectWins.length ? 'Drag a window to an edge to split, a corner to quarter' : 'Hover to read · click to open · Ctrl/⌘-click to select · drag to reorder'}</span>
-                <span className="tv-rel">
-                  <button className={`tv-btn tv-icon${gridMenu ? ' on' : ''}`} title="Grid size" aria-label="Grid size" onClick={() => setGridMenu((v) => !v)}>
-                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><circle cx="8" cy="8" r="2.3" /><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4" /></svg>
-                  </button>
-                  {gridMenu && (
+                <span className="tv-hint" style={{ marginLeft: 0 }}>{projectWins.length ? 'Drag a window to an edge to split, a corner to quarter' : 'Hover to read · click to open · Ctrl/⌘-click to select · drag to reorder'}</span>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', flexWrap: 'wrap', gap: 'var(--space-3)', marginLeft: 'auto' }}>
+                  <span className="tv-rel">
+                    <button className={`tv-btn tv-icon${gridMenu ? ' on' : ''}`} title="Grid size" aria-label="Grid size" onClick={() => setGridMenu((v) => !v)}>
+                      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><circle cx="8" cy="8" r="2.3" /><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4" /></svg>
+                    </button>
+                    {gridMenu && (
+                      <>
+                        <div className="tv-scrim" onClick={() => setGridMenu(false)} />
+                        <div className="tv-pop tv-gridmenu">
+                          <span className="eyebrow">Swarm grid</span>
+                          {GRID_OPTS.map((g) => (
+                            <button key={`${g.c}x${g.r}`} className={`tv-gridopt${grid.c === g.c && grid.r === g.r ? ' on' : ''}`}
+                              onClick={() => { saveViewPrefs({ grid: { c: g.c, r: g.r } }); setGridMenu(false); }}>
+                              <span className="l">{g.c}×{g.r}</span><span className="n">{g.note}</span><span className="t">{g.c * g.r} tiles</span>
+                            </button>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </span>
+                  {!swarmProject && cap - tiles.length > 0 && (
+                    <button className="tv-btn sm tv-action-fill" title="Start a new session in every empty slot, using your defaults"
+                      onClick={() => setFillAsk(cap - tiles.length)}><TermActionIcon action="fill" />Fill {cap - tiles.length} empty</button>
+                  )}
+                  {tiles.length > 0 && (
+                    <button className="tv-btn sm tv-action-hide" title="Hide every tile from Swarm (sessions keep running)"
+                      onClick={() => { setHidden([...new Set([...hidden, ...projectTiles.map((t) => t.key)])]); setWins((ws) => ws.filter((w) => !projectWins.some((p) => p.id === w.id))); setTilePeek(null); }}><TermActionIcon action="hide" />Hide all</button>
+                  )}
+                  {hiddenCount > 0 && (
+                    <button className="tv-btn sm tv-action-show" title="Bring hidden sessions back into Swarm" onClick={() => setHidden(hidden.filter((key) => !projectTiles.some((t) => t.key === key)))}><TermActionIcon action="show" />Show {hiddenCount} hidden</button>
+                  )}
+                  {tiles.length > 1 && <button className="tv-btn sm tv-action-layout" title="Asking first, then failed, working, idle" onClick={sortByStatus}><TermActionIcon action="sort" />Sort by status</button>}
+                  {projectWins.length > 0 && (
                     <>
-                      <div className="tv-scrim" onClick={() => setGridMenu(false)} />
-                      <div className="tv-pop tv-gridmenu">
-                        <span className="eyebrow">Swarm grid</span>
-                        {GRID_OPTS.map((g) => (
-                          <button key={`${g.c}x${g.r}`} className={`tv-gridopt${grid.c === g.c && grid.r === g.r ? ' on' : ''}`}
-                            onClick={() => { saveViewPrefs({ grid: { c: g.c, r: g.r } }); setGridMenu(false); }}>
-                            <span className="l">{g.c}×{g.r}</span><span className="n">{g.note}</span><span className="t">{g.c * g.r} tiles</span>
-                          </button>
-                        ))}
-                      </div>
+                      <button className="tv-btn sm tv-action-layout" onClick={() => tileAllWins(projectWins.map((w) => w.id))}><TermActionIcon action="tile" />Tile {projectWins.length} window{projectWins.length === 1 ? '' : 's'}</button>
+                      <button className="tv-btn sm" onClick={() => { setWins((ws) => ws.filter((w) => !projectWins.some((p) => p.id === w.id))); setOpenIn(null); }}><TermActionIcon action="close" />Close all</button>
                     </>
                   )}
-                </span>
-                {!swarmProject && cap - tiles.length > 0 && (
-                  <button className="tv-btn sm tv-action-fill" title="Start a new session in every empty slot, using your defaults"
-                    onClick={() => setFillAsk(cap - tiles.length)}><TermActionIcon action="fill" />Fill {cap - tiles.length} empty</button>
-                )}
-                {tiles.length > 0 && (
-                  <button className="tv-btn sm tv-action-hide" title="Hide every tile from Swarm (sessions keep running)"
-                    onClick={() => { setHidden([...new Set([...hidden, ...projectTiles.map((t) => t.key)])]); setWins((ws) => ws.filter((w) => !projectWins.some((p) => p.id === w.id))); setTilePeek(null); }}><TermActionIcon action="hide" />Hide all</button>
-                )}
-                {hiddenCount > 0 && (
-                  <button className="tv-btn sm tv-action-show" title="Bring hidden sessions back into Swarm" onClick={() => setHidden(hidden.filter((key) => !projectTiles.some((t) => t.key === key)))}><TermActionIcon action="show" />Show {hiddenCount} hidden</button>
-                )}
-                {tiles.length > 1 && <button className="tv-btn sm tv-action-layout" title="Asking first, then failed, working, idle" onClick={sortByStatus}><TermActionIcon action="sort" />Sort by status</button>}
-                {projectWins.length > 0 && (
-                  <>
-                    <button className="tv-btn sm tv-action-layout" onClick={() => tileAllWins(projectWins.map((w) => w.id))}><TermActionIcon action="tile" />Tile {projectWins.length} window{projectWins.length === 1 ? '' : 's'}</button>
-                    <button className="tv-btn sm" onClick={() => { setWins((ws) => ws.filter((w) => !projectWins.some((p) => p.id === w.id))); setOpenIn(null); }}><TermActionIcon action="close" />Close all</button>
-                  </>
-                )}
-                <select className="tv-select" style={{ marginLeft: 'auto' }} aria-label="Filter terminals by project" value={swarmProject}
-                  onChange={(e) => changeSwarmProject(e.target.value)}>
-                  <option value="">All projects</option>
-                  {swarmProject && !swarmProjects.includes(swarmProject) && <option value={swarmProject}>{swarmProject}</option>}
-                  {swarmProjects.filter(Boolean).map((project) => <option key={project} value={project}>{project}</option>)}
-                </select>
+                  <select className="tv-select" aria-label="Filter terminals by project" value={swarmProject}
+                    onChange={(e) => changeSwarmProject(e.target.value)}>
+                    <option value="">All projects</option>
+                    {swarmProject && !swarmProjects.includes(swarmProject) && <option value={swarmProject}>{swarmProject}</option>}
+                    {swarmProjects.filter(Boolean).map((project) => <option key={project} value={project}>{project}</option>)}
+                  </select>
+                </div>
               </div>
               {selectedTiles.length > 0 && (
                 <div className="tv-swarm-head" role="toolbar" aria-label="Selected terminals">
