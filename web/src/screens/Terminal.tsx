@@ -1176,12 +1176,12 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
       return { ...w, ...zoneRect('max', a), snapped: true, prev: { w: w.w, h: w.h } };
     }));
   };
-  const tileAllWins = () => {
+  const tileAllWins = (ids: number[]) => {
     const a = area();
     setWins((ws) => {
-      const order = [...ws].sort((p, q) => p.z - q.z).map((w) => w.id);
-      const rects = tileRects(ws.length, a);
-      return ws.map((w) => ({ ...w, ...rects[order.indexOf(w.id)], snapped: true, prev: w.snapped ? w.prev : { w: w.w, h: w.h } }));
+      const order = ws.filter((w) => ids.includes(w.id)).sort((p, q) => p.z - q.z).map((w) => w.id);
+      const rects = tileRects(order.length, a);
+      return ws.map((w) => !ids.includes(w.id) ? w : ({ ...w, ...rects[order.indexOf(w.id)], snapped: true, prev: w.snapped ? w.prev : { w: w.w, h: w.h } }));
     });
   };
   // DRAG A TITLE BAR to move; to an edge or corner to snap. A snapped window
@@ -1265,11 +1265,20 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
       };
     }),
   ];
+  const [swarmProject, setSwarmProject] = useState('');
+  const swarmProjects = [...new Set(allTiles.map((t) => t.project))].sort((a, b) => a.localeCompare(b));
+  const projectTiles = allTiles.filter((t) => !swarmProject || t.project === swarmProject);
+  const projectWins = wins.filter((w) => projectTiles.some((t) => t.sess?.id === w.id));
+  const changeSwarmProject = (project: string) => {
+    setSwarmProject(project);
+    setSelectedKeys([]);
+    setTilePeek(null);
+  };
   const [hidden, setHiddenState] = useState<string[]>(() => getTermSwarmHidden());
   const setHidden = (next: string[]) => { setHiddenState(next); setTermSwarmHidden(next); };
   const [tileOrder, setTileOrder] = useState<string[]>([]);
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
-  const selectedTiles = allTiles.filter((t) => selectedKeys.includes(t.key) && !hidden.includes(t.key));
+  const selectedTiles = projectTiles.filter((t) => selectedKeys.includes(t.key) && !hidden.includes(t.key));
   const toggleTileSelection = (key: string) => {
     setSelectedKeys((keys) => keys.includes(key) ? keys.filter((k) => k !== key) : [...keys, key]);
   };
@@ -1306,9 +1315,10 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   };
   const cap = grid.c * grid.r;
   const compact = cap >= 35;
-  const shownTiles = orderTiles(allTiles.filter((t) => !hidden.includes(t.key)), tileOrder);
+  const shownTiles = orderTiles(projectTiles.filter((t) => !hidden.includes(t.key)), tileOrder);
   const tiles = shownTiles.slice(0, cap);
-  const hiddenCount = allTiles.filter((t) => hidden.includes(t.key)).length;
+  const hiddenCount = projectTiles.filter((t) => hidden.includes(t.key)).length;
+  const seenCount = projectTiles.filter((t) => t.seen).length;
   const [tilePeek, setTilePeek] = useState<string | null>(null);
   const [dragTile, setDragTile] = useState<string | null>(null);
   const [dropOn, setDropOn] = useState<string | null>(null);
@@ -1318,8 +1328,6 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   const flashTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(flashTimer.current), []);
   const askingCount = allTiles.filter((t) => t.st === 'asking' && !t.seen).length;
-  const seenCount = allTiles.filter((t) => t.seen).length;
-  const workingCount = allTiles.filter((t) => t.st === 'working').length;
   const linesOf = (t: Tile): string[] => {
     const live = t.sess ? handles.current.get(t.sess.id)?.tail(40) : undefined;
     return live?.length ? live : t.det?.preview || [];
@@ -1879,7 +1887,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
           {sessions.map((s) => {
             const winOf = wins.find((w) => w.id === s.id);
             const miniAt = minis.findIndex((m) => m.id === s.id);
-            const place = view === 'swarm' ? (winOf ? 'win' : 'off')
+            const place = view === 'swarm' ? (winOf && (!swarmProject || projectOf(s) === swarmProject) ? 'win' : 'off')
               : s.id === cur?.id ? 'main' : miniAt >= 0 ? 'mini' : 'off';
             const st = statusOf(s);
             const run = s.status === 'live' ? runOfSess(s, st) : '';
@@ -2041,10 +2049,16 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
             <div className="tv-swarm" onDragOver={onSwarmDragOver} onDrop={onSwarmDrop}
               onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setSnapPreview(null); }}>
               <div className="tv-swarm-head">
+                <select className="tv-select" aria-label="Filter terminals by project" value={swarmProject}
+                  onChange={(e) => changeSwarmProject(e.target.value)}>
+                  <option value="">All projects</option>
+                  {swarmProject && !swarmProjects.includes(swarmProject) && <option value={swarmProject}>{swarmProject}</option>}
+                  {swarmProjects.filter(Boolean).map((project) => <option key={project} value={project}>{project}</option>)}
+                </select>
                 <span className="tv-counts">
-                  {allTiles.length} sessions · <span className="asking">{askingCount} asking</span>{seenCount ? ` (${seenCount} seen)` : ''} · <span className="working">{workingCount} working</span>
+                  {projectTiles.length} sessions · <span className="asking">{projectTiles.filter((t) => t.st === 'asking' && !t.seen).length} asking</span>{seenCount ? ` (${seenCount} seen)` : ''} · <span className="working">{projectTiles.filter((t) => t.st === 'working').length} working</span>
                 </span>
-                <span className="tv-hint">{wins.length ? 'Drag a window to an edge to split, a corner to quarter' : 'Hover to read · click to open · Ctrl/⌘-click to select · drag to reorder'}</span>
+                <span className="tv-hint">{projectWins.length ? 'Drag a window to an edge to split, a corner to quarter' : 'Hover to read · click to open · Ctrl/⌘-click to select · drag to reorder'}</span>
                 <span className="tv-rel">
                   <button className={`tv-btn tv-icon${gridMenu ? ' on' : ''}`} title="Grid size" aria-label="Grid size" onClick={() => setGridMenu((v) => !v)}>
                     <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><circle cx="8" cy="8" r="2.3" /><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4" /></svg>
@@ -2064,22 +2078,22 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                     </>
                   )}
                 </span>
-                {cap - tiles.length > 0 && (
+                {!swarmProject && cap - tiles.length > 0 && (
                   <button className="tv-btn sm tv-action-fill" title="Start a new session in every empty slot, using your defaults"
                     onClick={() => setFillAsk(cap - tiles.length)}><TermActionIcon action="fill" />Fill {cap - tiles.length} empty</button>
                 )}
                 {tiles.length > 0 && (
                   <button className="tv-btn sm tv-action-hide" title="Hide every tile from Swarm (sessions keep running)"
-                    onClick={() => { setHidden([...new Set([...hidden, ...allTiles.map((t) => t.key)])]); setWins([]); setTilePeek(null); }}><TermActionIcon action="hide" />Hide all</button>
+                    onClick={() => { setHidden([...new Set([...hidden, ...projectTiles.map((t) => t.key)])]); setWins((ws) => ws.filter((w) => !projectWins.some((p) => p.id === w.id))); setTilePeek(null); }}><TermActionIcon action="hide" />Hide all</button>
                 )}
                 {hiddenCount > 0 && (
-                  <button className="tv-btn sm tv-action-show" title="Bring hidden sessions back into Swarm" onClick={() => setHidden([])}><TermActionIcon action="show" />Show {hiddenCount} hidden</button>
+                  <button className="tv-btn sm tv-action-show" title="Bring hidden sessions back into Swarm" onClick={() => setHidden(hidden.filter((key) => !projectTiles.some((t) => t.key === key)))}><TermActionIcon action="show" />Show {hiddenCount} hidden</button>
                 )}
                 {tiles.length > 1 && <button className="tv-btn sm tv-action-layout" title="Asking first, then failed, working, idle" onClick={sortByStatus}><TermActionIcon action="sort" />Sort by status</button>}
-                {wins.length > 0 && (
+                {projectWins.length > 0 && (
                   <>
-                    <button className="tv-btn sm tv-action-layout" onClick={tileAllWins}><TermActionIcon action="tile" />Tile {wins.length} window{wins.length === 1 ? '' : 's'}</button>
-                    <button className="tv-btn sm" onClick={() => { setWins([]); setOpenIn(null); }}><TermActionIcon action="close" />Close all</button>
+                    <button className="tv-btn sm tv-action-layout" onClick={() => tileAllWins(projectWins.map((w) => w.id))}><TermActionIcon action="tile" />Tile {projectWins.length} window{projectWins.length === 1 ? '' : 's'}</button>
+                    <button className="tv-btn sm" onClick={() => { setWins((ws) => ws.filter((w) => !projectWins.some((p) => p.id === w.id))); setOpenIn(null); }}><TermActionIcon action="close" />Close all</button>
                   </>
                 )}
               </div>
