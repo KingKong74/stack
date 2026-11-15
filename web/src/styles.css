@@ -10016,3 +10016,42 @@ a.pp-link:hover { text-decoration: underline; }
 .lp-policy-card strong, .lp-policy-form strong { color: var(--text-primary); font: var(--type-label); }
 .lp-policy-card .lp-names span { color: var(--text-secondary); font: var(--type-body-sm); overflow-wrap: anywhere; }
 .lp-loop-message { padding: var(--space-4); color: var(--text-secondary); overflow-wrap: anywhere; }
+
+/* Mission Control utilisation dashboard: observed activity, separate from configuration. */
+.au-dashboard { display: grid; gap: var(--space-5); }
+.au-toolbar { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
+.au-window, .au-label { font: var(--type-label); color: var(--text-secondary); }
+.au-window { white-space: nowrap; }
+.au-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-4); }
+.au-metric { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-5); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); background: var(--surface-card); }
+.au-metric > strong { font: var(--weight-medium) 36px/1.1 var(--font-mono); color: var(--text-primary); }
+.au-metric > span:last-child { font: var(--type-caption); color: var(--text-secondary); }
+.au-panels { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: var(--space-4); align-items: start; }
+.au-legend { display: flex; flex-wrap: wrap; gap: var(--space-5); padding: var(--space-4) var(--space-5) 0; font: var(--type-caption); color: var(--text-secondary); }
+.au-legend > span { display: inline-flex; align-items: center; gap: var(--space-2); }
+.au-legend i { width: 8px; height: 8px; border-radius: 2px; }
+.au-delegations { background: var(--action-accent); }
+.au-diagnostics { background: var(--text-link); }
+.au-ranking { padding: 0 var(--space-5); }
+.au-agent { padding: var(--space-5) 0; border-bottom: 1px solid var(--border-subtle); }
+.au-agent:last-child { border-bottom: 0; }
+.au-agenthead, .au-agentmeta { display: flex; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }
+.au-agenthead > div { display: flex; gap: var(--space-3); align-items: baseline; flex-wrap: wrap; min-width: 0; }
+.au-agenthead strong { font: var(--type-label); color: var(--text-primary); }
+.au-agenthead span { font: var(--type-code); color: var(--text-secondary); overflow-wrap: anywhere; }
+.au-agenthead .au-count { font: var(--type-code); }
+.au-track { height: 10px; display: flex; overflow: hidden; border-radius: var(--radius-pill); background: var(--surface-sunken); margin: var(--space-3) 0; }
+.au-track > span { height: 100%; }
+.au-agentmeta, .au-projects { font: var(--type-caption); color: var(--text-secondary); }
+.au-projects { margin: var(--space-2) 0 0; overflow-wrap: anywhere; }
+.au-outcome-total { display: flex; flex-direction: column; align-items: center; gap: var(--space-2); padding: var(--space-7) var(--space-5); color: var(--text-secondary); font: var(--type-body-sm); }
+.au-outcome-total strong { font: var(--weight-medium) 48px/1 var(--font-mono); color: var(--text-primary); }
+.au-outcome-list { padding: 0 var(--space-5); }
+.au-outcome-list > div { display: flex; justify-content: space-between; gap: var(--space-3); padding: var(--space-4) 0; border-top: 1px solid var(--border-subtle); font: var(--type-body-sm); color: var(--text-secondary); }
+.au-outcome-list strong { font: var(--type-code); color: var(--text-primary); }
+.au-outcome-note, .au-coverage { font: var(--type-caption); color: var(--text-secondary); margin: 0; text-wrap: pretty; }
+.au-outcome-note { padding: var(--space-5); }
+.au-config summary { cursor: pointer; font: var(--type-label); color: var(--text-secondary); }
+.au-config[open] summary { margin-bottom: var(--space-4); }
+@media (max-width: 800px) { .au-panels { grid-template-columns: minmax(0, 1fr); } .au-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 480px) { .au-dashboard > .mc-sechead { align-items: start; flex-direction: column; gap: var(--space-4); } .au-metric { padding: var(--space-4); } }

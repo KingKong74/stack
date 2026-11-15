@@ -502,14 +502,20 @@ const CONTROL_PANELS = [
     click: '.mc-tabs .mc-tab:has-text("Agents")',
     expect: '.mc-agents .mc-tr.row',
   },
+  {
+    id: 'control-agent-dashboard',
+    label: 'Mission Control — agent activity dashboard',
+    click: '.mc-tabs .mc-tab:has-text("Agents")',
+    expect: '.au-dashboard .au-metrics',
+  },
   // THE FRAME, SEPARATELY, because its absence is the silent expensive one: a
   // profile's `model: ''` inherits the executor, and `--agents` is passed only
   // when an advisor is set. The Default spawn tile is drawn either way (a dash
   // when nothing resolves), so it witnesses the payload and pins neither state.
   {
     id: 'control-agents-frame',
-    label: 'Mission Control — the Agents tab states its spawn policy',
-    click: '.mc-tabs .mc-tab:has-text("Agents")',
+    label: 'Mission Control — expand agent execution configuration',
+    click: '.au-config summary',
     expect: '.mc-tile:has-text("Default spawn")',
   },
   // The profile editor is a MODAL now. Opening it is read-only; nothing here

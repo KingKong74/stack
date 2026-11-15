@@ -56,6 +56,7 @@ import {
 import { compactTokens } from '../lib/spine';
 import { hrefTo } from '../lib/route';
 import { TopBar } from '../components/TopBar';
+import { AgentUtilisation } from '../components/AgentUtilisation';
 
 type Tone = 'info' | 'warning' | 'success' | 'danger' | 'neutral';
 type McTab = 'agents' | 'models' | 'context' | 'settings';
@@ -284,6 +285,9 @@ function Agents({ room, onChanged, onOpen }: {
 
   return (
     <div className="mc-stack">
+      <AgentUtilisation room={room} onRefresh={onChanged} />
+
+      <details className="au-config"><summary>Execution configuration</summary>
       <div className="mc-tiles">
         <Tile label="Director" value={policy.advisorModel || 'off'} line="plans, delegates, commits" />
         <Tile label="Executor model" value={policy.executorModel || 'CLI default'} line="what every profile inherits" />
@@ -291,6 +295,8 @@ function Agents({ room, onChanged, onOpen }: {
         <Tile label="Profiles on" value={`${on} of ${room.profiles.length}`}
           line={`${builtins} built-in · ${room.profiles.length - builtins} added`} />
       </div>
+
+      </details>
 
       {/* THE FRAME, FIRST: with no advisor nothing below spawns at all. */}
       {!policy.spawnsAgents && (
@@ -302,32 +308,6 @@ function Agents({ room, onChanged, onOpen }: {
       )}
       {defaultSpawn.fallback && (
         <div className="mc-banner info">A run naming no profile fell back to the built-in executor: {defaultSpawn.reason}</div>
-      )}
-
-      <div className="mc-sechead">
-        <div>
-          <h2>Utilisation · last {room.utilisation?.windowDays ?? 30} days</h2>
-          <p>Recorded Claude delegations and started specialist diagnostics, matched by profile key.
-            Session dates indicate when delegations were recorded. Codex and unreported activity are unknown;
-            supplied profiles and open assignments do not count as use. Tokens and cost cannot be attributed per profile.</p>
-        </div>
-        <button className="k-btn secondary" onClick={onChanged}>Refresh usage</button>
-      </div>
-      {!room.utilisation?.profiles ? <p role="status">Utilisation data unavailable. Refresh to try again.</p> : (
-        <div className="mc-footnotes">
-          {room.profiles.map(p => {
-            const u = room.utilisation.profiles?.[p.key];
-            return <div key={p.key}>
-              <span className="t">{p.name}</span>
-              <span className="b">{u
-                ? <>{plural(u.calls, 'delegation')} · {plural(u.diagnostics, 'diagnostic attempt')}<br />
-                    Diagnostics: {u.completed} completed · {u.failed} failed · {u.diagnostics - u.completed - u.failed} other or in progress<br />
-                    Projects: {u.projects.join(', ')}<br />
-                    Last recorded: <time dateTime={u.lastAt}>{new Date(u.lastAt).toLocaleString('en-AU')}</time></>
-                : 'No use recorded in this window. This does not establish that the agent was unused.'}</span>
-            </div>;
-          })}
-        </div>
       )}
 
       <div className="mc-sechead">
