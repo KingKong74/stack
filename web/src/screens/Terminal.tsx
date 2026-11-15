@@ -2049,12 +2049,6 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
             <div className="tv-swarm" onDragOver={onSwarmDragOver} onDrop={onSwarmDrop}
               onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setSnapPreview(null); }}>
               <div className="tv-swarm-head">
-                <select className="tv-select" aria-label="Filter terminals by project" value={swarmProject}
-                  onChange={(e) => changeSwarmProject(e.target.value)}>
-                  <option value="">All projects</option>
-                  {swarmProject && !swarmProjects.includes(swarmProject) && <option value={swarmProject}>{swarmProject}</option>}
-                  {swarmProjects.filter(Boolean).map((project) => <option key={project} value={project}>{project}</option>)}
-                </select>
                 <span className="tv-counts">
                   {projectTiles.length} sessions · <span className="asking">{projectTiles.filter((t) => t.st === 'asking' && !t.seen).length} asking</span>{seenCount ? ` (${seenCount} seen)` : ''} · <span className="working">{projectTiles.filter((t) => t.st === 'working').length} working</span>
                 </span>
@@ -2096,6 +2090,12 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
                     <button className="tv-btn sm" onClick={() => { setWins((ws) => ws.filter((w) => !projectWins.some((p) => p.id === w.id))); setOpenIn(null); }}><TermActionIcon action="close" />Close all</button>
                   </>
                 )}
+                <select className="tv-select" style={{ marginLeft: 'auto' }} aria-label="Filter terminals by project" value={swarmProject}
+                  onChange={(e) => changeSwarmProject(e.target.value)}>
+                  <option value="">All projects</option>
+                  {swarmProject && !swarmProjects.includes(swarmProject) && <option value={swarmProject}>{swarmProject}</option>}
+                  {swarmProjects.filter(Boolean).map((project) => <option key={project} value={project}>{project}</option>)}
+                </select>
               </div>
               {selectedTiles.length > 0 && (
                 <div className="tv-swarm-head" role="toolbar" aria-label="Selected terminals">
