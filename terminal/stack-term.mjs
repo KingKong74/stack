@@ -52,7 +52,7 @@ import { createCodexAccount } from './codex-account.mjs';
 import { createPlanUsage } from './plan-usage.mjs';
 import { tmuxAvailable, validName, generateName, sessionArgv, sessionExists, killSession, clearFresh, listDetached, listStackSessions, listAutoSessions, markFresh, isKeystroke, paneTail, paneTailStyled, reapDeadSessions, reapFreshSessions, reapIdleSessions, sendKeys, setKeep, setSessionBranch, setSessionModel, setSessionRun } from './tmux-session.mjs';
 import { trackRun, runWorking, encodeRun, decodeRun } from './work-run.mjs';
-import { makeBranchSession } from './session-worktree.mjs';
+import { makeBranchSession, discardBranchSession } from './session-worktree.mjs';
 import { detectPrompt } from './prompt-scan.mjs';
 import { detectWaiting } from './input-wait.mjs';
 import { parseAutoName, readActivity } from './auto-scan.mjs';
@@ -730,10 +730,20 @@ function dropFile(m) {
   sendUplink({ t: 'dropped', sid, id: m.id, ok: r.ok, path: r.path, name: r.name, bytes: r.bytes, error: r.error });
 }
 
+// A launch refused after its own-branch tree was cut gives the tree back
+// (session-worktree.mjs says why it fails safe). `pending.made` is cleared the
+// moment a session is about to run in the tree, so a live tree is never touched.
+function discardPendingTree(pending, sid) {
+  const made = pending.made; pending.made = null;
+  if (!made) return;
+  const r = discardBranchSession(made);
+  log(`session ${sid}: launch refused, ${r.ok ? `discarded ${made.branch}${r.reason ? ` (${r.reason})` : ''}` : `kept ${made.path}: ${r.reason}`}`);
+}
 function startSession(msg) {
   if (pendingStarts.has(msg.sid) || sessions.has(msg.sid)) return;
-  const pending = { cancelled: false, name: null }; pendingStarts.set(msg.sid, pending);
+  const pending = { cancelled: false, name: null, made: null }; pendingStarts.set(msg.sid, pending);
   startPreparedSession(msg, pending).catch(e => {
+    discardPendingTree(pending, msg.sid);
     sendUplink({ t: 'err', sid: msg.sid, msg: `Could not prepare session: ${e.message}` });
     sendUplink({ t: 'exit', sid: msg.sid, code: 1 });
   }).finally(() => { pendingStarts.delete(msg.sid); if (pending.name) pendingNames.delete(pending.name); });
@@ -741,6 +751,7 @@ function startSession(msg) {
 async function startPreparedSession(msg, pending) {
   const { sid } = msg;
   const failUplink = (m) => {
+    discardPendingTree(pending, sid);
     sendUplink({ t: 'err', sid, msg: m });
     sendUplink({ t: 'exit', sid, code: 1 });
   };
@@ -805,7 +816,7 @@ async function startPreparedSession(msg, pending) {
       if (!reattached && msg.dest === 'branch') {
         const wt = makeBranchSession({ cwd, tmuxName: tmuxSession, root: ROOT, home: homedir() });
         if (!wt.ok) return failUplink(`Could not start this session on its own branch: ${wt.reason}`);
-        cwd = wt.cwd; branch = wt.branch; branchProject = wt.project;
+        cwd = wt.cwd; branch = wt.branch; branchProject = wt.project; pending.made = wt.made;
         log(`session ${sid}: ${tmuxSession} on its own branch ${branch} (${cwd})`);
       } else if (reattached) {
         const known = listStackSessions().find((x) => x.name === tmuxSession);
@@ -829,9 +840,10 @@ async function startPreparedSession(msg, pending) {
           if (!response.ok) throw Error(`Configuration HTTP ${response.status}`); return response.json();
         };
         const prepared = await prepareSessionConfiguration({ name: tmuxSession, runtime: msg.cmd, cwd, profileKeys: msg.profileKeys, request });
-        if (pending.cancelled) return;
+        if (pending.cancelled) { discardPendingTree(pending, sid); return; }
         if (sessions.size >= MAX_SESSIONS) return failUplink('The session cap was reached while preparing configuration.');
-        if (sessionExists(tmuxSession)) return failUplink('This session was created while configuration was being prepared. Reattach by name.');
+        // A session by this name may already be sitting in the tree: keep it.
+        if (sessionExists(tmuxSession)) { pending.made = null; return failUplink('This session was created while configuration was being prepared. Reattach by name.'); }
         configuration = prepared.snapshot;
         if (prepared.agents) {
           const path = writeBrief(tmuxSession, JSON.stringify(prepared.agents), join(briefsDir(), 'profiles'));
@@ -876,6 +888,7 @@ async function startPreparedSession(msg, pending) {
   // A daemon started from a non-interactive shell inherits NO_COLOR=1 and
   // TERM=xterm; neither belongs in a session drawn by xterm.js.
   const { NO_COLOR: _nc, ...childEnv } = process.env;
+  pending.made = null; // a session runs in the tree from here on
   const child = spawn('python3', [SHIM, cwd, ...argv], {
     stdio: ['pipe', 'pipe', 'pipe', 'pipe'], // fd3 = resize control
     env: { ...childEnv, TERM: 'xterm-256color', COLORTERM: 'truecolor' },

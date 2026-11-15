@@ -11,9 +11,15 @@
 // FAILS LOUD. A branch that could not be made refuses the session with the
 // reason, rather than quietly running it in the checkout: the human asked for
 // isolation, and work landing on main instead is the outcome they chose against.
+//
+// The tree is cut BEFORE the launch is configured (configuration reads the tree
+// it will run in), so a launch refused after this point owns a tree no session
+// will ever use. discardBranchSession() takes it back, and fails safe: a dirty
+// tree stays, and the branch goes only if this call created it and it still
+// points where it was cut.
 import { spawnSync } from 'node:child_process';
 import { join, relative, sep } from 'node:path';
-import { addWorktree, worktreeKey, worktreesRoot } from '../scripts/lib/worktree.mjs';
+import { addWorktree, removeWorktree, worktreeKey, worktreesRoot } from '../scripts/lib/worktree.mjs';
 
 const git = (cwd, args, timeout = 15_000) =>
   spawnSync('git', ['-C', cwd, ...args], { encoding: 'utf8', timeout });
@@ -39,13 +45,33 @@ export function makeBranchSession({ cwd, tmuxName, root, home }) {
   git(repo, ['fetch', '--quiet', 'origin', 'main'], 30_000);
   const base = git(repo, ['rev-parse', '--verify', '--quiet', 'origin/main']).status === 0 ? 'origin/main' : 'HEAD';
   const plan = branchSessionPlan(tmuxName, home);
+  const branchExisted = git(repo, ['rev-parse', '--verify', '--quiet', `refs/heads/${plan.branch}`]).status === 0;
   const r = addWorktree(repo, plan.path, { branch: plan.branch, base });
   if (!r.ok) return { ok: false, reason: r.reason };
+  const head = git(r.path, ['rev-parse', 'HEAD']);
   const sub = relative(repo, cwd);
   return {
     ok: true,
     cwd: sub && !sub.startsWith('..') ? join(r.path, sub) : r.path,
     branch: plan.branch,
     project: relative(root, repo),
+    // What discardBranchSession needs to take back exactly what this call made.
+    made: r.created ? { repo, path: r.path, branch: plan.branch, branchCreated: !branchExisted, cutAt: head.status === 0 ? head.stdout.trim() : '' } : null,
   };
+}
+
+/**
+ * Undo makeBranchSession for a launch that was refused before any session ran
+ * in the tree. `{ ok, reason }`, never a throw.
+ */
+export function discardBranchSession(made) {
+  if (!made) return { ok: true, reason: 'nothing was made' };
+  const r = removeWorktree(made.repo, made.path);
+  if (!r.ok) return { ok: false, reason: r.reason };
+  if (!made.branchCreated || !made.cutAt) return { ok: true, reason: 'tree removed; branch kept (not made here)' };
+  const now = git(made.repo, ['rev-parse', '--verify', '--quiet', `refs/heads/${made.branch}`]);
+  if (now.status !== 0) return { ok: true, reason: 'tree removed; branch already gone' };
+  if (now.stdout.trim() !== made.cutAt) return { ok: true, reason: `tree removed; branch ${made.branch} kept (it moved)` };
+  const d = git(made.repo, ['branch', '-D', made.branch]);
+  return d.status === 0 ? { ok: true, reason: '' } : { ok: false, reason: (d.stderr || 'git branch -D failed').trim() };
 }
