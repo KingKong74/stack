@@ -25,6 +25,7 @@ import { hrefTo } from '../lib/route';
 import { newTermName } from '../lib/termLaunch';
 import { FLICK_HINT } from '../lib/flick';
 import { askOf, type AskInfo } from '../lib/asking';
+import { BoardPeek } from '../components/BoardPeek';
 
 import { useAutoRefresh } from '../lib/autoRefresh';
 import { wireTermClipboard } from '../lib/termClipboard';
@@ -911,6 +912,8 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
   // A cwd that is not a project leaves both absent rather than guessing.
   const [detail, setDetail] = useState<ProjectDetailData | null>(null);
   const [detailSlug, setDetailSlug] = useState('');
+  // Bumped to re-read the payload; the board peek polls through it.
+  const [detailTick, setDetailTick] = useState(0);
   useEffect(() => {
     if (!visible || !projectSlug) return;
     let gone = false;
@@ -921,8 +924,25 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
       // "nobody is on this".
       .catch(() => { if (!gone) { setDetail(null); setDetailSlug(projectSlug); } });
     return () => { gone = true; };
-  }, [visible, projectSlug]);
+  }, [visible, projectSlug, detailTick]);
   const board = detailSlug === projectSlug ? detail : null;
+  // THE BOARD PEEK (components/BoardPeek.tsx): open only when there is a
+  // project board to show, re-read on the shared cadence while it is open.
+  const peekOpen = viewPrefs.peekOpen && !!board;
+  useAutoRefresh(() => setDetailTick((n) => n + 1), visible && viewPrefs.peekOpen && !!projectSlug);
+  const togglePeek = () => saveViewPrefs({ peekOpen: !viewPrefs.peekOpen });
+  useEffect(() => {
+    if (!visible) return;
+    // ⌃⇧` — the flick key's sibling. CAPTURE PHASE, so a focused xterm
+    // doesn't swallow it (see App's flick handler).
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey && e.shiftKey && !e.metaKey && !e.altKey && e.code === 'Backquote')) return;
+      e.preventDefault(); e.stopPropagation();
+      setViewPrefsState((prev) => { const next = { ...prev, peekOpen: !prev.peekOpen }; setTermViewPrefs(next); return next; });
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [visible]);
   const boardProject = board ? board.project.id : '';
   useEffect(() => { onProject?.(boardProject); }, [boardProject, onProject]);
   const bookReset = async () => {
@@ -1616,6 +1636,13 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
               {board ? NavIcons.board : <span aria-hidden="true">←</span>}
             </a>
           )}
+          {board && (
+            <button className={`btn-repo btn-ico${peekOpen ? ' on' : ''}`} onClick={togglePeek} aria-pressed={peekOpen}
+              title={`${peekOpen ? 'Hide' : 'Peek at'} ${crumbName(board.project.name)}'s board beside the terminal (⌃⇧\`)`}
+              aria-label={`${peekOpen ? 'Hide' : 'Show'} the board peek`}>
+              <span aria-hidden="true">{peekOpen ? '⇥' : '⇤'}</span>
+            </button>
+          )}
           {/* The file exchange: what this project's sessions were handed, and
               what they handed back (detail/Artifacts.tsx). Only with a project. */}
           {board && (
@@ -1883,6 +1910,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
 
         {/* ---- THE STAGE. Every pane is a child of this one element, keyed,
             in the same position, whatever the view — see the file header. ---- */}
+        <div className="tv-body">
         <div className={`tv-stage v-${view}`}>
           {sessions.map((s) => {
             const winOf = wins.find((w) => w.id === s.id);
@@ -2213,6 +2241,8 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
               )}
             </div>
           )}
+        </div>
+        {peekOpen && board && <BoardPeek board={board} onClose={togglePeek} />}
         </div>
       </div>
     </div>

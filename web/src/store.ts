@@ -660,6 +660,8 @@ export interface TermViewPrefs {
   /** Swarm's grid, columns × rows. */
   grid: { c: number; r: number };
   railOpen: boolean;
+  /** The board peek drawer beside the stage (components/BoardPeek.tsx). */
+  peekOpen: boolean;
   /** Retained so a device upgrading from the 1–4 control keeps its shape; the
    *  LAYOUT is what the screen reads. */
   panes: TermPaneCount;
@@ -675,6 +677,7 @@ export function getTermViewPrefs(): TermViewPrefs {
       && p.grid.c >= 2 && p.grid.c <= 10 && p.grid.r >= 2 && p.grid.r <= 8
       ? { c: p.grid.c, r: p.grid.r } : { c: 6, r: 4 },
     railOpen: p?.railOpen === true,
+    peekOpen: p?.peekOpen === true,
     // A device that stored the old `wide: true` keeps its full-width screen by
     // landing on two panes, which is the nearest honest reading of what it was
     // asking for. Anything unrecognised falls back to a single pane.

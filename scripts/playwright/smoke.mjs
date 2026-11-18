@@ -609,6 +609,13 @@ export const SCREENS = [
         click: 'button[aria-label="Session defaults"]', expect: '.tv-newmenu' },
       { id: 'terminal-directories', label: 'Terminal — project directory choices',
         click: '.tv-newmenu button[aria-label="Choose project directory"]', expect: '.tv-directory-menu [role="option"]' },
+      // Choosing a directory only fills the box (nothing launches); a tracked
+      // project there (not bare `~/`) is what offers the board peek.
+      { id: 'terminal-pick-project', label: 'Terminal — pick a project directory',
+        click: '.tv-directory-menu [role="option"]:has(small:text-matches("^~/.+"))', expect: 'button[aria-label="Show the board peek"]',
+        dismiss: '.tv-scrim' },
+      { id: 'terminal-board-peek', label: 'Terminal — board peek drawer',
+        click: 'button[aria-label="Show the board peek"]', expect: '.board-peek .bp-list' },
     ],
   },
   { id: 'skills', label: 'Skills', path: '#/skills' },
