@@ -175,11 +175,12 @@ function AskRow({ a, className, compact, onGo }: {
  * thing you had to be on the right page to see. A row for somewhere else says
  * where it is; a row for here does not, because here is where you are.
  */
-export function TerminalNavFoot({ slug }: { slug: string }) {
+export function TerminalNavFoot({ slug, active }: { slug: string; active?: boolean }) {
   const asking = useAsking();
   return (
     <>
-      <a className="con-navitem" href={hrefTo.terminal(slug)}>
+      <a className={`con-navitem${active ? ' on' : ''}`} href={hrefTo.projectTerminal(slug)}
+        aria-label="Terminal" aria-current={active ? 'page' : undefined}>
         <span className="con-navico">{NavIcons.terminal}</span>
         <span className="con-navlabel">Terminal</span>
         {asking.length > 0 && (

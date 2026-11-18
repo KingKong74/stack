@@ -70,8 +70,8 @@ const LEGACY_TABS: Record<string, Tab> = {
 const asTab = (t: string | undefined): Tab =>
   (t && TAB_KEYS.has(t as Tab) ? (t as Tab) : (t && LEGACY_TABS[t]) || 'overview');
 
-export function ProjectDetail({ id, tab, highlight, onOpenSearch }: {
-  id: string; tab?: string; highlight?: string; onOpenSearch: () => void;
+export function ProjectDetail({ id, tab, highlight, terminalView, onOpenSearch }: {
+  id: string; tab?: string; highlight?: string; terminalView?: boolean; onOpenSearch: () => void;
 }) {
   const [data, setData] = useState<ProjectDetailData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -97,6 +97,7 @@ export function ProjectDetail({ id, tab, highlight, onOpenSearch }: {
     return () => { live = false; };
   }, [id]);
 
+  if (terminalView && (loading || loadError || !data || data.project.id !== id)) return null;
   if (loading) return <Shell><div className="empty-state"><div className="big">Loading…</div></div></Shell>;
   if (loadError || !data) {
     return (
@@ -110,7 +111,7 @@ export function ProjectDetail({ id, tab, highlight, onOpenSearch }: {
     );
   }
   return <Detail data={data} setData={setData}
-    routeTab={tab} routeHighlight={highlight} onOpenSearch={onOpenSearch} />;
+    routeTab={tab} routeHighlight={highlight} terminalView={terminalView} onOpenSearch={onOpenSearch} />;
 }
 
 function Shell({ children }: { children: ReactNode }) {
@@ -122,9 +123,9 @@ function Shell({ children }: { children: ReactNode }) {
   );
 }
 
-function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
+function Detail({ data, setData, routeTab, routeHighlight, terminalView, onOpenSearch }: {
   data: ProjectDetailData; setData: (d: ProjectDetailData) => void;
-  routeTab?: string; routeHighlight?: string; onOpenSearch: () => void;
+  routeTab?: string; routeHighlight?: string; terminalView?: boolean; onOpenSearch: () => void;
 }) {
   const { project } = data;
   const slug = project.id;
@@ -523,6 +524,13 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
     },
   ];
 
+  const sidebar = <ConsoleNav key={terminalView ? 'terminal' : 'project'}
+    active={terminalView ? '' : isForYou(tab) ? 'overview' : isSpine(tab) ? 'charter' : tab === 'auto' ? 'roadmap' : tab}
+    sections={navSections} terminalView={terminalView}
+    footer={<TerminalNavFoot slug={slug} active={terminalView} />} />;
+
+  if (terminalView) return sidebar;
+
   const open = (url: string) => { if (url) window.open(url, '_blank', 'noopener'); };
 
   return (
@@ -545,7 +553,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
           <>
             {/* Same order and shape as the terminal's topbar: the other place
                 first (here the terminal, there the board), then Mission Control. */}
-            <a className="btn-repo btn-ico" href={hrefTo.terminal(slug)} title={`Open a terminal in ~/${slug} (${FLICK_HINT} flicks back to the one you left)`} aria-label="Terminal">
+            <a className="btn-repo btn-ico" href={hrefTo.projectTerminal(slug)} title={`Open a terminal in ~/${slug} (${FLICK_HINT} flicks back to the one you left)`} aria-label="Terminal">
               {NavIcons.terminal}
             </a>
             <a className="btn-repo btn-ico" href={hrefTo.control} title="Mission Control" aria-label="Mission Control">
@@ -564,8 +572,7 @@ function Detail({ data, setData, routeTab, routeHighlight, onOpenSearch }: {
             that said so was the terminal screen itself — the one you go to once
             you already suspect it. components/Asking.tsx owns the rule,
             including why the rows are NOT scoped to this project. */}
-        <ConsoleNav active={isForYou(tab) ? 'overview' : isSpine(tab) ? 'charter' : tab === 'auto' ? 'roadmap' : tab} sections={navSections}
-          footer={<TerminalNavFoot slug={slug} />} />
+        {sidebar}
 
       {/* No `wide` modifier any more (#483): the console fills its column on
           every tab, so the board no longer needs carving out of a cap that was

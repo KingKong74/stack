@@ -108,19 +108,24 @@ function RailChevron() {
   );
 }
 
-export function ConsoleNav({ sections, active, footer }: {
+export function ConsoleNav({ sections, active, footer, terminalView = false }: {
   sections: NavSection[];
   active: NavKey;
   footer?: ReactNode;
+  terminalView?: boolean;
 }) {
   const [folded, setFolded] = useState<string[]>(getNavFolded);
-  const [mini, setMini] = useState<boolean>(getNavMini);
+  const [mini, setMini] = useState(() => terminalView || getNavMini());
   const toggle = (id: string) => {
     const next = folded.includes(id) ? folded.filter((f) => f !== id) : [...folded, id];
     setFolded(next);
     setNavFolded(next);
   };
-  const toggleRail = () => { const next = !mini; setMini(next); setNavMini(next); };
+  const toggleRail = () => {
+    const next = !mini;
+    setMini(next);
+    if (!terminalView) setNavMini(next);
+  };
   const railWord = mini ? 'Expand the sidebar' : 'Collapse the sidebar';
 
   return (

@@ -14,7 +14,7 @@ export type Route =
   | { name: 'timeline' }
   | { name: 'control' }
   | { name: 'skills' }
-  | { name: 'terminal'; cwd?: string; attach?: string; brief?: boolean }
+  | { name: 'terminal'; project?: string; cwd?: string; attach?: string; brief?: boolean }
   | { name: 'share'; slug: string; token: string }
   | { name: 'detail'; id: string; tab?: string; highlight?: string };
 
@@ -44,10 +44,14 @@ export function parseHash(hash: string): Route {
   if (h === '/control' || h.startsWith('/control')) return { name: 'control' };
   // The skill tree (#228) — the managed Claude skill library.
   if (h === '/skills' || h.startsWith('/skills')) return { name: 'skills' };
-  if (h.startsWith('/terminal')) {
-    const params = new URLSearchParams(h.split('?')[1] || '');
+  const [pathPart, queryPart] = h.split('?');
+  const m = pathPart.match(/^\/p\/([^/]+)(?:\/([^/]+))?/);
+  if (h.startsWith('/terminal') || m?.[2] === 'terminal') {
+    const project = m ? seg(m[1]) : undefined;
+    const params = new URLSearchParams(queryPart || '');
     return {
       name: 'terminal',
+      ...(project ? { project } : {}),
       cwd: params.get('cwd') || undefined,
       attach: params.get('attach') || undefined,
       brief: params.get('brief') === '1' ? true : undefined,
@@ -56,8 +60,6 @@ export function parseHash(hash: string): Route {
   // The public showcase — rendered without the token gate (read-only, its own key).
   const s = h.match(/^\/share\/([^/]+)\/([^/?]+)/);
   if (s) return { name: 'share', slug: seg(s[1]), token: seg(s[2]) };
-  const [pathPart, queryPart] = h.split('?');
-  const m = pathPart.match(/^\/p\/([^/]+)(?:\/([^/]+))?/);
   if (m) {
     const params = new URLSearchParams(queryPart || '');
     // `hl` IS DECODED ONCE, BY URLSearchParams, and must not be decoded again.
@@ -102,6 +104,9 @@ export const hrefTo = {
       brief ? 'brief=1' : '',
     ].filter(Boolean).join('&');
     return `#/terminal${q ? `?${q}` : ''}`;
+  },
+  projectTerminal: (id: string, cwd = id) => {
+    return `#/p/${encodeURIComponent(id)}/terminal?cwd=${encodeURIComponent(cwd)}`;
   },
   // tab picks which collection opens; highlight (when given) flags the matching
   // item/commit on that tab via the existing highlight mechanism. The tab

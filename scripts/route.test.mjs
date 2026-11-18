@@ -100,6 +100,15 @@ test('the terminal carries cwd, attach and brief, each independently optional', 
     { name: 'terminal', cwd: '/srv', attach: 'stack-term-a', brief: true });
 });
 
+test('the project Terminal shortcut opens the project terminal with its cwd', () => {
+  const href = hrefTo.projectTerminal('stack');
+  assert.equal(href, '#/p/stack/terminal?cwd=stack');
+  assert.deepEqual(parseHash(href),
+    { name: 'terminal', project: 'stack', cwd: 'stack', attach: undefined, brief: undefined });
+  assert.deepEqual(parseHash(hrefTo.projectTerminal('my/project', '/home/bailey/my checkout')),
+    { name: 'terminal', project: 'my/project', cwd: '/home/bailey/my checkout', attach: undefined, brief: undefined });
+});
+
 test('brief is ONLY the literal 1 — anything else is absent, not false', () => {
   // It is a tri-state on the Route type (`brief?: boolean`), and an explicit
   // `false` and an absent value are different things to the screen that reads it.

@@ -281,8 +281,9 @@ type Handle = { sendText: (s: string) => void; reconnect: () => void; reload: ()
 // Mounted once by App and never unmounted (#137): sessions, sockets and
 // scrollback survive navigation. `visible` = the #/terminal route is showing;
 // away from it the component renders NOTHING.
-export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible = true, boardHref = '', onProject }: {
+export function Terminal({ initialCwd = '', initialAttach, initialBrief, projectRoute, visible = true, boardHref = '', onProject }: {
   initialCwd?: string; initialAttach?: string; initialBrief?: boolean; visible?: boolean;
+  projectRoute?: string;
   /** Where ⌃` goes from here (lib/flick.ts), drawn as the topbar's Board button. */
   boardHref?: string;
   /** Reports the focused pane's TRACKED project ('' for a plain directory). */
@@ -1626,7 +1627,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, visible
       <TopBar crumb={[
         { label: 'Projects', href: hrefTo.dashboard },
         ...(board ? [{ label: crumbName(board.project.name), href: hrefTo.detail(board.project.id) }] : []),
-        { label: 'Terminal', href: hrefTo.terminal(cwd) },
+        { label: 'Terminal', href: projectRoute ? hrefTo.projectTerminal(projectRoute, cwd || projectRoute) : hrefTo.terminal(cwd) },
       ]}
         actions={<>
           {boardHref && (

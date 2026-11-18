@@ -9184,6 +9184,18 @@ button.ar-open:hover { background: var(--surface-hover); }
    top, three views, Swarm's tiles and its floating windows. Every rule is
    scoped under `.tv` so the old rail rules above cannot reach in.
    ============================================================ */
+.project-terminal-layout { display: flex; }
+.project-terminal-layout > .term-screen { flex: 1; min-width: 0; }
+.project-terminal-layout > .con-nav { top: 0; height: 100vh; }
+@media (max-width: 900px) {
+  .project-terminal-layout { flex-direction: column; height: 100svh; }
+  .project-terminal-layout > .con-nav { height: auto; max-height: 25svh; }
+  .project-terminal-layout .con-railtoggle { display: flex; }
+  .project-terminal-layout .con-nav.mini .con-railbody { display: none; }
+  .project-terminal-layout > .term-screen { display: flex; flex-direction: column; min-height: 0; }
+  .project-terminal-layout .term-screen > .topbar { flex: none; }
+  .project-terminal-layout .tv-page { flex: 1; height: auto; }
+}
 .tv-page { height: calc(100vh - var(--topbar-h)); min-height: 0; display: flex; flex-direction: column; }
 .term-fullscreen .tv-page { height: auto; flex: 1; }
 .tv .mono { font-family: var(--font-mono); }

@@ -80,20 +80,25 @@ export default function App() {
 
   if (!token) return <TokenGate />;
 
+  const terminalProject = route.name === 'terminal' ? route.project : undefined;
+  const projectId = route.name === 'detail' ? route.id : terminalProject;
+
   return (
-    <>
+    <div className={terminalProject ? 'project-terminal-layout' : undefined}>
       {route.name === 'settings' ? (
         <Settings />
       ) : route.name === 'timeline' ? (
         <Timeline />
       ) : route.name === 'control' ? (
         <MissionControl />
-      ) : route.name === 'terminal' ? (
-        null /* the persistent dock below renders it */
       ) : route.name === 'skills' ? (
         <Suspense fallback={null}><Skills /></Suspense>
-      ) : route.name === 'detail' ? (
-        <ProjectDetail id={route.id} tab={route.tab} highlight={route.highlight} onOpenSearch={() => setPaletteOpen(true)} />
+      ) : projectId ? (
+        <ProjectDetail id={projectId} tab={route.name === 'detail' ? route.tab : undefined}
+          highlight={route.name === 'detail' ? route.highlight : undefined}
+          terminalView={!!terminalProject} onOpenSearch={() => setPaletteOpen(true)} />
+      ) : route.name === 'terminal' ? (
+        null /* the persistent dock below renders it */
       ) : (
         <Dashboard onOpenSearch={() => setPaletteOpen(true)} />
       )}
@@ -102,6 +107,7 @@ export default function App() {
           <Terminal initialCwd={route.name === 'terminal' ? route.cwd : ''}
             initialAttach={route.name === 'terminal' ? route.attach : undefined}
             initialBrief={route.name === 'terminal' ? route.brief : undefined}
+            projectRoute={terminalProject}
             visible={route.name === 'terminal'}
             boardHref={route.name === 'terminal' ? flickHref : ''}
             onProject={setTermProject} />
@@ -112,6 +118,6 @@ export default function App() {
           session stops for you. Mounted once, on every screen. */}
       <AskNotifier />
       {route.name !== 'terminal' && <ToTop />}
-    </>
+    </div>
   );
 }
