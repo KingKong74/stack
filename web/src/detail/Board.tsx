@@ -791,7 +791,7 @@ export function Board({ slug, projectName, items, milestones, slices, onRefresh,
       const tmux = newTermName();
       wrote(await patchRoadmapItem(slug, it.id, { claimed_by: termClaim(tmux), listKey: '' }));
       queueTermLaunch(tmux, launchBrief(slug, it, tmux));
-      go.terminal(slug, tmux);
+      go.projectTerminal(slug, slug, tmux);
     });
   const readyIds = () => rows.filter((x) => x.ready && !x.done)
     .sort((a, b) => a.readyRank - b.readyRank).map((x) => x.id);

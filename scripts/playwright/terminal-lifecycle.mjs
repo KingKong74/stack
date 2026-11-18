@@ -9,7 +9,7 @@ const url = process.argv[2] || 'http://127.0.0.1:5199';
 const browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] });
 const survivor = { name: 'stack-term-survivor', cwd: 'stack', cmd: 'codex', attached: false,
   created: Date.now(), label: 'Existing work', model: { key: 'codex', id: 'native', label: 'Codex' } };
-async function scenario(saved, host, check, { goneOnRetry = false, delay = 0, route = '#/terminal' } = {}) {
+async function scenario(saved, host, check, { goneOnRetry = false, delay = 0, route = '#/p/stack/terminal' } = {}) {
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
   try {
     const page = await context.newPage();
@@ -51,7 +51,7 @@ try {
   await scenario([{ cwd: 'stack', cmd: 'codex', tmux: 'stack-term-ended' }], [survivor], noStarts);
   await scenario([{ cwd: 'stack', cmd: 'codex' }], [survivor], noStarts);
   await scenario([{ cwd: 'stack', cmd: 'codex', tmux: survivor.name }], [survivor], async ({ page, starts }) => {
-    await page.locator('.tv-pane.main .tv-pill.idle').waitFor();
+    await page.locator('.tv-pane.main .tv-pill.idle').filter({ hasText: /^idle$/ }).waitFor();
     assert.equal(starts.length, 1);
     assert.equal(starts[0].reattachOnly, true);
     assert.equal(starts[0].tmuxSession, survivor.name);
@@ -62,7 +62,7 @@ try {
   });
   await scenario([], [], async ({ page, starts, disconnect }) => {
     await page.locator('button.tv-go').first().click();
-    await page.locator('.tv-pane.main .tv-pill.idle').waitFor();
+    await page.locator('.tv-pane.main .tv-pill.idle').filter({ hasText: /^idle$/ }).waitFor();
     assert.equal(starts.length, 1);
     assert.equal(starts[0].reattachOnly, false, 'explicit New may create');
     disconnect();
@@ -76,6 +76,6 @@ try {
     await page.locator('button.tv-go').first().click();
     await page.waitForTimeout(1200);
     assert.equal(starts.length, 1, 'a delayed restoration must not add a second session after New');
-  }, { delay: 500, route: '#/terminal?cwd=stack' });
+  }, { delay: 500, route: '#/p/stack/terminal?cwd=stack' });
   console.log('Terminal lifecycle passed: empty/stale/nameless tabs, exact restore, explicit New, reload, reconnect and delayed restoration');
 } finally { await browser.close(); }

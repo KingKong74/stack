@@ -50,7 +50,7 @@ import type {
   ModelProvider, ModelsRoom,
 } from '../types';
 import {
-  getAgentProfiles, getContextRoom, getModelsRoom, patchAgentProfile,
+  getLastViewedProject, getAgentProfiles, getContextRoom, getModelsRoom, patchAgentProfile,
   createAgentProfile, deleteAgentProfile, patchSettings, getClaudeMd, putClaudeMd,
 } from '../store';
 import { compactTokens } from '../lib/spine';
@@ -165,7 +165,7 @@ export function MissionControl() {
     <div className="mc-ground">
       <TopBar
         crumb={[{ label: 'Projects', href: hrefTo.dashboard }, { label: 'Mission Control', href: hrefTo.control }]}
-        actions={<a className="btn-repo" href={hrefTo.terminal()} title="Back to the terminal">Terminal</a>} />
+        actions={<a className="btn-repo" href={hrefTo.projectTerminal(getLastViewedProject() || 'stack')} title="Back to the terminal">Terminal</a>} />
 
       <div className="page detail mc">
         <div className="mc-head">

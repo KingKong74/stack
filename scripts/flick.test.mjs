@@ -20,28 +20,30 @@ module.registerHooks({
 const { flickTarget, isFlickKey } = await import(new URL('../web/src/lib/flick.ts', import.meta.url).href);
 const { parseHash } = await import(new URL('../web/src/lib/route.ts', import.meta.url).href);
 
-const term = parseHash('#/terminal');
+const term = parseHash('#/p/stack/terminal');
 
 test('from the terminal: the focused pane\'s project board', () => {
-  assert.equal(flickTarget(term, { termProject: 'stack', lastAway: '', termMounted: true }), '#/p/stack/roadmap');
+  assert.equal(flickTarget(term, { lastProject: '', termProject: 'stack', lastAway: '', termMounted: true }), '#/p/stack/roadmap');
 });
 
 test('from the terminal: always the board, never the project tab you left', () => {
-  assert.equal(flickTarget(term, { termProject: 'stack', lastAway: '#/p/stack', termMounted: true }), '#/p/stack/roadmap');
-  assert.equal(flickTarget(term, { termProject: 'stack', lastAway: '#/p/stack/plans', termMounted: true }), '#/p/stack/roadmap');
-  assert.equal(flickTarget(term, { termProject: 'stack', lastAway: '#/p/other/plans', termMounted: true }), '#/p/stack/roadmap');
+  assert.equal(flickTarget(term, { lastProject: '', termProject: 'stack', lastAway: '#/p/stack', termMounted: true }), '#/p/stack/roadmap');
+  assert.equal(flickTarget(term, { lastProject: '', termProject: 'stack', lastAway: '#/p/stack/plans', termMounted: true }), '#/p/stack/roadmap');
+  assert.equal(flickTarget(term, { lastProject: '', termProject: 'stack', lastAway: '#/p/other/plans', termMounted: true }), '#/p/stack/roadmap');
 });
 
 test('from the terminal with no project: back where you came from, else home', () => {
-  assert.equal(flickTarget(term, { termProject: '', lastAway: '#/timeline', termMounted: true }), '#/timeline');
-  assert.equal(flickTarget(term, { termProject: '', lastAway: '', termMounted: true }), '#/');
+  assert.equal(flickTarget(term, { lastProject: '', termProject: '', lastAway: '#/timeline', termMounted: true }), '#/timeline');
+  assert.equal(flickTarget(term, { lastProject: '', termProject: '', lastAway: '', termMounted: true }), '#/');
 });
 
 test('to the terminal: bare once mounted, so nothing spawns', () => {
   const board = parseHash('#/p/stack/roadmap');
-  assert.equal(flickTarget(board, { termProject: '', lastAway: '', termMounted: true }), '#/terminal');
-  assert.equal(flickTarget(board, { termProject: '', lastAway: '', termMounted: false }), '#/terminal?cwd=stack');
-  assert.equal(flickTarget(parseHash('#/timeline'), { termProject: '', lastAway: '', termMounted: false }), '#/terminal');
+  assert.equal(flickTarget(board, { lastProject: '', termProject: '', lastAway: '', termMounted: true }), '#/p/stack/terminal');
+  assert.equal(flickTarget(board, { lastProject: '', termProject: '', lastAway: '', termMounted: false }), '#/p/stack/terminal?cwd=stack');
+  assert.equal(flickTarget(parseHash('#/timeline'), { lastProject: '', termProject: '', lastAway: '', termMounted: false }), '#/p/stack/terminal');
+  assert.equal(flickTarget(parseHash('#/settings'), { lastProject: 'other', termProject: '', lastAway: '', termMounted: false }), '#/p/other/terminal');
+  assert.equal(flickTarget(board, { lastProject: 'stack', termProject: 'other', lastAway: '', termMounted: true }), '#/p/other/terminal');
 });
 
 test('the key is ⌃` alone', () => {

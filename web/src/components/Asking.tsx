@@ -1,9 +1,12 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { hrefTo, useRoute } from '../lib/route';
 import { pickAsking, waitedFor, askingName, diffStops, badgeTitle, notifyText, stopKey, type AskingSession } from '../lib/asking';
-import { getDetachedFeed, getAskNotify, setAskNotify, onAskNotifyChange, getAutoRefreshSeconds } from '../store';
+import { getDetachedFeed, getLastViewedProject, getAskNotify, setAskNotify, onAskNotifyChange, getAutoRefreshSeconds } from '../store';
 import { useAutoRefresh } from '../lib/autoRefresh';
 import { NavIcons } from '../detail/ConsoleNav';
+
+const askingTerminalHref = (a: AskingSession) =>
+  hrefTo.projectTerminal(a.project || getLastViewedProject() || 'stack', a.cwd, a.name);
 
 // A SESSION THAT HAS STOPPED TO ASK YOU SOMETHING, SAID AWAY FROM THE TERMINAL.
 //
@@ -150,7 +153,7 @@ function AskRow({ a, className, compact, onGo }: {
   const about = a.ask.detail || a.ask.question;
   const waited = waitedFor(a.ask.since);
   return (
-    <a className={`${className}${a.runtime === 'codex' ? ' runtime-codex' : ''}`} href={hrefTo.terminal(a.cwd, a.name)} onClick={onGo}
+    <a className={`${className}${a.runtime === 'codex' ? ' runtime-codex' : ''}`} href={askingTerminalHref(a)} onClick={onGo}
       title={`Waiting ${waited}${a.ask.title ? ` — ${a.ask.title}` : ''}\n${a.ask.question}\n${a.ask.detail}\n\nOpens the session; answer it at the pane`}>
       <AskDot />
       <span className="ask-rowtext">
@@ -179,7 +182,7 @@ export function TerminalNavFoot({ slug, active }: { slug: string; active?: boole
   const asking = useAsking();
   return (
     <>
-      <a className={`con-navitem${active ? ' on' : ''}`} href={hrefTo.projectTerminal(slug)}
+      <a className={`con-navitem${active ? ' on' : ''}`} href={hrefTo.projectTerminal(slug, slug)}
         aria-label="Terminal" aria-current={active ? 'page' : undefined}>
         <span className="con-navico">{NavIcons.terminal}</span>
         <span className="con-navlabel">Terminal</span>
@@ -350,7 +353,7 @@ export function AskNotifier() {
         const n = new Notification(title, { body, tag: `stack-ask-${stopKey(a)}`, icon: '/icons/icon-192.png' });
         n.onclick = () => {
           window.focus();
-          window.location.hash = hrefTo.terminal(a.cwd, a.name).replace(/^#/, '');
+          window.location.hash = askingTerminalHref(a).replace(/^#/, '');
           n.close();
         };
         shown.current.set(stopKey(a), n);

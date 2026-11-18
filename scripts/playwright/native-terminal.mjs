@@ -17,6 +17,11 @@ const requests = [];
 const sessions = new Map();
 const configurations = new Map();
 const profileRoom = { profiles: [{ key: 'executor', name: 'Builder', enabled: true, prompt: 'Build', tools: ['Read', 'Write'], model: '', skillIds: [] }], policy: {}, usage: {}, defaultSpawn: { keys: ['executor'] }, knownTools: ['Read', 'Write'] };
+const project = { slug: 'stack', name: 'Stack', status: 'live' };
+const projectDetail = {
+  ...project, activity: [], bugs: [],
+  roadmap: { highest: [], high: [], medium: [], low: [], lowest: [] },
+};
 let hostConnected = true;
 const out = '/tmp/stack-native-terminal-ui';
 // Reuse the repository's rootless browser dependencies when provisioned.
@@ -38,7 +43,9 @@ const server = createServer((req, res) => {
       : path === '/api/settings' ? { termIdleHours: 0 }
       : path === '/api/terminal/usage' ? { tokensToday: 0, tokenBudget: 0 }
       : path === '/api/overview' ? { resume: null, attention: {}, activity: [], presence: [], claims: [] }
-      : path === '/api/projects' ? [] : [];
+      : path === '/api/spaces' ? { areas: [], workflows: [], ideas: [] }
+      : path === '/api/projects' ? [project]
+      : path === '/api/projects/stack' ? projectDetail : [];
     res.setHeader('content-type', 'application/json');
     res.end(JSON.stringify(payload));
     return;
@@ -82,7 +89,7 @@ try {
   await once(server, 'listening');
   const url = `http://127.0.0.1:${server.address().port}`;
   if (serve) {
-    console.log(`Local terminal preview: ${url}/#/terminal (sample sessions; no live API or agents)`);
+    console.log(`Local terminal preview: ${url}/#/p/stack/terminal (sample sessions; no live API or agents)`);
     await new Promise(() => {});
   }
   browser = await chromium.launch({ headless: true });
@@ -96,7 +103,11 @@ try {
       localStorage.setItem('stack.termSession', JSON.stringify({ autoStart: 'claude', onGateway: true, model: 'legacy-route' }));
     }
   });
-  await page.goto(`${url}/#/terminal`);
+  await page.goto(`${url}/#/terminal?cwd=stack`);
+  await page.locator('.sp-screen .topbar').waitFor();
+  assert.equal(await page.locator('.term-screen').count(), 0);
+  await page.goto(`${url}/#/p/stack/terminal`);
+  await page.getByRole('button', { name: 'Expand the sidebar' }).waitFor();
   await page.getByLabel('Session type').waitFor();
   assert.deepEqual(await page.getByLabel('Session type').locator('option').allTextContents(), ['Claude', 'Codex', 'Shell']);
   assert.equal(starts.length, 0, 'opening an empty terminal must not create a process');

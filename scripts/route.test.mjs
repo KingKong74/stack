@@ -90,18 +90,24 @@ test('a null or undefined hash does not throw', () => {
 // ---- B. the terminal, and its three optional parameters --------------------
 
 test('the terminal carries cwd, attach and brief, each independently optional', () => {
-  assert.deepEqual(parseHash('#/terminal'),
-    { name: 'terminal', cwd: undefined, attach: undefined, brief: undefined });
-  assert.deepEqual(parseHash('#/terminal?cwd=%2Fhome%2Fbailey%2Fstack'),
-    { name: 'terminal', cwd: '/home/bailey/stack', attach: undefined, brief: undefined });
-  assert.deepEqual(parseHash('#/terminal?attach=stack-term-bf2fb4ec'),
-    { name: 'terminal', cwd: undefined, attach: 'stack-term-bf2fb4ec', brief: undefined });
-  assert.deepEqual(parseHash('#/terminal?cwd=%2Fsrv&attach=stack-term-a&brief=1'),
-    { name: 'terminal', cwd: '/srv', attach: 'stack-term-a', brief: true });
+  assert.deepEqual(parseHash('#/p/stack/terminal'),
+    { name: 'terminal', project: 'stack', cwd: undefined, attach: undefined, brief: undefined });
+  assert.deepEqual(parseHash('#/p/stack/terminal?cwd=%2Fhome%2Fbailey%2Fstack'),
+    { name: 'terminal', project: 'stack', cwd: '/home/bailey/stack', attach: undefined, brief: undefined });
+  assert.deepEqual(parseHash('#/p/stack/terminal?attach=stack-term-bf2fb4ec'),
+    { name: 'terminal', project: 'stack', cwd: undefined, attach: 'stack-term-bf2fb4ec', brief: undefined });
+  assert.deepEqual(parseHash('#/p/stack/terminal?cwd=%2Fsrv&attach=stack-term-a&brief=1'),
+    { name: 'terminal', project: 'stack', cwd: '/srv', attach: 'stack-term-a', brief: true });
+});
+
+test('the retired standalone Terminal route falls back to Projects', () => {
+  for (const hash of ['#/terminal', '#/terminal?cwd=stack', '#/terminal?attach=stack-term-a']) {
+    assert.deepEqual(parseHash(hash), { name: 'dashboard' });
+  }
 });
 
 test('the project Terminal shortcut opens the project terminal with its cwd', () => {
-  const href = hrefTo.projectTerminal('stack');
+  const href = hrefTo.projectTerminal('stack', 'stack');
   assert.equal(href, '#/p/stack/terminal?cwd=stack');
   assert.deepEqual(parseHash(href),
     { name: 'terminal', project: 'stack', cwd: 'stack', attach: undefined, brief: undefined });
@@ -113,14 +119,14 @@ test('brief is ONLY the literal 1 — anything else is absent, not false', () =>
   // It is a tri-state on the Route type (`brief?: boolean`), and an explicit
   // `false` and an absent value are different things to the screen that reads it.
   for (const v of ['0', 'true', 'yes', '']) {
-    assert.equal(parseHash(`#/terminal?brief=${v}`).brief, undefined, `brief=${v}`);
+    assert.equal(parseHash(`#/p/stack/terminal?brief=${v}`).brief, undefined, `brief=${v}`);
   }
-  assert.equal(parseHash('#/terminal?brief=1').brief, true);
+  assert.equal(parseHash('#/p/stack/terminal?brief=1').brief, true);
 });
 
 test('a cwd with a space survives the round trip', () => {
   const cwd = '/home/bailey/my projects/stack';
-  assert.equal(parseHash(hrefTo.terminal(cwd)).cwd, cwd);
+  assert.equal(parseHash(hrefTo.projectTerminal('stack', cwd)).cwd, cwd);
 });
 
 // ---- C. the public showcase ------------------------------------------------
@@ -215,7 +221,7 @@ test('a hand-typed hl is decoded exactly once, like every other query value', ()
   // terminal arm have always been read this way; `hl` was the odd one out.
   assert.equal(parseHash('#/p/stack/roadmap?hl=a%2Fb').highlight, 'a/b');
   assert.equal(parseHash('#/p/stack/roadmap?hl=100%25').highlight, '100%');
-  assert.equal(parseHash('#/terminal?cwd=%2Fa%2Fb').cwd, '/a/b');
+  assert.equal(parseHash('#/p/stack/terminal?cwd=%2Fa%2Fb').cwd, '/a/b');
 });
 
 test('a malformed percent escape does not take the whole app down', () => {
@@ -236,15 +242,15 @@ test('a malformed percent escape does not take the whole app down', () => {
 });
 
 test('a terminal href with all three parameters parses back to all three', () => {
-  const href = hrefTo.terminal('/home/bailey/my stack', 'stack-term-a1b2', true);
+  const href = hrefTo.projectTerminal('stack', '/home/bailey/my stack', 'stack-term-a1b2', true);
   assert.deepEqual(parseHash(href),
-    { name: 'terminal', cwd: '/home/bailey/my stack', attach: 'stack-term-a1b2', brief: true });
+    { name: 'terminal', project: 'stack', cwd: '/home/bailey/my stack', attach: 'stack-term-a1b2', brief: true });
 });
 
 test('an href with no optional parts carries no query string at all', () => {
-  // A bare `#/terminal?` would still parse, but it is the thing that ends up in
+  // A bare `#/p/stack/terminal?` would still parse, but it is the thing that ends up in
   // the address bar and in the user's bookmarks.
-  assert.equal(hrefTo.terminal(), '#/terminal');
+  assert.equal(hrefTo.projectTerminal('stack'), '#/p/stack/terminal');
   assert.equal(hrefTo.detail('stack'), '#/p/stack');
   assert.equal(hrefTo.detail('stack', 'quality'), '#/p/stack/quality');
 });

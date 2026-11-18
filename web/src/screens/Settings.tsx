@@ -3,7 +3,7 @@ import type { Settings as SettingsData, CheckpointDetail, AuthDevice, Project } 
 import {
   getSettings, patchSettings, getToken, clearToken, verifyToken, AuthError,
   getDeletedProjects, restoreProject, purgeProject, type DeletedProject,
-  getProjects, deleteProject,
+  getProjects, deleteProject, getLastViewedProject,
   getAuthDevices, revokeAuthDevice,
   getTermSessionPrefs, setTermSessionPrefs, type TermSessionPrefs,
   getAutoRefreshSeconds, setAutoRefreshSeconds, AUTO_REFRESH_CHOICES, type AutoRefreshSeconds,
@@ -185,7 +185,7 @@ export function Settings() {
           {/* Not a tab — the jump to the host terminal, up here beside it.
               Opens in the most recently touched project (the Terminal screen
               resolves the cwd itself when none is given). */}
-          <a className="tab tab-term" href="#/terminal"
+          <a className="tab tab-term" href={hrefTo.projectTerminal(getLastViewedProject() || 'stack')}
             title="A real shell (or Claude) on the host, from any device — opens in your current project">
             ⌨ Terminal
           </a>

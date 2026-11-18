@@ -1997,7 +1997,7 @@ a.tab { display: inline-block; }
 .btn-accent.sm { height: 32px; padding: 0 14px; font-size: 12.5px; }
 @media (max-width: 760px) { .mc-week { grid-template-columns: repeat(4, 1fr); } .mc-day:nth-child(n+5) { display: none; } }
 
-/* ---------- web terminal (#/terminal) ---------- */
+/* ---------- web terminal ---------- */
 .term-page { display: flex; flex-direction: column; max-width: 1080px; }
 .term-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
 /* #490 — THE CHROME SCALE, and why it is a zoom rather than forty edits.
@@ -2863,7 +2863,7 @@ a.tab { display: inline-block; }
 .td-killlist { margin: 8px 0 0; padding-left: 18px; font-size: 12.5px; line-height: 1.7; }
 .td-x:hover { color: var(--critical-text); }
 /* #137 — the persistent terminal dock. The whole screen stays mounted; away
-   from #/terminal it is simply HIDDEN — the same DOM, no floating panel and no
+   from the terminal route it is simply HIDDEN — the same DOM, no floating panel and no
    corner chip (#492 took both: the running-sessions pill already says a
    session is alive, and the pane it drew sat on top of whatever screen you had
    navigated to). */

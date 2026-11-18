@@ -71,7 +71,7 @@ function TermActionIcon({ action }: { action: 'fill' | 'hide' | 'show' | 'sort' 
   return <svg className="tv-action-icon" aria-hidden="true" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d={paths[action]} /></svg>;
 }
 
-// The web terminal (#/terminal[?cwd=…]) — xterm.js over websocket to the host
+// The web terminal (#/p/<project>/terminal[?cwd=…]) — xterm.js over websocket to the host
 // PTY daemon (via the server relay at /term). Parallel sessions are panes in a
 // grid (each is its own socket; the relay multiplexes them over the one agent
 // connection), and the theme is a mintty/git-bash homage: black, grey
@@ -279,7 +279,7 @@ function ModelChip({ model, resolved, show }: {
 type Handle = { sendText: (s: string) => void; reconnect: () => void; reload: () => void; focus: () => void; tail: (n: number) => string[]; peek: (n: number) => PeekSeg[][] };
 
 // Mounted once by App and never unmounted (#137): sessions, sockets and
-// scrollback survive navigation. `visible` = the #/terminal route is showing;
+// scrollback survive navigation. `visible` = the terminal route is showing;
 // away from it the component renders NOTHING.
 export function Terminal({ initialCwd = '', initialAttach, initialBrief, projectRoute, visible = true, boardHref = '', onProject }: {
   initialCwd?: string; initialAttach?: string; initialBrief?: boolean; visible?: boolean;
@@ -347,7 +347,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, project
     document.addEventListener('fullscreenchange', onChange);
     return () => document.removeEventListener('fullscreenchange', onChange);
   }, []);
-  // A session opened away from #/terminal must never strand the screen
+  // A session opened away from the terminal must never strand the screen
   // full-screen over the rest of the app.
   useEffect(() => { if (!visible && full) setFull(false); }, [visible, full]);
   // THE PANE'S RECEIPT LINE. xterm draws to a canvas, so a gesture leaves
@@ -400,7 +400,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, project
   // The jail still applies: symlinks that escape $HOME are refused by the
   // daemon's resolveCwd() regardless of what the browser sends.
   // Mission Control's per-row ⌨ button and the ProjectDetail ⌨ button both
-  // call go.terminal(slug), so project-context opens already land here.
+  // use the project terminal route, so project-context opens already land here.
   const openSession = (dir?: string, kind?: 'shell' | 'claude' | 'codex', tmux?: string) => {
     const id = nextId.current++;
     const cwdKey = (dir ?? cwd).trim();
@@ -1627,7 +1627,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, project
       <TopBar crumb={[
         { label: 'Projects', href: hrefTo.dashboard },
         ...(board ? [{ label: crumbName(board.project.name), href: hrefTo.detail(board.project.id) }] : []),
-        { label: 'Terminal', href: projectRoute ? hrefTo.projectTerminal(projectRoute, cwd || projectRoute) : hrefTo.terminal(cwd) },
+        { label: 'Terminal', href: hrefTo.projectTerminal(projectRoute || boardProject || 'stack', cwd) },
       ]}
         actions={<>
           {boardHref && (

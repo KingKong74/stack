@@ -86,13 +86,13 @@ function readStackEnv() {
 const OPEN_BOARD = '?.km-collapseall[data-all-folded="true"]';
 
 const SCREENS = [
-  { slug: 'terminal', hash: '#/terminal' },
-  { slug: 'terminal-configuration', hash: '#/terminal', press: ['button[title="Inspect the active session\'s launch configuration"]'] },
-  { slug: 'terminal-defaults', hash: '#/terminal', press: ['button[aria-label="Session defaults"]'] },
-  { slug: 'terminal-directories', hash: '#/terminal', press: ['button[aria-label="Session defaults"]', '.tv-newmenu button[aria-label="Choose project directory"]'] },
+  { slug: 'terminal', hash: '#/p/{slug}/terminal' },
+  { slug: 'terminal-configuration', hash: '#/p/{slug}/terminal', press: ['button[title="Inspect the active session\'s launch configuration"]'] },
+  { slug: 'terminal-defaults', hash: '#/p/{slug}/terminal', press: ['button[aria-label="Session defaults"]'] },
+  { slug: 'terminal-directories', hash: '#/p/{slug}/terminal', press: ['button[aria-label="Session defaults"]', '.tv-newmenu button[aria-label="Choose project directory"]'] },
   // The board peek: pick a tracked project (not bare `~/`), close the menu on
   // its scrim, then open the drawer. Every press is view state; none launches.
-  { slug: 'terminal-board-peek', hash: '#/terminal', press: ['button[aria-label="Session defaults"]', '.tv-newmenu button[aria-label="Choose project directory"]', '.tv-directory-menu [role="option"]:has(small:text-matches("^~/.+"))', '.tv-scrim', 'button[aria-label="Show the board peek"]', '.board-peek .bp-head'] },
+  { slug: 'terminal-board-peek', hash: '#/p/{slug}/terminal', press: ['button[aria-label="Session defaults"]', '.tv-newmenu button[aria-label="Choose project directory"]', '.tv-directory-menu [role="option"]:has(small:text-matches("^~/.+"))', '.tv-scrim', 'button[aria-label="Show the board peek"]', '.board-peek .bp-head'] },
   { slug: 'dashboard', hash: '#/' },
   // The Projects page's two tones first paint can't reach: a card's actions
   // menu (--surface-overlay, with Archive in danger) and the new-project modal.

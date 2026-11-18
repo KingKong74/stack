@@ -598,7 +598,7 @@ export const SCREENS = [
     interactions: CONTROL_PANELS,
   },
   {
-    id: 'terminal', label: 'Terminal', path: '#/terminal',
+    id: 'terminal', label: 'Terminal', path: '#/p/<slug>/terminal',
     // View state only: neither press launches or changes a running session.
     interactions: [
       { id: 'terminal-configuration', label: 'Terminal — launch configuration',

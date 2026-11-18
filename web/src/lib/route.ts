@@ -14,7 +14,7 @@ export type Route =
   | { name: 'timeline' }
   | { name: 'control' }
   | { name: 'skills' }
-  | { name: 'terminal'; project?: string; cwd?: string; attach?: string; brief?: boolean }
+  | { name: 'terminal'; project: string; cwd?: string; attach?: string; brief?: boolean }
   | { name: 'share'; slug: string; token: string }
   | { name: 'detail'; id: string; tab?: string; highlight?: string };
 
@@ -46,12 +46,11 @@ export function parseHash(hash: string): Route {
   if (h === '/skills' || h.startsWith('/skills')) return { name: 'skills' };
   const [pathPart, queryPart] = h.split('?');
   const m = pathPart.match(/^\/p\/([^/]+)(?:\/([^/]+))?/);
-  if (h.startsWith('/terminal') || m?.[2] === 'terminal') {
-    const project = m ? seg(m[1]) : undefined;
+  if (m?.[2] === 'terminal') {
     const params = new URLSearchParams(queryPart || '');
     return {
       name: 'terminal',
-      ...(project ? { project } : {}),
+      project: seg(m[1]),
       cwd: params.get('cwd') || undefined,
       attach: params.get('attach') || undefined,
       brief: params.get('brief') === '1' ? true : undefined,
@@ -97,16 +96,13 @@ export const hrefTo = {
   control: '#/control',
   settings: '#/settings',
   skills: '#/skills',
-  terminal: (cwd?: string, attach?: string, brief?: boolean) => {
+  projectTerminal: (id: string, cwd?: string, attach?: string, brief?: boolean) => {
     const q = [
       cwd ? `cwd=${encodeURIComponent(cwd)}` : '',
       attach ? `attach=${encodeURIComponent(attach)}` : '',
       brief ? 'brief=1' : '',
     ].filter(Boolean).join('&');
-    return `#/terminal${q ? `?${q}` : ''}`;
-  },
-  projectTerminal: (id: string, cwd = id) => {
-    return `#/p/${encodeURIComponent(id)}/terminal?cwd=${encodeURIComponent(cwd)}`;
+    return `#/p/${encodeURIComponent(id)}/terminal${q ? `?${q}` : ''}`;
   },
   // tab picks which collection opens; highlight (when given) flags the matching
   // item/commit on that tab via the existing highlight mechanism. The tab
@@ -125,8 +121,8 @@ export const go = {
   skills: () => { window.location.hash = '#/skills'; },
   // attach (a stack-term-* tmux name) jumps straight into that running claude
   // session.
-  terminal: (cwd?: string, attach?: string, brief?: boolean) => {
-    window.location.hash = hrefTo.terminal(cwd, attach, brief);
+  projectTerminal: (id: string, cwd?: string, attach?: string, brief?: boolean) => {
+    window.location.hash = hrefTo.projectTerminal(id, cwd, attach, brief);
   },
   // tab picks which collection opens; highlight (when given) flags the matching
   // item/commit on that tab via the existing highlight mechanism. The tab

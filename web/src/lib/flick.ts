@@ -3,7 +3,7 @@ import { hrefTo, type Route } from './route';
 // THE FLICK (⌃`): one key between the terminal and the board, both ways.
 //
 // The terminal stays mounted once visited (App.tsx), so going back to
-// `#/terminal` with NO cwd is exactly "back": same panes, same focus, nothing
+// the project terminal with NO cwd is exactly "back": same panes, same focus, nothing
 // opened. Adding a cwd would re-run the screen's ⌨ handoff, which focuses or
 // SPAWNS a session for that directory, so a cwd is passed only when the
 // terminal has never been opened.
@@ -22,6 +22,7 @@ export type FlickState = {
   lastAway: string;
   /** Whether the terminal has been mounted in this tab. */
   termMounted: boolean;
+  lastProject: string;
 };
 
 export function flickTarget(route: Route, s: FlickState): string {
@@ -29,8 +30,9 @@ export function flickTarget(route: Route, s: FlickState): string {
     if (s.termProject) return hrefTo.detail(s.termProject, 'roadmap');
     return s.lastAway || hrefTo.dashboard;
   }
-  if (s.termMounted) return hrefTo.terminal();
-  return hrefTo.terminal(route.name === 'detail' ? route.id : undefined);
+  const project = (s.termMounted && s.termProject) ||
+    (route.name === 'detail' ? route.id : s.lastProject) || 'stack';
+  return hrefTo.projectTerminal(project, !s.termMounted && route.name === 'detail' ? project : undefined);
 }
 
 /** ⌃` on every platform (⌘` is the macOS window switcher). Matched on the

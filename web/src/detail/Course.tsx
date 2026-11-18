@@ -87,7 +87,7 @@ export function Course({ slug, name, items, milestones, slices, charter, resume,
   const resumeInTerminal = () => {
     const tmux = newTermName();
     queueTermLaunch(tmux, brief());
-    go.terminal(slug, tmux);
+    go.projectTerminal(slug, slug, tmux);
   };
   const copyBrief = async () => {
     if (await copyText(brief())) { setCopied(true); setTimeout(() => setCopied(false), 1800); }

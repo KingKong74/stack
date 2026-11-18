@@ -18,7 +18,7 @@ import { Showcase } from './screens/Showcase';
 import { CommandPalette } from './components/CommandPalette';
 import { ToTop } from './components/ToTop';
 import { AskNotifier } from './components/Asking';
-import { getToken, onAuthChange } from './store';
+import { getToken, onAuthChange, getLastViewedProject } from './store';
 
 // The app is DARK-ONLY: the imported console kit ships one palette and no
 // light counterpart, so there is no preference to resolve, no attribute to
@@ -31,7 +31,7 @@ export default function App() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   // The terminal dock (#137): once visited, the Terminal stays mounted for the
   // life of the tab — sessions, sockets and scrollback survive navigation.
-  // Away from #/terminal it is hidden outright (#492 removed the floating
+  // Away from the terminal route it is hidden outright (#492 removed the floating
   // panel and its corner chip), so the global presence pill is what says a
   // session is still alive.
   const [termMounted, setTermMounted] = useState(false);
@@ -45,7 +45,7 @@ export default function App() {
   useEffect(() => {
     if (route.name !== 'terminal' && route.name !== 'share') setLastAway(window.location.hash || '#/');
   }, [route]);
-  const flickHref = flickTarget(route, { termProject, lastAway, termMounted });
+  const flickHref = flickTarget(route, { termProject, lastAway, termMounted, lastProject: getLastViewedProject() });
   useEffect(() => {
     // CAPTURE PHASE, so the key is ours before xterm's textarea sees it.
     // Otherwise a focused pane eats it and sends ⌃@ to the shell.
@@ -97,8 +97,6 @@ export default function App() {
         <ProjectDetail id={projectId} tab={route.name === 'detail' ? route.tab : undefined}
           highlight={route.name === 'detail' ? route.highlight : undefined}
           terminalView={!!terminalProject} onOpenSearch={() => setPaletteOpen(true)} />
-      ) : route.name === 'terminal' ? (
-        null /* the persistent dock below renders it */
       ) : (
         <Dashboard onOpenSearch={() => setPaletteOpen(true)} />
       )}
