@@ -551,8 +551,6 @@ function Detail({ data, setData, routeTab, routeHighlight, terminalView, onOpenS
         onSearch={onOpenSearch}
         actions={
           <>
-            {/* Same order and shape as the terminal's topbar: the other place
-                first (here the terminal, there the board), then Mission Control. */}
             <a className="btn-repo btn-ico" href={hrefTo.projectTerminal(slug, slug)} title={`Open a terminal in ~/${slug} (${FLICK_HINT} flicks back to the one you left)`} aria-label="Terminal">
               {NavIcons.terminal}
             </a>

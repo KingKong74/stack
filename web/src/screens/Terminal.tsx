@@ -23,9 +23,7 @@ import {
 } from '../store';
 import { hrefTo } from '../lib/route';
 import { newTermName } from '../lib/termLaunch';
-import { FLICK_HINT } from '../lib/flick';
 import { askOf, type AskInfo } from '../lib/asking';
-import { BoardPeek } from '../components/BoardPeek';
 
 import { useAutoRefresh } from '../lib/autoRefresh';
 import { wireTermClipboard } from '../lib/termClipboard';
@@ -281,12 +279,9 @@ type Handle = { sendText: (s: string) => void; reconnect: () => void; reload: ()
 // Mounted once by App and never unmounted (#137): sessions, sockets and
 // scrollback survive navigation. `visible` = the terminal route is showing;
 // away from it the component renders NOTHING.
-export function Terminal({ initialCwd = '', initialAttach, initialBrief, projectRoute, visible = true, boardHref = '', onProject }: {
+export function Terminal({ initialCwd = '', initialAttach, initialBrief, projectRoute, visible = true, onProject }: {
   initialCwd?: string; initialAttach?: string; initialBrief?: boolean; visible?: boolean;
   projectRoute?: string;
-  /** Where ⌃` goes from here (lib/flick.ts), drawn as the topbar's Board button. */
-  boardHref?: string;
-  /** Reports the focused pane's TRACKED project ('' for a plain directory). */
   onProject?: (slug: string) => void;
 }) {
   const [cwd, setCwd] = useState(initialCwd);
@@ -913,37 +908,16 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, project
   // A cwd that is not a project leaves both absent rather than guessing.
   const [detail, setDetail] = useState<ProjectDetailData | null>(null);
   const [detailSlug, setDetailSlug] = useState('');
-  // Bumped to re-read the payload; the board peek polls through it.
-  const [detailTick, setDetailTick] = useState(0);
   useEffect(() => {
     if (!visible || !projectSlug) return;
     let gone = false;
     getProjectDetail(projectSlug)
       .then((d) => { if (!gone) { setDetail(d); setDetailSlug(projectSlug); } })
-      // Quiet: a cwd that isn't a tracked project is normal, and the chip's
-      // absence is the honest answer — never a "0 claimed" that would read as
-      // "nobody is on this".
+      // An untracked directory has no project crumb.
       .catch(() => { if (!gone) { setDetail(null); setDetailSlug(projectSlug); } });
     return () => { gone = true; };
-  }, [visible, projectSlug, detailTick]);
+  }, [visible, projectSlug]);
   const board = detailSlug === projectSlug ? detail : null;
-  // THE BOARD PEEK (components/BoardPeek.tsx): open only when there is a
-  // project board to show, re-read on the shared cadence while it is open.
-  const peekOpen = viewPrefs.peekOpen && !!board;
-  useAutoRefresh(() => setDetailTick((n) => n + 1), visible && viewPrefs.peekOpen && !!projectSlug);
-  const togglePeek = () => saveViewPrefs({ peekOpen: !viewPrefs.peekOpen });
-  useEffect(() => {
-    if (!visible) return;
-    // ⌃⇧` — the flick key's sibling. CAPTURE PHASE, so a focused xterm
-    // doesn't swallow it (see App's flick handler).
-    const onKey = (e: KeyboardEvent) => {
-      if (!(e.ctrlKey && e.shiftKey && !e.metaKey && !e.altKey && e.code === 'Backquote')) return;
-      e.preventDefault(); e.stopPropagation();
-      setViewPrefsState((prev) => { const next = { ...prev, peekOpen: !prev.peekOpen }; setTermViewPrefs(next); return next; });
-    };
-    window.addEventListener('keydown', onKey, true);
-    return () => window.removeEventListener('keydown', onKey, true);
-  }, [visible]);
   const boardProject = board ? board.project.id : '';
   useEffect(() => { onProject?.(boardProject); }, [boardProject, onProject]);
   const bookReset = async () => {
@@ -1629,32 +1603,9 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, project
         ...(board ? [{ label: crumbName(board.project.name), href: hrefTo.detail(board.project.id) }] : []),
         { label: 'Terminal', href: hrefTo.projectTerminal(projectRoute || boardProject || 'stack', cwd) },
       ]}
-        actions={<>
-          {boardHref && (
-            <a className="btn-repo btn-ico" href={boardHref}
-              title={`${board ? `${crumbName(board.project.name)}'s board` : 'Back'} (${FLICK_HINT})`}
-              aria-label={board ? `${crumbName(board.project.name)}'s board` : 'Back'}>
-              {board ? NavIcons.board : <span aria-hidden="true">←</span>}
-            </a>
-          )}
-          {board && (
-            <button className={`btn-repo btn-ico${peekOpen ? ' on' : ''}`} onClick={togglePeek} aria-pressed={peekOpen}
-              title={`${peekOpen ? 'Hide' : 'Peek at'} ${crumbName(board.project.name)}'s board beside the terminal (⌃⇧\`)`}
-              aria-label={`${peekOpen ? 'Hide' : 'Show'} the board peek`}>
-              <span aria-hidden="true">{peekOpen ? '⇥' : '⇤'}</span>
-            </button>
-          )}
-          {/* The file exchange: what this project's sessions were handed, and
-              what they handed back (detail/Artifacts.tsx). Only with a project. */}
-          {board && (
-            <a className="btn-repo btn-ico" href={hrefTo.detail(board.project.id, 'artifacts', 'files')}
-              title={`${crumbName(board.project.name)}'s files: share with sessions, download what they made`}
-              aria-label={`${crumbName(board.project.name)}'s files`}>
-              {NavIcons.paperclip}
-            </a>
-          )}
+        actions={
           <a className="btn-repo btn-ico" href={hrefTo.control} title="Mission Control" aria-label="Mission Control">{NavIcons.gauge}</a>
-        </>} />
+        } />
 
       <div className="page term-page tv-page">
         {/* ---- THE BAR: tabs · switcher · limits · start · views ---- */}
@@ -1911,7 +1862,6 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, project
 
         {/* ---- THE STAGE. Every pane is a child of this one element, keyed,
             in the same position, whatever the view — see the file header. ---- */}
-        <div className="tv-body">
         <div className={`tv-stage v-${view}`}>
           {sessions.map((s) => {
             const winOf = wins.find((w) => w.id === s.id);
@@ -2242,8 +2192,6 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, project
               )}
             </div>
           )}
-        </div>
-        {peekOpen && board && <BoardPeek board={board} onClose={togglePeek} />}
         </div>
       </div>
     </div>

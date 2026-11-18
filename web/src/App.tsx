@@ -107,7 +107,6 @@ export default function App() {
             initialBrief={route.name === 'terminal' ? route.brief : undefined}
             projectRoute={terminalProject}
             visible={route.name === 'terminal'}
-            boardHref={route.name === 'terminal' ? flickHref : ''}
             onProject={setTermProject} />
         </Suspense>
       )}
