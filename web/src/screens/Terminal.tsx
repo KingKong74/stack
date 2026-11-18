@@ -1563,12 +1563,18 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, project
   };
   const meterOf = (k: 'claude' | 'codex') => meters.find((m) => m.key === k)!;
 
-  // Locations for Start's defaults: tracked projects, from the one list read.
+  // Locations for Start's defaults: current projects only. The server already
+  // drops deleted ones; archived ones are left out here. Re-read on every show
+  // and on the auto-refresh tick, so a delete or archive elsewhere leaves the
+  // picker. A failed read keeps the last list (the input still takes any path).
   const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
-  useEffect(() => {
-    if (!visible || projects.length) return;
-    getProjects().then((ps) => setProjects(ps.map(({ id, name }) => ({ id, name })))).catch(() => { /* the input still takes any path */ });
-  }, [visible]); // eslint-disable-line react-hooks/exhaustive-deps
+  const loadProjects = () => {
+    getProjects()
+      .then((ps) => setProjects(ps.filter((p) => p.status !== 'archived').map(({ id, name }) => ({ id, name }))))
+      .catch(() => { /* keep the last list */ });
+  };
+  useEffect(() => { if (visible) loadProjects(); }, [visible]); // eslint-disable-line react-hooks/exhaustive-deps
+  useAutoRefresh(loadProjects, visible);
   const codexModels = [{ id: '', label: 'Default' }, ...(usage?.codex?.models || [])];
   const modelName = (tool: Sess['cmd']) => (tool === 'claude'
     ? CLAUDE_MODELS.find((m) => m.id === defs.claudeModel)?.name || defs.claudeModel
