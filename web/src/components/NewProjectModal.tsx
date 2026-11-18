@@ -3,9 +3,7 @@ import type { ProjectStatus, Project, SpaceArea } from '../types';
 import { Modal } from './Modal';
 
 // One modal for every way the Projects page makes or edits something: a new
-// app, a new hub, a new workflow inside a hub, an edit of a project's details,
-// and "Start →" on a wishlist idea (which is a new project, prefilled, whose
-// idea is deleted once it exists — the page does that, not this).
+// app, a new hub, a new workflow inside a hub, or an edit of a project's details.
 
 export type ModalType = 'app' | 'hub' | 'workflow';
 export type ModalInit = {
@@ -17,7 +15,6 @@ export type ModalInit = {
   pitch?: string;
   status?: ProjectStatus;
   slug?: string;        // edit: the project being edited
-  fromIdea?: number;    // new: the wishlist idea it starts from
 };
 export type ModalValue = {
   type: ModalType; name: string; pitch: string; area: string; hub: string; status: ProjectStatus;
@@ -66,8 +63,8 @@ export function NewProjectModal({ init, areas, hubs, onClose, onSubmit, onNewAre
         if (e.key === 'Enter' && (e.metaKey || e.ctrlKey || (e.target as HTMLElement).tagName === 'INPUT')) submit();
       }}>
         <div className="sp-modal-h">
-          <h3>{isEdit ? 'Edit project' : init.fromIdea ? 'Start from idea' : `New ${noun}`}</h3>
-          <span className="hint">{isEdit ? `editing ${init.name}` : init.fromIdea ? 'removes it from the wishlist' : ''}</span>
+          <h3>{isEdit ? 'Edit project' : `New ${noun}`}</h3>
+          <span className="hint">{isEdit ? `editing ${init.name}` : ''}</span>
         </div>
         <div className="sp-modal-body">
           <label className="sp-field">

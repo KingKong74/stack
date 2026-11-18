@@ -7779,7 +7779,7 @@ body[data-mc-full] .totop { display: none; }
 /* ============================================================
    THE PROJECTS PAGE (screens/Dashboard.tsx) — the Claude Design
    "Overview" layout: a foldable area rail, a section per area of
-   app cards and hub rows, then the wishlist. Kit tokens only.
+   app cards and hub rows. Kit tokens only.
    ============================================================ */
 .sp-screen { min-height: 100vh; background: var(--surface-canvas); }
 .sp-layout { display: grid; grid-template-columns: 220px minmax(0, 1fr); min-height: calc(100vh - 56px); }
@@ -7836,7 +7836,6 @@ body[data-mc-full] .totop { display: none; }
 .sp-section { display: flex; flex-direction: column; gap: var(--space-4); }
 .sp-section-h { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--space-1) var(--space-3); padding-bottom: var(--space-3); border-bottom: 1px solid var(--border-subtle); }
 .sp-section-h h2 { margin: 0; font: var(--type-heading); color: var(--text-primary); }
-.sp-section-h h2.big { font: var(--type-title); font-size: var(--text-xl); }
 .sp-section-h .meta { white-space: nowrap; font: var(--weight-regular) var(--text-xs)/1.3 var(--font-mono); color: var(--text-tertiary); }
 .sp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: var(--space-5); }
 
@@ -7874,8 +7873,8 @@ body[data-mc-full] .totop { display: none; }
 /* pills: status, health, stage */
 .sp-pill { font: var(--type-label); font-size: var(--text-2xs); padding: 3px 8px; border-radius: var(--radius-pill); border: 0; white-space: nowrap; background: var(--status-neutral-bg); color: var(--status-neutral-fg); }
 button.sp-pill { cursor: pointer; }
-.sp-pill.st-live, .sp-pill.good, .sp-pill.stage-ready { background: var(--status-success-bg); color: var(--status-success-fg); }
-.sp-pill.st-building, .sp-pill.stage-scoped { background: var(--status-info-bg); color: var(--status-info-fg); }
+.sp-pill.st-live, .sp-pill.good { background: var(--status-success-bg); color: var(--status-success-fg); }
+.sp-pill.st-building { background: var(--status-info-bg); color: var(--status-info-fg); }
 .sp-pill.bad { background: var(--status-danger-bg); color: var(--status-danger-fg); }
 .sp-pill.auto { background: var(--surface-overlay); color: var(--text-secondary); }
 
@@ -7909,21 +7908,7 @@ button.sp-pill { cursor: pointer; }
 .sp-wf-add { display: block; width: 100%; text-align: left; padding: 10px var(--space-5) 10px 46px; font: var(--type-caption); color: var(--text-tertiary); background: none; border: 0; cursor: pointer; }
 .sp-wf-add:hover { color: var(--text-secondary); }
 
-/* wishlist */
-.sp-wishlist { gap: var(--space-5); }
-.sp-wish-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: var(--space-4); }
-.sp-wish { display: flex; flex-direction: column; background: var(--surface-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); overflow: hidden; }
-.sp-wish-h { display: flex; justify-content: space-between; padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border-subtle); font: var(--type-label); color: var(--text-primary); }
-.sp-wish-h .n { font: var(--weight-regular) var(--text-2xs)/1.3 var(--font-mono); color: var(--text-tertiary); }
-.sp-idea { display: flex; flex-direction: column; gap: 4px; padding: 10px var(--space-4); border-bottom: 1px solid var(--border-subtle); }
-.sp-idea .row { display: flex; align-items: center; gap: var(--space-3); }
-.sp-idea .t { font: var(--type-label); color: var(--text-primary); flex: 1; min-width: 0; }
-.sp-idea .note { font: var(--type-caption); color: var(--text-tertiary); flex: 1; min-width: 0; }
-.sp-idea .x { width: 18px; border: 0; background: none; color: var(--text-tertiary); cursor: pointer; opacity: 0; }
-.sp-idea:hover .x, .sp-idea .x:focus-visible { opacity: 1; }
-.sp-idea .x:hover { color: var(--status-danger-fg); }
-.sp-idea-input { border: 0; outline: 0; background: transparent; padding: 10px var(--space-4); font: var(--type-body-sm); color: var(--text-primary); }
-.sp-idea-input::placeholder, .sp-input::placeholder, .sp-rail-input::placeholder, .sp-chip-input::placeholder { color: var(--text-tertiary); }
+.sp-input::placeholder, .sp-rail-input::placeholder, .sp-chip-input::placeholder { color: var(--text-tertiary); }
 
 /* the new / edit modal */
 .sp-modal { display: flex; flex-direction: column; margin: -24px -26px; }
@@ -7971,7 +7956,6 @@ button.sp-pill { cursor: pointer; }
   .sp-main { padding: var(--space-5) var(--space-4) var(--space-8); gap: var(--space-6); }
   .sp-wf { grid-template-columns: 14px minmax(0, 1fr) auto; padding-left: var(--space-5); }
   .sp-wf .desc, .sp-wf .trig, .sp-wf .toggle { display: none; }
-  .sp-wish-grid { grid-template-columns: minmax(0, 1fr); }
 }
 
 /* THE BOARD'S LIST VIEW (detail/BoardList.tsx) — one row per item, area as a

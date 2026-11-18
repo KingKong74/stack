@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { Project, ProjectStatus, Spaces, SpaceArea, WishIdea, IdeaStage, Workflow } from '../types';
+import type { Project, ProjectStatus, Spaces, SpaceArea, Workflow } from '../types';
 import {
   getProjects, createProject, patchProject, getSpaces, createSpaceArea, renameSpaceArea, deleteSpaceArea,
-  createIdea, patchIdea, deleteIdea, createWorkflow, patchWorkflow, getAreaRailFolded, setAreaRailFolded,
+  createWorkflow, patchWorkflow, getAreaRailFolded, setAreaRailFolded,
 } from '../store';
 import { hrefTo } from '../lib/route';
 import { NewProjectModal, type ModalInit, type ModalValue } from '../components/NewProjectModal';
@@ -12,8 +12,7 @@ import { TopBar } from '../components/TopBar';
 
 // THE PROJECTS PAGE: an area rail (owner-named groupings, foldable), then one
 // section per area holding its app cards and its hubs (a hub is a project
-// drawn as a row of the workflows it hosts), then the wishlist: ideas per area
-// that aren't projects yet. Areas, workflows and ideas come from /api/spaces;
+// drawn as a row of the workflows it hosts). Area data comes from /api/spaces;
 // the rail's fold is device-local. A project whose area key is unknown is read
 // as Personal, which is the server's fallback too.
 
@@ -24,8 +23,6 @@ const framed = window.self !== window.top;
 const STATUS_LABEL: Record<ProjectStatus, string> = {
   live: 'Live', building: 'Building', paused: 'Paused', archived: 'Archived',
 };
-const STAGES: IdeaStage[] = ['spark', 'scoped', 'ready'];
-const STAGE_LABEL: Record<IdeaStage, string> = { spark: 'Spark', scoped: 'Scoped', ready: 'Ready' };
 const WF_LABEL: Record<Workflow['status'], string> = { ok: '', failing: 'failed', paused: 'paused', never: 'never run' };
 const EMPTY: Spaces = { areas: [], workflows: [], ideas: [] };
 
@@ -131,23 +128,6 @@ export function Dashboard({ onOpenSearch }: { onOpenSearch: () => void }) {
     } catch (e) { fail('delete the area')(e); }
   };
 
-  const addIdea = async (areaKey: string, title: string) => {
-    try {
-      const i = await createIdea({ area: areaKey, title });
-      setSpaces((s) => ({ ...s, ideas: [...s.ideas, i] }));
-    } catch (e) { fail('add the idea')(e); }
-  };
-  const putIdea = (i: WishIdea) => setSpaces((s) => ({ ...s, ideas: s.ideas.map((x) => (x.id === i.id ? i : x)) }));
-  const cycle = async (i: WishIdea) => {
-    const stage = STAGES[(STAGES.indexOf(i.stage) + 1) % STAGES.length];
-    putIdea({ ...i, stage });
-    try { putIdea(await patchIdea(i.id, { stage })); } catch (e) { putIdea(i); fail('change the stage')(e); }
-  };
-  const dropIdea = async (i: WishIdea) => {
-    setSpaces((s) => ({ ...s, ideas: s.ideas.filter((x) => x.id !== i.id) }));
-    try { await deleteIdea(i.id); } catch (e) { setSpaces((s) => ({ ...s, ideas: [...s.ideas, i] })); fail('remove the idea')(e); }
-  };
-
   const toggleWorkflow = async (w: Workflow) => {
     try {
       const n = await patchWorkflow(w.id, { enabled: !w.enabled });
@@ -176,12 +156,6 @@ export function Dashboard({ onOpenSearch }: { onOpenSearch: () => void }) {
       } else {
         const p = await createProject({ name: v.name.trim(), subtitle: v.pitch, status: v.status, category: v.area, kind: v.type });
         setProjects((ps) => [...ps, p]);
-      }
-      // The idea only goes once its project exists; a failed delete leaves it listed.
-      if (m.fromIdea) {
-        const id = m.fromIdea;
-        setSpaces((s) => ({ ...s, ideas: s.ideas.filter((x) => x.id !== id) }));
-        await deleteIdea(id).catch(() => undefined);
       }
     } catch (e) { fail(m.mode === 'edit' ? 'save the project' : 'create it')(e); }
   };
@@ -279,19 +253,10 @@ export function Dashboard({ onOpenSearch }: { onOpenSearch: () => void }) {
     );
   };
 
-  const ideaInput = (key: string, placeholder: string) => (
-    <input className="sp-idea-input" placeholder={placeholder}
-      onKeyDown={(e) => {
-        const el = e.currentTarget; const v = el.value.trim();
-        if (e.key === 'Enter' && v) { addIdea(key, v); el.value = ''; }
-      }} />
-  );
-
   // ---- layout ----
 
   const shownAreas = spaces.areas.filter((a) => area === 'all' || a.key === area);
   const areaName = area === 'all' ? 'Overview' : spaces.areas.find((a) => a.key === area)?.name || 'Overview';
-  const ready = spaces.ideas.filter((i) => i.stage === 'ready').length;
 
   const rail = (
     <aside className={`sp-rail${folded ? ' folded' : ''}`}>
@@ -352,7 +317,6 @@ export function Dashboard({ onOpenSearch }: { onOpenSearch: () => void }) {
             <div><span>Live</span><span className="v">{counts.live}</span></div>
             <div><span>Building</span><span className="v">{counts.building}</span></div>
             <div><span>Workflows failing</span><span className={`v${failing ? ' bad' : ''}`}>{failing}</span></div>
-            <div><span>Ideas</span><span className="v">{spaces.ideas.length}</span></div>
             <button onClick={() => setFilter('archived')} disabled={!counts.archived}>
               <span>Archived</span><span className="v">{counts.archived}</span>
             </button>
@@ -390,7 +354,7 @@ export function Dashboard({ onOpenSearch }: { onOpenSearch: () => void }) {
             <div className="titles">
               <h1>{areaName}</h1>
               <span className="summary">
-                {unarchived.length} app{unarchived.length === 1 ? '' : 's'} · {liveHubs.length} hub{liveHubs.length === 1 ? '' : 's'} · {wfCount} workflow{wfCount === 1 ? '' : 's'} · {spaces.ideas.length} idea{spaces.ideas.length === 1 ? '' : 's'}
+                {unarchived.length} app{unarchived.length === 1 ? '' : 's'} · {liveHubs.length} hub{liveHubs.length === 1 ? '' : 's'} · {wfCount} workflow{wfCount === 1 ? '' : 's'}
               </span>
             </div>
             <div className="sp-tabs" role="tablist">
@@ -412,11 +376,9 @@ export function Dashboard({ onOpenSearch }: { onOpenSearch: () => void }) {
                 const secApps = apps.filter((p) => areaOf(p) === a.key && shows(p));
                 const secHubs = hubs.filter((h) => areaOf(h) === a.key && (filter === 'archived' ? h.status === 'archived' : h.status !== 'archived'));
                 const secWf = secHubs.reduce((n, h) => n + wfOf(h.id).length, 0);
-                const secIdeas = spaces.ideas.filter((i) => i.area === a.key).length;
                 const parts = [
                   secApps.length && `${secApps.length} app${secApps.length === 1 ? '' : 's'}`,
                   secHubs.length && `${secWf} workflow${secWf === 1 ? '' : 's'}`,
-                  secIdeas && `${secIdeas} idea${secIdeas === 1 ? '' : 's'}`,
                 ].filter(Boolean);
                 const empty = !secApps.length && !secHubs.length;
                 return (
@@ -440,37 +402,6 @@ export function Dashboard({ onOpenSearch }: { onOpenSearch: () => void }) {
                   </section>
                 );
               })}
-
-              <section className="sp-section sp-wishlist">
-                <div className="sp-section-h">
-                  <h2 className="big">Wishlist</h2>
-                  <span className="meta">{spaces.ideas.length} idea{spaces.ideas.length === 1 ? '' : 's'} · {ready} ready to start</span>
-                </div>
-                <div className="sp-wish-grid">
-                  {shownAreas.map((a) => {
-                    const ideas = spaces.ideas.filter((i) => i.area === a.key);
-                    return (
-                      <div key={a.key} className="sp-wish">
-                        <div className="sp-wish-h"><span>{a.name}</span><span className="n">{ideas.length}</span></div>
-                        {ideas.map((i) => (
-                          <div key={i.id} className="sp-idea">
-                            <div className="row">
-                              <span className="t">{i.title}</span>
-                              <button className={`sp-pill stage-${i.stage}`} onClick={() => cycle(i)} title="Next stage">{STAGE_LABEL[i.stage]}</button>
-                              <button className="x" title="Remove this idea" onClick={() => dropIdea(i)}>×</button>
-                            </div>
-                            <div className="row">
-                              <span className="note">{i.note || '—'}</span>
-                              <button className="sp-link" onClick={() => openNew({ name: i.title, pitch: i.note, area: i.area, fromIdea: i.id })}>Start →</button>
-                            </div>
-                          </div>
-                        ))}
-                        {ideaInput(a.key, 'Add an idea — Enter')}
-                      </div>
-                    );
-                  })}
-                </div>
-              </section>
             </>
           )}
         </main>
