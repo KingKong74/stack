@@ -18,6 +18,7 @@ import {
   getTermOpenTabs, setTermOpenTabs,
   getTermNames, setTermName, getTermLabels, setTermLabels,
   getTerminalAgent, getTermSessionPrefs, setTermSessionPrefs, type TermSessionPrefs,
+  getTerminalTaskInbox, getTermInboxSeen, setTermInboxSeen, type TerminalTaskCompletion,
   getProjectDetail, type ProjectDetailData,
   peekTermLaunch, clearTermLaunch,
 } from '../store';
@@ -155,6 +156,8 @@ const fmtTok = (n: number) =>
 // whole), and it is the only id that exists for EVERY session — a shell has no
 // tmux name, so keying names by tmux is why shells used to go unnamed.
 type Sess = {
+  taskMode?: boolean;
+  endedTmux?: string;
   profileKeys?: string[];
   configuration?: SessionConfiguration | null;
   reattachOnly?: boolean;
@@ -304,6 +307,32 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, project
   const [configurationOpen, setConfigurationOpen] = useState(false);
   const [hostCapabilities, setHostCapabilities] = useState<string[]>([]);
   const [launchError, setLaunchError] = useState('');
+  const [inboxOpen, setInboxOpen] = useState(false);
+  const [inbox, setInbox] = useState<TerminalTaskCompletion[] | null>(null);
+  const [inboxError, setInboxError] = useState(false);
+  const [inboxSeen, setInboxSeen] = useState(getTermInboxSeen);
+  const inboxRequest = useRef(0);
+  const refreshInbox = async () => {
+    const request = ++inboxRequest.current;
+    try {
+      const entries = await getTerminalTaskInbox();
+      if (request !== inboxRequest.current) return;
+      setInbox(entries);
+      setInboxError(false);
+    } catch {
+      if (request === inboxRequest.current) setInboxError(true);
+    }
+  };
+  useEffect(() => { if (visible) void refreshInbox(); }, [visible, inboxOpen]);
+  useAutoRefresh(() => void refreshInbox(), visible);
+  useEffect(() => {
+    const latest = inbox?.[0] ? Date.parse(inbox[0].completedAt) : 0;
+    if (visible && inboxOpen && latest > inboxSeen) {
+      setInboxSeen(latest);
+      setTermInboxSeen(latest);
+    }
+  }, [visible, inboxOpen, inbox, inboxSeen]);
+  const unreadTasks = inbox?.filter((entry) => Date.parse(entry.completedAt) > inboxSeen).length ?? 0;
   // A mirror of `sessions` for the async restore (#486) to read. The adoption
   // pass resolves after its own round trip, by which time the `sessions` it
   // closed over at mount is empty — and deciding "is this already open" from a
@@ -396,7 +425,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, project
   // daemon's resolveCwd() regardless of what the browser sends.
   // Mission Control's per-row ⌨ button and the ProjectDetail ⌨ button both
   // use the project terminal route, so project-context opens already land here.
-  const openSession = (dir?: string, kind?: 'shell' | 'claude' | 'codex', tmux?: string) => {
+  const openSession = (dir?: string, kind?: 'shell' | 'claude' | 'codex', tmux?: string, taskMode = false) => {
     const id = nextId.current++;
     const cwdKey = (dir ?? cwd).trim();
     const cmd = kind ?? mode;
@@ -407,6 +436,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, project
       const fresh = !tmux;
       return [...s, {
         id, cwd: cwdKey, cmd, status: 'connecting', note: '', tmux: name, reattachOnly: !!tmux,
+        taskMode: fresh && cmd !== 'shell' && taskMode,
         codexModel: cmd === 'codex' && fresh ? defs.codexModel || undefined : undefined,
         claudeModel: cmd === 'claude' && fresh ? defs.claudeModel || undefined : undefined,
         dest: cmd !== 'shell' && fresh ? defs.dest : undefined,
@@ -713,8 +743,15 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, project
   // (a detach never sends one) — forget the mapping so the next open is fresh.
   const noteTmuxEnded = (id: number, cwdKey: string, name: string | null) => {
     if (name) clearTermTmuxName(cwdKey, name);
-    setSessions((tabs) => tabs.map((tab) => tab.id === id ? { ...tab, tmux: undefined } : tab));
+    setSessions((tabs) => tabs.map((tab) => tab.id === id ? { ...tab, tmux: undefined, endedTmux: name || undefined } : tab));
+    if (name) void refreshInbox();
   };
+  useEffect(() => {
+    if (!inbox?.length) return;
+    const completed = new Set(inbox.map((entry) => entry.sessionName));
+    const ended = sessions.filter((tab) => tab.endedTmux && completed.has(tab.endedTmux));
+    for (const tab of ended) detachSession(tab.id, false);
+  }, [inbox, sessions]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Chips for sessions a live tab already holds would be re-attach traps —
   // hide them (the daemon's next push drops them anyway).
@@ -1156,7 +1193,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, project
   const startSession = (kind?: Sess['cmd']) => {
     if ((kind || mode) === 'claude' && profileKeys.length && !hostCapabilities.includes('profile-keys')) { setLaunchError('Host profile delivery is unavailable. Restart the updated terminal daemon or clear the profile selection.'); return; }
     setLaunchError('');
-    const id = openSession(undefined, kind);
+    const id = openSession(undefined, kind, undefined, defs.taskMode);
     if (view === 'swarm') openWin(id);
   };
   const closeWin = (id: number) => { setWins((ws) => ws.filter((w) => w.id !== id)); setOpenIn(null); };
@@ -1369,7 +1406,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, project
   const sortByStatus = () => setTileOrder(STATUS_ORDER.flatMap((k) => shownTiles.filter((t) => t.st === k)).map((t) => t.key));
   const [fillAsk, setFillAsk] = useState(0);
   const fillEmpty = (n: number) => {
-    for (let i = 0; i < n; i++) openSession(undefined, mode);
+    for (let i = 0; i < n; i++) openSession(undefined, mode, undefined, defs.taskMode);
     setFillAsk(0);
   };
   // A tab clicked in Swarm lights its tile rather than leaving the view.
@@ -1604,7 +1641,14 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, project
         { label: 'Terminal', href: hrefTo.projectTerminal(projectRoute || boardProject || 'stack', cwd) },
       ]}
         actions={
-          <a className="btn-repo btn-ico" href={hrefTo.control} title="Mission Control" aria-label="Mission Control">{NavIcons.gauge}</a>
+          <>
+            <button className={`tv-btn${defs.taskMode ? ' on' : ''}`} role="switch" aria-checked={defs.taskMode}
+              title="New Claude and Codex sessions close after saving their completion brief"
+              onClick={() => saveDefs({ taskMode: !defs.taskMode })}>Task mode</button>
+            <button className={`tv-btn${inboxOpen ? ' on' : ''}`} aria-expanded={inboxOpen} aria-controls="terminal-task-inbox"
+              onClick={() => setInboxOpen((open) => !open)}>Inbox{unreadTasks > 0 && ` (${unreadTasks})`}</button>
+            <a className="btn-repo btn-ico" href={hrefTo.control} title="Mission Control" aria-label="Mission Control">{NavIcons.gauge}</a>
+          </>
         } />
 
       <div className="page term-page tv-page">
@@ -1862,6 +1906,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, project
 
         {/* ---- THE STAGE. Every pane is a child of this one element, keyed,
             in the same position, whatever the view — see the file header. ---- */}
+        <div className="tv-workspace">
         <div className={`tv-stage v-${view}`}>
           {sessions.map((s) => {
             const winOf = wins.find((w) => w.id === s.id);
@@ -2193,6 +2238,31 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, project
             </div>
           )}
         </div>
+        {inboxOpen && (
+          <aside className="tv-task-inbox" id="terminal-task-inbox" aria-label="Terminal inbox">
+            <header>
+              <h2>Completed tasks</h2>
+              <button className="tv-btn" onClick={() => setInboxOpen(false)} aria-label="Close inbox">×</button>
+            </header>
+            {inboxError && <p role="status">Could not refresh the inbox. <button className="tv-btn" onClick={() => void refreshInbox()}>Retry</button></p>}
+            {!inboxError && !inbox && <p role="status">Loading completions…</p>}
+            {!inboxError && inbox?.length === 0 && <p>No completed tasks yet.</p>}
+            {inbox && inbox.length > 0 && (
+              <ul>
+                {inbox.map((entry) => (
+                  <li key={entry.id}>
+                    <h3>{entry.title}</h3>
+                    <div className="tv-dim">{TOOL[entry.runtime].name} · <time dateTime={entry.completedAt}>
+                      {new Date(entry.completedAt).toLocaleString('en-AU', { dateStyle: 'medium', timeStyle: 'short' })}
+                    </time></div>
+                    <p>{entry.summary}</p>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </aside>
+        )}
+        </div>
       </div>
     </div>
 
@@ -2326,7 +2396,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, project
 // One tab: an xterm instance + its websocket, kept mounted (hidden when
 // inactive) so the scrollback survives tab switches.
 function TermSession({ sess, visible, focused, fontSize, onStatus, onUsage, onTmux, onBranch, onModel, onConfiguration, onSid, onExit, onOutput, onTyped, onNotice, register }: {
-  sess: { profileKeys?: string[]; reattachOnly?: boolean; codexModel?: string; claudeModel?: string; dest?: TermDest; id: number; cwd: string; cmd: 'shell' | 'claude' | 'codex'; tmux?: string };
+  sess: { taskMode?: boolean; profileKeys?: string[]; reattachOnly?: boolean; codexModel?: string; claudeModel?: string; dest?: TermDest; id: number; cwd: string; cmd: 'shell' | 'claude' | 'codex'; tmux?: string };
   // Rendered on screen at all (it may be one of several panes)...
   visible: boolean;
   // ...and the one that takes keystrokes. With a grid these stopped being the
@@ -2565,6 +2635,7 @@ function TermSession({ sess, visible, focused, fontSize, onStatus, onUsage, onTm
         cwd: sess.cwd, cmd: sess.cmd, cols: term.cols, rows: term.rows,
         tmuxSession: sess.cmd !== 'shell' && tmuxRef.current ? tmuxRef.current : undefined,
         reattachOnly: sess.cmd !== 'shell' && !!tmuxRef.current && reattachOnlyRef.current,
+        taskMode: sess.taskMode && !reattachOnlyRef.current,
         // Device pref (Settings → Terminal): claude without permission prompts.
         // A boolean only — the daemon maps it to its one allow-listed flag.
         skipPerms: sess.cmd === 'claude' && getTermSessionPrefs().skipPermissions ? true : undefined,

@@ -1949,3 +1949,14 @@ CREATE TABLE IF NOT EXISTS specialist_loop_policies (
 -- uploaded it from ~/.stack/files/<slug>/outbox, fingerprint 'out:<name>').
 ALTER TABLE artifacts ADD COLUMN IF NOT EXISTS exchange TEXT NOT NULL DEFAULT '';
 CREATE INDEX IF NOT EXISTS artifacts_exchange_idx ON artifacts (exchange) WHERE exchange <> '';
+
+CREATE TABLE IF NOT EXISTS terminal_task_completions (
+  id UUID PRIMARY KEY,
+  session_name TEXT NOT NULL,
+  runtime TEXT NOT NULL CHECK (runtime IN ('claude', 'codex')),
+  title TEXT NOT NULL,
+  summary TEXT NOT NULL,
+  completed_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS terminal_task_completions_recent
+  ON terminal_task_completions (completed_at DESC, id DESC);

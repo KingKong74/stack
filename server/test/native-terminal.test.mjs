@@ -126,11 +126,11 @@ test('daemon launches, resizes and reattaches Codex without a gateway', { timeou
       && Buffer.from(f.data, 'base64').toString().includes('SPAWN'));
     const text = Buffer.from(output.data, 'base64').toString();
     assert.match(text, /exec codex --dangerously-bypass-approvals-and-sandbox/);
-    assert.doesNotMatch(text, /omniroute|old-gateway-model/);
+    assert.doesNotMatch(text, /omniroute|old-gateway-model|@stack-task-mode/);
     ws.send(JSON.stringify({ t: 'resize', sid: 'codex', cols: 0, rows: 9000 }));
     await waitFor((f) => f.t === 'out' && f.sid === 'codex'
       && Buffer.from(f.data, 'base64').toString().includes('RESIZED'));
-    start('attach', 'claude', { tmuxSession: 'stack-term-existing' });
+    start('attach', 'claude', { tmuxSession: 'stack-term-existing', taskMode: true });
     const attached = await waitFor((f) => f.t === 'ready' && f.sid === 'attach');
     assert.equal(attached.cmd, 'codex');
     assert.equal(attached.configuration, null);
@@ -138,7 +138,20 @@ test('daemon launches, resizes and reattaches Codex without a gateway', { timeou
     const attachOutput = await waitFor((f) => f.t === 'out' && f.sid === 'attach'
       && Buffer.from(f.data, 'base64').toString().includes('SPAWN'));
     assert.match(Buffer.from(attachOutput.data, 'base64').toString(), /attach-session/);
-    assert.doesNotMatch(Buffer.from(attachOutput.data, 'base64').toString(), /new-session/);
+    assert.doesNotMatch(Buffer.from(attachOutput.data, 'base64').toString(), /new-session|@stack-task-mode/);
+    for (const [runtime, option] of [['claude', '--append-system-prompt'], ['codex', '-c']]) {
+      const name = `stack-term-task-${runtime}`;
+      start(name, runtime, { taskMode: true, tmuxSession: name });
+      const frame = await waitFor((f) => f.t === 'out' && f.sid === name
+        && Buffer.from(f.data, 'base64').toString().includes('SPAWN'));
+      const line = Buffer.from(frame.data, 'base64').toString().split('\n').find((line) => line.startsWith('SPAWN '));
+      const args = JSON.parse(line.slice('SPAWN '.length));
+      assert.equal(args.includes('-A'), false);
+      assert.ok(args.some((arg) => arg.includes(`${option} `) && arg.includes('/briefs/task-mode/')));
+      assert.match(args[args.indexOf('@stack-task-mode') + 1], new RegExp(`^[a-f0-9-]{36}:${runtime}$`));
+      assert.match(readFileSync(join(dir, '.stack', 'briefs', 'task-mode', name + '.md'), 'utf8'), /task-finish\.mjs/);
+      ws.send(JSON.stringify({ t: 'kill', sid: name }));
+    }
     start('missing', 'codex', { tmuxSession: 'stack-term-gone', reattachOnly: true });
     assert.match((await waitFor((f) => f.t === 'err' && f.sid === 'missing')).msg, /session has ended/);
     await waitFor((f) => f.t === 'exit' && f.sid === 'missing');

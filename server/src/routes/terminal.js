@@ -14,6 +14,40 @@ import { titleLabel, labelRequest } from '../term-label.js';
 // session rows and die with them. 503 without a key (silent degrade upstream).
 export const terminal = Router();
 
+terminal.get('/task-inbox', async (_req, res) => {
+  try {
+    const { rows } = await q(`SELECT id, session_name AS "sessionName", runtime, title, summary,
+      completed_at AS "completedAt" FROM terminal_task_completions ORDER BY completed_at DESC, id DESC LIMIT 100`);
+    res.json(rows);
+  } catch {
+    res.status(503).json({ error: 'Task inbox is unavailable.' });
+  }
+});
+
+terminal.post('/task-inbox', async (req, res) => {
+  const { id, sessionName, runtime } = req.body || {};
+  const title = typeof req.body?.title === 'string' ? req.body.title.trim() : '';
+  const summary = typeof req.body?.summary === 'string' ? req.body.summary.trim() : '';
+  if (typeof id !== 'string' || !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(id)
+      || typeof sessionName !== 'string' || !/^stack-term-[A-Za-z0-9_-]{1,64}$/.test(sessionName)
+      || (runtime !== 'claude' && runtime !== 'codex')
+      || !title || title.length > 160 || !summary || summary.length > 4000
+      || title.includes('\0') || summary.includes('\0')) {
+    return res.status(400).json({ error: 'Invalid task completion.' });
+  }
+  try {
+    const { rows } = await q(`INSERT INTO terminal_task_completions AS c (id, session_name, runtime, title, summary)
+      VALUES ($1, $2, $3, $4, $5)
+      ON CONFLICT (id) DO UPDATE SET id = c.id
+        WHERE c.session_name = EXCLUDED.session_name AND c.runtime = EXCLUDED.runtime
+      RETURNING id`, [id, sessionName, runtime, title, summary]);
+    if (!rows.length) return res.status(409).json({ error: 'This task ID belongs to another session.' });
+    res.json(rows[0]);
+  } catch {
+    res.status(503).json({ error: 'Could not save the task completion.' });
+  }
+});
+
 // GET /api/terminal/usage — token consumption and budget for the terminal header.
 // tokensToday: sum of autopilot_runs.tokens over the last 24 hours (BIGINT → Number).
 // tokenBudget: settings.autopilot_tokens (0 = unlimited).

@@ -40,6 +40,7 @@
 // Usage-limit exits do not change providers or credentials.
 
 import { spawn, spawnSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { createOutbox, createReplayBuffer } from './out-coalesce.mjs';
 import { existsSync, mkdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -66,6 +67,7 @@ import { createEditWatch } from './edit-watch.mjs';
 import { resolvedModelFor } from './session-model.mjs';
 import { describeModelTag } from './model-switch.mjs';
 import { nativeLaunch, agentForTag } from './native-launch.mjs';
+import { taskModeInstructions } from './task-mode.mjs';
 
 // ---- env (same loader contract as the hooks: ~/.stack/env, never printed) ----
 const envFile = join(homedir(), '.stack', 'env');
@@ -449,7 +451,10 @@ function gcOrphans() {
 setInterval(gcOrphans, 10 * 60_000);
 gcOrphans(); // and once at startup — reboots are when corpses accumulate
 // #525 — a launch brief a spawn never consumed (launch-brief.mjs). Same cadence.
-setInterval(() => { const n = pruneBriefs(); if (n) log(`briefs: pruned ${n} unconsumed`); }, 10 * 60_000);
+setInterval(() => {
+  const n = pruneBriefs() + pruneBriefs({ dir: join(briefsDir(), 'task-mode') });
+  if (n) log(`briefs: pruned ${n} unconsumed`);
+}, 10 * 60_000);
 
 // ---- the file exchange: ~/.stack/files/<slug>/{inbox,outbox} (file-sync.mjs)
 // Mirrors what the owner shared into each inbox and sends what sessions left
@@ -780,6 +785,7 @@ async function startPreparedSession(msg, pending) {
   let configuration = null;
 
   if (msg.cmd === 'claude' || msg.cmd === 'codex') {
+    if (msg.taskMode === true && !tmuxAvailable()) return failUplink('Task mode requires tmux on this host.');
     if (msg.reattachOnly === true && (!tmuxAvailable() || !validName(msg.tmuxSession) || !sessionExists(msg.tmuxSession))) {
       return failUplink('This terminal session has ended. Start a new session to continue.');
     }
@@ -796,6 +802,9 @@ async function startPreparedSession(msg, pending) {
     if (tmuxAvailable()) {
       // Use a validated name from the browser if provided, otherwise generate one.
       tmuxSession = validName(msg.tmuxSession) ? msg.tmuxSession : generateName('term');
+      if (msg.taskMode === true && !/^stack-term-[A-Za-z0-9_-]{1,64}$/.test(tmuxSession)) {
+        return failUplink('Task mode requires a Stack Terminal session name.');
+      }
       // Did this session already exist? `new-session -A` deliberately does not
       // say — it creates or attaches with one command precisely so there is no
       // race between the two — so the answer has to be taken BEFORE the spawn.
@@ -831,7 +840,9 @@ async function startPreparedSession(msg, pending) {
         : launch.tag;
       // A brief only for a session this call CREATES — a re-attach ignores the
       // command, and the start frame is re-sent on every reconnect.
-      let initialBrief = typeof msg.brief === 'string' ? msg.brief : '';
+      const initialBrief = typeof msg.brief === 'string' ? msg.brief : '';
+      const taskId = !reattached && msg.taskMode === true ? randomUUID() : null;
+      let taskArg = '';
       if (reattached) configuration = readSessionConfiguration(tmuxSession);
       else {
         const request = async (method, path, body) => {
@@ -852,12 +863,21 @@ async function startPreparedSession(msg, pending) {
         }
         saveSessionConfiguration(configuration);
       }
+      if (taskId) {
+        const instructions = taskModeInstructions(msg.cmd);
+        const path = writeBrief(tmuxSession, instructions, join(briefsDir(), 'task-mode'));
+        if (!path) return failUplink('Could not prepare Task mode instructions.');
+        taskArg = ` ${msg.cmd === 'claude' ? '--append-system-prompt' : '-c'}${briefArg(path)}`;
+      }
       const briefFile = !reattached && initialBrief ? writeBrief(tmuxSession, initialBrief) : null;
       if (!reattached && initialBrief && !briefFile) return failUplink('Could not write the starting task.');
       if (briefFile) log(`session ${sid}: starting ${tmuxSession} on a brief (${initialBrief.length} chars)`);
-      const shellCmd = `/bin/bash -lc "${briefFile ? agentCmdWith(briefArg(briefFile)) : agentCmd}"`;
-      argv = sessionArgv(tmuxSession, cwd, shellCmd, { attachOnly: reattached || msg.reattachOnly === true });
+      const shellCmd = `/bin/bash -lc "${agentCmdWith(taskArg + (briefFile ? briefArg(briefFile) : ''))}"`;
+      // Never tag an unrelated session if the name appears between preparation
+      // and spawn. A duplicate-name error stops the tmux command sequence.
+      argv = sessionArgv(tmuxSession, cwd, shellCmd, { attachOnly: reattached || msg.reattachOnly === true, createOnly: !!taskId });
       if (!reattached && configuration) argv.push(';', 'set-option', '-t', `=${tmuxSession}:`, '@stack-configuration', configuration.id);
+      if (taskId) argv.push(';', 'set-option', '-t', `=${tmuxSession}:`, '@stack-task-mode', `${taskId}:${msg.cmd}`);
       log(`session ${sid}: tmux session ${tmuxSession} (${reattached ? 're-attach' : 'new'})`);
       // A session we are CREATING starts out marked fresh — nobody has been
       // near it yet. The mark is set after the spawn below, once the session
@@ -1226,7 +1246,7 @@ function connect() {
     backoff = 5_000;
     uplink = ws;
     log(`connected to ${API}`);
-    sendUplink({ t: 'capabilities', features: ['session-configuration', 'profile-keys'] });
+    sendUplink({ t: 'capabilities', features: ['session-configuration', 'profile-keys', 'task-mode'] });
 
     // Re-announce any sessions that survived the uplink gap, then flush their
     // buffered output so browsers can re-attach and catch up.

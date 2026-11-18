@@ -510,6 +510,7 @@ export async function getProjectPulse(slug: string): Promise<ProjectPulse> {
 // account model for a new Codex session; it never changes an attached process.
 export function openTerminal(opts: {
   cwd: string; cmd: 'shell' | 'claude' | 'codex'; cols: number; rows: number;
+  taskMode?: boolean;
   tmuxSession?: string; reattachOnly?: boolean; skipPerms?: boolean; codexModel?: string;
   // An alias (opus/sonnet/haiku) or a full id; '' / absent = the CLI's default.
   claudeModel?: string;
@@ -527,6 +528,25 @@ export function openTerminal(opts: {
     ws.send(JSON.stringify({ t: 'start', token: getToken() || '', ...opts }));
   });
   return ws;
+}
+
+export interface TerminalTaskCompletion {
+  id: string;
+  sessionName: string;
+  runtime: 'claude' | 'codex';
+  title: string;
+  summary: string;
+  completedAt: string;
+}
+export function getTerminalTaskInbox() {
+  return request<TerminalTaskCompletion[]>('/terminal/task-inbox');
+}
+const TERM_INBOX_SEEN = 'stack.termInboxSeen';
+export function getTermInboxSeen(): number {
+  return Number(localStorage.getItem(TERM_INBOX_SEEN)) || 0;
+}
+export function setTermInboxSeen(at: number) {
+  localStorage.setItem(TERM_INBOX_SEEN, String(at));
 }
 
 // #525 — THE BOARD'S ⌨ RUN IN TERMINAL hands a claude tab its first prompt,
@@ -726,6 +746,7 @@ export function setTermWorkingItem(cwd: string, id: number | null) {
 export type TermDest = 'main' | 'branch';
 export interface TermSessionPrefs {
   autoStart: 'claude' | 'codex' | 'shell'; skipPermissions: boolean;
+  taskMode: boolean;
   /** '' = the CLI default. Same allowlist as cleanModelId below. */
   claudeModel: string;
   codexModel: string;
@@ -737,6 +758,7 @@ export function getTermSessionPrefs(): TermSessionPrefs {
     autoStart: p?.autoStart === 'shell' ? 'shell' as const
       : p?.autoStart === 'codex' ? 'codex' as const : 'claude' as const,
     skipPermissions: p?.skipPermissions !== false,
+    taskMode: p?.taskMode === true,
     claudeModel: cleanModelId(p?.claudeModel),
     codexModel: cleanModelId(p?.codexModel),
     dest: p?.dest === 'branch' ? 'branch' as const : 'main' as const,

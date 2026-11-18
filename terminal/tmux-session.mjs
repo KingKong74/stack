@@ -78,11 +78,12 @@ export function sessionExists(name) {
 // Claude session drew monochrome (2026-11-08). So the chain scrubs the global
 // env BEFORE new-session, on every start: start-server makes that legal when
 // no server is running yet, and an existing server is repaired in place.
-export function sessionArgv(name, cwd, shellCmd, { attachOnly = false } = {}) {
+export function sessionArgv(name, cwd, shellCmd, { attachOnly = false, createOnly = false } = {}) {
   return ['tmux', 'start-server',
     ';', 'set-environment', '-gu', 'NO_COLOR',
     ';', 'set-environment', '-g', 'COLORTERM', 'truecolor',
-    ';', ...(attachOnly ? ['attach-session', '-t', `=${name}:`] : ['new-session', '-A', '-s', name, '-c', cwd, shellCmd]),
+    ';', ...(attachOnly ? ['attach-session', '-t', `=${name}:`]
+      : ['new-session', ...(createOnly ? [] : ['-A']), '-s', name, '-c', cwd, shellCmd]),
     ';', 'set-option', '-g', 'mouse', 'on',
     ';', 'set-option', '-g', 'set-clipboard', 'on',
     ';', 'set-option', '-as', 'terminal-features', ',*:clipboard',

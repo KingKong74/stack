@@ -6,12 +6,14 @@ roadmap and sticky notes.
 
 ## Codex sessions
 
-Stack Terminal launches Claude and Codex natively, with Shell as a utility. New Codex sessions
-use YOLO mode; its sidepanel lists account models and reported quota windows. Codex has no automatic
-resume injection, branch claims, SessionEnd backstop or usage/edit tracking. Read live state and
-claims before choosing board work. Author checkpoint JSON and pipe it to
-`node ~/.stack/stack-checkpoint.mjs`; `/checkpoint` is a Claude command, not a Codex command.
-Reconnect starts set `reattachOnly:true`; missing sessions fail without spawning. `POST /api/terminal/label` accepts `{sid, tmux, prompt}` to retitle a session.
+Codex launches natively in YOLO mode. Read live state and claims before choosing board work.
+Resume injection, claims, SessionEnd and usage/edit tracking are Claude-only. Pipe authored
+checkpoint JSON to `node ~/.stack/stack-checkpoint.mjs` from Codex. Reconnect uses `reattachOnly:true`.
+`POST /api/terminal/label` retitles a session with `{sid, tmux, prompt}`.
+
+In Task mode, use the supplied finish command only when the typed task is complete. It posts a
+title and brief to `POST /api/terminal/task-inbox`, then closes the pane after confirmation.
+`GET /api/terminal/task-inbox` reads recent completions.
 
 ## Agent configuration and diagnostics
 

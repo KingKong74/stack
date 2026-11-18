@@ -465,7 +465,7 @@ export function attachTerm(httpServer) {
       let m;
       try { m = JSON.parse(raw.toString()); } catch { return; }
 
-      if (m.t === 'capabilities') { agentCapabilities = Array.isArray(m.features) ? m.features.filter(f => ['session-configuration', 'profile-keys'].includes(f)) : []; return; }
+      if (m.t === 'capabilities') { agentCapabilities = Array.isArray(m.features) ? m.features.filter(f => ['session-configuration', 'profile-keys', 'task-mode'].includes(f)) : []; return; }
 
       // hello — the daemon re-announces sessions that survived an uplink gap.
       // Each sid in the list is a PTY that kept running while we were
@@ -669,6 +669,11 @@ export function attachTerm(httpServer) {
       }
       if (!agent) {
         send(ws, { t: 'err', msg: 'The terminal daemon is not connected — is stack-term running on the host?' });
+        ws.close();
+        return;
+      }
+      if (msg.taskMode === true && !agentCapabilities.includes('task-mode')) {
+        send(ws, { t: 'err', msg: 'Task mode requires an updated terminal daemon.' });
         ws.close();
         return;
       }
