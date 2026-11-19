@@ -114,6 +114,29 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 // presses, because it HIDES rows — every demo card is parked, so pressing it
 // earlier would empty the board underneath every press that follows.
 const ROADMAP_PANELS = [
+  // THE BOARD TAB OPENS ON THE WORK MAP (detail/BoardMap.tsx). Its presses come
+  // first and end on the map's Board switch, because every press after them
+  // names the kanban. The arrangement press writes only this browser's storage.
+  {
+    id: 'board-map-fit', label: 'Board — the work map draws and Fit frames it',
+    click: '.bm-zoom .fit', expect: '.bm-canvas .bm-card.type-project',
+  },
+  {
+    id: 'board-map-stage', label: 'Board — the map’s stage flow lays work out by stage',
+    click: '.bm-layouts .seg-opt:nth-child(2)', expect: '.bm-canvas .bm-stagehead',
+  },
+  {
+    id: 'board-map-tree', label: 'Board — the map returns to the tree',
+    click: '.bm-layouts .seg-opt:nth-child(1)', expect: '.bm-canvas:not(:has(.bm-stagehead))',
+  },
+  {
+    id: 'board-map-select', label: 'Board — a map card selects into the detail panel',
+    click: '.bm-canvas .bm-card.sel', expect: '.bm-detail .bm-sec.head h2',
+  },
+  {
+    id: 'board-kanban', label: 'Board — the map’s Board switch opens the kanban',
+    click: '.bm-toolbar .seg-control:first-child .seg-opt:nth-child(2)', expect: '.km-cols',
+  },
   {
     // #524 — THE BOARD LANDS FOLDED: every area group is a header until
     // opened, and a folded group draws no `.km-card`. So Expand all (the
@@ -372,11 +395,11 @@ const ROADMAP_PANELS = [
   },
   {
     id: 'board-list-layout', label: 'Board — list shows milestone and slice context',
-    click: '.km-layout button:nth-child(2)', expect: '.bl-list .bl-c-spine',
+    click: '.km-layout button:nth-child(3)', expect: '.bl-list .bl-c-spine',
   },
   {
     id: 'board-list-back', label: 'Board — return to card layout',
-    click: '.km-layout button:nth-child(1)', expect: '.km-cols',
+    click: '.km-layout button:nth-child(2)', expect: '.km-cols',
   },
   // THESE FOUR MUST COME LAST, and not for tidiness: the presses above all
   // name `.km-col`, which only exists while the Board tab is the one drawn.

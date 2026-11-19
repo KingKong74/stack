@@ -4,7 +4,7 @@ The root `CLAUDE.md` holds the cross-package rules (mirrored predicates, fail-sa
 file holds what applies only here. These file headers carry their own rules; read one before editing
 its file: `lib/branch.ts`, `lib/plan.ts`, `lib/quality.ts`, `lib/termClipboard.ts`, `lib/termLaunch.ts`, `styles.css`,
 `components/Brandmark.tsx`, `components/RoadmapModal.tsx`, `components/Asking.tsx`,
-`detail/Board.tsx`, `detail/BoardFocus.tsx`, `detail/ForYou.tsx`, `detail/Plans.tsx`,
+`detail/Board.tsx`, `detail/BoardMap.tsx`, `lib/workMap.ts`, `detail/BoardFocus.tsx`, `detail/ForYou.tsx`, `detail/Plans.tsx`,
 `detail/Development.tsx`, `detail/SkillsAgents.tsx`, `detail/Loops.tsx`, `detail/Artifacts.tsx`, `detail/Spine.tsx`,
 `detail/Architecture.tsx`, `detail/Course.tsx`,
 `components/Markdown.tsx`.
@@ -45,6 +45,8 @@ on two screens gets acted on twice; a row on none has silently vanished.
   the cluster's column is rolled up from them (`clusterKeyOf`), so it doesn't drag; its size is Σ
   its parts' points. A part whose cluster is off the board is an ordinary card again. `Board.tsx`'s
   header has the rest.
+- **The Board tab opens on the work map** (`detail/BoardMap.tsx`): the same board rows as a tree, with
+  every write borrowed from `Board.tsx`. Map, kanban and list must agree on what is on the board.
 - **There is no Roadmap tab** (owner's call, 2026-10-28). The `canvas` column is dormant: nothing
   writes or serves it. Don't bring back a third home without changing `homeOf` with it.
 

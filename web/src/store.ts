@@ -1562,13 +1562,15 @@ export function setBoardFolds(slug: string, folds: BoardFolds) {
   catch { /* storage full or unavailable — a fold is a nicety, never a blocker */ }
 }
 
-// ---- the board's VIEW (Areas | List) ----
+// ---- the board's VIEW (Map | Board | List) ----
 //
 // Device-local and per project, like the folds: which layout you read a board
 // in, and how the List view is sorted and scoped, is a preference and not a
-// fact about the work. Unknown or corrupt storage lands on the Areas view,
-// newest first, everything shown.
-export type BoardViewLayout = 'areas' | 'list';
+// fact about the work. Unknown or corrupt storage lands on the Map (the work
+// map, detail/BoardMap.tsx), newest first, everything shown. The kanban is
+// stored as 'kanban'; the pre-map value 'areas' reads as the Map, because the
+// Map replaced it as the board's front page.
+export type BoardViewLayout = 'map' | 'kanban' | 'list';
 export type BoardSort = 'newest' | 'oldest' | 'updated' | 'priority' | 'run' | 'area' | 'title';
 export type BoardShow = 'all' | 'board' | 'ideas';
 /** #608 — what each kanban column groups its cards by. Slice is the default:
@@ -1585,7 +1587,7 @@ export function getBoardView(slug: string): BoardView {
   return readStoredJSON(BOARD_VIEW_KEY(slug), (p) => {
     const o = (p && typeof p === 'object') ? p as Record<string, unknown> : {};
     return {
-      layout: o.layout === 'list' ? 'list' : 'areas',
+      layout: o.layout === 'list' ? 'list' : o.layout === 'kanban' ? 'kanban' : 'map',
       sort: BOARD_SORTS.includes(o.sort as BoardSort) ? o.sort as BoardSort : 'newest',
       show: o.show === 'board' || o.show === 'ideas' ? o.show : 'all',
       group: o.group === 'area' || o.group === 'none' || o.group === 'slice'
@@ -1596,6 +1598,30 @@ export function getBoardView(slug: string): BoardView {
 export function setBoardView(slug: string, view: BoardView) {
   try { localStorage.setItem(BOARD_VIEW_KEY(slug), JSON.stringify(view)); }
   catch { /* storage unavailable — the view still switches for this visit */ }
+}
+
+// ---- the work map's own preferences (device-local, per project) ----
+//
+// How the owner likes to look at the map: its arrangement, whether finished
+// branches start folded, and which side panels are tucked away. None of it is
+// a fact about the work. Zoom and pan are screen state and are not kept.
+export type BoardMapLayout = 'tree' | 'stage';
+export interface BoardMapPrefs { layout: BoardMapLayout; collapseDone: boolean; attnClosed: boolean; detailClosed: boolean }
+const BOARD_MAP_KEY = (slug: string) => `stack.boardMap.${slug}`;
+export function getBoardMapPrefs(slug: string): BoardMapPrefs {
+  return readStoredJSON(BOARD_MAP_KEY(slug), (p) => {
+    const o = (p && typeof p === 'object') ? p as Record<string, unknown> : {};
+    return {
+      layout: o.layout === 'stage' ? 'stage' : 'tree',
+      collapseDone: o.collapseDone !== false,
+      attnClosed: o.attnClosed === true,
+      detailClosed: o.detailClosed === true,
+    };
+  });
+}
+export function setBoardMapPrefs(slug: string, prefs: BoardMapPrefs) {
+  try { localStorage.setItem(BOARD_MAP_KEY(slug), JSON.stringify(prefs)); }
+  catch { /* storage unavailable — the map still changes for this visit */ }
 }
 
 // ---- the board's focus canvas (device-local) ----

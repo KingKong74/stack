@@ -83,6 +83,10 @@ function readStackEnv() {
 // starting with `?` is optional: pressed when it matches, skipped when not.
 // One starting with `2:` is a DOUBLE press (the board card's focus canvas),
 // given long enough after it for the card's flight and the canvas to settle.
+// THE BOARD TAB OPENS ON THE WORK MAP (detail/BoardMap.tsx), so every kanban
+// screen first presses the map's Board switch. Optional, because the choice is
+// stored per browser and a screen before may already have left the kanban up.
+const KANBAN = '?.bm-toolbar .seg-control:first-child .seg-opt:nth-child(2)';
 const OPEN_BOARD = '?.km-collapseall[data-all-folded="true"]';
 
 const SCREENS = [
@@ -136,28 +140,31 @@ const SCREENS = [
   { slug: 'loops', hash: '#/p/{slug}/loops' },
   { slug: 'loops-create', hash: '#/p/{slug}/loops', press: ['.lp .lp-head .lp-primary'] },
   { slug: 'roadmap', hash: '#/p/{slug}/roadmap' },
+  // The work map (first paint) and its stage flow; then the kanban behind it.
+  { slug: 'board-map-stage', hash: '#/p/{slug}/roadmap', press: ['.bm-layouts .seg-opt:nth-child(2)'] },
+  { slug: 'board-kanban', hash: '#/p/{slug}/roadmap', press: [KANBAN] },
   // #524 — THE BOARD LANDS WITH EVERY AREA FOLDED, so first paint has no card
   // on it at all. Every screen that measures a card presses Expand all first
   // — OPTIONALLY (see OPEN_BOARD): the button toggles, the folds persist in
   // this run's shared context, and a second unconditional press would fold
   // the board the previous screen had opened. `board-open` is the cards at
   // rest: their area-coloured top edge (Board v5) and every chip on them.
-  { slug: 'board-open', hash: '#/p/{slug}/roadmap', press: [OPEN_BOARD] },
-  { slug: 'board-priority', hash: '#/p/{slug}/roadmap', press: [OPEN_BOARD, '.km-card [aria-label^="Priority"]'] },
-  { slug: 'board-cardmenu', hash: '#/p/{slug}/roadmap', press: [OPEN_BOARD, '.km-card [aria-label^="More actions for #"]'] },
+  { slug: 'board-open', hash: '#/p/{slug}/roadmap', press: [KANBAN, OPEN_BOARD] },
+  { slug: 'board-priority', hash: '#/p/{slug}/roadmap', press: [KANBAN, OPEN_BOARD, '.km-card [aria-label^="Priority"]'] },
+  { slug: 'board-cardmenu', hash: '#/p/{slug}/roadmap', press: [KANBAN, OPEN_BOARD, '.km-card [aria-label^="More actions for #"]'] },
   // The focus canvas: the flown card, its linked nodes and connectors, the
   // Bring-in tray, and (second screen) the editor's chips over the canvas.
-  { slug: 'board-focus', hash: '#/p/{slug}/roadmap', press: [OPEN_BOARD, '2:.km-card .km-cardmeta .id'] },
+  { slug: 'board-focus', hash: '#/p/{slug}/roadmap', press: [KANBAN, OPEN_BOARD, '2:.km-card .km-cardmeta .id'] },
   // A task in a slice opens its slice with the task in the editor (BoardFocus
   // decision 6), so the editor is measured by the double press alone.
-  { slug: 'board-focus-edit', hash: '#/p/{slug}/roadmap', press: [OPEN_BOARD, '2:.km-slicegroup .km-card .km-cardmeta .id'] },
-  { slug: 'board-colmenu', hash: '#/p/{slug}/roadmap', press: ['[aria-label^="Column actions"]'] },
+  { slug: 'board-focus-edit', hash: '#/p/{slug}/roadmap', press: [KANBAN, OPEN_BOARD, '2:.km-slicegroup .km-card .km-cardmeta .id'] },
+  { slug: 'board-colmenu', hash: '#/p/{slug}/roadmap', press: [KANBAN, '[aria-label^="Column actions"]'] },
   // #608 — the spine's tone: the milestone strip (first paint, on `roadmap`),
   // a slice head's editor and the milestone dialog (both --surface-overlay
   // modals over a dimmed board).
-  { slug: 'board-slicezoom', hash: '#/p/{slug}/roadmap', press: ['.km-grouphead [aria-label^="Zoom into slice"]'] },
-  { slug: 'board-sliceedit', hash: '#/p/{slug}/roadmap', press: ['.km-grouphead [aria-label^="Edit slice"]'] },
-  { slug: 'board-milestone', hash: '#/p/{slug}/roadmap', press: ['.km-spine-ms'] },
+  { slug: 'board-slicezoom', hash: '#/p/{slug}/roadmap', press: [KANBAN, '.km-grouphead [aria-label^="Zoom into slice"]'] },
+  { slug: 'board-sliceedit', hash: '#/p/{slug}/roadmap', press: [KANBAN, '.km-grouphead [aria-label^="Edit slice"]'] },
+  { slug: 'board-milestone', hash: '#/p/{slug}/roadmap', press: [KANBAN, '.km-spine-ms'] },
   // #616 — Charter and Architecture: docs, component cards, ADR rows and
   // their status tags, all on --surface-raised. (The board's Propositions tab is
   // the existing `auto` row further down.)
@@ -173,14 +180,14 @@ const SCREENS = [
   // #469 — a filtered board (the group filter open, its last group picked)
   // and an open inline title editor, which paints its own text over a card in
   // the focus state. Neither exists at first paint.
-  { slug: 'board-scoped', hash: '#/p/{slug}/roadmap', press: ['.km-scopebtn', '.km-scopemenu .km-scopeopt:last-of-type'] },
+  { slug: 'board-scoped', hash: '#/p/{slug}/roadmap', press: [KANBAN, '.km-scopebtn', '.km-scopemenu .km-scopeopt:last-of-type'] },
   // #453 — THE DRAG PAINTS TONE NO PRESS CAN REACH. A card in flight, the
   // column under it and the drop preview inside that column exist only while a
   // pointer is down, and the preview is a whole small surface of its own: two
   // chips, an arrow and a dashed zone, on a --surface-selected ground this
   // audit had never measured anything over. `drag` below is what gets there.
-  { slug: 'board-drag', hash: '#/p/{slug}/roadmap', press: [OPEN_BOARD], drag: true },
-  { slug: 'board-list', hash: '#/p/{slug}/roadmap', press: ['.km-layout button:nth-child(2)'] },
+  { slug: 'board-drag', hash: '#/p/{slug}/roadmap', press: [KANBAN, OPEN_BOARD], drag: true },
+  { slug: 'board-list', hash: '#/p/{slug}/roadmap', press: [KANBAN, '.km-layout button:nth-child(3)'] },
   { slug: 'board-backlog', hash: '#/p/{slug}/roadmap', press: ['.km-tabs .k-tab:has-text("Backlog")'] },
   { slug: 'board-dev', hash: '#/p/{slug}/roadmap', press: ['.km-tabs .k-tab:has-text("Development")'] },
   { slug: 'activity', hash: '#/p/{slug}/activity' },

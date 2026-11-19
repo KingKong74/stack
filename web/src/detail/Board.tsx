@@ -109,6 +109,7 @@ import { newTermName, termClaim, launchBrief } from '../lib/termLaunch';
 import type { BoardFolds, BoardView, BoardSort, BoardShow, BoardGroup } from '../store';
 import { BoardListView, SORT_LABEL, SHOW_LABEL } from './BoardList';
 import { BoardFocus, type FocusOpen, type FocusPhase } from './BoardFocus';
+import { BoardMap } from './BoardMap';
 import { PropositionsSection } from './Propositions';
 import { ForYou } from './ForYou';
 
@@ -388,6 +389,7 @@ export function Board({ slug, projectName, items, milestones, slices, onRefresh,
   };
   const [listArea, setListArea] = useState('');
   const listMode = bview.layout === 'list';
+  const mapMode = bview.layout === 'map';
   // (#608: only while grouped by area; a slice pick names no area.)
   const homeArea = bview.group === 'area' && picked.length === 1 && picked[0] !== UNTAGGED ? picked[0] : '';
 
@@ -1230,7 +1232,18 @@ export function Board({ slug, projectName, items, milestones, slices, onRefresh,
           </div>
         )}
 
-        {view === 'board' && <>
+        {view === 'board' && mapMode && (
+          <BoardMap slug={slug} projectName={projectName} rows={rows} milestones={ms} slices={sl}
+            highlightId={highlightId} onLayout={(layout) => writeView({ layout })}
+            actions={{
+              approve, sendBack, signOff, runInTerminal, setReady, park, archive, edit: onEdit,
+              openItem: (it, el) => openFocus(it, el, false),
+              openSlice: (slice, el) => openSlice(slice, el),
+              showOffMap: () => { closeAll(); setView('propositions'); },
+            }} />
+        )}
+
+        {view === 'board' && !mapMode && <>
         <SpineStrip milestones={ms} slices={sl} iced={icedCount}
           viewing={shownMs} position={shownMs ? msOrdered.findIndex((m) => m.id === shownMs.id) : -1} total={msOrdered.length}
           onStep={stepMilestone} onCurrent={curMs && shownMs?.id !== curMs.id ? () => { closeAll(); setPicked([]); setViewMsId(null); } : undefined}
@@ -1277,8 +1290,10 @@ export function Board({ slug, projectName, items, milestones, slices, onRefresh,
           </span>
 
           <div className="seg-control sm km-layout" role="tablist" aria-label="Board layout">
+            <button role="tab" aria-selected={false} className="seg-opt"
+              onClick={() => writeView({ layout: 'map' })}>Map</button>
             <button role="tab" aria-selected={!listMode} className={`seg-opt${listMode ? '' : ' on'}`}
-              onClick={() => writeView({ layout: 'areas' })}>Board</button>
+              onClick={() => writeView({ layout: 'kanban' })}>Board</button>
             <button role="tab" aria-selected={listMode} className={`seg-opt${listMode ? ' on' : ''}`}
               onClick={() => writeView({ layout: 'list' })}>List</button>
           </div>
