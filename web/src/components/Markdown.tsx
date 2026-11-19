@@ -12,9 +12,16 @@
 // is reduced to a same-origin path before rendering; a plan's links point off
 // site, so the label is drawn and the target sits in its title, where a human
 // can read it before choosing to go there by hand.
+//
+// A COLOUR IS SHOWN, NOT JUST NAMED. Inline code that is exactly a hex colour
+// (`#1a2b3c` or `#abc`) draws a swatch before the value, so a design doc's
+// palette can be seen. The value is matched against the hex pattern before it
+// reaches `style`, so nothing else in the text can set a style.
 
 import type { ReactNode } from 'react';
 import { parseBlocks, type Block } from '../lib/markdown';
+
+const HEX = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
 
 const INLINE = /(`+)([^`]+?)\1|\*\*([^*]+)\*\*|__([^_]+)__|\*([^*\s][^*]*)\*|_([^_\s][^_]*)_|\[([^\]]+)\]\(([^)\s]+)[^)]*\)/g;
 
@@ -26,7 +33,9 @@ export function inline(text: string): ReactNode[] {
     const at = m.index ?? 0;
     if (at > last) out.push(text.slice(last, at));
     const key = n++;
-    if (m[2] !== undefined) out.push(<code key={key}>{m[2]}</code>);
+    if (m[2] !== undefined && HEX.test(m[2].trim())) {
+      out.push(<code key={key} className="md-hex"><span className="md-swatch" style={{ background: m[2].trim() }} aria-hidden="true" />{m[2]}</code>);
+    } else if (m[2] !== undefined) out.push(<code key={key}>{m[2]}</code>);
     else if (m[3] !== undefined || m[4] !== undefined) out.push(<strong key={key}>{inline(m[3] ?? m[4])}</strong>);
     else if (m[5] !== undefined || m[6] !== undefined) out.push(<em key={key}>{inline(m[5] ?? m[6])}</em>);
     else out.push(<span key={key} className="md-link" title={m[8]}>{inline(m[7])}</span>);

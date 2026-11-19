@@ -6376,6 +6376,10 @@ body[data-mc-full] .totop { display: none; }
 .md h4, .md h5, .md h6 { font-size: var(--text-md); }
 .md strong { color: var(--text-primary); font-weight: var(--weight-medium); }
 .md code { font-family: var(--font-mono); font-size: 0.9em; padding: 1px 4px; border-radius: var(--radius-xs); background: var(--surface-sunken); color: var(--text-primary); }
+.md-hex { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+/* The swatch's own fill is the doc's colour, so it is the one inline background here; the ring keeps
+   a colour near the ground visible. */
+.md-swatch { display: inline-block; width: 0.95em; height: 0.95em; border-radius: 3px; box-shadow: 0 0 0 1px var(--border-strong); flex: none; }
 .md pre { margin: 0; padding: var(--space-5) var(--space-6); border-radius: var(--radius-md); background: var(--surface-sunken); border: 1px solid var(--border-subtle); overflow-x: auto; }
 .md pre code { padding: 0; background: none; font-size: var(--text-xs); line-height: var(--leading-normal); white-space: pre; }
 .md ul, .md ol { margin-bottom: 0; padding-left: 1.4em; }
