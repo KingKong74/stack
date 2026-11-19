@@ -134,8 +134,16 @@ const ROADMAP_PANELS = [
     click: '.bm-canvas .bm-card.sel', expect: '.bm-detail .bm-sec.head h2',
   },
   {
-    id: 'board-kanban', label: 'Board — the map’s Board switch opens the kanban',
-    click: '.bm-toolbar .seg-control:first-child .seg-opt:nth-child(2)', expect: '.km-cols',
+    id: 'board-lanes', label: 'Board — the Lanes switch draws a lane per job',
+    click: '.bm-toolbar .seg-control:first-child .seg-opt:nth-child(2)', expect: '.bm-lanes .bm-lanes-cols',
+  },
+  {
+    id: 'board-lanes-select', label: 'Board — a lane header selects its job into the detail panel',
+    click: '.bm-lanes .bm-lane-head', expect: '.bm-lane.sel',
+  },
+  {
+    id: 'board-kanban', label: 'Board — the Board switch opens the kanban',
+    click: '.bm-toolbar .seg-control:first-child .seg-opt:nth-child(3)', expect: '.km-cols',
   },
   {
     // #524 — THE BOARD LANDS FOLDED: every area group is a header until
@@ -395,11 +403,11 @@ const ROADMAP_PANELS = [
   },
   {
     id: 'board-list-layout', label: 'Board — list shows milestone and slice context',
-    click: '.km-layout button:nth-child(3)', expect: '.bl-list .bl-c-spine',
+    click: '.km-layout button:nth-child(4)', expect: '.bl-list .bl-c-spine',
   },
   {
     id: 'board-list-back', label: 'Board — return to card layout',
-    click: '.km-layout button:nth-child(2)', expect: '.km-cols',
+    click: '.km-layout button:nth-child(3)', expect: '.km-cols',
   },
   // THESE FOUR MUST COME LAST, and not for tidiness: the presses above all
   // name `.km-col`, which only exists while the Board tab is the one drawn.

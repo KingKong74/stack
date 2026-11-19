@@ -24,12 +24,19 @@
 //     fold and the tucked panels are device-local preferences (store.ts).
 //  6. DELETE IS NOT ON THE MAP's MENU. Archive is: it is recoverable, and a
 //     `hook` row's delete tombstones it with no undo. The kanban keeps Delete.
+//  7. LANES IS THE SAME SCREEN WITH A DIFFERENT MIDDLE: one milestone at a
+//     time, a lane per job split into the four stages (laneBoard in
+//     lib/workMap.ts). Selection, the rail, the details and every action are
+//     the map's, so the two views can't disagree. A lane's fold is the map's
+//     fold of that job.
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { Milestone, RoadmapItem, Slice } from '../types';
 import {
   ROOT, TYPE_LABEL, KIDS_LABEL, CARD_H,
+  STAGES,
   buildWorkMap, layoutMap, edgePath, ancestors, descendants, activeSet, isDone, itemKey,
+  laneBoard, laneMilestones, defaultLaneMilestone,
   type MapNode, type NodeStatus,
 } from '../lib/workMap';
 import { isBuilt } from '../lib/plan';
@@ -74,16 +81,19 @@ function Chip({ status, small }: { status: NodeStatus; small?: boolean }) {
   return <span className={`bm-chip t-${tone}${small ? ' sm' : ''}`}>{label}</span>;
 }
 
-export function BoardMap({ slug, projectName, rows, milestones, slices, highlightId, actions, onLayout }: {
+export type BoardMapMode = 'map' | 'lanes';
+
+export function BoardMap({ slug, projectName, rows, milestones, slices, highlightId, actions, onLayout, mode }: {
   slug: string;
+  mode: BoardMapMode;
   projectName: string;
   rows: RoadmapItem[];
   milestones: Milestone[];
   slices: Slice[];
   highlightId: string | null;
   actions: MapActions;
-  /** Switch the Board tab to the kanban or the list. */
-  onLayout: (layout: 'kanban' | 'list') => void;
+  /** Switch the Board tab's layout. */
+  onLayout: (layout: 'map' | 'lanes' | 'kanban' | 'list') => void;
 }) {
   const map = useMemo(() => buildWorkMap({ slug, name: projectName }, rows, milestones, slices),
     [slug, projectName, rows, milestones, slices]);
@@ -114,6 +124,7 @@ export function BoardMap({ slug, projectName, rows, milestones, slices, highligh
     if (Number.isFinite(hl) && hl > 0) setSel(itemKey(hl));
   }, [highlightId]);
   const selNode = node(sel) || node(ROOT)!;
+  const lanesMode = mode === 'lanes';
   useEffect(() => { setSendBack(null); }, [sel]);
 
   const isFolded = useCallback((k: string) => {
@@ -123,6 +134,13 @@ export function BoardMap({ slug, projectName, rows, milestones, slices, highligh
   }, [collapsed, map, prefs.collapseDone]);
   const laid = useMemo(() => layoutMap(map, prefs.layout, isFolded), [map, prefs.layout, isFolded]);
   const hot = useMemo(() => activeSet(map), [map]);
+
+  // ---- the lanes view: one milestone at a time (decision 7) --------------------
+  const msList = useMemo(() => laneMilestones(map), [map]);
+  const [laneMs, setLaneMs] = useState<string | null>(null);
+  const shownMs = laneMs && msList.includes(laneMs) ? laneMs : defaultLaneMilestone(map, sel);
+  const board = useMemo(() => laneBoard(map, shownMs), [map, shownMs]);
+  const lanesRef = useRef<HTMLDivElement>(null);
   const needle = query.trim().toLowerCase();
   const matches = (n: MapNode) => !needle || n.title.toLowerCase().includes(needle)
     || n.ref.toLowerCase() === needle || n.ref.toLowerCase() === `#${needle.replace(/^#/, '')}`;
@@ -205,7 +223,7 @@ export function BoardMap({ slug, projectName, rows, milestones, slices, highligh
   useEffect(() => {
     const t = window.setTimeout(() => centreOn(sel), 40);
     return () => window.clearTimeout(t);
-  }, [prefs.layout, full, wrapTop]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [prefs.layout, full, wrapTop, mode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // The wheel pans and Ctrl+wheel zooms. Not a React handler: it must be
   // non-passive to keep the page itself from scrolling.
@@ -248,10 +266,19 @@ export function BoardMap({ slug, projectName, rows, milestones, slices, highligh
   // ---- what a node does ---------------------------------------------------------
   const select = (k: string, centre = false) => {
     setSel(k); setCtx(null);
-    if (centre) window.setTimeout(() => centreOn(k), 30);
+    if (!centre) return;
+    if (!lanesMode) { window.setTimeout(() => centreOn(k), 30); return; }
+    // Lanes: turn to the node's milestone, open its lane, and scroll it in.
+    const up = ancestors(map, k);
+    const m = [k, ...up].find((a) => msList.includes(a));
+    if (m) setLaneMs(m);
+    setCollapsed((c) => { const o = { ...c }; for (const a of up) if (node(a)?.type === 'job') o[a] = false; return o; });
+    window.setTimeout(() => {
+      lanesRef.current?.querySelector(`[data-mapkey="${k}"]`)?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    }, 40);
   };
   const liveSession = (n: MapNode) => (n.session && liveNames.has(n.session) ? n.session : '');
-  const open = (n: MapNode, el: HTMLElement | null) => {
+  const openNode = (n: MapNode, el: HTMLElement | null) => {
     const s = liveSession(n);
     if (s) { openSession(s); return; }
     if (n.item) actions.openItem(n.item, el);
@@ -404,7 +431,106 @@ export function BoardMap({ slug, projectName, rows, milestones, slices, highligh
     : n.item.source === 'hook' ? 'Extracted from a push' : n.item.source === 'plan' ? 'From an agent plan' : '') : '';
   const live = liveSession(n);
   const ctxNode = ctx ? node(ctx.key) : undefined;
-  const cardEl = (k: string) => canvasRef.current?.querySelector<HTMLElement>(`[data-mapkey="${k}"]`) ?? null;
+  const cardEl = (k: string) => wrapRef.current?.querySelector<HTMLElement>(`[data-mapkey="${k}"]`) ?? null;
+
+  const FLAGGED: NodeStatus[] = ['held', 'parked', 'ready'];
+  const msIdx = shownMs ? msList.indexOf(shownMs) : -1;
+  const msNode = shownMs ? node(shownMs) : undefined;
+  const renderLanes = () => (
+    <div ref={lanesRef} className="bm-lanes" aria-label="Lanes">
+      <div className="bm-lanes-inner">
+        <div className="bm-lanes-ms">
+          <span className="bm-eyebrow">Milestone</span>
+          {msList.length > 1 && (
+            <span className="bm-pager">
+              <button aria-label="Previous milestone" disabled={msIdx <= 0}
+                onClick={() => setLaneMs(msList[msIdx - 1])}>‹</button>
+              <span className="bm-count">{msIdx + 1}/{msList.length}</span>
+              <button aria-label="Next milestone" disabled={msIdx >= msList.length - 1}
+                onClick={() => setLaneMs(msList[msIdx + 1])}>›</button>
+            </span>
+          )}
+          {msNode ? <>
+            <button className="bm-lanes-mstitle" data-mapkey={msNode.key} onClick={() => select(msNode.key)}
+              onContextMenu={(e) => openCtx(msNode.key, e)}>
+              <span className="ref">{msNode.ref}</span><span className="t">{msNode.title}</span>
+            </button>
+            <Chip status={msNode.status} />
+            <span className="meta">{metaOf(msNode)}</span>
+          </> : <span className="meta">No milestones yet.</span>}
+        </div>
+        <div className="bm-lanes-cols">
+          {STAGES.map((label, i) => (
+            <div key={label}><span className="lbl">{label}</span><span className="bm-count">{board.counts[i]}</span></div>
+          ))}
+        </div>
+        {board.lanes.map((l) => {
+          const ln = node(l.key)!;
+          const isRoot = l.key === ROOT;
+          const open = !isFolded(l.key);
+          return (
+            <section key={l.key} className={`bm-lane${sel === l.key ? ' sel' : ''}`}>
+              <div className="bm-lane-head" data-card="1" data-mapkey={l.key}
+                onClick={() => select(l.key)}
+                onDoubleClick={(e) => { if (isRoot) return; e.stopPropagation(); openNode(ln, e.currentTarget); }}
+                onContextMenu={(e) => openCtx(l.key, e)}>
+                <button className="chev" aria-label={open ? 'Collapse lane' : 'Expand lane'} aria-expanded={open}
+                  onClick={(e) => { e.stopPropagation(); setCollapsed((c) => ({ ...c, [l.key]: open })); }}
+                  onDoubleClick={(e) => e.stopPropagation()}>{open ? '▾' : '▸'}</button>
+                <span className="bm-eyebrow">{isRoot ? 'Project' : TYPE_LABEL[ln.type]}</span>
+                {!isRoot && <span className="ref">{ln.ref}</span>}
+                <span className="t">{isRoot ? `Directly under ${projectName}` : ln.title}</span>
+                {!isRoot && <Chip status={ln.status} small />}
+                <span className="sp" />
+                <span className="prog">{l.done}/{l.total} done</span>
+                <span className="bar"><span style={{ width: `${l.total ? Math.round((l.done / l.total) * 100) : 0}%` }} /></span>
+              </div>
+              {open && !l.total && <div className="bm-lane-empty">No tasks yet.</div>}
+              {open && l.total > 0 && (
+                <div className="bm-lane-cols">
+                  {l.cols.map((col, i) => (
+                    <div key={i} className="col" aria-label={STAGES[i]}>
+                      {col.map((k) => {
+                        const c = node(k)!;
+                        const dim = (focusMode && !hot.has(k)) || (!!needle && !matches(c));
+                        const cs = liveSession(c);
+                        const par = c.type === 'ticket' && c.parent ? node(c.parent) : undefined;
+                        return (
+                          <div key={k} data-card="1" data-mapkey={k} data-hl={c.item ? c.item.id : undefined}
+                            className={`bm-lcard type-${c.type}${sel === k ? ' sel' : ''}${dim ? ' dim' : ''}${isDone(c.status) ? ' done' : ''}`}
+                            onClick={(e) => { e.stopPropagation(); select(k); }}
+                            onDoubleClick={(e) => { e.stopPropagation(); openNode(c, e.currentTarget); }}
+                            onContextMenu={(e) => openCtx(k, e)}>
+                            <div className="row">
+                              <span className="bm-eyebrow">{TYPE_LABEL[c.type]}</span>
+                              <span className="ref">{c.ref}</span>
+                              <span className="sp" />
+                              {FLAGGED.includes(c.status) && <Chip status={c.status} small />}
+                            </div>
+                            <div className="title">{c.title}</div>
+                            <div className="foot">
+                              <span className="meta">{par ? `under ${par.ref}` : metaOf(c)}</span>
+                              {c.session && (
+                                <span className="sess" title={cs ? 'Double-click to open its session' : 'Session ended'}>
+                                  <span className={`bm-dot ${cs ? 'live' : 'gone'}`} />{c.session}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          );
+        })}
+        {!board.lanes.length && <div className="bm-empty">No jobs in this milestone yet. Plan them from the milestone's canvas.</div>}
+        {msList.length > 1 && <div className="bm-lanes-note">Page through milestones with ‹ ›. These are the same items as the map.</div>}
+      </div>
+    </div>
+  );
 
   return (
     <div ref={wrapRef} className={`bm${full ? ' full' : ''}`}
@@ -412,11 +538,12 @@ export function BoardMap({ slug, projectName, rows, milestones, slices, highligh
       onClick={() => setCtx(null)}>
       <div className="bm-toolbar">
         <div className="seg-control sm" role="tablist" aria-label="Board layout">
-          <button role="tab" aria-selected className="seg-opt on">Map</button>
+          <button role="tab" aria-selected={!lanesMode} className={`seg-opt${lanesMode ? '' : ' on'}`} onClick={() => onLayout('map')}>Map</button>
+          <button role="tab" aria-selected={lanesMode} className={`seg-opt${lanesMode ? ' on' : ''}`} onClick={() => onLayout('lanes')}>Lanes</button>
           <button role="tab" aria-selected={false} className="seg-opt" onClick={() => onLayout('kanban')}>Board</button>
           <button role="tab" aria-selected={false} className="seg-opt" onClick={() => onLayout('list')}>List</button>
         </div>
-        <div className="seg-control sm bm-layouts" role="tablist" aria-label="Map arrangement">
+        {!lanesMode && <div className="seg-control sm bm-layouts" role="tablist" aria-label="Map arrangement">
           <button role="tab" aria-selected={prefs.layout === 'tree'} title="Tree: project to ticket, left to right"
             aria-label="Tree" className={`seg-opt${prefs.layout === 'tree' ? ' on' : ''}`} onClick={() => setPrefs({ layout: 'tree' })}>
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><rect x="1.5" y="6.5" width="4" height="3" rx="0.8" /><rect x="10.5" y="2" width="4" height="3" rx="0.8" /><rect x="10.5" y="11" width="4" height="3" rx="0.8" /><path d="M5.5 8h2.5M8 3.5v9M8 3.5h2.5M8 12.5h2.5" /></svg>
@@ -425,9 +552,9 @@ export function BoardMap({ slug, projectName, rows, milestones, slices, highligh
             aria-label="Stage flow" className={`seg-opt${prefs.layout === 'stage' ? ' on' : ''}`} onClick={() => setPrefs({ layout: 'stage' })}>
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><rect x="1.5" y="2" width="3.5" height="12" rx="0.8" /><rect x="6.25" y="2" width="3.5" height="8" rx="0.8" /><rect x="11" y="2" width="3.5" height="5" rx="0.8" /></svg>
           </button>
-        </div>
+        </div>}
         <span className="searchbox sm bm-search">
-          <input placeholder="Search map" aria-label="Search map" value={query}
+          <input placeholder={lanesMode ? 'Search lanes' : 'Search map'} aria-label={lanesMode ? 'Search lanes' : 'Search map'} value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => {
               if (e.key !== 'Enter' || !needle) return;
@@ -452,7 +579,9 @@ export function BoardMap({ slug, projectName, rows, milestones, slices, highligh
             ? <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M6 2v4H2M10 2v4h4M6 14v-4H2M10 14v-4h4" /></svg>
             : <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M2 6V2h4M14 6V2h-4M2 10v4h4M14 10v4h-4" /></svg>}
         </button>
-        <span className="bm-hint">Drag to move · Ctrl + scroll to zoom · double-click a node for its session</span>
+        <span className="bm-hint">{lanesMode
+          ? 'The same work as the map, a lane per job · double-click a card for its session'
+          : 'Drag to move · Ctrl + scroll to zoom · double-click a node for its session'}</span>
         <span className="bm-legend">
           <span>{counts.active} building</span><span>{counts.review} for review</span><span>{counts.done} done</span>
         </span>
@@ -512,7 +641,7 @@ export function BoardMap({ slug, projectName, rows, milestones, slices, highligh
           </>}
         </section>
 
-        <div ref={canvasRef} className="bm-canvas" onMouseDown={panStart}
+        {lanesMode ? renderLanes() : <div ref={canvasRef} className="bm-canvas" onMouseDown={panStart}
           style={{ backgroundPosition: `${view.x}px ${view.y}px`, backgroundSize: `${22 * view.z}px ${22 * view.z}px` }}>
           <div className="bm-inner" style={{ width: laid.W, height: laid.H, transform: `translate(${view.x}px, ${view.y}px) scale(${view.z})` }}>
             {laid.bands.map((b, i) => (
@@ -539,7 +668,7 @@ export function BoardMap({ slug, projectName, rows, milestones, slices, highligh
                   className={`bm-card type-${c.type}${sel === k ? ' sel' : ''}${dim ? ' dim' : ''}${isDone(c.status) ? ' done' : ''}`}
                   style={{ left: p.x, top: p.y, width: p.w, height: CARD_H }}
                   onClick={(e) => { e.stopPropagation(); select(k); }}
-                  onDoubleClick={(e) => { e.stopPropagation(); open(c, e.currentTarget); }}
+                  onDoubleClick={(e) => { e.stopPropagation(); openNode(c, e.currentTarget); }}
                   onContextMenu={(e) => openCtx(k, e)}>
                   <div className="row">
                     <span className="bm-eyebrow">{TYPE_LABEL[c.type]}</span>
@@ -575,7 +704,7 @@ export function BoardMap({ slug, projectName, rows, milestones, slices, highligh
             <button className="fit" onClick={fit}>Fit</button>
           </div>
           {prefs.layout === 'stage' && laid.pos.size <= 1 && <div className="bm-canvas-empty">No work on the map yet.</div>}
-        </div>
+        </div>}
 
         <aside className={`bm-detail${prefs.detailClosed ? ' closed' : ''}`} aria-label="Details">
           {prefs.detailClosed ? (
@@ -715,7 +844,7 @@ export function BoardMap({ slug, projectName, rows, milestones, slices, highligh
             );
             const out = [];
             if (live2) out.push(row('Open session', () => openSession(live2), 'dbl-click'));
-            out.push(row(prefs.detailClosed ? 'Show details' : 'Centre on map', () => { setPrefs({ detailClosed: false }); select(ctxNode.key, true); }));
+            out.push(row(prefs.detailClosed || lanesMode ? 'Show details' : 'Centre on map', () => { setPrefs({ detailClosed: false }); select(ctxNode.key, true); }));
             if (ctxNode.slice) out.push(row('Open on canvas', () => actions.openSlice(ctxNode.slice!, cardEl(ctxNode.key))));
             if (it) {
               out.push(<span key="s1" className="sep" />);

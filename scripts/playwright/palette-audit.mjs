@@ -86,7 +86,7 @@ function readStackEnv() {
 // THE BOARD TAB OPENS ON THE WORK MAP (detail/BoardMap.tsx), so every kanban
 // screen first presses the map's Board switch. Optional, because the choice is
 // stored per browser and a screen before may already have left the kanban up.
-const KANBAN = '?.bm-toolbar .seg-control:first-child .seg-opt:nth-child(2)';
+const KANBAN = '?.bm-toolbar .seg-control:first-child .seg-opt:nth-child(3)';
 const OPEN_BOARD = '?.km-collapseall[data-all-folded="true"]';
 
 const SCREENS = [
@@ -142,6 +142,7 @@ const SCREENS = [
   { slug: 'roadmap', hash: '#/p/{slug}/roadmap' },
   // The work map (first paint) and its stage flow; then the kanban behind it.
   { slug: 'board-map-stage', hash: '#/p/{slug}/roadmap', press: ['.bm-layouts .seg-opt:nth-child(2)'] },
+  { slug: 'board-lanes', hash: '#/p/{slug}/roadmap', press: ['.bm-toolbar .seg-control:first-child .seg-opt:nth-child(2)'] },
   { slug: 'board-kanban', hash: '#/p/{slug}/roadmap', press: [KANBAN] },
   // #524 — THE BOARD LANDS WITH EVERY AREA FOLDED, so first paint has no card
   // on it at all. Every screen that measures a card presses Expand all first
@@ -187,7 +188,7 @@ const SCREENS = [
   // chips, an arrow and a dashed zone, on a --surface-selected ground this
   // audit had never measured anything over. `drag` below is what gets there.
   { slug: 'board-drag', hash: '#/p/{slug}/roadmap', press: [KANBAN, OPEN_BOARD], drag: true },
-  { slug: 'board-list', hash: '#/p/{slug}/roadmap', press: [KANBAN, '.km-layout button:nth-child(3)'] },
+  { slug: 'board-list', hash: '#/p/{slug}/roadmap', press: [KANBAN, '.km-layout button:nth-child(4)'] },
   { slug: 'board-backlog', hash: '#/p/{slug}/roadmap', press: ['.km-tabs .k-tab:has-text("Backlog")'] },
   { slug: 'board-dev', hash: '#/p/{slug}/roadmap', press: ['.km-tabs .k-tab:has-text("Development")'] },
   { slug: 'activity', hash: '#/p/{slug}/activity' },

@@ -1568,9 +1568,9 @@ export function setBoardFolds(slug: string, folds: BoardFolds) {
 // in, and how the List view is sorted and scoped, is a preference and not a
 // fact about the work. Unknown or corrupt storage lands on the Map (the work
 // map, detail/BoardMap.tsx), newest first, everything shown. The kanban is
-// stored as 'kanban'; the pre-map value 'areas' reads as the Map, because the
+// stored as 'kanban', the lane-per-job view as 'lanes'; the pre-map value 'areas' reads as the Map, because the
 // Map replaced it as the board's front page.
-export type BoardViewLayout = 'map' | 'kanban' | 'list';
+export type BoardViewLayout = 'map' | 'lanes' | 'kanban' | 'list';
 export type BoardSort = 'newest' | 'oldest' | 'updated' | 'priority' | 'run' | 'area' | 'title';
 export type BoardShow = 'all' | 'board' | 'ideas';
 /** #608 — what each kanban column groups its cards by. Slice is the default:
@@ -1587,7 +1587,7 @@ export function getBoardView(slug: string): BoardView {
   return readStoredJSON(BOARD_VIEW_KEY(slug), (p) => {
     const o = (p && typeof p === 'object') ? p as Record<string, unknown> : {};
     return {
-      layout: o.layout === 'list' ? 'list' : o.layout === 'kanban' ? 'kanban' : 'map',
+      layout: o.layout === 'list' || o.layout === 'kanban' || o.layout === 'lanes' ? o.layout : 'map',
       sort: BOARD_SORTS.includes(o.sort as BoardSort) ? o.sort as BoardSort : 'newest',
       show: o.show === 'board' || o.show === 'ideas' ? o.show : 'all',
       group: o.group === 'area' || o.group === 'none' || o.group === 'slice'

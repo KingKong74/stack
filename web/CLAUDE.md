@@ -46,7 +46,8 @@ on two screens gets acted on twice; a row on none has silently vanished.
   its parts' points. A part whose cluster is off the board is an ordinary card again. `Board.tsx`'s
   header has the rest.
 - **The Board tab opens on the work map** (`detail/BoardMap.tsx`): the same board rows as a tree, with
-  every write borrowed from `Board.tsx`. Map, kanban and list must agree on what is on the board.
+  every write borrowed from `Board.tsx`; Lanes is the same screen as a lane per job. Map, lanes,
+  kanban and list must agree on what is on the board.
 - **There is no Roadmap tab** (owner's call, 2026-10-28). The `canvas` column is dormant: nothing
   writes or serves it. Don't bring back a third home without changing `homeOf` with it.
 

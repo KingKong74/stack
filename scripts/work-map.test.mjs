@@ -19,7 +19,7 @@ module.registerHooks({
 
 const {
   buildWorkMap, layoutMap, activeSet, ancestors, descendants, itemStatus, rollUp,
-  itemKey, sliceKey, msKey, ROOT,
+  itemKey, sliceKey, msKey, ROOT, laneBoard, laneMilestones, defaultLaneMilestone, stageOf: STAGE_OF,
 } = await import(new URL('../web/src/lib/workMap.ts', import.meta.url).href);
 
 let seq = 0;
@@ -115,4 +115,34 @@ test('layout places every visible node, and a fold hides what is under it', () =
   const stage = layoutMap(map, 'stage', () => false);
   assert.equal(stage.heads.length, 5);
   assert.ok(stage.pos.has(itemKey(2)));
+});
+
+test('lanes: a lane per job of one milestone, plus loose work, split by stage', () => {
+  const rows = [
+    item({ id: 1, sliceId: 1 }),
+    item({ id: 2, sliceId: 1, parentId: 1, done: true }),
+    item({ id: 6, sliceId: 1, parentId: 1 }),
+    item({ id: 3, sliceId: 2, claimedBy: 'feat/3' }),
+    item({ id: 4, sliceId: 3, claimedBy: 'x', builtNote: 'built' }),
+    item({ id: 5, sliceId: null, claimedBy: 'feat/5' }),
+  ];
+  const map = buildWorkMap(P, rows, [ms(1, 'done', 0), ms(2, 'active', 1)], [sl(1, 2, 0), sl(2, 2, 1), sl(3, 1, 0)]);
+  assert.deepEqual(laneMilestones(map), [msKey(1), msKey(2)]);
+  // opens on the current milestone, or on the selection's own
+  assert.equal(defaultLaneMilestone(map, ROOT), msKey(2));
+  assert.equal(defaultLaneMilestone(map, itemKey(4)), msKey(1));
+  const b = laneBoard(map, msKey(2));
+  assert.deepEqual(b.lanes.map((l) => l.key), [sliceKey(1), sliceKey(2), ROOT]);
+  // a ticket is a card of its own, in its own stage, not its task's
+  const j1 = b.lanes[0];
+  const stage = (k) => j1.cols.findIndex((c) => c.includes(k));
+  assert.equal(stage(itemKey(2)), 3);
+  assert.equal(stage(itemKey(6)), 0);
+  assert.equal(stage(itemKey(1)), STAGE_OF(map.nodes.get(itemKey(1)).status));
+  assert.equal(j1.done, 1); assert.equal(j1.total, 3);
+  assert.deepEqual(b.lanes[1].cols[1], [itemKey(3)]);
+  assert.deepEqual(b.lanes[2].cols[1], [itemKey(5)]);
+  assert.equal(b.counts.reduce((a, c) => a + c, 0), 5);
+  assert.deepEqual(laneBoard(map, msKey(1)).lanes[0].cols[2], [itemKey(4)]);
+  assert.deepEqual(laneBoard(map, null).lanes.map((l) => l.key), [ROOT]);
 });

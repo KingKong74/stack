@@ -208,6 +208,52 @@ export interface Laid { pos: Map<string, Placed>; W: number; H: number; mode: Ma
 export const STAGES = ['To do', 'Building', 'For review', 'Done'] as const;
 export const stageOf = (s: NodeStatus) => (s === 'active' ? 1 : s === 'review' ? 2 : isDone(s) ? 3 : 0);
 
+/** Every task and ticket under a node, in tree order (a task, then its tickets). */
+export function workUnder(map: WorkMap, key: string): string[] {
+  const out: string[] = [];
+  const walk = (c: string) => {
+    for (const kid of map.nodes.get(c)?.kids || []) {
+      const t = map.nodes.get(kid)!.type;
+      if (t === 'task' || t === 'ticket') out.push(kid);
+      walk(kid);
+    }
+  };
+  walk(key);
+  return out;
+}
+
+// THE LANES VIEW (the design's lane-per-Job board): one milestone at a time,
+// a lane per job and a lane for work hanging straight off the project, each
+// split into the four STAGES. A ticket is a card of its own here, beside its
+// task, because a part can sit in a different stage from its cluster.
+export interface Lane { key: string; cols: string[][]; done: number; total: number }
+export interface LaneBoard { milestone: string | null; lanes: Lane[]; counts: number[] }
+
+/** The milestones the lanes view pages through, in map order. */
+export const laneMilestones = (map: WorkMap) =>
+  (map.nodes.get(ROOT)?.kids || []).filter((k) => map.nodes.get(k)!.type === 'milestone');
+
+/** The milestone the lanes view opens on: the selection's, else the current one, else the first unfinished. */
+export function defaultLaneMilestone(map: WorkMap, sel: string): string | null {
+  const ms = laneMilestones(map);
+  const mine = [sel, ...ancestors(map, sel)].find((k) => ms.includes(k));
+  return mine || ms.find((k) => map.nodes.get(k)!.status === 'current')
+    || ms.find((k) => !isDone(map.nodes.get(k)!.status)) || ms[0] || null;
+}
+
+export function laneBoard(map: WorkMap, milestone: string | null): LaneBoard {
+  const counts = [0, 0, 0, 0];
+  const lane = (key: string, list: string[]): Lane => {
+    const cols: string[][] = [[], [], [], []];
+    for (const k of list) { const c = stageOf(map.nodes.get(k)!.status); cols[c].push(k); counts[c] += 1; }
+    return { key, cols, done: cols[3].length, total: list.length };
+  };
+  const lanes = (milestone ? map.nodes.get(milestone)?.kids || [] : []).map((j) => lane(j, workUnder(map, j)));
+  const loose = (map.nodes.get(ROOT)?.kids || []).filter((k) => map.nodes.get(k)!.type === 'task');
+  if (loose.length) lanes.push(lane(ROOT, loose.flatMap((k) => [k, ...workUnder(map, k)])));
+  return { milestone, lanes, counts };
+}
+
 /** Lay the map out. `folded(key)` says whether a node with children is folded. */
 export function layoutMap(map: WorkMap, mode: MapLayoutMode, folded: (key: string) => boolean): Laid {
   return mode === 'stage' ? stageLayout(map, folded) : treeLayout(map, folded);
@@ -242,18 +288,7 @@ function stageLayout(map: WorkMap, folded: (key: string) => boolean): Laid {
   const node = (k: string) => map.nodes.get(k)!;
   const fold = (k: string) => node(k).kids.length > 0 && folded(k);
   const place = (k: string, x: number, yy: number, w = CARD_W) => pos.set(k, { x, y: yy, w, depth: 0, folded: fold(k) });
-  const work = (k: string): string[] => {
-    const out: string[] = [];
-    const walk = (c: string) => {
-      for (const kid of node(c).kids) {
-        const t = node(kid).type;
-        if (t === 'task' || t === 'ticket') out.push(kid);
-        walk(kid);
-      }
-    };
-    walk(k);
-    return out;
-  };
+  const work = (k: string) => workUnder(map, k);
   const lane = (head: string, list: string[]) => {
     const t = node(head).type;
     place(head, PAD + (t === 'milestone' ? IND : t === 'job' ? IND * 2 : 0), y);
