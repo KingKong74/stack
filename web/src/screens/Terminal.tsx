@@ -289,6 +289,9 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, project
   const [cwd, setCwd] = useState(initialCwd);
   const navigationRef = useRef({ visible, initialCwd, initialAttach, initialBrief });
   navigationRef.current = { visible, initialCwd, initialAttach, initialBrief };
+  // The latest revealSession (defined with Swarm's windows below), for the
+  // mount effect, whose closure is the first render's.
+  const revealRef = useRef<(id: number, project?: string) => void>(() => {});
   // The seg control starts on the device's preferred session kind (Settings →
   // Terminal; default claude — that's what this screen is for).
   // DEFAULTS FOR NEW SESSIONS — the tool, each tool's model, and where the work
@@ -496,9 +499,10 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, project
         const i = saved.findIndex((t) => t.tmux === navigation.initialAttach);
         const held = sessionsRef.current.find(
           (s) => s.tmux === navigation.initialAttach && (s.status === 'live' || s.status === 'connecting'));
-        if (i >= 0 && ids[i] !== null) setActive(ids[i] as number);
-        else if (held) setActive(held.id);
-        else openSession(navigation.initialCwd, 'claude', navigation.initialAttach);
+        const project = projectOfSession({ cwd: navigation.initialCwd });
+        if (i >= 0 && ids[i] !== null) revealRef.current(ids[i] as number, project);
+        else if (held) revealRef.current(held.id, project);
+        else revealRef.current(openSession(navigation.initialCwd, 'claude', navigation.initialAttach), project);
         return;
       }
       if (navigation.initialCwd) {
@@ -553,10 +557,10 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, project
     if (!restoreComplete.current) return;
     if (initialAttach) {
       const held = sessions.find((s) => s.tmux === initialAttach && (s.status === 'live' || s.status === 'connecting'));
-      if (held) { setActive(held.id); return; }
+      if (held) { revealSession(held.id, projectOf(held)); return; }
       if (changed) {
         if (initialCwd) setCwd(initialCwd);
-        openSession(initialCwd, 'claude', initialAttach);
+        revealSession(openSession(initialCwd, 'claude', initialAttach), projectOfSession({ cwd: initialCwd }));
       }
       return;
     }
@@ -1196,6 +1200,17 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, project
     if (view === 'swarm') openWin(id);
   };
   const closeWin = (id: number) => { setWins((ws) => ws.filter((w) => w.id !== id)); setOpenIn(null); };
+  // An attach link (a waiting session's rail row, a notification, a jump-in)
+  // names ONE session, so that session must end up on screen. Focus and
+  // Main + 3 show the active tab, but Swarm shows only windows, and only
+  // those its project filter lets through, so there an attach opens a window
+  // in front and drops a filter that would hide it.
+  const revealSession = (id: number, project?: string) => {
+    if (view !== 'swarm') { setActive(id); return; }
+    if (swarmProject && project && project !== swarmProject) setSwarmProject('');
+    openWin(id);
+  };
+  revealRef.current = revealSession;
   const toggleMax = (id: number) => {
     const a = area();
     setWins((ws) => ws.map((w) => {
