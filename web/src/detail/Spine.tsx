@@ -1,5 +1,6 @@
-// THE SPINE'S CONTROLS (#608): the milestone strip over the board, the slice
-// and milestone dialogs, and the Icebox list For you draws beside Auto-ideas.
+// THE SPINE'S CONTROLS (#608): the slice dialog (the work map's New job and
+// Edit job), the slice picker, and the Icebox list For you draws beside
+// Auto-ideas. Milestones are edited on their own screen (detail/Milestones.tsx).
 //
 // project → milestone → slice → item, and an item in no slice is in the
 // ICEBOX. `homeOf` in lib/plan.ts decides which screen a row is on; nothing
@@ -7,8 +8,6 @@
 // stored. The server's rules (routes/spine.js) are the ones these controls
 // SAY out loud rather than pre-empt:
 //
-//  • Making a milestone current FINISHES the one before it, in the same write.
-//  • Deleting a milestone removes its slices, keeps items in the Icebox and clears Ready.
 //  • Deleting a slice sends its items to the Icebox and takes them out of
 //    Ready. The second press says both, because neither is guessable.
 //  • An unsliced item cannot be queued to build (Ready ⇒ sliced is a CHECK).
@@ -59,79 +58,6 @@ export function SlicePicker({ value, slices, milestones, onPick, iceboxLabel = '
       {live.map((s) => <option key={s.id} value={s.id}>{sliceLabel(s, milestones)}</option>)}
       <option value="">{iceboxLabel}</option>
     </select>
-  );
-}
-
-/**
- * THE STRIP OVER THE BOARD: where this is going, before any card. The current
- * milestone and its goal, how many slices it holds, and how much is waiting in
- * the Icebox. The Icebox count is what explains a low progress number right
- * after the spine landed: most of a board was iced for triage.
- */
-// THE STRIP FLICKS (owner's call, 2026-11-09): ‹ › step through every
-// milestone in order and the board shows the one being viewed. `viewing` is
-// the board's; without it the strip shows the current milestone, as before.
-const MS_STATUS: Record<Milestone['status'], { label: string; tone: string }> = {
-  active: { label: 'Current', tone: 'success' },
-  planned: { label: 'Upcoming', tone: 'info' },
-  done: { label: 'Completed', tone: '' },
-};
-export function SpineStrip({ milestones, slices, iced, onMilestone, onNewSlice, onIcebox, milestonesHref,
-  viewing, position = -1, total = 0, onStep, onCurrent, owedAway = 0, onOwedAway }: {
-  milestones: Milestone[]; slices: Slice[]; iced: number;
-  onMilestone: () => void; onNewSlice: () => void; onIcebox: () => void;
-  /** The Milestones tab, where every milestone (not just the current) lives. */
-  milestonesHref?: string;
-  viewing?: Milestone | null; position?: number; total?: number;
-  onStep?: (dir: -1 | 1) => void;
-  /** Present while viewing another milestone: back to the current one. */
-  onCurrent?: () => void;
-  /** Built cards in OTHER milestones waiting on your verdict; the chip jumps to the nearest. */
-  owedAway?: number;
-  onOwedAway?: () => void;
-}) {
-  const cur = viewing === undefined ? currentMilestone(milestones) : viewing;
-  const inCur = cur ? slices.filter((s) => s.milestoneId === cur.id && !s.archived).length : 0;
-  const st = cur ? MS_STATUS[cur.status] : null;
-  return (
-    <div className="km-spine">
-      <span className="km-spine-eyebrow">Milestone</span>
-      {onStep && total > 1 && (
-        <span className="km-spine-flick">
-          <button className="km-colbtn" aria-label="Previous milestone" title="Previous milestone"
-            disabled={position <= 0} onClick={() => onStep(-1)}><KitIcon name="chevron-left" size={14} /></button>
-          <span className="km-spine-pos">{position + 1}/{total}</span>
-          <button className="km-colbtn" aria-label="Next milestone" title="Next milestone"
-            disabled={position >= total - 1} onClick={() => onStep(1)}><KitIcon name="chevron-right" size={14} /></button>
-        </span>
-      )}
-      <button className="km-spine-ms" onClick={onMilestone}
-        title={cur?.goal.trim() || 'Name the milestone and say what it is for'}>
-        {cur ? cur.name : 'None current'}
-        <KitIcon name="chevron-down" size={12} />
-      </button>
-      {st && <span className={`k-tag ${st.tone}`.trim()}>{st.label}</span>}
-      {onCurrent && <button className="k-btn sm ghost km-spine-back" onClick={onCurrent}>Back to current</button>}
-      {cur?.goal.trim() && <span className="km-spine-goal">{cur.goal.trim().split('\n')[0]}</span>}
-      {cur?.targetOn && <span className="k-tag" title="A target you set. It gates nothing.">by {cur.targetOn}</span>}
-      {milestonesHref && <a className="k-btn sm ghost" href={milestonesHref}>All milestones</a>}
-      {owedAway > 0 && onOwedAway && (
-        <button className="k-btn sm secondary" onClick={onOwedAway}
-          title="Built cards in other milestones are waiting on your verdict. Go to the nearest milestone that has one.">
-          {owedAway} to review elsewhere<KitIcon name="chevron-right" size={12} />
-        </button>
-      )}
-      <span className="km-spine-rule" />
-      <span className="km-spine-n">{inCur} slice{inCur === 1 ? '' : 's'}</span>
-      <button className="k-btn sm secondary" onClick={onNewSlice}
-        title="A slice is one shippable piece of the milestone. Cards on the board belong to one.">
-        <KitIcon name="plus" size={13} />Slice
-      </button>
-      <button className={`k-btn sm ${iced ? 'secondary' : 'ghost'}`} onClick={onIcebox}
-        title="Kept ideas that belong to no slice yet. They are not on the board, do not count toward progress and cannot be queued to build.">
-        Icebox{iced ? ` · ${iced}` : ''}
-      </button>
-    </div>
   );
 }
 
@@ -212,102 +138,6 @@ export function SliceDialog({ slice, milestones, areaNames, count, onClose, onSa
           )}
           <button className="k-btn ghost" onClick={onClose}>Cancel</button>
           <button className="k-btn" onClick={submit} disabled={!title.trim()}>{slice ? 'Save' : 'Create'}</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/**
- * The current milestone's name, goal and target, plus the two ways to move on:
- * start a new one, or make an existing one current. Either FINISHES the one in
- * progress, and the line under the buttons says so before the press.
- */
-export function MilestoneDialog({ milestones, onClose, onSave, onCreate, onMakeCurrent, onDelete, editing }: {
-  milestones: Milestone[];
-  /** The milestone to edit: the one the board is viewing. Default, the current. */
-  editing?: Milestone | null;
-  onClose: () => void;
-  onSave: (id: number, v: { name: string; goal: string; targetOn: string | null }) => void;
-  onCreate: (v: { name: string; goal: string; targetOn: string | null }) => void;
-  onMakeCurrent: (id: number) => void;
-  onDelete: (id: number) => void;
-}) {
-  const current = currentMilestone(milestones);
-  const target = editing ?? current;
-  // "Move on" belongs to the current milestone only; another one offers to
-  // become current instead.
-  const cur = target && target.id === current?.id ? current : null;
-  const [name, setName] = useState(target?.name ?? '');
-  const [goal, setGoal] = useState(target?.goal ?? '');
-  const [targetOn, setTargetOn] = useState(target?.targetOn ?? '');
-  const [fresh, setFresh] = useState('');
-  const [confirming, setConfirming] = useState(false);
-  const others = milestones.filter((m) => m.id !== cur?.id && m.status !== 'done');
-  const save = () => {
-    const n = name.trim();
-    if (!n) return;
-    if (target) onSave(target.id, { name: n, goal, targetOn: targetOn || null });
-    else onCreate({ name: n, goal, targetOn: targetOn || null });
-  };
-  return (
-    <div className="km-scrim" onClick={onClose}>
-      <div className="km-dialog km-dialog-wide" onClick={(e) => e.stopPropagation()}>
-        <div className="km-dialog-head">
-          <span className="t">{cur ? 'Current milestone' : target ? `${target.status === 'done' ? 'Completed' : 'Upcoming'} milestone` : 'Set a milestone'}</span>
-          <span className="d">Where this project is going next. Slices belong to a milestone; the target date gates nothing.</span>
-        </div>
-        <label className="km-field">
-          <span className="lbl">Name</span>
-          <span className="searchbox km-input">
-            <input autoFocus value={name} placeholder="e.g. Public beta" onChange={(e) => setName(e.target.value)} />
-          </span>
-        </label>
-        <label className="km-field">
-          <span className="lbl">Goal</span>
-          <textarea className="km-textarea" rows={4} value={goal}
-            placeholder="Markdown. What is true when this milestone is done?"
-            onChange={(e) => setGoal(e.target.value)} />
-        </label>
-        <label className="km-field">
-          <span className="lbl">Target</span>
-          <input className="km-select" type="date" value={targetOn} aria-label="Target date"
-            onChange={(e) => setTargetOn(e.target.value)} />
-        </label>
-        {cur && (
-          <div className="km-field">
-            <span className="lbl">Move on</span>
-            <span className="km-msnext">
-              <span className="searchbox km-input">
-                <input value={fresh} placeholder="Next milestone's name" onChange={(e) => setFresh(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter' && fresh.trim()) onCreate({ name: fresh.trim(), goal: '', targetOn: null }); }} />
-              </span>
-              <button className="k-btn secondary" disabled={!fresh.trim()}
-                onClick={() => onCreate({ name: fresh.trim(), goal: '', targetOn: null })}>Start it</button>
-            </span>
-            {others.map((m) => (
-              <button key={m.id} className="k-btn ghost sm km-dialog-left" onClick={() => onMakeCurrent(m.id)}>
-                Make “{m.name}” current
-              </button>
-            ))}
-            <span className="km-menunote">Starting or switching finishes “{cur.name}”. Its slices stay where they are.</span>
-          </div>
-        )}
-        {target && !cur && (
-          <div className="km-field">
-            <button className="k-btn secondary sm km-dialog-left" onClick={() => onMakeCurrent(target.id)}>
-              Make “{target.name}” current
-            </button>
-            {current && <span className="km-menunote">That finishes “{current.name}”. Its slices stay where they are.</span>}
-          </div>
-        )}
-        {confirming && <p className="km-menunote" role="alert">Delete this milestone and all its slices? Items are kept in the Icebox and leave Ready. This cannot be undone.</p>}
-        <div className="km-dialog-foot">
-          {target && <button className="k-btn danger km-dialog-left" onClick={() => confirming ? onDelete(target.id) : setConfirming(true)}>
-            {confirming ? 'Confirm delete' : 'Delete milestone'}
-          </button>}
-          <button className="k-btn ghost" onClick={onClose}>Cancel</button>
-          <button className="k-btn" onClick={save} disabled={!name.trim()}>Save</button>
         </div>
       </div>
     </div>

@@ -4450,7 +4450,6 @@ body[data-mc-full] .totop { display: none; }
   .ai-top { flex-wrap: wrap; }
 }
 
-
 /* ==========================================================================
    THE TWO MOCKUPS — ui_kits/console BoardScreen and IdeasScreen, ported.
    (web/src/detail/BoardMock.tsx, web/src/detail/IdeasMock.tsx)
@@ -4473,84 +4472,18 @@ body[data-mc-full] .totop { display: none; }
 .km-create { margin-left: auto; }
 
 .km-tabs { margin-bottom: 0; }
-.km-banner { align-items: center; }
-.km-banner .k-btn { flex: none; }
-
-/* Areas stay visible above the board, including those with no cards. */
-.km-areas { display: flex; flex-direction: column; gap: var(--space-4); }
-.km-areas-head { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
-.km-areas-head > div { flex: 1; min-width: 180px; }
-.km-areas-head h2 { margin: 0; font: var(--type-body); font-weight: var(--weight-semibold); color: var(--text-primary); }
-.km-areas-head p { margin: var(--space-1) 0 0; font: var(--type-caption); color: var(--text-secondary); }
-.km-area-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(210px, 100%), 1fr)); gap: var(--space-3); }
-.km-area-card { display: flex; flex-direction: column; align-items: stretch; gap: var(--space-3); min-width: 0; padding: var(--space-5); text-align: left; font: inherit; color: var(--text-primary); background: var(--surface-card); border: 1px solid var(--border-default); border-radius: var(--radius-md); cursor: pointer; }
-.km-area-card:hover { background: var(--surface-hover); }
-.km-area-card.selected { background: var(--surface-selected); border-color: var(--border-focus); }
-.km-area-card:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 3px; }
-.km-area-title { display: flex; align-items: center; gap: var(--space-3); font-weight: var(--weight-semibold); }
-.km-area-title > span:not(.km-dot) { flex: 1; overflow-wrap: anywhere; }
-.km-area-description { color: var(--text-secondary); font: var(--type-caption); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
-.km-area-count { margin-top: auto; color: var(--text-secondary); font: var(--type-caption); }
 
 /* ---- the toolbar ---- */
 .km-toolbar { display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap; }
-.km-avatars { display: inline-flex; align-items: center; flex: none; }
-.km-av {
-  width: 26px; height: 26px; border-radius: 50%; flex: none;
-  display: inline-flex; align-items: center; justify-content: center;
-}
-.km-av.ghost { background: var(--surface-overlay); color: var(--text-tertiary); }
-.km-av.sm { width: 22px; height: 22px; background: var(--surface-raised); }
-/* The kit's one lime fill, and the one place a label on it is DARK: --lime-500
-   is a light tone, so white text on it is the trap #432 measured its way out
-   of twice. */
-.km-av.me {
-  margin-left: -6px; background: var(--lime-500); color: var(--grey-1000);
-  font: var(--weight-semibold) var(--text-2xs)/1 var(--font-sans);
-  box-shadow: 0 0 0 2px var(--surface-canvas);
-}
-.km-search { width: 220px; flex: 0 1 220px; }
-.km-search svg { color: var(--text-tertiary); }
-.km-views { margin-left: auto; display: inline-flex; align-items: center; gap: var(--space-2); flex: none; }
-.km-filter { position: relative; display: inline-flex; }
-/* THE GROUP FILTER — one toolbar button and its menu (Board.tsx GroupFilter).
-   The button is capped so one long slice title can't push the toolbar
-   around; the menu scrolls rather than run off a short window. */
-.km-scope { display: inline-flex; align-items: center; gap: var(--space-1); flex: none; min-width: 0; }
-.km-scopebtn { max-width: 220px; }
-.km-scopebtn .km-scopelbl { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.km-scopebtn.on { background: var(--surface-selected); color: var(--blue-300); box-shadow: inset 0 0 0 1px var(--border-focus); }
-.km-scopemenu { width: 320px; max-width: calc(100vw - 16px); padding: var(--space-2); }
-.km-scopelist { display: flex; flex-direction: column; gap: 1px; max-height: min(60vh, 440px); overflow-y: auto; }
-.km-scopelist .km-menulbl { padding-top: 8px; }
-.km-scopehead { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border-subtle); padding-bottom: 4px; margin-bottom: 2px; }
-.km-scopehead .km-menulbl { padding-top: 4px; }
-.km-scopelist .km-menulbl:first-child { padding-top: 4px; }
-.km-scopeopt { display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
-.km-scopeopt.on { color: var(--text-primary); }
-.km-scopename { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.km-scopeopt .n { flex: none; font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-secondary); }
-.km-scopecheck {
-  width: 14px; height: 14px; flex: none; display: inline-flex; align-items: center; justify-content: center;
-  border: 1px solid var(--border-default); border-radius: var(--radius-sm); color: var(--white);
-}
-.km-scopeopt.on .km-scopecheck { background: var(--action-primary); border-color: transparent; }
 /* An area's identity is its stored DOT, not an invented icon. */
 .km-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
 /* The inline title editor. It sits exactly where the title it replaces sits, so
    the card does not jump on a double-click: same font, same colour, no border
    and no padding of its own — the focus ring is the card's `editing` state. */
-.km-inline {
-  width: 100%; resize: none; overflow: hidden;
-  border: 0; outline: none; padding: 0; background: transparent;
-  font: var(--type-body-sm); color: var(--text-primary);
-  caret-color: var(--blue-500);
-}
 .km-card.editing {
   cursor: default; border-color: var(--border-focus);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--action-primary) 22%, transparent);
 }
-.km-count { margin-left: auto; font: var(--type-body-sm); color: var(--text-secondary); }
 /* A write that did not land says so where the press was, not in a toast this
    app does not have. */
 .km-err {
@@ -4570,32 +4503,9 @@ body[data-mc-full] .totop { display: none; }
   color: var(--status-info-fg);
   font: var(--type-body-sm);
 }
-.km-composer-pick { display: inline-flex; align-items: center; gap: var(--space-3); }
-.km-composer-pick button {
-  border: 0; background: transparent; cursor: pointer;
-  font: var(--type-caption); padding: 2px 4px; border-radius: var(--radius-sm);
-}
-.km-composer-pick button.on { background: var(--surface-selected); }
 
 /* ---- the lanes ---- */
 .km-cols { display: flex; gap: var(--space-5); align-items: flex-start; overflow-x: auto; padding-bottom: var(--space-4); }
-.km-col {
-  /* Board v5 — the columns SHARE THE WIDTH rather than sitting at a fixed
-     272px with dead space beside them; `--column-w` is now the floor, below
-     which the row scrolls sideways as it always did. */
-  flex: 1 0 var(--column-w); min-width: var(--column-w);
-  background: var(--surface-raised); border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg); padding: var(--space-4);
-  display: flex; flex-direction: column; gap: var(--space-4);
-  transition: background-color var(--dur-normal) var(--ease-standard),
-              border-color var(--dur-normal) var(--ease-standard),
-              box-shadow var(--dur-normal) var(--ease-standard),
-              opacity var(--dur-normal) var(--ease-standard);
-}
-.km-colhead { display: flex; align-items: center; gap: var(--space-4); padding: 2px 4px; position: relative; }
-.km-colhead .nm { font: var(--type-label); color: var(--text-secondary); }
-.km-colhead .lim { font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-tertiary); }
-.km-colhead .tools { margin-left: auto; display: flex; align-items: center; gap: 2px; }
 
 /* THE BOARD IS WIRED (Board.tsx) and these are the pieces the mockup had no
    need of: a drop target, a card in flight, a column with nothing in it, the
@@ -4624,87 +4534,16 @@ body[data-mc-full] .totop { display: none; }
    The rings are `color-mix` over the same tokens the borders use, never an
    inline rgba(): the audit reads a literal tone as a stray one, and these two
    are the focus blue and the accent lime BY CONSTRUCTION. */
-.km-col.over, .km-sprintbox.over, .km-backlog.over {
+.km-backlog.over {
   border-color: var(--border-focus); background: var(--surface-selected);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--border-focus) 22%, transparent);
 }
-.km-col.dim, .km-sprintbox.dim, .km-backlog.dim { opacity: 0.72; }
-.km-col.catchall { border-style: dashed; }
+.km-backlog.dim { opacity: 0.72; }
 
-/* The drop preview. `scaleY` on the way in is the space opening rather than a
-   panel appearing — it is the column's own height that changes, and animating
-   the thing that moves is what stops the cards below it looking shoved. */
-.km-slot {
-  border: 1px solid var(--border-focus); border-radius: var(--radius-lg);
-  background: var(--surface-selected); overflow: hidden;
-  animation: km-slot-in var(--dur-normal) var(--ease-out);
-}
-@keyframes km-slot-in {
-  from { opacity: 0; transform: translateY(-6px) scaleY(0.9); }
-  to { opacity: 1; transform: none; }
-}
-.km-slot .hop {
-  display: flex; align-items: center; justify-content: center;
-  gap: var(--space-4); padding: var(--space-4);
-}
-.km-slot .from, .km-slot .to {
-  height: 20px; padding: 0 8px; border-radius: var(--radius-sm);
-  font: var(--type-label); display: inline-flex; align-items: center;
-  min-width: 0; max-width: 42%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.km-slot .from { background: var(--status-neutral-bg); color: var(--status-neutral-fg); }
-.km-slot .to { background: var(--action-primary); color: var(--white); }
-.km-slot .arr { color: var(--blue-400); display: flex; flex: none; }
-.km-slot .zone {
-  min-height: 58px; margin: 0 var(--space-4) var(--space-4); padding: var(--space-4);
-  border: 1px dashed var(--blue-500); border-radius: var(--radius-md);
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
-  text-align: center; font: var(--type-label); color: var(--blue-300);
-}
-.km-slot .zone .n { font: var(--type-caption); color: var(--text-tertiary); }
 .km-colempty {
   padding: var(--space-5) var(--space-4); text-align: center;
   font: var(--type-caption); color: var(--text-tertiary);
 }
-.km-colname {
-  width: 100%; height: 26px; padding: 0 6px;
-  background: var(--surface-card); color: var(--text-primary);
-  border: 1px solid var(--border-focus); border-radius: var(--radius-sm);
-  font: var(--type-label); outline: none;
-}
-
-/* ---- THE FOLDS (#510 area sections, #511 columns) ----------------------
-   One block for both. */
-.km-foldbtn {
-  width: 22px; height: 22px; flex: none; border: 0; padding: 0;
-  background: transparent; cursor: pointer; border-radius: var(--radius-sm);
-  display: inline-flex; align-items: center; justify-content: center;
-  color: var(--text-tertiary);
-  transition: var(--transition-control);
-}
-.km-foldbtn:hover { color: var(--text-primary); background: var(--surface-overlay); }
-.km-foldbtn:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 1px; }
-
-/* A FOLDED COLUMN IS A STRIP THAT STILL COUNTS. It keeps its head — the
-   chevron, the name and the badge — because a column you cannot see the size
-   of is a column whose cards have gone missing as far as anyone reading the
-   board can tell. The name turns rather than truncating to two characters:
-   "In Review" and "In Progress" share their first six. */
-.km-col.folded {
-  flex: 0 0 auto; width: auto; min-width: 46px; padding: var(--space-4) var(--space-3);
-  align-items: center;
-}
-.km-col.folded .km-colhead {
-  flex-direction: column; gap: var(--space-3); padding: 0; width: 100%;
-}
-.km-col.folded .km-colhead .nm {
-  writing-mode: vertical-rl; text-orientation: mixed;
-  white-space: nowrap; max-height: 190px; overflow: hidden;
-}
-/* `margin-left: auto` pushes the tools to the right of a ROW; in a column it
-   would do nothing and leave them tight against the badge. */
-.km-col.folded .km-colhead .tools { margin-left: 0; margin-top: var(--space-2); }
-.km-col.folded .km-colhead .lim { writing-mode: vertical-rl; }
 
 /* ---- AREAS INSIDE THE COLUMNS (Board v5) ---------------------------------
    Each column groups its cards by area under a small head: chevron, dot, name,
@@ -4716,7 +4555,6 @@ body[data-mc-full] .totop { display: none; }
   display: flex; align-items: center; gap: var(--space-3); min-width: 0;
   padding: 0 2px;
 }
-.km-grouphead .km-foldbtn { width: 18px; height: 18px; }
 .km-grouphead .nm {
   /* WRAPS, never ellipsed (owner's call, 2026-11-15): a slice's name is what
      the card is, and "5. Manual specialist…" said nothing. */
@@ -4751,15 +4589,6 @@ body[data-mc-full] .totop { display: none; }
 }
 .km.fx-out { --km-wait: 60ms; opacity: 0; transform: translateY(-6px); pointer-events: none; }
 .km.fx-in { --km-wait: calc(var(--km-d) * 0.3); }
-.km.fx-out .km-col {
-  opacity: 0; transform: translateY(22px) scale(0.97);
-  transition: opacity calc(var(--km-d) * 0.45) var(--ease-standard) calc(var(--ci) * 45ms),
-              transform calc(var(--km-d) * 0.6) var(--ease-out) calc(var(--ci) * 45ms);
-}
-.km.fx-in .km-col {
-  transition: opacity calc(var(--km-d) * 0.45) var(--ease-standard) calc(var(--km-d) * 0.35 + var(--ci) * 45ms),
-              transform calc(var(--km-d) * 0.6) var(--ease-out) calc(var(--km-d) * 0.35 + var(--ci) * 45ms);
-}
 /* The card that is out keeps its slot, empty, so the column does not reflow
    under the card flying back into it. */
 .km-card.away { opacity: 0; }
@@ -4940,76 +4769,14 @@ body[data-mc-full] .totop { display: none; }
 .bf-editor .chips .km-dot { width: 7px; height: 7px; }
 /* The area's ⋯ on a group head: tight against the count, and quiet until the
    head is hovered or the menu is open. */
-.km-grouphead .km-areatools { margin-left: 0; }
 .km-grouphead .km-colbtn { width: 20px; height: 20px; opacity: 0; }
 .km-grouphead:hover .km-colbtn, .km-grouphead .km-colbtn.on,
 .km-grouphead .km-colbtn:focus-visible { opacity: 1; }
-.km-grouphead .km-arearename { width: 140px; margin-left: 0; }
-
-/* Said on the count line while a search has every fold suspended. */
-.km-unfolded { color: var(--text-tertiary); }
 
 /* ---- AREAS AS A REGISTRY, NOT JUST A FILTER (#473) ---------------------
    ＋ New area on the scope bar, and a ⋯ on each section head. The create
    control is an `.im-chip` wearing a dashed ring, so it sits in the chip row as
    one of them rather than as a button bolted on the end. */
-/* ONE WIDTH OPEN OR SHUT. The toolbar wraps, and a name field wider than its
-   button reflowed the row under it on every open and blur, so the board jumped
-   a line between the two halves of a double-click. */
-.km-addarea { box-shadow: inset 0 0 0 1px var(--border-default); border-style: dashed; width: 124px; flex: none; justify-content: center; }
-.km-addarea:not(.open) { color: var(--text-tertiary); }
-.km-addarea.open { display: inline-flex; align-items: center; }
-.km-addarea.open .km-colname { height: 28px; }
-
-/* The area head's own tools, after the count. */
-.km-areatools { position: relative; display: inline-flex; align-items: center; margin-left: var(--space-3); }
-.km-arearename { display: inline-flex; width: 180px; margin-left: var(--space-3); }
-
-/* The colour row inside the area menu. Every swatch is a `background` on a
-   CHILDLESS span-shaped button, because an area's dot is DATA (`project_areas.dot`) and the palette
-   audit exempts a data tone only on the element whose own `style` names that
-   property — painting it as `color` leaks it onto children and onto
-   `borderTopColor`, whose initial value is `currentColor`. */
-.km-menulbl {
-  padding: 4px 9px 2px; font: var(--type-caption); color: var(--text-tertiary);
-}
-.km-dots {
-  display: grid; grid-template-columns: repeat(8, 1fr); gap: 5px; padding: 4px 9px 7px;
-}
-.km-dotopt {
-  width: 15px; height: 15px; border: 0; padding: 0; cursor: pointer;
-  border-radius: var(--radius-pill); outline-offset: 2px;
-  transition: var(--transition-control);
-}
-.km-dotopt:hover { transform: scale(1.18); }
-.km-dotopt.on { outline: 2px solid var(--text-primary); }
-.km-dotopt:focus-visible { outline: 2px solid var(--border-focus); }
-
-/* ---- STORY POINTS (#507) -----------------------------------------------
-   The size chip on a card, and the totals on the two heads that add it up. */
-.km-pts {
-  min-width: 20px; height: 18px; padding: 0 5px; border: 0; cursor: pointer;
-  border-radius: var(--radius-sm); background: var(--surface-raised);
-  color: var(--text-secondary);
-  display: inline-flex; align-items: center; justify-content: center;
-  font: var(--weight-medium) var(--text-2xs)/1 var(--font-mono);
-  transition: var(--transition-control);
-}
-.km-pts:hover { color: var(--text-primary); }
-/* UNSIZED IS DRAWN QUIETLY, NOT HIDDEN. The button is always there — a control
-   that appears only once a card has points is a control nobody finds — but an
-   unsized card must not read as a sized one, so it wears the tertiary tone and
-   a dash rather than a number. */
-.km-pts.none { color: var(--text-tertiary); background: transparent; box-shadow: inset 0 0 0 1px var(--border-subtle); }
-.km-pts.on { background: var(--surface-selected); box-shadow: inset 0 0 0 1px var(--border-focus); }
-/* #600 — a cluster's total: read-only, so no hover lift and no pointer. */
-.km-pts.static { cursor: default; display: inline-flex; align-items: center; }
-.km-pts.static:hover { color: var(--text-secondary); }
-.km-pts.static.none:hover { color: var(--text-tertiary); }
-/* The picker is the priority list's own furniture — same width, same rows, one
-   extra class so the glyph column can hold two digits. */
-.km-ptslist .g { width: 18px; }
-.km-pts-total { white-space: nowrap; }
 
 /* ---- A KIND AND A DUE DATE (#508) --------------------------------------
    Two chips in the card's tag row, and the controls that change them in the
@@ -5031,26 +4798,8 @@ body[data-mc-full] .totop { display: none; }
 .km-due.today { color: var(--status-warning-fg); background: var(--surface-overlay); box-shadow: inset 0 0 0 1px var(--status-warning-fg); }
 .km-due.late { color: var(--status-danger-fg); background: var(--surface-overlay); box-shadow: inset 0 0 0 1px var(--status-danger-fg); }
 
-.km-kindrow { display: flex; gap: 3px; padding: 2px 9px 6px; }
-.km-kindopt {
-  flex: 1; padding: 5px 6px; border: 0; cursor: pointer;
-  border-radius: var(--radius-sm); background: var(--surface-card);
-  color: var(--text-secondary); font: var(--type-caption);
-  transition: var(--transition-control);
-}
-.km-kindopt:hover { background: var(--surface-hover); color: var(--text-primary); }
-.km-kindopt.on { background: var(--action-primary); color: var(--white); }
-.km-duerow { display: flex; align-items: center; gap: 4px; padding: 2px 9px 6px; }
-.km-dueinput {
-  flex: 1; min-width: 0; height: 26px; padding: 0 6px;
-  background: var(--surface-card); color: var(--text-primary);
-  border: 1px solid var(--border-subtle); border-radius: var(--radius-sm);
-  font: var(--type-caption); outline: none;
-}
-.km-dueinput:focus { border-color: var(--border-focus); }
 /* The native picker indicator is drawn by the browser in its own dark-on-light
    colours; this is the one way to make it legible on a dark overlay. */
-.km-dueinput::-webkit-calendar-picker-indicator { filter: invert(0.7); cursor: pointer; }
 .km-colbtn {
   width: 24px; height: 24px; border: 0; background: transparent; cursor: pointer;
   border-radius: var(--radius-sm); display: inline-flex; align-items: center; justify-content: center;
@@ -5059,37 +4808,9 @@ body[data-mc-full] .totop { display: none; }
 }
 .km-colbtn:hover { color: var(--text-primary); }
 .km-colbtn.on { background: var(--action-primary); color: var(--white); }
-.km-tip {
-  position: absolute; top: 28px; right: -18px; z-index: 30; white-space: nowrap;
-  background: var(--surface-overlay); border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm); padding: 4px 8px; box-shadow: var(--shadow-md);
-  font: var(--type-caption); color: var(--text-secondary);
-}
-.km-menu {
-  position: absolute; top: 30px; right: 0; z-index: 40; min-width: 176px;
-  background: var(--surface-overlay); border: 1px solid var(--border-default);
-  border-radius: var(--radius-md); box-shadow: var(--shadow-lg);
-  padding: var(--space-3); display: flex; flex-direction: column; gap: 2px;
-}
-.km-menuitem {
-  border: 0; background: transparent; cursor: pointer; text-align: left;
-  padding: 7px 9px; border-radius: var(--radius-sm);
-  font: var(--type-label); color: var(--text-secondary);
-  transition: var(--transition-control);
-}
-.km-menuitem:hover:not(:disabled) { background: var(--surface-hover); }
-/* 2.80:1, deliberately: WCAG 1.4.3 exempts an inactive control, `--text-disabled`
-   is the token that exists to say inactive, and the kit spells this menu the
-   same way. The audit learned to open a menu (#453) and reported this row
-   exactly as predicted — so the exemption now lives in palette-audit.mjs, where
-   it applies to every disabled control rather than to this one from memory. */
-.km-menuitem:disabled { color: var(--text-disabled); cursor: not-allowed; }
-.km-menuitem.danger { color: var(--status-danger-fg); }
-.km-menusep { height: 1px; background: var(--border-subtle); margin: 4px 0; }
-/* A STATEMENT INSIDE A MENU, where an item would be a dead press (#521). It is
-   deliberately not a `.km-menuitem:disabled`: a greyed-out row still looks like
-   a control and gets clicked, where a line of prose reads as the answer to the
-   question the missing item would have raised. Not focusable, not hoverable. */
+/* A STATEMENT where a control would be a dead press (#521): a line of prose
+   reads as the answer to the question a missing control would have raised.
+   Not focusable, not hoverable. */
 .km-menunote {
   display: block; padding: 6px 10px;
   font: var(--weight-regular) var(--text-2xs)/1.45 var(--font-mono);
@@ -5134,32 +4855,6 @@ body[data-mc-full] .totop { display: none; }
               var(--shadow-md);
 }
 .km-card.cluster > .t { font-weight: var(--weight-semibold); }
-.km-parts { display: flex; flex-direction: column; gap: var(--space-3); }
-.km-partbar { display: flex; align-items: center; gap: var(--space-3); }
-.km-partbar .track { position: relative; flex: 1; height: 6px; border-radius: 999px; background: var(--surface-sunken); }
-.km-partbar .fill {
-  position: absolute; inset: 0 auto 0 0; border-radius: inherit;
-  background: var(--status-success-fg); transition: width var(--dur-fast) var(--ease-out);
-}
-.km-partbar .n { flex: none; font: var(--weight-medium) var(--text-2xs)/1 var(--font-mono); color: var(--text-tertiary); }
-.km-parts ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
-.km-part {
-  width: 100%; display: flex; align-items: baseline; gap: var(--space-3);
-  background: none; border: 0; border-radius: var(--radius-sm);
-  padding: 3px var(--space-2); text-align: left; cursor: pointer;
-  font: var(--type-body-sm); font-size: var(--text-xs); color: var(--text-secondary);
-}
-.km-part:hover { background: var(--surface-sunken); color: var(--text-primary); }
-.km-part .g { flex: none; width: 1em; text-align: center; font-family: var(--font-mono); }
-.km-part .pt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.km-part .pp { flex: none; font-size: var(--text-2xs); color: var(--text-secondary); }
-.km-part .pp.none { color: var(--text-tertiary); }
-.km-part.todo .g { color: var(--status-neutral-fg); }
-.km-part.going .g { color: var(--status-info-fg); }
-.km-part.review .g { color: var(--status-warning-fg); }
-.km-part.done .g { color: var(--status-success-fg); }
-.km-part.done .pt { text-decoration: line-through; color: var(--text-tertiary); }
-.km-part.more { color: var(--text-tertiary); font-family: var(--font-mono); font-size: var(--text-2xs); }
 .km-cardmeta { display: flex; align-items: center; gap: var(--space-3); }
 .km-cardmeta .kind { display: flex; }
 .km-cardmeta .id { font: var(--weight-medium) var(--text-xs)/1 var(--font-mono); color: var(--text-secondary); }
@@ -5191,37 +4886,6 @@ body[data-mc-full] .totop { display: none; }
    against, so it leads, clamped to three lines with the whole of it in the
    title. Approve wears the success tone because it is the owner's own verdict,
    never an agent's call (those are drawn in the accent). */
-.km-verdict {
-  display: flex; flex-direction: column; gap: var(--space-3);
-  border-top: 1px solid var(--border-subtle); padding-top: var(--space-4);
-  cursor: default;
-}
-.km-verdict .bn {
-  margin: 0; font: var(--type-caption); color: var(--text-secondary);
-  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
-}
-.km-verdict .acts { display: flex; gap: var(--space-3); flex-wrap: wrap; }
-.km-verdict .back { display: flex; flex-direction: column; gap: var(--space-3); }
-.km-verdict textarea {
-  width: 100%; box-sizing: border-box; resize: vertical; min-height: 64px;
-  padding: var(--space-3) var(--space-4); border-radius: var(--radius-md);
-  background: var(--surface-sunken); border: 1px solid var(--border-default);
-  color: var(--text-primary); font: var(--type-body-sm);
-}
-.km-vbtn {
-  height: var(--control-h-sm); padding: 0 10px; border-radius: var(--radius-md);
-  display: inline-flex; align-items: center; gap: var(--space-2);
-  background: var(--surface-card); border: 1px solid var(--border-default);
-  color: var(--text-primary); font: var(--weight-medium) var(--text-sm)/1 var(--font-sans);
-  transition: var(--transition-control); cursor: pointer;
-}
-.km-vbtn:hover { background: var(--surface-overlay); border-color: var(--border-strong); }
-.km-vbtn.ok { background: var(--status-success-bg); color: var(--status-success-fg); border-color: transparent; }
-.km-vbtn.ok:hover { border-color: var(--status-success-fg); }
-.km-vbtn.primary { background: var(--action-primary); color: var(--white); border-color: transparent; }
-.km-vbtn.primary:hover { background: var(--action-primary-hover); }
-.km-approveall { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; padding: 0 var(--space-2) var(--space-3); }
-.km-vbtn:disabled { opacity: 0.5; cursor: default; }
 .km-note { display: flex; align-items: center; gap: var(--space-4); }
 /* The board's receipt FLOATS, so it never pushes the board down. Opaque
    (the info ground is translucent), above the columns, clear of the to-top. */
@@ -5246,15 +4910,6 @@ body[data-mc-full] .totop { display: none; }
    branch name escaped the card entirely. The truncation is on the inner span
    because the chip itself is a flex container. */
 .km-cardtags .k-tag { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; min-width: 0; }
-/* #477 — the sprint chip. Muted for a box that is only planned, accented for
-   the one in progress: a card in a planned sprint is committed but not running,
-   and the whole feature is that those are different. The name truncates in its
-   own `.v` span for the same reason a branch name does — `text-overflow` does
-   nothing on the flex CONTAINER, and the `title` makes the cut lossless. */
-.km-cardtags .km-sprint { color: var(--text-tertiary); }
-.km-cardtags .km-sprint.on {
-  background: var(--status-success-bg); color: var(--status-success-fg);
-}
 /* THE LINE-HEIGHT IS PART OF THE TRUNCATION, not decoration. `.k-tag.mono`
    spells its font with `/1`, and an `overflow: hidden` box on a line-height-1
    mono font is 12px tall over a 14px glyph box — so the ellipsis arrived and
@@ -5264,79 +4919,6 @@ body[data-mc-full] .totop { display: none; }
   min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   line-height: 1.4;
 }
-/* THE CARD MENU OPENS EXACTLY WHERE THE PRIORITY LIST DOES — below the card,
-   not above it. It was anchored to the card's bottom edge first, which grows a
-   six-item menu UPWARD past a ~90px card and over the COLUMN HEADER above it:
-   the ⋯ that opens the column's own menu became unclickable while a card menu
-   was open, which the smoke caught as `control-inert`. Two popovers on one card
-   also have no business opening in opposite directions. */
-.km-menu.card { top: calc(100% - 6px); bottom: auto; right: var(--space-5); }
-.km-menu.left { right: auto; left: 0; }
-.km-pri {
-  width: 24px; height: 24px; border: 0; cursor: pointer;
-  border-radius: var(--radius-sm); background: var(--surface-raised);
-  display: inline-flex; align-items: center; justify-content: center;
-  font: var(--weight-medium) var(--text-xs)/1 var(--font-mono);
-  transition: var(--transition-control);
-}
-.km-pri.on { background: var(--surface-selected); box-shadow: inset 0 0 0 1px var(--border-focus); }
-.km-prilist {
-  position: absolute; top: calc(100% - 6px); right: var(--space-5); z-index: 40; width: 196px;
-  background: var(--surface-overlay); border: 1px solid var(--border-default);
-  border-radius: var(--radius-md); box-shadow: var(--shadow-lg);
-  padding: var(--space-4); display: flex; flex-direction: column; gap: var(--space-4);
-}
-.km-prilist .cur {
-  display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 9px;
-  border-radius: var(--radius-md); background: var(--surface-card);
-  border: 1px solid var(--border-focus);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--action-primary) 25%, transparent);
-  font: var(--type-body-sm); color: var(--text-primary);
-}
-.km-prilist .opts { display: flex; flex-direction: column; gap: 2px; }
-.km-prilist .opt {
-  display: flex; align-items: center; gap: 10px; width: 100%;
-  padding: 7px 9px; border: 0; border-radius: var(--radius-sm); background: transparent;
-  cursor: pointer; font: var(--type-body-sm); color: var(--text-secondary);
-  transition: var(--transition-control);
-}
-.km-prilist .opt:hover { background: var(--surface-hover); color: var(--text-primary); }
-.km-prilist .opt.on { background: var(--action-primary); color: var(--white); }
-.km-prilist .g { width: 14px; text-align: center; flex: none; font: var(--weight-medium) var(--text-xs)/1 var(--font-mono); }
-.km-prilist .opt.on .g { color: var(--white); }
-
-/* ---- the lane composer ---- */
-.km-add {
-  display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
-  border: 0; background: transparent; cursor: pointer;
-  padding: 6px; border-radius: var(--radius-sm);
-  color: var(--text-tertiary); font: var(--type-label);
-  transition: var(--transition-control);
-}
-.km-add:hover { color: var(--text-primary); background: var(--surface-hover); }
-.km-composer {
-  background: var(--surface-card); border: 1px solid var(--border-focus);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--action-primary) 22%, transparent);
-  border-radius: var(--radius-lg); padding: var(--space-5);
-  display: flex; flex-direction: column; gap: var(--space-5);
-}
-.km-composer textarea {
-  width: 100%; resize: none; border: 0; outline: none; background: transparent;
-  font: var(--type-body-sm); color: var(--text-primary); caret-color: var(--blue-500);
-}
-.km-composer-foot { display: flex; align-items: center; gap: var(--space-4); }
-.km-composer-foot .ic {
-  display: inline-flex; align-items: center; gap: 3px;
-  border: 0; background: transparent; cursor: pointer; color: var(--text-tertiary);
-}
-.km-composer-foot .ic .chev { font: var(--text-xs)/1 var(--font-sans); color: var(--text-tertiary); }
-.km-composer-foot .go {
-  margin-left: auto; flex: none; width: 26px; height: 26px; border: 0; cursor: pointer;
-  border-radius: var(--radius-sm); background: var(--surface-overlay); color: var(--text-tertiary);
-  display: inline-flex; align-items: center; justify-content: center;
-  font: var(--text-xs)/1 var(--font-sans); transition: var(--transition-control);
-}
-.km-composer-foot .go.armed { background: var(--action-primary); color: var(--white); }
 
 /* ---- the create-issue dialog ---- */
 .km-scrim {
@@ -5754,101 +5336,31 @@ body[data-mc-full] .totop { display: none; }
 .fy-tags { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 
 /* ---- Backlog: rank order, and the line the board pulls from ---- */
-.km-bl, .km-dev { display: flex; flex-direction: column; gap: var(--space-5); }
+.km-dev { display: flex; flex-direction: column; gap: var(--space-5); }
 .km-dev { gap: var(--space-6); }
-.km-bl-bar { display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap; }
-.km-bl-count { margin-left: auto; font: var(--type-body-sm); color: var(--text-tertiary); }
-.km-bl-add {
-  align-self: flex-start; border: 0; background: transparent; cursor: pointer;
-  padding: var(--space-4); font: var(--type-label); color: var(--text-tertiary);
-}
-.km-bl-add:hover { color: var(--text-primary); }
-
-/* The pull line and Development's "can land now" are ONE shape on purpose:
-   a card with a single lime edge, saying what happens next with nothing
-   pressed. The lime is a border here — as a LABEL it takes --text-accent,
-   which is the "a fill tone is not a text tone" rule (#432). */
-.km-pull {
-  display: flex; align-items: center; gap: var(--space-5); flex-wrap: wrap;
-  background: var(--surface-card); border: 1px solid var(--border-subtle);
-  border-left: 2px solid var(--lime-500); border-radius: var(--radius-lg);
-  padding: var(--space-5) var(--space-6);
-}
-.km-pull .lbl {
-  flex: none; font: var(--type-eyebrow); letter-spacing: var(--tracking-caps);
-  text-transform: uppercase; color: var(--text-accent);
-}
-.km-pull .ids { display: flex; gap: var(--space-3); flex-wrap: wrap; min-width: 0; }
-.km-pull .say { margin-left: auto; font: var(--type-body-sm); color: var(--text-secondary); }
-.km-pull .k-btn { margin-left: auto; flex: none; }
-/* #477 — NOTHING IN PROGRESS IS A REPORTED STATE, not an absent one, so the
-   line keeps its shape and only its tone changes. Lime says "this is what
-   happens next"; the muted edge says "nothing does", which is a different
-   answer from the same instrument rather than a missing instrument. Same rule
-   as a NULL verdict rendering as NO REVIEW instead of vanishing. */
-.km-pull:not(.on) { border-left-color: var(--border-strong); }
-.km-pull:not(.on) .lbl { color: var(--text-tertiary); }
 
 /* ---- the sprint boxes (#477) ---- */
 /* A box is a batch with a body, and the ONE in progress is the only one that
    gets the accent. That contrast is the feature: a planned sprint is full of
    real work in a real order and is one press from running, so if the two look
    alike the screen is lying about what the machine is doing. */
-.km-sprintbox, .km-backlog, .km-done {
+.km-backlog {
   background: var(--surface-card); border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg); padding: var(--space-5); gap: var(--space-2);
 }
-.km-sprintbox.on { border-color: var(--lime-700); border-left: 2px solid var(--lime-500); }
-/* The lit target wins over the live box's lime — the shared `.over` rule sits
-   above this one in the file, so it has to be restated at this specificity or
-   the sprint in progress is the one box that never says it will take a drop. */
-.km-sprintbox.on.over { border-color: var(--border-focus); }
 /* The drop target lights up BEFORE anything is written — an empty box that
    gives no sign it will accept the card is a box nobody drops into twice. The
    lit and dimmed states are the kanban column's (#498, "THE DRAG, AS THE KIT
    DRAWS IT"); what is here is only the transition they fade on. */
-.km-sprintbox, .km-backlog {
+.km-backlog {
   transition: background-color var(--dur-normal) var(--ease-standard),
               border-color var(--dur-normal) var(--ease-standard),
               box-shadow var(--dur-normal) var(--ease-standard),
               opacity var(--dur-normal) var(--ease-standard);
 }
-.km-sprintbox .km-batchhead, .km-backlog .km-batchhead, .km-done .km-batchhead {
+.km-backlog .km-batchhead {
   padding: 0 0 var(--space-3);
 }
-.km-sprintbox .km-batchhead .right, .km-done .km-donerow .right {
-  display: flex; align-items: center; gap: var(--space-3); flex: none;
-}
-.km-batchsay { flex: none; font: var(--type-body-sm); color: var(--text-tertiary); }
-/* The live dot on the box in progress. A dot rather than a word because the
-   word is already there ("N to build"); this is what the eye finds first. */
-.km-live {
-  flex: none; width: 7px; height: 7px; border-radius: 50%;
-  background: var(--lime-500); box-shadow: 0 0 0 3px var(--lime-tint);
-}
-.km-sprintname {
-  border: 0; background: transparent; cursor: text; padding: 0;
-  font: var(--type-eyebrow); letter-spacing: var(--tracking-caps);
-  text-transform: uppercase; color: var(--text-tertiary);
-}
-.km-sprintbox.on .km-sprintname { color: var(--text-accent); }
-.km-sprintname:hover { color: var(--text-primary); }
-.km-bl-empty {
-  padding: var(--space-5) var(--space-4); font: var(--type-body-sm);
-  color: var(--text-tertiary); text-align: center;
-  border: 1px dashed var(--border-subtle); border-radius: var(--radius-md);
-}
-.km-bl-new { display: flex; align-items: center; gap: var(--space-3); }
-.km-bl-new input {
-  width: 170px; padding: var(--space-3) var(--space-4);
-  background: var(--surface-input); border: 1px solid var(--border-default);
-  border-radius: var(--radius-md); font: var(--type-body-sm); color: var(--text-primary);
-}
-.km-donerow {
-  display: flex; align-items: center; gap: var(--space-4);
-  padding: var(--space-4) var(--space-3);
-}
-.km-donerow .nm { flex: 1; min-width: 0; font: var(--type-body-sm); color: var(--text-secondary); }
 
 /* The item count. A WORD, not a bare number: "12" beside a sprint name reads as
    an id or a rank as easily as a count, and this header already carries three
@@ -5858,133 +5370,7 @@ body[data-mc-full] .totop { display: none; }
   color: var(--text-tertiary);
 }
 
-/* THE STATUS SQUARES — one per board column, the header's census.
-   Fixed-width and monospaced so the row of them stays a row rather than
-   jittering as counts change width, and a ZERO is dimmed rather than hidden:
-   the cluster claims to be every column, so a missing one turns "nothing is in
-   review" into "there is no review". */
-.km-squares { display: inline-flex; gap: 3px; flex: none; }
-.km-squares .sq {
-  min-width: 22px; height: 20px; padding: 0 4px;
-  display: inline-flex; align-items: center; justify-content: center;
-  border-radius: var(--radius-sm); background: var(--surface-raised);
-  box-shadow: inset 0 0 0 1px var(--border-subtle);
-  font: var(--weight-medium) var(--text-2xs)/1 var(--font-mono);
-  color: var(--text-secondary);
-}
-/* A ZERO IS DIMMED, NOT DISABLED. The first cut used --text-disabled and the
-   palette audit measured it at 3.06:1 — under AA, on the one glyph in the
-   cluster that carries the least redundancy. A zero here is CONTENT: "nothing
-   is in review" is the whole reason the square is drawn rather than omitted, so
-   it has to be as readable as any other count. --text-tertiary is the quiet
-   tone that still measures. */
-.km-squares .sq.zero { color: var(--text-tertiary); background: transparent; }
-/* An orphan square only exists when something is IN it, and it is the one that
-   wants finding — a card counted everywhere else and drawn in no column. */
-.km-squares .sq.orphan { color: var(--status-warning-fg); box-shadow: inset 0 0 0 1px var(--status-warning-fg); }
-
-/* THE PLANNED WINDOW. `undated` is a state with a control, not a gap. */
-.km-when {
-  flex: none; display: inline-flex; align-items: center; gap: 5px;
-  border: 0; background: transparent; cursor: pointer; padding: 2px 4px;
-  border-radius: var(--radius-sm);
-  font: var(--weight-regular) var(--text-xs)/1 var(--font-mono);
-  color: var(--text-secondary);
-}
-.km-when:hover, .km-when.on { color: var(--text-primary); background: var(--surface-hover); }
-.km-when.none { color: var(--text-tertiary); }
-.km-donerow .km-when { cursor: default; }
-
-.km-dates {
-  display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap;
-  padding: var(--space-4) var(--space-3) var(--space-5);
-}
-.km-dates .lbl {
-  font: var(--type-eyebrow); letter-spacing: var(--tracking-caps);
-  text-transform: uppercase; color: var(--text-tertiary);
-}
-.km-dates .sep, .km-bl-new .sep { color: var(--text-tertiary); font: var(--type-body-sm); }
-.km-dates .say { font: var(--type-body-sm); color: var(--text-secondary); }
-.km-dates .say.dim { color: var(--text-tertiary); margin-left: auto; }
-.km-dates .dt, .km-bl-new .dt {
-  padding: var(--space-3) var(--space-4);
-  background: var(--surface-input); border: 1px solid var(--border-default);
-  border-radius: var(--radius-md); font: var(--type-body-sm); color: var(--text-primary);
-}
-/* The native picker glyph is black-on-black in a dark theme and invisible in a
-   light one; `invert` on the dark scheme alone is what makes it a control in
-   both, and it is why this rule is not a colour token. */
-:root:not([data-theme="light"]) .km-dates .dt::-webkit-calendar-picker-indicator,
-:root:not([data-theme="light"]) .km-bl-new .dt::-webkit-calendar-picker-indicator { filter: invert(0.75); }
-:root[data-theme="dark"] .km-dates .dt::-webkit-calendar-picker-indicator,
-:root[data-theme="dark"] .km-bl-new .dt::-webkit-calendar-picker-indicator { filter: invert(0.75); }
-
-/* THE ROW'S STATUS AND AREA TAGS. The status is toned by the DEFAULT lane keys
-   only — a lane the owner added or renamed keeps its key and falls through to
-   the neutral `.k-tag`, which is the honest answer: this stylesheet cannot know
-   what a lane somebody invented means. */
-.km-blrow .km-status.st-progress { color: var(--status-info-fg); }
-.km-blrow .km-status.st-review { color: var(--status-warning-fg); }
-.km-blrow .km-status.st-shipped { color: var(--status-success-fg); }
-.km-blrow .km-area.none { color: var(--text-tertiary); font-style: italic; }
-
-/* ✧ THE PLANNER'S PROPOSAL (#522) — a panel above the boxes, in the ACCENT's
-   quiet register rather than a status tone. It is neither good news nor bad:
-   it is a suggestion waiting on a press, and the one moment it earns a colour
-   is the Apply button, which is already the accent. A row's own `lane held`
-   chip is the warning pair, because that one IS a fact about what cannot run. */
-.km-plan {
-  display: flex; flex-direction: column; gap: var(--space-4);
-  padding: var(--space-5); border-radius: var(--radius-lg);
-  background: var(--surface-sunken);
-  box-shadow: inset 0 0 0 1px var(--border-subtle);
-}
-.km-planhead { display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap; }
-.km-planhead .lbl { font: var(--type-body-sm); color: var(--text-primary); }
-.km-planhead .n {
-  font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-tertiary);
-}
-.km-planhead .rule { flex: 1; min-width: var(--space-4); }
-.km-plansay { margin: 0; font: var(--type-body-sm); color: var(--text-secondary); text-wrap: pretty; }
-/* The two things the order cannot say for itself: how much of the backlog was
-   actually read, and which areas are locked. Tertiary and mono — they are
-   provenance, not findings. */
-.km-plannote {
-  margin: 0; font: var(--weight-regular) var(--text-2xs)/1.5 var(--font-mono);
-  color: var(--text-tertiary); text-wrap: pretty;
-}
-.km-planlist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
-.km-planrow {
-  display: flex; align-items: flex-start; gap: var(--space-4);
-  padding: var(--space-3) var(--space-4); border-radius: var(--radius-md);
-  background: var(--surface-card);
-}
-/* A row COMING FROM THE BACKLOG is the part of the proposal that changes
-   membership rather than order, so it carries the accent edge — the one thing
-   on this panel a reader most needs to find before pressing Apply. */
-.km-planrow.adding { box-shadow: inset 2px 0 0 var(--action-accent); }
-.km-planrow .rank {
-  flex: none; width: 20px; text-align: right;
-  font: var(--weight-medium) var(--text-2xs)/1.6 var(--font-mono); color: var(--text-tertiary);
-}
-.km-planrow .body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
-.km-planrow .line { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
-.km-planrow .t { font: var(--type-body-sm); color: var(--text-primary); }
-.km-planrow .why {
-  font: var(--weight-regular) var(--text-2xs)/1.5 var(--font-mono);
-  color: var(--text-secondary); text-wrap: pretty;
-}
 /* WHAT APPLYING REMOVES, above the button and never after it. */
-.km-plandrops { display: flex; flex-direction: column; gap: var(--space-2); }
-.km-plandrops .lbl {
-  font: var(--type-eyebrow); letter-spacing: var(--tracking-caps);
-  text-transform: uppercase; color: var(--text-tertiary);
-}
-.km-plandrops .row {
-  display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap;
-  font: var(--type-body-sm); color: var(--text-secondary);
-}
-.km-batch { display: flex; flex-direction: column; gap: var(--space-2); }
 .km-devgroup { display: flex; flex-direction: column; gap: var(--space-3); }
 .km-devsay { padding: 0 var(--space-4); font: var(--type-body-sm); color: var(--text-secondary); }
 /* The Development tab's ledger (detail/Development.tsx). Rows reuse the
@@ -6059,12 +5445,6 @@ body[data-mc-full] .totop { display: none; }
 .km-blrow .pri { flex: none; width: 26px; text-align: center; font: var(--weight-medium) var(--text-xs)/1 var(--font-mono); }
 .km-blrow .pts { flex: none; width: 20px; text-align: right; font: var(--weight-regular) var(--text-xs)/1 var(--font-mono); color: var(--text-tertiary); }
 
-/* `.km-cut` — the mockup's WIP line — went with the mockup (#477). The board's
-   In Progress column has no stored limit and inventing one here would have been
-   a second truth about concurrency next to `autopilotWorkers`; what the backlog
-   says instead is which rows are RUNNABLE in the sprint that is running, which
-   is a fact rather than an invented threshold. */
-
 /* ---- Development: branches in the order they can land ---- */
 .km-branch {
   background: var(--surface-card); border: 1px solid var(--border-subtle);
@@ -6137,8 +5517,7 @@ body[data-mc-full] .totop { display: none; }
          header's runnable count unexplainable on exactly the screens with the
          least room to go hunting;
        · "runs", the other half of that same sentence. */
-  .km-blrow .km-area { display: none; }
-  .km-branchhead .delta, .km-branchhead .diff { display: none; }
+    .km-branchhead .delta, .km-branchhead .diff { display: none; }
 }
 
 /* ==========================================================================
@@ -6451,7 +5830,6 @@ body[data-mc-full] .totop { display: none; }
   overflow: hidden; background: var(--surface-canvas);
 }
 
-
 .pl-row, .pl-subrow { display: grid; grid-template-columns: var(--pl-cols); align-items: center; }
 .pl-row > span {
   padding: 0 var(--space-5); height: 40px; min-width: 0;
@@ -6470,8 +5848,7 @@ body[data-mc-full] .totop { display: none; }
    SHAPE AS WELL AS TONE: the button takes the selected chip's fill AND ring and
    the header's label goes to the link tone, because a tint alone is the state a
    colour-blind reader cannot find, and a restored filter nobody can see is the
-   "rows are missing" bug. The menu is `.km-menu` portalled (`Popover`) — the
-   grid is a clip on both axes — with a checkbox square per value. */
+   "rows are missing" bug. */
 .pl-row.head > span .lbl { min-width: 0; display: inline-flex; align-items: center; gap: var(--space-3); overflow: hidden; white-space: nowrap; }
 .pl-row.head > span.filtered .lbl { color: var(--text-link); }
 .pl-colfilter {
@@ -6570,7 +5947,6 @@ body[data-mc-full] .totop { display: none; }
 .pl-meter .fill { display: block; height: 100%; background: var(--viz-2); }
 .pl-meter .fill.full { background: var(--viz-1); }
 .pl-meter .pct { flex: none; font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-secondary); }
-
 
 .pl-subrow { border-bottom: 1px solid var(--border-subtle); }
 .pl-subrow .c-item {
@@ -7965,7 +7341,6 @@ button.sp-pill { cursor: pointer; }
 /* THE BOARD'S LIST VIEW (detail/BoardList.tsx) — one row per item, area as a
    tag. A grid rather than a <table> so a row is one focusable, clickable box;
    the narrow layout drops the two stamps before the title. */
-.km-layout { flex: none; }
 .km-toolbar .k-select { width: auto; flex: none; max-width: 100%; }
 .bl-list { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .bl-row {
@@ -7989,14 +7364,8 @@ button.sp-pill { cursor: pointer; }
 .bl-id { font: var(--weight-regular) var(--text-xs)/1 var(--font-mono); color: var(--text-tertiary); }
 .bl-title { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .bl-title .t { font: var(--type-body-sm); color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.bl-parent { font: var(--weight-regular) var(--text-2xs)/1.3 var(--font-sans); color: var(--text-tertiary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bl-row > span { min-width: 0; }
 .bl-row .k-tag { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.bl-status { display: flex; gap: var(--space-2); flex-wrap: wrap; }
-.bl-area.none { color: var(--text-tertiary); font-style: italic; }
-.bl-row .km-status.st-progress { color: var(--status-info-fg); }
-.bl-row .km-status.st-review { color: var(--status-warning-fg); }
-.bl-row .km-status.st-shipped { color: var(--status-success-fg); }
 .bl-c-pri { text-align: center; }
 .bl-c-pts { text-align: right; font: var(--weight-regular) var(--text-xs)/1 var(--font-mono); color: var(--text-secondary); }
 .bl-c-when { font: var(--type-body-sm); color: var(--text-tertiary); white-space: nowrap; }
@@ -8663,34 +8032,6 @@ button.ar-open:hover { background: var(--surface-hover); }
    under Auto-ideas. Tokens only; the strip reads as a quiet header, not a card,
    so it sits on the page ground with a rule under it.
    ========================================================================== */
-.km-spine {
-  display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3) var(--space-4);
-  padding-bottom: var(--space-4); border-bottom: 1px solid var(--border-subtle); min-width: 0;
-}
-.km-spine-eyebrow {
-  font: var(--type-eyebrow); letter-spacing: var(--tracking-caps);
-  text-transform: uppercase; color: var(--text-tertiary);
-}
-.km-spine-ms {
-  display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
-  border: 0; background: transparent; padding: 2px 4px; border-radius: var(--radius-sm);
-  font: var(--type-heading); color: var(--text-primary);
-}
-.km-spine-ms:hover { background: var(--surface-raised); }
-.km-spine-ms:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 1px; }
-.km-spine-goal {
-  font: var(--type-body-sm); color: var(--text-secondary); min-width: 0; max-width: 60ch;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.km-spine-rule { flex: 1; min-width: var(--space-4); }
-.km-spine-n { font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-tertiary); }
-.km-spine-flick { display: inline-flex; align-items: center; gap: 2px; flex: none; }
-.km-spine-flick .km-colbtn:disabled { opacity: 0.4; cursor: default; }
-.km-spine-pos { font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-secondary); min-width: 3ch; text-align: center; }
-@media (max-width: 640px) {
-  .km-spine-goal { flex-basis: 100%; white-space: normal; }
-  .km-spine-rule { display: none; }
-}
 
 .km-dialog.km-dialog-wide { width: 560px; max-height: calc(100vh - 2 * var(--space-7)); overflow-y: auto; }
 .km-textarea {
@@ -8704,13 +8045,10 @@ button.ar-open:hover { background: var(--surface-hover); }
 .km-areapicks { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 .km-dialog-foot .km-dialog-left { margin-right: auto; }
 .km-field .km-dialog-left { align-self: flex-start; }
-.km-msnext { display: flex; gap: var(--space-3); align-items: center; }
-.km-msnext .searchbox { flex: 1; min-width: 0; }
 
 /* The picker is a native select: it sits in the card menu's row, beside
    Promote, and on an Icebox row, at the width of its longest slice. */
 .km-slicepick { max-width: 220px; min-width: 0; }
-.km-duerow .km-slicepick { flex: 1; max-width: none; }
 
 /* The Icebox follows the Auto-ideas queue in the same pane, set apart by a rule. */
 .ai.ai-icebox { margin-top: var(--space-6); padding-top: var(--space-6); border-top: 1px solid var(--border-subtle); }
@@ -8883,7 +8221,6 @@ button.ar-open:hover { background: var(--surface-hover); }
   .nt-list { columns: 1; }
 }
 
-
 .sp-adr {
   background: var(--surface-raised); border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg); min-width: 0;
@@ -9014,16 +8351,6 @@ button.ar-open:hover { background: var(--surface-hover); }
   .doc-adrs .sp-adrhead { gap: var(--space-2) var(--space-3); }
 }
 
-/* #621 — a slice's head inside a sprint box or the backlog: the unit a drag
-   moves. Quiet, like an area group head, so the rows stay the subject. */
-.km-blslice {
-  display: flex; align-items: center; gap: var(--space-3); min-width: 0;
-  padding: var(--space-3) var(--space-2) var(--space-1); color: var(--text-tertiary);
-}
-.km-blslice .nm { font: var(--type-caption); color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.km-blslice .n { margin-left: auto; font: var(--weight-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-tertiary); white-space: nowrap; }
-.km-blslice.loose .nm { color: var(--text-tertiary); }
-
 /* ==========================================================================
    COURSE (#622) — detail/Course.tsx, the project home, as a timeline:
    done · you are here · ahead. The middle column is the one raised card.
@@ -9144,28 +8471,6 @@ button.ar-open:hover { background: var(--surface-hover); }
   .cb-here { padding: var(--space-5); }
   .cb-title { font-size: var(--text-xl); }
 }
-/* #621 — a sprint box head WRAPS once it has a sprint's worth of controls: at
-   the narrow width the planned box's "nothing is picked up" line, its squares
-   and three buttons ran past the viewport. The sentence may shrink and wrap;
-   the buttons keep their line. */
-.km-sprintbox .km-batchhead { flex-wrap: wrap; row-gap: var(--space-2); }
-.km-sprintbox .km-batchhead .km-batchsay { flex: 1 1 200px; min-width: 0; }
-.km-sprintbox .km-batchhead .right { margin-left: auto; }
-
-/* #621 — GROUPED BY SLICE, A SLICE IS A CLUSTER. Its group in each column is
-   drawn the way a cluster card is (the same two stacked plates, a heavier
-   title, the layers glyph, the parts bar), with its cards inside it rather
-   than squeezed into a list, so every card keeps its own column and controls. */
-.km-group.km-slicegroup {
-  background: var(--surface-raised); border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg); padding: var(--space-3);
-  margin-bottom: 8px;
-  box-shadow: 0 4px 0 -1px var(--surface-raised), 0 4px 0 0 var(--border-subtle),
-              0 8px 0 -2px var(--surface-raised), 0 8px 0 -1px var(--border-subtle);
-}
-.km-slicegroup > .km-grouphead .nm { font: var(--type-label); font-weight: var(--weight-semibold); color: var(--text-primary); }
-.km-slicegroup > .km-grouphead .kind { display: inline-flex; color: var(--accent); }
-.km-slicegroup .km-slicebar { padding: 0 2px; }
 
 /* ============================================================
    THE TERMINAL SCREEN, v2 (Terminal Prototype v2 design): tabs across the
@@ -10226,6 +9531,7 @@ a.pp-link:hover { text-decoration: underline; }
 .bm-lanes { flex: 1; min-width: 0; min-height: 160px; overflow: auto; background: var(--surface-canvas); }
 .bm-lanes-inner { min-width: 840px; padding: var(--space-5) var(--space-6) var(--space-8); display: flex; flex-direction: column; gap: var(--space-4); }
 .bm-lanes-ms { display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap; }
+.bm-lanes-ms .sp { flex: 1; }
 .bm-lanes-ms .meta { font: 12px/1 var(--font-mono); color: var(--text-tertiary); white-space: nowrap; }
 .bm-pager { display: inline-flex; align-items: center; gap: 4px; }
 .bm-pager button { width: 22px; height: 22px; border-radius: var(--radius-xs); background: transparent; border: 1px solid var(--border-subtle); color: var(--text-secondary); font: 13px/1 var(--font-mono); cursor: pointer; }

@@ -81,12 +81,11 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 //
 // THE ORDER IS LOAD-BEARING: the layout and arrangement presses persist in
 // this browser's storage and reach the narrow pass, so the run walks Map →
-// Lanes → List and ends back on the Map, and the parked filter is pressed
-// twice. The lane-head zoom needs a job to exist; an empty board reports it as
+// Lanes and ends back on the Map. The lane-head zoom needs a job to exist; an empty board reports it as
 // `control-missing`, the honest answer.
 const ROADMAP_PANELS = [
-  // THE BOARD TAB IS THE WORK MAP (detail/BoardMap.tsx): Map, then Lanes, then
-  // the List. The kanban was removed (2026-11-20). The arrangement and layout
+  // THE BOARD TAB IS THE WORK MAP (detail/BoardMap.tsx): Map, then Lanes. The
+  // kanban and the List were removed (2026-11-20). The arrangement and layout
   // presses write only this browser's storage, and the run ends back on the Map
   // so the narrow pass starts where this one did.
   {
@@ -139,47 +138,12 @@ const ROADMAP_PANELS = [
     expect: 'body:not(:has(.bf)) .bm-lanes',
   },
   {
-    id: 'board-list-layout', label: 'Board — list shows milestone and slice context',
-    click: '.bm-toolbar .seg-control:first-child .seg-opt:nth-child(3)', expect: '.bl-list .bl-c-spine',
+    id: 'board-lanes-newjob', label: 'Board — + New job opens the slice dialog',
+    click: '.bm-lanes-ms .k-btn', expect: '.km-dialog .km-textarea', dismiss: '.km-scrim',
   },
   {
-    id: 'board-milestone',
-    label: 'Board — the milestone strip opens the milestone',
-    click: '.km-spine-ms',
-    expect: '.km-dialog .km-textarea',
-    dismiss: '.km-scrim',
-  },
-  // The strip flicks through milestones (2026-11-09). Next is pressed from the
-  // current one, so it needs a milestone after it; Back to current returns.
-  {
-    id: 'board-ms-next',
-    label: 'Board — › views the next milestone',
-    click: '.km-spine [aria-label="Next milestone"]',
-    expect: '.km-spine .km-spine-back',
-  },
-  {
-    id: 'board-ms-back',
-    label: 'Board — Back to current returns to the current milestone',
-    click: '.km-spine-back',
-    expect: '.km-spine:not(:has(.km-spine-back))',
-  },
-  {
-    // Pressed twice: the second press is the assertion that it toggles, and
-    // it leaves parked rows shown for every press after it.
-    id: 'board-parked',
-    label: 'Board — parked filter',
-    click: '.km-parked',
-    expect: '.km-parked.on',
-  },
-  {
-    id: 'board-parked-off',
-    label: 'Board — parked filter turns off',
-    click: '.km-parked.on',
-    expect: '.km-parked:not(.on)',
-  },
-  {
-    id: 'board-list-back', label: 'Board — return to the map',
-    click: '.km-layout button:nth-child(1)', expect: '.bm-canvas',
+    id: 'board-back-to-map', label: 'Board — return to the map',
+    click: '.bm-toolbar .seg-control:first-child .seg-opt:nth-child(1)', expect: '.bm-canvas',
   },
   // THESE THREE MUST COME LAST: the presses above all name the Board tab's
   // own view, which only exists while that tab is the one drawn.

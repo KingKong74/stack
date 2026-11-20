@@ -1516,30 +1516,19 @@ const strings = (v: unknown): string[] => (
   Array.isArray(v) ? [...new Set(v.filter((x): x is string => typeof x === 'string'))] : []
 );
 
-// ---- the board's VIEW (Map | Lanes | List) ----
+// ---- the board's VIEW (Map | Lanes) ----
 //
-// Device-local and per project: which layout you read a board
-// in, and how the List view is sorted and scoped, is a preference and not a
-// fact about the work. Unknown or corrupt storage lands on the Map (the work
-// map, detail/BoardMap.tsx), newest first, everything shown. The lane-per-job
-// view is 'lanes'. The retired kanban ('kanban', and the older 'areas') reads as
-// the Map (owner's call, 2026-11-20: the kanban was removed).
-export type BoardViewLayout = 'map' | 'lanes' | 'list';
-export type BoardSort = 'newest' | 'oldest' | 'updated' | 'priority' | 'run' | 'area' | 'title';
-export type BoardShow = 'all' | 'board' | 'ideas';
-export interface BoardView {
-  layout: BoardViewLayout; sort: BoardSort; show: BoardShow;
-}
-const BOARD_SORTS: BoardSort[] = ['newest', 'oldest', 'updated', 'priority', 'run', 'area', 'title'];
+// Device-local and per project: which layout you read a board in is a
+// preference, not a fact about the work. Unknown or corrupt storage lands on
+// the Map (detail/BoardMap.tsx), and so does every retired layout ('kanban',
+// 'areas', 'list'; owner's calls, 2026-11-20).
+export type BoardViewLayout = 'map' | 'lanes';
+export interface BoardView { layout: BoardViewLayout }
 const BOARD_VIEW_KEY = (slug: string) => `stack.boardView.${slug}`;
 export function getBoardView(slug: string): BoardView {
   return readStoredJSON(BOARD_VIEW_KEY(slug), (p) => {
     const o = (p && typeof p === 'object') ? p as Record<string, unknown> : {};
-    return {
-      layout: o.layout === 'list' || o.layout === 'lanes' ? o.layout : 'map',
-      sort: BOARD_SORTS.includes(o.sort as BoardSort) ? o.sort as BoardSort : 'newest',
-      show: o.show === 'board' || o.show === 'ideas' ? o.show : 'all',
-    };
+    return { layout: o.layout === 'lanes' ? 'lanes' : 'map' };
   });
 }
 export function setBoardView(slug: string, view: BoardView) {

@@ -83,12 +83,10 @@ function readStackEnv() {
 // starting with `?` is optional: pressed when it matches, skipped when not.
 // One starting with `2:` is a DOUBLE press (a lane head's focus canvas),
 // given long enough after it for the card's flight and the canvas to settle.
-// THE BOARD TAB IS THE WORK MAP (detail/BoardMap.tsx): Map, Lanes and List,
-// switched by one control whose choice is stored per browser. Each is
-// optional, because a screen before may already have left that layout up.
-const MAP = '?.km-layout button:nth-child(1)';
-const LANES = '?.bm-toolbar .seg-control:first-child .seg-opt:nth-child(2)';
-const LIST = '?.bm-toolbar .seg-control:first-child .seg-opt:nth-child(3)';
+// THE BOARD TAB IS THE WORK MAP (detail/BoardMap.tsx): Map and Lanes,
+// switched by one control whose choice is stored per browser.
+const MAP = '.bm-toolbar .seg-control:first-child .seg-opt:nth-child(1)';
+const LANES = '.bm-toolbar .seg-control:first-child .seg-opt:nth-child(2)';
 
 const SCREENS = [
   { slug: 'terminal', hash: '#/p/{slug}/terminal' },
@@ -142,14 +140,13 @@ const SCREENS = [
   { slug: 'loops-create', hash: '#/p/{slug}/loops', press: ['.lp .lp-head .lp-primary'] },
   { slug: 'roadmap', hash: '#/p/{slug}/roadmap', press: [MAP] },
   // The work map (first paint) and its stage flow; Lanes, and the focus canvas
-  // a job's lane head zooms (its slice, then the slice's ✎ dialog); the List
-  // and the milestone strip above it.
+  // a job's lane head zooms (its slice, then the slice's ✎ dialog), and the
+  // New job dialog.
   { slug: 'board-map-stage', hash: '#/p/{slug}/roadmap', press: [MAP, '.bm-layouts .seg-opt:nth-child(2)'] },
   { slug: 'board-lanes', hash: '#/p/{slug}/roadmap', press: [LANES] },
   { slug: 'board-slicezoom', hash: '#/p/{slug}/roadmap', press: [LANES, '2:.bm-lanes .bm-lane-head:has(.ref)'] },
   { slug: 'board-sliceedit', hash: '#/p/{slug}/roadmap', press: [LANES, '2:.bm-lanes .bm-lane-head:has(.ref)', '.bf-float [aria-label="Edit slice"]'] },
-  { slug: 'board-list', hash: '#/p/{slug}/roadmap', press: [LIST] },
-  { slug: 'board-milestone', hash: '#/p/{slug}/roadmap', press: [LIST, '.km-spine-ms'] },
+  { slug: 'board-newjob', hash: '#/p/{slug}/roadmap', press: [LANES, '.bm-lanes-ms .k-btn'] },
   // #616 — Charter and Architecture: docs, component cards, ADR rows and
   // their status tags, all on --surface-raised. (The board's Propositions tab is
   // the existing `auto` row further down.)

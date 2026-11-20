@@ -42,8 +42,8 @@ on two screens gets acted on twice; a row on none has silently vanished.
 - **A task and its tickets** (parts, `parent_id`, one level deep). The task's stage is rolled up
   from its parts (`clusterKeyOf`); a part whose task is off the board is an ordinary task again.
 - **The Board tab is the work map** (`detail/BoardMap.tsx`): Map (a tree) and Lanes (a lane per
-  job), with every write borrowed from `Board.tsx`, plus the List. There is no kanban (owner's
-  call, 2026-11-20). Map, Lanes and List must agree on what is on the board.
+  job), with every write borrowed from `Board.tsx`. There is no kanban and no List (owner's
+  calls, 2026-11-20). Map and Lanes must agree on what is on the board.
 - **There is no Roadmap tab** (owner's call, 2026-10-28). The `canvas` column is dormant: nothing
   writes or serves it. Don't bring back a third home without changing `homeOf` with it.
 

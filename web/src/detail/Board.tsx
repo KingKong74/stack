@@ -4,10 +4,9 @@
 // project. Only the board's shape is fetched here (`GET /board`).
 //
 // THE BOARD IS THE WORK MAP (detail/BoardMap.tsx): Map and Lanes. The kanban
-// was removed (owner's call, 2026-11-20); List (detail/BoardList.tsx) is the
-// finder beside them. The map decides nothing and writes nothing of its own:
+// and the List were removed (owner's calls, 2026-11-20). The map decides nothing and writes nothing of its own:
 // every action it offers is one of this file's (approve, send back, sign off,
-// Ready, park, archive, delete, run in terminal), so a write keeps its receipt
+// Ready, park, archive, delete, run in terminal, the slice dialog), so a write keeps its receipt
 // and its Undo. A double-click on the map opens detail/BoardFocus.tsx, which
 // is where a row is edited, a slice zoomed and a part created.
 //
@@ -47,7 +46,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { KitIcon } from './kit/KitIcon';
 import type { BoardArea, BoardList, ItemKind, Milestone, Priority, RoadmapItem, Slice } from '../types';
 import { listKeyOf, clusterKeyOf, queueOrder, isBoardWork, isIced, isAutoIdea, isBuilt, homeOf, bucketRank } from '../lib/plan';
-import { SpineStrip, SliceDialog, MilestoneDialog, liveSlices, currentMilestone } from './Spine';
+import { SliceDialog, liveSlices, currentMilestone } from './Spine';
 import { isHeld } from '../lib/approval';
 import { PRIORITY_META, PRIORITY_DEFAULT, priorityMeta } from '../lib/ui';
 import {
@@ -55,14 +54,13 @@ import {
   getBoardView, setBoardView,
   createRoadmapItem, patchRoadmapItem, deleteRoadmapItem,
   putReadyQueue,
-  createSlice, patchSlice, deleteSlice, createMilestone, patchMilestone, deleteMilestone,
+  createSlice, patchSlice, deleteSlice,
   queueTermLaunch, setStarred,
 } from '../store';
 import { DevelopmentView } from './Development';
-import { go, hrefTo } from '../lib/route';
+import { go } from '../lib/route';
 import { newTermName, termClaim, launchBrief } from '../lib/termLaunch';
-import type { BoardView, BoardSort, BoardShow } from '../store';
-import { BoardListView, SORT_LABEL, SHOW_LABEL } from './BoardList';
+import type { BoardView } from '../store';
 import { BoardFocus, type FocusOpen, type FocusPhase } from './BoardFocus';
 import { BoardMap } from './BoardMap';
 import { PropositionsSection } from './Propositions';
@@ -249,22 +247,13 @@ export function Board({ slug, projectName, items, milestones, slices, onRefresh,
     onRefresh();
   };
 
-  // ---- filters --------------------------------------------------------------
-  const [query, setQuery] = useState('');
-  // Parked cards SHOW by default. Hiding them by default is how a parked item
-  // becomes invisible work, which is the state #247 existed to end.
-  const [hideParked, setHideParked] = useState(false);
-
-  // MAP, LANES OR LIST (store.ts BoardView). Map and Lanes are
-  // detail/BoardMap.tsx; List (detail/BoardList.tsx) is the finder: every row,
-  // area as a tag, sortable, ideas included. Device-local per project.
+  // MAP OR LANES (store.ts BoardView), both detail/BoardMap.tsx. Device-local
+  // per project.
   const [bview, setBview] = useState<BoardView>(() => getBoardView(slug));
   useEffect(() => { setBview(getBoardView(slug)); }, [slug]);
   const writeView = (patch: Partial<BoardView>) => {
     const next = { ...bview, ...patch }; setBview(next); setBoardView(slug, next);
   };
-  const [listArea, setListArea] = useState('');
-  const mapMode = bview.layout === 'map' || bview.layout === 'lanes';
 
   // CLUSTERS (owner's call, 2026-11-02). A row with parts on the board is a
   // cluster whose stage is rolled up from them (`clusterKeyOf`), the map's
@@ -283,26 +272,12 @@ export function Board({ slug, projectName, items, milestones, slices, onRefresh,
   }, [rows, planningSlices]);
   const isPart = (it: RoadmapItem) => it.parentId !== null && partsOf.has(it.parentId);
   const placeOf = (it: RoadmapItem) => clusterKeyOf(it, partsOf.get(it.id) || []);
-  // WHAT THE IN REVIEW VERDICT STRIP MAY ANSWER: built and unverdicted (`isBuilt`
-  // already excludes a verdict), or a cluster whose parts all are, or already
-  // carry one. NOT `placeOf(it) === 'review'` alone: a card dragged into In
-  // Review by hand has a stored `list_key` and nothing built to give a verdict on.
-  const awaitsVerdict = (it: RoadmapItem) => {
-    if (it.done || it.reviewTag) return false;
-    const parts = partsOf.get(it.id) || [];
-    if (!parts.length) return isBuilt(it);
-    return parts.some(isBuilt) && parts.every((p) => isBuilt(p) || p.done || !!p.reviewTag);
-  };
 
-  // THE MILESTONE BEING VIEWED (owner's call, 2026-11-09): the strip's ‹ ›
-  // flick through every milestone, in order, and the board shows that one's
-  // slices. It starts on the current one; a row in no slice is shown only
-  // there, since it belongs to no milestone. Screen state, never stored: the
-  // board should always open on what is current.
-  const [viewMsId, setViewMsId] = useState<number | null>(null);
+  // THE CURRENT MILESTONE, else the first: what the tab's count and a new
+  // slice default to.
   const msOrdered = useMemo(() => [...ms].sort((a, b) => a.position - b.position || a.id - b.id), [ms]);
   const curMs = currentMilestone(ms);
-  const shownMs = ms.find((m) => m.id === viewMsId) || curMs || msOrdered[0] || null;
+  const shownMs = curMs || msOrdered[0] || null;
   const msOfRow = (it: RoadmapItem) => {
     const s = it.sliceId !== null ? sl.find((x) => x.id === it.sliceId) : undefined;
     return s ? s.milestoneId : null;
@@ -314,54 +289,6 @@ export function Board({ slug, projectName, items, milestones, slices, onRefresh,
   // that owes one (`owedAway`), so none sits unanswerable behind a ‹ ›.
   const homeMs = (it: RoadmapItem) => msOfRow(it) ?? curMs?.id ?? shownMs?.id ?? null;
   const inView = (it: RoadmapItem) => !shownMs || homeMs(it) === shownMs.id;
-  const owedAway = useMemo(() => {
-    if (!shownMs) return [];
-    return rows.filter((it) => !it.archived && isBoardWork(it) && !isPart(it) && awaitsVerdict(it) && homeMs(it) !== shownMs.id);
-  }, [rows, partsOf, sl, shownMs?.id, curMs?.id]); // eslint-disable-line react-hooks/exhaustive-deps
-  const jumpToOwed = () => {
-    if (!shownMs || !owedAway.length) return;
-    const at = msOrdered.findIndex((m) => m.id === shownMs.id);
-    const owing = new Set(owedAway.map(homeMs));
-    const next = msOrdered
-      .map((m, i) => ({ m, d: Math.abs(i - at) }))
-      .filter(({ m }) => owing.has(m.id))
-      .sort((a, b) => a.d - b.d)[0];
-    if (!next) return;
-    setViewMsId(next.m.id);
-  };
-  const stepMilestone = (dir: -1 | 1) => {
-    if (!shownMs) return;
-    const i = msOrdered.findIndex((m) => m.id === shownMs.id);
-    const next = msOrdered[i + dir];
-    if (!next) return;
-    setViewMsId(next.id);
-  };
-
-
-  // The List view's rows: the same search and parked filters, but NOT
-  // `isBoardWork` — it is a finder across every screen (BoardList.tsx's header).
-  const listRows = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    return rows
-      .filter((it) => !it.archived)
-      .filter((it) => (hideParked ? !it.skipped : true))
-      .filter((it) => !needle
-        || it.title.toLowerCase().includes(needle)
-        || it.note.toLowerCase().includes(needle)
-        || String(it.id) === needle.replace(/^#/, ''));
-  }, [rows, query, hideParked]);
-  const listAreas = useMemo(() => {
-    const names = new Set<string>();
-    for (const it of listRows) if (it.area.trim()) names.add(it.area.trim());
-    return [...names].sort((a, b) => a.localeCompare(b));
-  }, [listRows]);
-
-
-  // `area` is `roadmap_items.area`, and (project, area) IS THE OVERNIGHT LANE
-  // (#267) — an area with an open claimed item admits no second worker. So a
-  // group says whether its lane is HELD and by which branch, which is the one
-  // fact about an area that changes what the night can do.
-  const areaKey = (it: RoadmapItem) => it.area.trim() || UNTAGGED;
   // WHERE A NEW CARD IS BORN (#608): the current milestone's only live slice, else nowhere, which is the Icebox. Guessing
   // between two slices would file work under a piece nobody chose.
   const cur = currentMilestone(ms);
@@ -378,6 +305,7 @@ export function Board({ slug, projectName, items, milestones, slices, onRefresh,
   // Read off every row on the board, NOT the searched set: the filter row lists
   // every area whatever the search box says (Board v5), and a chip that
   // vanished mid-search would take a live pick with it.
+  const areaKey = (it: RoadmapItem) => it.area.trim() || UNTAGGED;
   const areaOrder = useMemo(() => {
     const order = [...areas.map((a) => a.name)];
     let untagged = false;
@@ -405,7 +333,6 @@ export function Board({ slug, projectName, items, milestones, slices, onRefresh,
   const onBoard = rows.filter((it) => !it.archived && isBoardWork(it));
 
 
-  const parked = onBoard.filter((it) => it.skipped).length;
   // The tab's count: the viewed milestone's board work, the cards the map draws in it.
   const shown = onBoard.filter((it) => !isPart(it) && inView(it)).length;
 
@@ -541,8 +468,7 @@ export function Board({ slug, projectName, items, milestones, slices, onRefresh,
       setNote(`#${it.id} went back to To Do with your note. Run it in a terminal and the session starts from what you asked for.`);
     });
 
-  const [sliceEdit, setSliceEdit] = useState<{ slice: Slice | null } | null>(null);
-  const [msEdit, setMsEdit] = useState(false);
+  const [sliceEdit, setSliceEdit] = useState<{ slice: Slice | null; milestoneId?: number | null } | null>(null);
   const saveSlice = (v: { title: string; spec: string; areas: string[]; milestoneId: number | null }) =>
     guard(async () => {
       const editing = sliceEdit?.slice ?? null;
@@ -568,22 +494,6 @@ export function Board({ slug, projectName, items, milestones, slices, onRefresh,
       setNote(iced.length ? `Deleted “${slice.title}”. Its ${iced.length} item${iced.length === 1 ? '' : 's'} went to the Icebox.` : `Deleted “${slice.title}”.`);
       onRefresh();
     });
-  const msWrote = (m: Milestone) => {
-    // Making one current finishes the incumbent on the server; mirror that here
-    // so the strip is right before the re-read lands.
-    setMs((xs) => {
-      const rest = xs.filter((x) => x.id !== m.id).map((x) => (m.status === 'active' && x.status === 'active' ? { ...x, status: 'done' as const } : x));
-      return [...rest, m].sort((a, b) => Number(a.status === 'done') - Number(b.status === 'done') || a.position - b.position || a.id - b.id);
-    });
-    onRefresh();
-  };
-  const saveMilestone = (id: number, v: { name: string; goal: string; targetOn: string | null }) =>
-    guard(async () => { setMsEdit(false); msWrote(await patchMilestone(slug, id, v)); });
-  const startMilestone = (v: { name: string; goal: string; targetOn: string | null }) =>
-    guard(async () => { setMsEdit(false); msWrote(await createMilestone(slug, { ...v, status: 'active' })); });
-  const makeCurrent = (id: number) =>
-    guard(async () => { setMsEdit(false); setViewMsId(null); msWrote(await patchMilestone(slug, id, { status: 'active' })); });
-
   // A card born in a column that is not its derived one carries the override
   // from the start; one born in To Do does not, because it would derive there
   // anyway. Two calls rather than one because POST has no `listKey`.
@@ -619,7 +529,6 @@ export function Board({ slug, projectName, items, milestones, slices, onRefresh,
 
 
   // ---- transient UI ---------------------------------------------------------
-  const [selected, setSelected] = useState<number | null>(null);
   const [dialog, setDialog] = useState(false);
 
   // ---- THE FOCUS CANVAS (detail/BoardFocus.tsx) ------------------------------
@@ -636,7 +545,6 @@ export function Board({ slug, projectName, items, milestones, slices, onRefresh,
     const head = el.closest('.km-group')?.querySelector('.km-grouphead') as HTMLElement | null;
     const r = (head || el).getBoundingClientRect();
     const main = el.closest('.con-main') || el.closest('.km');
-    if (editId != null) setSelected(editId);
     setFocusPhase('measure');
     setFocus({ id: -slice.id, sliceId: slice.id, from: { l: r.left, t: r.top, w: r.width },
       edit: editId != null, editId,
@@ -651,7 +559,6 @@ export function Board({ slug, projectName, items, milestones, slices, onRefresh,
     if (home) { openSlice(home, el, editId ?? it.id); return; }
     const r = el.getBoundingClientRect();
     const main = el.closest('.con-main') || el.closest('.km');
-    setSelected(it.id);
     setFocusPhase('measure');
     setFocus({ id: it.id, from: { l: r.left, t: r.top, w: r.width }, edit, editId,
       canvasLeft: Math.round(main?.getBoundingClientRect().left ?? 0) });
@@ -684,12 +591,6 @@ export function Board({ slug, projectName, items, milestones, slices, onRefresh,
     return (lists || []).some((l) => l.key === k) ? k : CATCH_ALL;
   };
 
-  // A deep link SELECTS its row; the scroll to it is ProjectDetail's, off the
-  // `data-hl` each card now carries.
-  useEffect(() => {
-    const n = Number(highlightId);
-    if (Number.isFinite(n) && n > 0) setSelected(n);
-  }, [highlightId]);
 
   return (
     <>
@@ -754,7 +655,7 @@ export function Board({ slug, projectName, items, milestones, slices, onRefresh,
           </div>
         )}
 
-        {view === 'board' && mapMode && (
+        {view === 'board' && (
           <BoardMap slug={slug} projectName={projectName} rows={rows} milestones={ms} slices={sl}
             mode={bview.layout === 'lanes' ? 'lanes' : 'map'}
             highlightId={highlightId} onLayout={(layout) => writeView({ layout })}
@@ -763,87 +664,19 @@ export function Board({ slug, projectName, items, milestones, slices, onRefresh,
               openItem: (it, el) => openFocus(it, el, false),
               openSlice: (slice, el) => openSlice(slice, el),
               showOffMap: () => { setView('propositions'); },
+              newSlice: (milestoneId) => setSliceEdit({ slice: null, milestoneId }),
+              editSlice: (slice) => setSliceEdit({ slice }),
             }} />
         )}
 
-        {view === 'board' && !mapMode && <>
-        <SpineStrip milestones={ms} slices={sl} iced={icedCount}
-          viewing={shownMs} position={shownMs ? msOrdered.findIndex((m) => m.id === shownMs.id) : -1} total={msOrdered.length}
-          onStep={stepMilestone} onCurrent={curMs && shownMs?.id !== curMs.id ? () => { setViewMsId(null); } : undefined}
-          onMilestone={() => { setMsEdit(true); }}
-          onNewSlice={() => { setSliceEdit({ slice: null }); }}
-          onIcebox={() => { setView('propositions'); }} milestonesHref={hrefTo.detail(slug, 'milestones')}
-          owedAway={owedAway.length} onOwedAway={jumpToOwed} />
-        <div className="km-toolbar">
-          <span className="searchbox sm km-search">
-            <KitIcon name="search" size={14} />
-            <input placeholder="Search board" aria-label="Search board" value={query}
-              onChange={(e) => setQuery(e.target.value)} />
-          </span>
-
-          <div className="seg-control sm km-layout" role="tablist" aria-label="Board layout">
-            <button role="tab" aria-selected={false} className="seg-opt"
-              onClick={() => writeView({ layout: 'map' })}>Map</button>
-            <button role="tab" aria-selected={false} className="seg-opt"
-              onClick={() => writeView({ layout: 'lanes' })}>Lanes</button>
-            <button role="tab" aria-selected className="seg-opt on">List</button>
-          </div>
-
-          <>
-            <select className="k-select sm" aria-label="Sort" value={bview.sort}
-              onChange={(e) => writeView({ sort: e.target.value as BoardSort })}>
-              {(Object.keys(SORT_LABEL) as BoardSort[]).map((k) => <option key={k} value={k}>{SORT_LABEL[k]}</option>)}
-            </select>
-            <select className="k-select sm" aria-label="Show" value={bview.show}
-              onChange={(e) => writeView({ show: e.target.value as BoardShow })}>
-              {(Object.keys(SHOW_LABEL) as BoardShow[]).map((k) => <option key={k} value={k}>{SHOW_LABEL[k]}</option>)}
-            </select>
-            <select className="k-select sm" aria-label="Area" value={listArea}
-              onChange={(e) => setListArea(e.target.value)}>
-              <option value="">All areas</option>
-              {listAreas.map((a) => <option key={a} value={a}>{a}</option>)}
-              <option value={UNTAGGED}>No area</option>
-            </select>
-          </>
-
-          {/* Parked is a FILTER and never the default — see `hideParked`. */}
-          <button className={`k-btn sm secondary km-parked${hideParked ? ' on' : ''}`}
-            onClick={() => setHideParked(!hideParked)}
-            title="Parked items are planned and deliberately not picked up. The autopilot skips them.">
-            <KitIcon name="layers" size={14} />{hideParked ? 'Parked hidden' : `Parked shown${parked ? ` (${parked})` : ''}`}
-          </button>
-
-          <span className="km-count">
-            {`${listRows.length} item${listRows.length === 1 ? '' : 's'}, ideas included`}
-          </span>
-        </div>
-
-        {lists && (
-          <BoardListView rows={listRows} sort={bview.sort} show={bview.show} area={listArea}
-            lists={lists} areas={areas} slices={sl} milestones={ms} planningSlices={planningSlices}
-            selected={selected} onOpen={(it) => { setSelected(it.id); onEdit(it); }} />
-        )}
-
-        </>}
       </div>
 
       {sliceEdit && (
-        <SliceDialog slice={sliceEdit.slice} milestones={ms} defaultMilestoneId={shownMs?.id ?? null}
+        <SliceDialog slice={sliceEdit.slice} milestones={ms} defaultMilestoneId={sliceEdit.milestoneId ?? shownMs?.id ?? null}
           areaNames={areaOrder.filter((k) => k !== UNTAGGED)}
           count={sliceEdit.slice ? rows.filter((it) => it.sliceId === sliceEdit.slice!.id && !it.archived).length : 0}
           onClose={() => setSliceEdit(null)} onSave={saveSlice}
           onDelete={sliceEdit.slice ? () => dropSlice(sliceEdit.slice!) : undefined} />
-      )}
-      {msEdit && (
-        <MilestoneDialog milestones={ms} editing={shownMs} onClose={() => setMsEdit(false)}
-          onSave={saveMilestone} onCreate={startMilestone} onMakeCurrent={makeCurrent}
-          onDelete={(id) => guard(async () => {
-            await deleteMilestone(slug, id);
-            setMsEdit(false); setViewMsId(null);
-            setMs((xs) => xs.filter((m) => m.id !== id));
-            setSl((xs) => xs.filter((s) => s.milestoneId !== id));
-            onRefresh();
-          })} />
       )}
 
       {dialog && (

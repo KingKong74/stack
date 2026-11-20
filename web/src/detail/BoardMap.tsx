@@ -63,6 +63,9 @@ export interface MapActions {
   openSlice: (slice: Slice, el: HTMLElement | null) => void;
   /** Off the map: the Icebox and ideas live on the Propositions tab. */
   showOffMap: () => void;
+  /** The slice dialog, new (in a milestone) or editing a job's slice. */
+  newSlice: (milestoneId: number | null) => void;
+  editSlice: (slice: Slice) => void;
 }
 
 type Tone = 'success' | 'info' | 'warning' | 'danger' | 'neutral';
@@ -96,7 +99,7 @@ export function BoardMap({ slug, projectName, rows, milestones, slices, highligh
   highlightId: string | null;
   actions: MapActions;
   /** Switch the Board tab's layout. */
-  onLayout: (layout: 'map' | 'lanes' | 'list') => void;
+  onLayout: (layout: 'map' | 'lanes') => void;
 }) {
   const map = useMemo(() => buildWorkMap({ slug, name: projectName }, rows, milestones, slices),
     [slug, projectName, rows, milestones, slices]);
@@ -355,7 +358,7 @@ export function BoardMap({ slug, projectName, rows, milestones, slices, highligh
     if (n.type === 'milestone') {
       const m = n.milestone!;
       const lead = m.status === 'done' ? 'Achieved.' : m.status === 'active' ? 'The current milestone.' : 'Planned. Not yet current.';
-      return [`${lead} ${firstLine(m.goal)}`.trim(), []];
+      return [`${lead} ${firstLine(m.goal)}`.trim(), [{ label: 'New job', run: () => actions.newSlice(m.id) }]];
     }
     if (n.type === 'job') {
       const kids = n.kids.map((k) => node(k)!);
@@ -363,6 +366,7 @@ export function BoardMap({ slug, projectName, rows, milestones, slices, highligh
       const acts: Act[] = [];
       if (review) acts.push({ label: `Review ${review.ref}`, primary: true, run: () => select(review.key, true) });
       acts.push({ label: 'Open on canvas', run: (el) => actions.openSlice(n.slice!, el) });
+      acts.push({ label: 'Edit job', run: () => actions.editSlice(n.slice!) });
       const built = kids.filter((k) => isDone(k.status) || k.status === 'review').length;
       return [kids.length ? `${built}/${kids.length} tasks built.${review ? ` ${review.ref} is waiting for your verdict.` : ''}` : 'No tasks yet. Open it on the canvas to add some.', acts];
     }
@@ -462,6 +466,8 @@ export function BoardMap({ slug, projectName, rows, milestones, slices, highligh
             </button>
             <Chip status={msNode.status} />
             <span className="meta">{metaOf(msNode)}</span>
+            <span className="sp" />
+            <button className="k-btn sm secondary" onClick={() => actions.newSlice(msNode.milestone?.id ?? null)}>+ New job</button>
           </> : <span className="meta">No milestones yet.</span>}
         </div>
         <div className="bm-lanes-cols">
@@ -531,7 +537,7 @@ export function BoardMap({ slug, projectName, rows, milestones, slices, highligh
             </section>
           );
         })}
-        {!board.lanes.length && <div className="bm-empty">No jobs in this milestone yet. Plan them from the milestone's canvas.</div>}
+        {!board.lanes.length && <div className="bm-empty">No jobs in this milestone yet. Add one with + New job.</div>}
         {msList.length > 1 && <div className="bm-lanes-note">Page through milestones with ‹ ›. These are the same items as the map.</div>}
       </div>
     </div>
@@ -545,7 +551,6 @@ export function BoardMap({ slug, projectName, rows, milestones, slices, highligh
         <div className="seg-control sm" role="tablist" aria-label="Board layout">
           <button role="tab" aria-selected={!lanesMode} className={`seg-opt${lanesMode ? '' : ' on'}`} onClick={() => onLayout('map')}>Map</button>
           <button role="tab" aria-selected={lanesMode} className={`seg-opt${lanesMode ? ' on' : ''}`} onClick={() => onLayout('lanes')}>Lanes</button>
-          <button role="tab" aria-selected={false} className="seg-opt" onClick={() => onLayout('list')}>List</button>
         </div>
         {!lanesMode && <div className="seg-control sm bm-layouts" role="tablist" aria-label="Map arrangement">
           <button role="tab" aria-selected={prefs.layout === 'tree'} title="Tree: project to ticket, left to right"
@@ -849,7 +854,11 @@ export function BoardMap({ slug, projectName, rows, milestones, slices, highligh
             const out = [];
             if (live2) out.push(row('Open session', () => openSession(live2), 'dbl-click'));
             if (!lanesMode) out.push(row(prefs.detailClosed ? 'Show details' : 'Centre on map', () => { setPrefs({ detailClosed: false }); select(ctxNode.key, true); }));
-            if (ctxNode.slice) out.push(row('Open on canvas', () => actions.openSlice(ctxNode.slice!, cardEl(ctxNode.key))));
+            if (ctxNode.slice) {
+              out.push(row('Open on canvas', () => actions.openSlice(ctxNode.slice!, cardEl(ctxNode.key))));
+              out.push(row('Edit job…', () => actions.editSlice(ctxNode.slice!)));
+            }
+            if (ctxNode.milestone) out.push(row('New job…', () => actions.newSlice(ctxNode.milestone!.id)));
             if (it) {
               out.push(<span key="s1" className="sep" />);
               // Lanes has no details panel, so a verdict is given from here.
