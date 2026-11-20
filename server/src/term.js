@@ -413,19 +413,36 @@ export function attachTerm(httpServer) {
       }
       wss.handleUpgrade(req, socket, head, (ws) => acceptAgent(ws));
     } else if (path === '/term') {
-      wss.handleUpgrade(req, socket, head, (ws) => acceptBrowser(ws));
+      wss.handleUpgrade(req, socket, head, (ws) => { watchPongs(ws); acceptBrowser(ws); });
     } else if (path === '/term-status') {
-      wss.handleUpgrade(req, socket, head, (ws) => acceptWatcher(ws));
+      wss.handleUpgrade(req, socket, head, (ws) => { watchPongs(ws); acceptWatcher(ws); });
     } else {
       socket.destroy();
     }
   });
 
-  // Keepalive pings so idle sessions survive proxies/tunnels between hops.
+  // Keepalive pings so idle sessions survive proxies/tunnels between hops,
+  // AND a pong check on every browser socket. Cloudflare keeps our half of a
+  // socket open after the browser's half is gone (a laptop lid, a network
+  // change), and our own pings keep it warm. Without the check that socket
+  // never closes, so the daemon never gets its 'kill', the pane's tmux client
+  // stays attached forever, and End can't kill the session: the daemon only
+  // kills DETACHED sessions. Two missed pongs (~60s) is dead. The check is safe
+  // because Cloudflare forwards ping and pong end to end, and a browser answers
+  // a ping in its network stack, so a throttled background tab still does.
+  // terminate() fires 'close', and the close handler sends the 'kill'.
+  const missed = new WeakMap(); // browser ws -> pings unanswered
+  const beat = (ws) => {
+    const n = missed.get(ws) || 0;
+    if (n >= 2) { try { ws.terminate(); } catch { /* already gone */ } return; }
+    missed.set(ws, n + 1);
+    try { ws.ping(); } catch { /* closing */ }
+  };
+  const watchPongs = (ws) => { missed.set(ws, 0); ws.on('pong', () => missed.set(ws, 0)); };
   setInterval(() => {
     if (agent) agent.ping();
-    for (const ws of sessions.values()) ws.ping();
-    for (const ws of watchers) ws.ping();
+    for (const ws of sessions.values()) beat(ws);
+    for (const ws of watchers) beat(ws);
   }, 30_000).unref();
 
   // The sids the current daemon has re-announced since it connected (#518).
