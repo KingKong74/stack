@@ -3,10 +3,13 @@ import { hrefTo, useRoute } from '../lib/route';
 import { pickAsking, waitedFor, askingName, diffStops, badgeTitle, notifyText, stopKey, type AskingSession } from '../lib/asking';
 import { getDetachedFeed, getLastViewedProject, getAskNotify, setAskNotify, onAskNotifyChange, getAutoRefreshSeconds } from '../store';
 import { useAutoRefresh } from '../lib/autoRefresh';
+import { projectOfSession } from '../lib/termLaunch';
 import { NavIcons } from '../detail/ConsoleNav';
 
+// A row opens ITS OWN project's terminal (owner's call, 2026-11-20), never the
+// one you happen to be on.
 const askingTerminalHref = (a: AskingSession) =>
-  hrefTo.projectTerminal(a.project || getLastViewedProject() || 'stack', a.cwd, a.name);
+  hrefTo.projectTerminal(projectOfSession(a) || getLastViewedProject() || 'stack', a.cwd, a.name);
 
 // A SESSION THAT HAS STOPPED TO ASK YOU SOMETHING, SAID AWAY FROM THE TERMINAL.
 //

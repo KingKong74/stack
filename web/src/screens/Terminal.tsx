@@ -23,7 +23,7 @@ import {
   peekTermLaunch, clearTermLaunch,
 } from '../store';
 import { hrefTo } from '../lib/route';
-import { newTermName } from '../lib/termLaunch';
+import { newTermName, projectOfSession } from '../lib/termLaunch';
 import { askOf, type AskInfo } from '../lib/asking';
 
 import { useAutoRefresh } from '../lib/autoRefresh';
@@ -185,7 +185,6 @@ type Sess = {
 
 // The project a session belongs to: the first segment of its cwd, which is
 // what `~/slug` opens, unless the host said otherwise (a branch session).
-const firstSeg = (cwd?: string) => (cwd || '').replace(/^[/\\~]+/, '').split('/')[0] || '';
 // Projects in a stable order, home ('') last.
 function byProject<T>(list: T[], projectOf: (x: T) => string): { project: string; rows: T[] }[] {
   const out = new Map<string, T[]>();
@@ -935,7 +934,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, project
 
   // The project a booked session runs against — the dispatcher resolves repos
   // as $STACK_AUTOPILOT_ROOT/<slug>, so the cwd's first segment IS the slug.
-  const projectSlug = activeSess?.project || firstSeg(activeSess?.cwd ?? cwd.trim());
+  const projectSlug = projectOfSession({ project: activeSess?.project, cwd: activeSess?.cwd ?? cwd.trim() });
   const schedKey = usage?.sched ? `${projectSlug} ${usage.sched.runDate} ${usage.sched.atTime}` : '';
   const booked = !!schedKey && usagePrefs.lastAutoKey === schedKey;
   // Today's fresh tokens off this host's Claude transcripts (the daemon's
@@ -1049,8 +1048,8 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, project
     return () => clearInterval(t);
   }, [visible]);
 
-  const projectOf = (s: Sess) => s.project || firstSeg(s.cwd);
-  const projectOfDet = (d: DetachedSession) => d.project || firstSeg(d.cwd);
+  const projectOf = (s: Sess) => projectOfSession(s);
+  const projectOfDet = (d: DetachedSession) => projectOfSession(d);
   const isPinned = (s: Sess) => !!s.tmux && pinnedOf(s.tmux);
   const detOf = (s: Sess) => (s.tmux ? detached.find((d) => d.name === s.tmux) : undefined);
   // A live tab's status off its OWN evidence: real output recently, read off

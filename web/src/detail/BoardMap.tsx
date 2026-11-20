@@ -47,6 +47,7 @@ import {
 } from '../store';
 import { useAutoRefresh } from '../lib/autoRefresh';
 import { go } from '../lib/route';
+import { projectOfSession } from '../lib/termLaunch';
 
 export interface MapActions {
   approve: (it: RoadmapItem) => void;
@@ -79,7 +80,6 @@ const MIN_Z = 0.3;
 const MAX_Z = 1.6;
 const PAN_MARGIN = 280;
 
-const firstSeg = (cwd?: string) => (cwd || '').replace(/^[/\\~]+/, '').split('/')[0] || '';
 const firstLine = (s: string) => s.split('\n').map((x) => x.trim()).find(Boolean) || '';
 
 function Chip({ status, small }: { status: NodeStatus; small?: boolean }) {
@@ -163,7 +163,7 @@ export function BoardMap({ slug, projectName, rows, milestones, slices, highligh
   }, []);
   useEffect(() => { readSessions(); }, [readSessions]);
   useAutoRefresh(readSessions);
-  const mine = sessions.filter((d) => (d.project || firstSeg(d.cwd)) === slug);
+  const mine = sessions.filter((d) => projectOfSession(d) === slug);
   const liveNames = new Set(sessions.map((d) => d.name));
   const names = getTermNames();
   const sessionLabel = (d: DetachedSession) => names[d.name] || d.label || d.name;

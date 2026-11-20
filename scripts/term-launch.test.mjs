@@ -20,7 +20,7 @@ module.registerHooks({
   },
 });
 
-const { newTermName, termClaim, launchBrief } = await import(new URL('../web/src/lib/termLaunch.ts', import.meta.url));
+const { newTermName, termClaim, launchBrief, projectOfSession } = await import(new URL('../web/src/lib/termLaunch.ts', import.meta.url));
 const { listFor } = await import(new URL('../server/src/lists.js', import.meta.url));
 
 test('a new name passes the daemon\'s validName and is fresh each time', () => {
@@ -69,4 +69,14 @@ test('the columns move themselves: claim → In Progress, built_note → In Revi
   assert.equal(listFor({ ...claimed, built_note: 'Built it; verified by the test.' }), 'review');
   // Released without building: back to To Do.
   assert.equal(listFor({ ...claimed, claimed_by: '' }), 'planned');
+});
+
+test('a session belongs to its own project: the host\'s, else its cwd\'s first segment', () => {
+  // The host sends no `project` today; a waiting session in ~/hmw must link to
+  // hmw's terminal, not to whichever project is open.
+  assert.equal(projectOfSession({ project: '', cwd: 'hmw' }), 'hmw');
+  assert.equal(projectOfSession({ cwd: '~/stack/web' }), 'stack');
+  assert.equal(projectOfSession({ cwd: '/moniqr' }), 'moniqr');
+  assert.equal(projectOfSession({ project: 'bookkeeper', cwd: 'hmw' }), 'bookkeeper');
+  assert.equal(projectOfSession({}), '');
 });

@@ -21,6 +21,16 @@
 // only job.
 import type { RoadmapItem } from '../types';
 
+/**
+ * THE PROJECT A SESSION BELONGS TO: the host's `project` when it sent one, else
+ * the first segment of its cwd, which is the project's slug for every checkout
+ * under $HOME (the daemon jails cwds there). The host leaves `project` empty
+ * today, so without the cwd half every session would read as projectless and
+ * a link to it would land in whatever project was last open.
+ */
+export const projectOfSession = (s: { project?: string; cwd?: string }) =>
+  s.project || (s.cwd || '').replace(/^[/\\~]+/, '').split('/')[0] || '';
+
 /** A fresh tmux name, spelled the way the daemon's own `generateName('term')` spells it. */
 export function newTermName(): string {
   const b = new Uint8Array(4);
