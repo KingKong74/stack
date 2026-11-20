@@ -73,50 +73,22 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 // so its press checks that the ledger answered, not that a row exists.
 //
 // THIS HARNESS IS READ-ONLY, and a wired board is full of controls that write.
-// Every press here OPENS something — a popover, a menu, a composer, a filter —
-// and not one of them commits: the priority picker is pressed but no priority
-// is picked, the composer is opened but never submitted, the column menu is
-// opened but no item in it is chosen. Adding a press that writes would have
+// Every press here OPENS something — a canvas, a dialog, a filter — and not
+// one of them commits: a dialog is dismissed on its backdrop, which saves
+// nothing. Adding a press that writes would have
 // this harness reordering the owner's real board every time it runs. If a write
 // path ever needs covering, it needs a project of its own to write to first.
 //
-// TWO OF THESE NEED A CARD TO EXIST, and a real board can be empty — which is
-// exactly why the mockup era's rule was "nothing card-shaped". They are here
-// anyway, scoped with `:has(.km-card)` so they find a card wherever it is,
-// because a board's card is most of what a board is and a harness that never
-// touched one would be photographing the screen rather than testing it. An
-// EMPTY board reports both as `control-missing`, which is the honest answer —
-// nothing about those controls was tested — and `./stack board-demo --seed`
-// is what puts cards on a board that has none.
-//
-// THE COLUMNS LEAD AND THE AREAS GROUP INSIDE THEM (Board v5), so `.km-col`
-// appears once per board column. Every selector below is scoped with
-// `:has(.km-card)` or an `nth-child` inside `.km-cols`, and the runner takes
-// `.first()`, so each press lands on the first match that can serve it.
-//
-// EVERY BOARD POPOVER IS A CHILD OF `<body>` NOW, and the `expect` selectors
-// below say so deliberately (`body > .km-prilist`, not `.km-card .km-prilist`).
-// `.km-cols` scrolls sideways, which makes it a clip on BOTH axes, so a menu
-// rendered inside a column was being cut off at the lane's edge — the portal is
-// the fix and this is where it is pinned. A selector matching the menu wherever
-// it lives would let the next refactor put it back inside the clip, and the
-// smoke suppresses `clipped-ancestor` overflow, so nothing else here would
-// notice. If one of these three fails, read Board.tsx's `Popover`.
-//
-// WHAT IS NOT PRESSED HERE, and why: a double-click on the CARD (rather than on
-// its title) opens the item modal, which covers the screen for every press
-// after it, and this harness has no way to dismiss one. The title's own
-// double-click — the other half of that pair — is `board-inline` below.
-//
-// THE ORDER IS LOAD-BEARING, and for a reason the mockup's list already knew:
-// every popover here floats over what is under it. The card presses come FIRST,
-// because a column menu opens over the first card in its own column. The parked filter comes LAST of the board-view
-// presses, because it HIDES rows — every demo card is parked, so pressing it
-// earlier would empty the board underneath every press that follows.
+// THE ORDER IS LOAD-BEARING: the layout and arrangement presses persist in
+// this browser's storage and reach the narrow pass, so the run walks Map →
+// Lanes → List and ends back on the Map, and the parked filter is pressed
+// twice. The lane-head zoom needs a job to exist; an empty board reports it as
+// `control-missing`, the honest answer.
 const ROADMAP_PANELS = [
-  // THE BOARD TAB OPENS ON THE WORK MAP (detail/BoardMap.tsx). Its presses come
-  // first and end on the map's Board switch, because every press after them
-  // names the kanban. The arrangement press writes only this browser's storage.
+  // THE BOARD TAB IS THE WORK MAP (detail/BoardMap.tsx): Map, then Lanes, then
+  // the List. The kanban was removed (2026-11-20). The arrangement and layout
+  // presses write only this browser's storage, and the run ends back on the Map
+  // so the narrow pass starts where this one did.
   {
     id: 'board-map-fit', label: 'Board — the work map draws and Fit frames it',
     click: '.bm-zoom .fit', expect: '.bm-canvas .bm-card.type-project',
@@ -134,47 +106,24 @@ const ROADMAP_PANELS = [
     click: '.bm-canvas .bm-card.sel', expect: '.bm-detail .bm-sec.head h2',
   },
   {
-    id: 'board-lanes', label: 'Board — the Lanes switch draws a lane per job',
-    click: '.bm-toolbar .seg-control:first-child .seg-opt:nth-child(2)', expect: '.bm-lanes .bm-lanes-cols',
+    id: 'board-lanes', label: 'Board — the Lanes switch draws a lane per job, with no side panels',
+    click: '.bm-toolbar .seg-control:first-child .seg-opt:nth-child(2)',
+    expect: '.bm:has(.bm-lanes .bm-lanes-cols):not(:has(.bm-detail)):not(:has(.bm-attn))',
   },
   {
-    id: 'board-lanes-select', label: 'Board — a lane header selects its job into the detail panel',
+    id: 'board-lanes-select', label: 'Board — a lane header selects its job',
     click: '.bm-lanes .bm-lane-head', expect: '.bm-lane.sel',
   },
+  // A JOB'S LANE HEAD ZOOMS ITS SLICE onto the focus canvas (BoardFocus
+  // decision 6). A job has no session of its own, so the double press can't
+  // leave for the terminal. Its ✎ is the slice's dialog, dismissed on the
+  // backdrop, which saves nothing; ← Board must come after it.
   {
-    id: 'board-kanban', label: 'Board — the Board switch opens the kanban',
-    click: '.bm-toolbar .seg-control:first-child .seg-opt:nth-child(3)', expect: '.km-cols',
-  },
-  {
-    // #524 — THE BOARD LANDS FOLDED: every area group is a header until
-    // opened, and a folded group draws no `.km-card`. So Expand all (the
-    // Collapse all button, which reads "Expand all" while everything is
-    // folded) goes FIRST, or every card press below reports a control hidden
-    // behind the default.
-    id: 'board-openall',
-    label: 'Board — lands folded; Expand all opens every area',
-    click: '.km-collapseall',
-    expect: '.km-cols:not(:has(.km-group.folded))',
-  },
-  // THE FOCUS CANVAS (detail/BoardFocus.tsx), FIRST AFTER Expand all: the card
-  // popovers below stay open (nothing here dismisses one), and the card menu
-  // is tall enough to clamp over a tall card's own id (a cluster), which
-  // would swallow this double press. A double press on the card's id
-  // (not its title, which renames) flies it out; the presses after it are all
-  // view state — the editor OPENED and typed nothing into (its flush on close
-  // sends nothing unchanged), and ← Board, which must come last so every
-  // press below finds the board drawn again. No tray press: at the narrow
-  // viewport the tray hides behind its Bring in toggle (the design's), so the
-  // palette audit measures it at desktop width instead.
-  // A TASK IN A SLICE OPENS ITS SLICE (BoardFocus decision 6, 2026-11-09):
-  // the slice flies out with its tasks around it and the pressed task already
-  // in the editor. Its ✎ is the slice's own dialog, dismissed on the backdrop.
-  {
-    id: 'board-focus',
-    label: 'Board — a double-clicked task opens its slice, task in the editor',
-    click: '.km-slicegroup .km-card .km-cardmeta .id',
+    id: 'board-slicezoom',
+    label: 'Board — double-click a job’s lane to zoom its slice',
+    click: '.bm-lanes .bm-lane-head:has(.ref)',
     dblclick: true,
-    expect: '.bf .bf-editor',
+    expect: '.bf-float.bf-slice',
   },
   {
     id: 'board-focus-edit',
@@ -185,103 +134,13 @@ const ROADMAP_PANELS = [
   },
   {
     id: 'board-focus-close',
-    label: 'Board — ← Board flies the card home',
+    label: 'Board — ← Board flies the slice home',
     click: '.bf-back',
-    expect: 'body:not(:has(.bf))',
+    expect: 'body:not(:has(.bf)) .bm-lanes',
   },
   {
-    id: 'board-priority',
-    label: 'Board — card priority picker',
-    click: '.km-col:has(.km-card) .km-card [aria-label^="Priority"]',
-    expect: 'body > .km-prilist',
-  },
-  {
-    // #507 — the SIZE picker, on the same card and anchored the same way. It is
-    // drawn on every card including an unsized one (a control that appears only
-    // once a card has points is one nobody finds), so this never depends on the
-    // board happening to have a sized card on it.
-    id: 'board-points',
-    label: 'Board — card story-point picker',
-    click: '.km-col:has(.km-card) .km-card [aria-label^="Story points"]',
-    expect: 'body > .km-ptslist',
-  },
-  {
-    // The same card: both popovers anchor to the card's own bottom edge (and
-    // flip above it only when the window leaves no room), so each covers what
-    // is under the card and never this card's own meta row.
-    id: 'board-cardmenu',
-    label: 'Board — card actions menu',
-    click: '.km-col:has(.km-card) .km-card [aria-label^="More actions for #"]',
-    // `.km-kindrow` rather than the menu itself: it proves the menu opened AND
-    // that it still carries #508's kind/due block, which is the only coverage
-    // those two controls can have here — pressing either of them WRITES, and
-    // nothing in this harness may write to the owner's real board.
-    expect: 'body > .km-menu.card .km-kindrow',
-  },
-  {
-    id: 'board-colmenu',
-    label: 'Board — column actions menu',
-    // The card menu above is still open, and with the Propositions column
-    // first it can sit over this header at narrow widths: close it first.
-    clear: '.km-toolbar .km-count',
-    click: '.km-col:nth-child(2) [aria-label^="Column actions"]',
-    expect: 'body > .km-menu:not(.card)',
-  },
-  {
-    // A different column from the menu above, which covers its own column's
-    // cards and the composer under them.
-    id: 'board-composer',
-    label: 'Board — lane composer',
-    click: '.km-col:nth-child(3) .km-add',
-    expect: '.km-col:nth-child(3) .km-composer',
-  },
-  {
-    // #469 — the inline title editor. It opens on a DOUBLE click and on
-    // nothing else. Read-only despite being an editor: the press opens it and
-    // types nothing, and the blur that follows commits an unchanged title,
-    // which `retitle` drops before it reaches the wire.
-    id: 'board-inline',
-    label: 'Board — inline title editor',
-    click: '.km-col:has(.km-card) .km-card .t',
-    dblclick: true,
-    expect: '.km-card.editing .km-inline',
-  },
-  // #473 — THE AREA REGISTRY, and these presses only OPEN things, which is
-  // this harness's rule: no area is created, renamed, recoloured or deleted by
-  // a smoke run. The New area composer is left open on purpose — its blur
-  // commits an empty name, which `AddArea` drops before it reaches the wire.
-  {
-    id: 'board-newarea',
-    label: 'Board — + New area opens its name field',
-    click: '.km-addarea',
-    expect: '.km-addarea.open input',
-  },
-  // #608 — THE BOARD LANDS GROUPED BY SLICE, so a group head is a SLICE head
-  // and its control is ✎ Edit slice, not the area's ⋯ (which draws only while
-  // grouped by area, and is not pressed here: switching the grouping persists
-  // to localStorage and would reach the narrow pass). Both presses below open a
-  // modal and `dismiss` closes it on the backdrop, which saves nothing. They
-  // need a slice on the board; after the #608 migration every board with work
-  // in flight has one ("Carried over" at least).
-  {
-    id: 'board-slicezoom',
-    label: 'Board — double-click a slice header to zoom',
-    click: '.km-slicegroup .km-grouphead .nm',
-    dblclick: true,
-    expect: '.bf-float.bf-slice',
-  },
-  {
-    id: 'board-slicezoom-back',
-    label: 'Board — return from slice zoom',
-    click: '.bf .bf-back',
-    expect: 'body:not(:has(.bf)) .km-grouphead',
-  },
-  {
-    id: 'board-sliceedit',
-    label: 'Board — a slice head opens its editor',
-    click: '.km-grouphead [aria-label^="Edit slice"]',
-    expect: '.km-dialog .km-textarea',
-    dismiss: '.km-scrim',
+    id: 'board-list-layout', label: 'Board — list shows milestone and slice context',
+    click: '.bm-toolbar .seg-control:first-child .seg-opt:nth-child(3)', expect: '.bl-list .bl-c-spine',
   },
   {
     id: 'board-milestone',
@@ -291,8 +150,7 @@ const ROADMAP_PANELS = [
     dismiss: '.km-scrim',
   },
   // The strip flicks through milestones (2026-11-09). Next is pressed from the
-  // current one, so it needs a milestone after it; Back to current returns the
-  // board to what every press below expects.
+  // current one, so it needs a milestone after it; Back to current returns.
   {
     id: 'board-ms-next',
     label: 'Board — › views the next milestone',
@@ -306,114 +164,25 @@ const ROADMAP_PANELS = [
     expect: '.km-spine:not(:has(.km-spine-back))',
   },
   {
-    // The group filter is one toolbar button (2026-11-09, it replaced a row
-    // of chips that wrapped to three lines); its menu lists every group.
-    id: 'board-scope-open',
-    label: 'Board — the group filter opens its menu',
-    click: '.km-scopebtn',
-    expect: '.km-scopemenu .km-scopeopt',
-  },
-  {
-    // A pick turns the button on and the menu stays open (several can be on).
-    id: 'board-scope',
-    label: 'Board — picking a group filters to it',
-    click: '.km-scopemenu .km-scopeopt[data-area]',
-    expect: '.km-scopebtn.on',
-  },
-  {
-    // …and Clear, which exists only while a filter is on, takes it off again —
-    // which every press after this one needs. The menu's own Clear, because
-    // on a narrow screen the open menu covers the one beside the button.
-    // Pressing it also closes the menu.
-    id: 'board-clear',
-    label: 'Board — Clear removes the group filter',
-    click: '.km-scopemenu .km-clearpick',
-    expect: '.km-scope:not(:has(.km-scopebtn.on))',
-  },
-  // THE FOLDS (#510, #511), AND THEY COME IN PAIRS ON PURPOSE. This harness is
-  // read-only, and a fold is the one press on this screen that persists
-  // anything: `stack.boardFolds.<slug>` in localStorage, which outlives the
-  // page and therefore reaches the NARROW pass that runs after this one. A
-  // folded column left behind would have the narrow run photographing a board
-  // nobody folded, and a folded AREA would hide every card the presses above
-  // need. So each fold is pressed and then pressed back, and the
-  // second press is a real assertion rather than a tidy-up: it is what proves
-  // the control toggles instead of only closing.
-  //
-  // THE COLUMN PAIR GOES FIRST. A folded column unmounts its area groups, so
-  // the other order could have the area press reporting a control that is not
-  // missing, only hidden behind a fold this harness itself just made.
-  //
-  // (`.km-cols`' FIRST child is the Propositions column, detail/Propositions.tsx,
-  // which is not a list: every nth-child below counts it, hence the +1.)
-  // Column 3 rather than 1 or 2: those two carry the menu and composer presses
-  // above, and a column that has been folded and unfolded is a column whose
-  // popovers have all been closed.
-  {
-    id: 'board-colfold',
-    label: 'Board — a column folds to its head',
-    click: '.km-col:nth-child(4) .km-foldbtn',
-    expect: '.km-col.folded',
-  },
-  {
-    // …and back. `.km-add` is the proof: the Create button goes with the fold,
-    // and a fold is BOARD-WIDE, so while column 3 is folded there is no
-    // `.km-col:nth-child(4) .km-add` in any section to match early.
-    id: 'board-colunfold',
-    label: 'Board — the same column opens again',
-    click: '.km-col:nth-child(4) .km-foldbtn',
-    expect: '.km-col:nth-child(4) .km-add',
-  },
-  {
-    // An AREA folds in every column at once, so one press folds every group
-    // carrying its key — and it is pressed back, for the reason above.
-    id: 'board-secfold',
-    label: 'Board — an area folds shut in every column',
-    click: '.km-grouphead .km-foldbtn',
-    expect: '.km-group.folded',
-  },
-  {
-    id: 'board-secunfold',
-    label: 'Board — the same area opens again',
-    click: '.km-group.folded .km-foldbtn',
-    expect: '.km-cols:not(:has(.km-group.folded))',
-  },
-  {
-    // Collapse all, then the same button back: it reads "Expand all" once
-    // every area is folded, and the second press leaves the board open for the
-    // narrow pass.
-    id: 'board-collapseall',
-    label: 'Board — Collapse all folds every area',
-    click: '.km-collapseall',
-    expect: '.km-cols:has(.km-group):not(:has(.km-group:not(.folded)))',
-  },
-  {
-    id: 'board-expandall',
-    label: 'Board — Expand all opens them again',
-    click: '.km-collapseall',
-    expect: '.km-cols:not(:has(.km-group.folded))',
-  },
-  {
-    // LAST of the board-view presses — it hides every parked row, and every
-    // card `stack board-demo` seeds is parked.
+    // Pressed twice: the second press is the assertion that it toggles, and
+    // it leaves parked rows shown for every press after it.
     id: 'board-parked',
     label: 'Board — parked filter',
     click: '.km-parked',
     expect: '.km-parked.on',
   },
   {
-    id: 'board-list-layout', label: 'Board — list shows milestone and slice context',
-    click: '.km-layout button:nth-child(4)', expect: '.bl-list .bl-c-spine',
+    id: 'board-parked-off',
+    label: 'Board — parked filter turns off',
+    click: '.km-parked.on',
+    expect: '.km-parked:not(.on)',
   },
   {
-    id: 'board-list-back', label: 'Board — return to card layout',
-    click: '.km-layout button:nth-child(3)', expect: '.km-cols',
+    id: 'board-list-back', label: 'Board — return to the map',
+    click: '.km-layout button:nth-child(1)', expect: '.bm-canvas',
   },
-  // THESE FOUR MUST COME LAST, and not for tidiness: the presses above all
-  // name `.km-col`, which only exists while the Board tab is the one drawn.
-  // Switch tabs first and every one of them reports a control it cannot
-  // reach — a true finding about a harness that ordered itself wrongly, and a
-  // false one about the board.
+  // THESE THREE MUST COME LAST: the presses above all name the Board tab's
+  // own view, which only exists while that tab is the one drawn.
   {
     id: 'board-backlog-tab',
     label: 'Board — Backlog tab',

@@ -22,13 +22,14 @@
 //     the project's terminal; it never kills or types (root CLAUDE.md).
 //  5. PAN, ZOOM AND SELECTION ARE SCREEN STATE. The arrangement, the finished
 //     fold and the tucked panels are device-local preferences (store.ts).
-//  6. DELETE IS NOT ON THE MAP's MENU. Archive is: it is recoverable, and a
-//     `hook` row's delete tombstones it with no undo. The kanban keeps Delete.
+//  6. DELETE ASKS TWICE. A `hook` row's delete tombstones its fingerprint, so
+//     it has no undo; the first press only arms it. Archive is recoverable.
 //  7. LANES IS THE SAME SCREEN WITH A DIFFERENT MIDDLE: one milestone at a
 //     time, a lane per job split into the four stages (laneBoard in
 //     lib/workMap.ts). Selection, the rail, the details and every action are
 //     the map's, so the two views can't disagree. A lane's fold is the map's
-//     fold of that job.
+//     fold of that job. Lanes draws no attention rail and no details panel
+//     (owner's call, 2026-11-20): its menu carries Approve instead.
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { Milestone, RoadmapItem, Slice } from '../types';
@@ -55,6 +56,8 @@ export interface MapActions {
   setReady: (it: RoadmapItem, on: boolean) => void;
   park: (it: RoadmapItem) => void;
   archive: (it: RoadmapItem) => void;
+  /** A `hook` row's delete tombstones it: no undo, so the menu asks twice. */
+  remove: (it: RoadmapItem) => void;
   edit: (it: RoadmapItem) => void;
   openItem: (it: RoadmapItem, el: HTMLElement | null) => void;
   openSlice: (slice: Slice, el: HTMLElement | null) => void;
@@ -93,7 +96,7 @@ export function BoardMap({ slug, projectName, rows, milestones, slices, highligh
   highlightId: string | null;
   actions: MapActions;
   /** Switch the Board tab's layout. */
-  onLayout: (layout: 'map' | 'lanes' | 'kanban' | 'list') => void;
+  onLayout: (layout: 'map' | 'lanes' | 'list') => void;
 }) {
   const map = useMemo(() => buildWorkMap({ slug, name: projectName }, rows, milestones, slices),
     [slug, projectName, rows, milestones, slices]);
@@ -111,6 +114,8 @@ export function BoardMap({ slug, projectName, rows, milestones, slices, highligh
   const [query, setQuery] = useState('');
   const [ctx, setCtx] = useState<{ key: string; x: number; y: number } | null>(null);
   const [sendBack, setSendBack] = useState<string | null>(null);
+  const [arming, setArming] = useState(false);
+  useEffect(() => { setArming(false); }, [ctx]);
 
   // The first selection: a deep link's row, else the first thing being built.
   const [sel, setSel] = useState<string>(() => {
@@ -540,7 +545,6 @@ export function BoardMap({ slug, projectName, rows, milestones, slices, highligh
         <div className="seg-control sm" role="tablist" aria-label="Board layout">
           <button role="tab" aria-selected={!lanesMode} className={`seg-opt${lanesMode ? '' : ' on'}`} onClick={() => onLayout('map')}>Map</button>
           <button role="tab" aria-selected={lanesMode} className={`seg-opt${lanesMode ? ' on' : ''}`} onClick={() => onLayout('lanes')}>Lanes</button>
-          <button role="tab" aria-selected={false} className="seg-opt" onClick={() => onLayout('kanban')}>Board</button>
           <button role="tab" aria-selected={false} className="seg-opt" onClick={() => onLayout('list')}>List</button>
         </div>
         {!lanesMode && <div className="seg-control sm bm-layouts" role="tablist" aria-label="Map arrangement">
@@ -607,7 +611,7 @@ export function BoardMap({ slug, projectName, rows, milestones, slices, highligh
       </div>
 
       <div className="bm-body">
-        <section className={`bm-attn${prefs.attnClosed ? ' closed' : ''}`} aria-label="Needs your attention">
+        {!lanesMode && <section className={`bm-attn${prefs.attnClosed ? ' closed' : ''}`} aria-label="Needs your attention">
           {prefs.attnClosed ? (
             <button className="bm-rail" title="Expand" onClick={() => setPrefs({ attnClosed: false })}>
               <span>»</span><span className="v">Needs you · {attention.length}</span>
@@ -639,7 +643,7 @@ export function BoardMap({ slug, projectName, rows, milestones, slices, highligh
               </button>
             </div>
           </>}
-        </section>
+        </section>}
 
         {lanesMode ? renderLanes() : <div ref={canvasRef} className="bm-canvas" onMouseDown={panStart}
           style={{ backgroundPosition: `${view.x}px ${view.y}px`, backgroundSize: `${22 * view.z}px ${22 * view.z}px` }}>
@@ -706,7 +710,7 @@ export function BoardMap({ slug, projectName, rows, milestones, slices, highligh
           {prefs.layout === 'stage' && laid.pos.size <= 1 && <div className="bm-canvas-empty">No work on the map yet.</div>}
         </div>}
 
-        <aside className={`bm-detail${prefs.detailClosed ? ' closed' : ''}`} aria-label="Details">
+        {!lanesMode && <aside className={`bm-detail${prefs.detailClosed ? ' closed' : ''}`} aria-label="Details">
           {prefs.detailClosed ? (
             <button className="bm-rail" title="Expand" onClick={() => setPrefs({ detailClosed: false })}>
               <span>«</span><span className="v">Details</span>
@@ -827,7 +831,7 @@ export function BoardMap({ slug, projectName, rows, milestones, slices, highligh
               </div>
             )}
           </>}
-        </aside>
+        </aside>}
       </div>
 
       {ctx && ctxNode && (
@@ -844,10 +848,14 @@ export function BoardMap({ slug, projectName, rows, milestones, slices, highligh
             );
             const out = [];
             if (live2) out.push(row('Open session', () => openSession(live2), 'dbl-click'));
-            out.push(row(prefs.detailClosed || lanesMode ? 'Show details' : 'Centre on map', () => { setPrefs({ detailClosed: false }); select(ctxNode.key, true); }));
+            if (!lanesMode) out.push(row(prefs.detailClosed ? 'Show details' : 'Centre on map', () => { setPrefs({ detailClosed: false }); select(ctxNode.key, true); }));
             if (ctxNode.slice) out.push(row('Open on canvas', () => actions.openSlice(ctxNode.slice!, cardEl(ctxNode.key))));
             if (it) {
               out.push(<span key="s1" className="sep" />);
+              // Lanes has no details panel, so a verdict is given from here.
+              if (lanesMode && ctxNode.status === 'review' && isBuilt(it) && !it.done && !it.reviewTag.trim()) {
+                out.push(row('Approve', () => actions.approve(it)));
+              }
               out.push(row('Edit item…', () => actions.edit(it)));
               if (ctxNode.status === 'held') out.push(row('Sign off', () => actions.signOff(it)));
               if (!isDone(ctxNode.status) && ctxNode.status !== 'active' && ctxNode.status !== 'review') {
@@ -856,6 +864,11 @@ export function BoardMap({ slug, projectName, rows, milestones, slices, highligh
                 out.push(row(it.skipped ? 'Unpark' : 'Park', () => actions.park(it)));
               }
               out.push(row('Archive', () => actions.archive(it)));
+              out.push(arming
+                ? <button key="del" className="item danger" onClick={() => { setCtx(null); actions.remove(it); }}>
+                    <span>Confirm delete</span><span className="hint">{it.source === 'hook' ? 'no undo; a push won’t re-add it' : 'no undo'}</span>
+                  </button>
+                : <button key="del" className="item danger" onClick={() => setArming(true)}><span>Delete…</span></button>);
             }
             if (ctxNode.type !== 'project') {
               out.push(<span key="s2" className="sep" />);

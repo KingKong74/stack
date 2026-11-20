@@ -33,21 +33,17 @@ on two screens gets acted on twice; a row on none has silently vanished.
 - **Auto-ideas** (Board → Propositions, route key `auto`): a held row (`hook`/`fly`/`plan`, not signed off) that
   nobody has worked and that is in no slice. Promote sends `{reviewed:true, parentId:null}` plus the picked `sliceId`.
 - **Icebox** (#608, same pane): signed off or manual, in no slice.
-- **Board**: sliced rows, held or not (a held card wears the `held` chip and signs off from its
-  menu), grouped by slice by default. **Once anybody has worked a row** (a claim, a
-  `built_note` or a tick: `isWorked`), it's board work whatever its sign-off or slice says (an
-  unsliced one sits in a "No slice" group). Its hold then only gates the runner, and the board shows
-  it (the `held` chip, answered from the card menu).
+- **Board**: sliced rows, held or not (a held row is `Held` on the map and signs off from its
+  menu). **Once anybody has worked a row** (a claim, a `built_note` or a tick: `isWorked`), it's
+  board work whatever its sign-off or slice says (an unsliced one hangs straight off the project).
+  Its hold then only gates the runner.
 - **The board is designed for the owner's hands** (2026-11-02). Weigh UX, not automation policy,
   when changing it; the run gates live in the root file and the server.
-- **Two kinds of card: a task, and a cluster** (a row with parts, `parent_id`, one level deep).
-  Parts draw inside their cluster's card, never as cards of their own while it is on the board, and
-  the cluster's column is rolled up from them (`clusterKeyOf`), so it doesn't drag; its size is Σ
-  its parts' points. A part whose cluster is off the board is an ordinary card again. `Board.tsx`'s
-  header has the rest.
-- **The Board tab opens on the work map** (`detail/BoardMap.tsx`): the same board rows as a tree, with
-  every write borrowed from `Board.tsx`; Lanes is the same screen as a lane per job. Map, lanes,
-  kanban and list must agree on what is on the board.
+- **A task and its tickets** (parts, `parent_id`, one level deep). The task's stage is rolled up
+  from its parts (`clusterKeyOf`); a part whose task is off the board is an ordinary task again.
+- **The Board tab is the work map** (`detail/BoardMap.tsx`): Map (a tree) and Lanes (a lane per
+  job), with every write borrowed from `Board.tsx`, plus the List. There is no kanban (owner's
+  call, 2026-11-20). Map, Lanes and List must agree on what is on the board.
 - **There is no Roadmap tab** (owner's call, 2026-10-28). The `canvas` column is dormant: nothing
   writes or serves it. Don't bring back a third home without changing `homeOf` with it.
 
@@ -57,7 +53,7 @@ on two screens gets acted on twice; a row on none has silently vanished.
   live slice IDs. Ready rank leads, then slice order and item `sliceRank`, then bucket; ties keep
   the order the server already sent.
 - `position` is a different number: scoped to the bucket, still PATCHable, and written by nothing in
-  the client. The kanban has no within-column drag because its columns cut across buckets.
+  the client.
 - `points` is unitless and NULL means unset, never zero in a total. `estimate` is in weeks, and
   `defaultLen` in `lib/plan.ts` is the one place weeks and schedule minutes meet. `due_on` is a day
   (use `dayOf`, never `toISOString`) and gates nothing.
@@ -70,8 +66,9 @@ about the wrong thing. **A number must agree with the screen behind it**: a wire
 count, a mockup's badge shows the mockup's count.
 
 Not reachable from a browser (use `./stack` and the API): labels, the ⎇ claim, writing the stored
-schedule, a merge, automode and the loop's mode. **The verdict is on the board's In Review cards**
-(Approve ticks too; Send back writes `refine_note` and releases the claim); `Board.tsx` says why.
+schedule, a merge, automode and the loop's mode. **The verdict is on the work map** (its details
+panel; Lanes' menu has Approve). Approve ticks too; Send back writes `refine_note` and releases the
+claim; `Board.tsx` says why.
 
 ## Derived state
 

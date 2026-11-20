@@ -10216,6 +10216,7 @@ a.pp-link:hover { text-decoration: underline; }
 .bm-ctx .item { display: flex; align-items: center; gap: var(--space-4); padding: 7px 10px; border-radius: var(--radius-md); background: none; border: none; color: var(--text-primary); font: var(--type-body-sm); text-align: left; cursor: pointer; }
 .bm-ctx .item:hover { background: var(--surface-hover); }
 .bm-ctx .item span:first-child { flex: 1; }
+.bm-ctx .item.danger { color: var(--status-danger-fg); }
 .bm-ctx .hint { font: 11px/1 var(--font-mono); color: var(--text-tertiary); }
 .bm-ctx .sep { height: 1px; margin: 4px 6px; background: var(--border-subtle); }
 

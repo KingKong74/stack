@@ -79,15 +79,16 @@ function readStackEnv() {
 // state a reader really sees, so it is kept — and `quality-open` presses a
 // feature fold because `.ql-frow.open` wears the same lightened ground with no
 // cursor on it at all.
-// Expand all, pressed only while every area IS folded. A press list entry
+// A press list entry
 // starting with `?` is optional: pressed when it matches, skipped when not.
-// One starting with `2:` is a DOUBLE press (the board card's focus canvas),
+// One starting with `2:` is a DOUBLE press (a lane head's focus canvas),
 // given long enough after it for the card's flight and the canvas to settle.
-// THE BOARD TAB OPENS ON THE WORK MAP (detail/BoardMap.tsx), so every kanban
-// screen first presses the map's Board switch. Optional, because the choice is
-// stored per browser and a screen before may already have left the kanban up.
-const KANBAN = '?.bm-toolbar .seg-control:first-child .seg-opt:nth-child(3)';
-const OPEN_BOARD = '?.km-collapseall[data-all-folded="true"]';
+// THE BOARD TAB IS THE WORK MAP (detail/BoardMap.tsx): Map, Lanes and List,
+// switched by one control whose choice is stored per browser. Each is
+// optional, because a screen before may already have left that layout up.
+const MAP = '?.km-layout button:nth-child(1)';
+const LANES = '?.bm-toolbar .seg-control:first-child .seg-opt:nth-child(2)';
+const LIST = '?.bm-toolbar .seg-control:first-child .seg-opt:nth-child(3)';
 
 const SCREENS = [
   { slug: 'terminal', hash: '#/p/{slug}/terminal' },
@@ -139,33 +140,16 @@ const SCREENS = [
   { slug: 'agents-skills', hash: '#/p/{slug}/agents', press: ['.sa .sa-tabs button:nth-child(2)'] },
   { slug: 'loops', hash: '#/p/{slug}/loops' },
   { slug: 'loops-create', hash: '#/p/{slug}/loops', press: ['.lp .lp-head .lp-primary'] },
-  { slug: 'roadmap', hash: '#/p/{slug}/roadmap' },
-  // The work map (first paint) and its stage flow; then the kanban behind it.
-  { slug: 'board-map-stage', hash: '#/p/{slug}/roadmap', press: ['.bm-layouts .seg-opt:nth-child(2)'] },
-  { slug: 'board-lanes', hash: '#/p/{slug}/roadmap', press: ['.bm-toolbar .seg-control:first-child .seg-opt:nth-child(2)'] },
-  { slug: 'board-kanban', hash: '#/p/{slug}/roadmap', press: [KANBAN] },
-  // #524 — THE BOARD LANDS WITH EVERY AREA FOLDED, so first paint has no card
-  // on it at all. Every screen that measures a card presses Expand all first
-  // — OPTIONALLY (see OPEN_BOARD): the button toggles, the folds persist in
-  // this run's shared context, and a second unconditional press would fold
-  // the board the previous screen had opened. `board-open` is the cards at
-  // rest: their area-coloured top edge (Board v5) and every chip on them.
-  { slug: 'board-open', hash: '#/p/{slug}/roadmap', press: [KANBAN, OPEN_BOARD] },
-  { slug: 'board-priority', hash: '#/p/{slug}/roadmap', press: [KANBAN, OPEN_BOARD, '.km-card [aria-label^="Priority"]'] },
-  { slug: 'board-cardmenu', hash: '#/p/{slug}/roadmap', press: [KANBAN, OPEN_BOARD, '.km-card [aria-label^="More actions for #"]'] },
-  // The focus canvas: the flown card, its linked nodes and connectors, the
-  // Bring-in tray, and (second screen) the editor's chips over the canvas.
-  { slug: 'board-focus', hash: '#/p/{slug}/roadmap', press: [KANBAN, OPEN_BOARD, '2:.km-card .km-cardmeta .id'] },
-  // A task in a slice opens its slice with the task in the editor (BoardFocus
-  // decision 6), so the editor is measured by the double press alone.
-  { slug: 'board-focus-edit', hash: '#/p/{slug}/roadmap', press: [KANBAN, OPEN_BOARD, '2:.km-slicegroup .km-card .km-cardmeta .id'] },
-  { slug: 'board-colmenu', hash: '#/p/{slug}/roadmap', press: [KANBAN, '[aria-label^="Column actions"]'] },
-  // #608 — the spine's tone: the milestone strip (first paint, on `roadmap`),
-  // a slice head's editor and the milestone dialog (both --surface-overlay
-  // modals over a dimmed board).
-  { slug: 'board-slicezoom', hash: '#/p/{slug}/roadmap', press: [KANBAN, '.km-grouphead [aria-label^="Zoom into slice"]'] },
-  { slug: 'board-sliceedit', hash: '#/p/{slug}/roadmap', press: [KANBAN, '.km-grouphead [aria-label^="Edit slice"]'] },
-  { slug: 'board-milestone', hash: '#/p/{slug}/roadmap', press: [KANBAN, '.km-spine-ms'] },
+  { slug: 'roadmap', hash: '#/p/{slug}/roadmap', press: [MAP] },
+  // The work map (first paint) and its stage flow; Lanes, and the focus canvas
+  // a job's lane head zooms (its slice, then the slice's ✎ dialog); the List
+  // and the milestone strip above it.
+  { slug: 'board-map-stage', hash: '#/p/{slug}/roadmap', press: [MAP, '.bm-layouts .seg-opt:nth-child(2)'] },
+  { slug: 'board-lanes', hash: '#/p/{slug}/roadmap', press: [LANES] },
+  { slug: 'board-slicezoom', hash: '#/p/{slug}/roadmap', press: [LANES, '2:.bm-lanes .bm-lane-head:has(.ref)'] },
+  { slug: 'board-sliceedit', hash: '#/p/{slug}/roadmap', press: [LANES, '2:.bm-lanes .bm-lane-head:has(.ref)', '.bf-float [aria-label="Edit slice"]'] },
+  { slug: 'board-list', hash: '#/p/{slug}/roadmap', press: [LIST] },
+  { slug: 'board-milestone', hash: '#/p/{slug}/roadmap', press: [LIST, '.km-spine-ms'] },
   // #616 — Charter and Architecture: docs, component cards, ADR rows and
   // their status tags, all on --surface-raised. (The board's Propositions tab is
   // the existing `auto` row further down.)
@@ -178,17 +162,6 @@ const SCREENS = [
   { slug: 'notes', hash: '#/p/{slug}/notes' },
   // Starred: the amber star, the state chips and the faint unstarred row.
   { slug: 'starred', hash: '#/p/{slug}/starred' },
-  // #469 — a filtered board (the group filter open, its last group picked)
-  // and an open inline title editor, which paints its own text over a card in
-  // the focus state. Neither exists at first paint.
-  { slug: 'board-scoped', hash: '#/p/{slug}/roadmap', press: [KANBAN, '.km-scopebtn', '.km-scopemenu .km-scopeopt:last-of-type'] },
-  // #453 — THE DRAG PAINTS TONE NO PRESS CAN REACH. A card in flight, the
-  // column under it and the drop preview inside that column exist only while a
-  // pointer is down, and the preview is a whole small surface of its own: two
-  // chips, an arrow and a dashed zone, on a --surface-selected ground this
-  // audit had never measured anything over. `drag` below is what gets there.
-  { slug: 'board-drag', hash: '#/p/{slug}/roadmap', press: [KANBAN, OPEN_BOARD], drag: true },
-  { slug: 'board-list', hash: '#/p/{slug}/roadmap', press: [KANBAN, '.km-layout button:nth-child(4)'] },
   { slug: 'board-backlog', hash: '#/p/{slug}/roadmap', press: ['.km-tabs .k-tab:has-text("Backlog")'] },
   { slug: 'board-dev', hash: '#/p/{slug}/roadmap', press: ['.km-tabs .k-tab:has-text("Development")'] },
   { slug: 'activity', hash: '#/p/{slug}/activity' },
@@ -514,61 +487,6 @@ async function main() {
         }
       }
       if (!reached) { await page.close(); continue; }
-
-      // A DRAG IS NOT A PRESS AND CANNOT BE ONE. Chromium's native drag cannot
-      // be driven from a script, so the events React actually listens for are
-      // dispatched by hand — which is enough, because the tone under audit is
-      // painted by the class names those handlers set and by nothing else.
-      // The target is the LAST real column: it is the Done lane on a default
-      // board, and the preview says one extra line there (that a drop sets the
-      // column and does not tick the item), so aiming at it measures the whole
-      // surface rather than most of it. Failure is reported, never skipped —
-      // a drag that did not start is a screen nobody looked at.
-      if (screen.drag) {
-        const marked = await page.evaluate(() => {
-          for (const row of document.querySelectorAll('.km-cols')) {
-            const cols = [...row.querySelectorAll('.km-col')].filter((c) => !c.classList.contains('catchall'));
-            const src = cols.find((c) => c.querySelector('.km-card'));
-            const dst = [...cols].reverse().find((c) => c !== src);
-            if (!src || !dst) continue;
-            src.querySelector('.km-card').setAttribute('data-audit-drag', 'from');
-            dst.setAttribute('data-audit-drag', 'to');
-            return true;
-          }
-          return false;
-        });
-        // ONE EVENT PER CALL, and that is not a style choice. React treats a
-        // drag event as continuous priority and flushes its state update in a
-        // later task, so a `dragstart` and a `dragover` fired in one evaluate
-        // reach a `dragover` handler that still believes nothing is being
-        // dragged — no highlight, no preview, and an audit reporting a clean
-        // pass over a surface that never painted.
-        const fire = (sel, type) => page.evaluate(([sel, type]) => {
-          const el = document.querySelector(sel);
-          if (!el) return false;
-          el.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: new DataTransfer() }));
-          return true;
-        }, [sel, type]);
-        if (marked) {
-          await fire('[data-audit-drag="from"]', 'dragstart');
-          await page.waitForTimeout(120);
-          await fire('[data-audit-drag="to"]', 'dragover');
-          await page.waitForTimeout(120);
-        }
-        // THE DRAG IS VERIFIED, NOT ASSUMED. Both halves of the state are
-        // checked by the class names the tone hangs off, because every way
-        // this can fail fails SILENTLY — the events land, nothing paints, and
-        // the audit reports the resting screen under the dragging screen's
-        // name. Exactly the absence-mistaken-for-a-pass this tool exists for.
-        const began = marked && await page.evaluate(() =>
-          !!document.querySelector('.km-card.dragging') && !!document.querySelector('.km-col.over .km-slot'));
-        if (!began) {
-          findings.push({ screen: screen.slug, kind: 'unreachable', detail: 'the drag did not paint — no card in flight or no drop preview, nothing audited' });
-          await page.close();
-          continue;
-        }
-        await page.waitForTimeout(400);
-      }
 
       const res = await page.evaluate(auditInPage);
       audited++;

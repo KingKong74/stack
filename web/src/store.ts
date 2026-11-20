@@ -1512,74 +1512,23 @@ export function setBoardLayout(slug: string, layout: BoardLayout) {
   catch { /* storage full or unavailable — the layout is a nicety, never a blocker */ }
 }
 
-// ---- the board's folds (#512, #511) ----
-//
-// Which AREA SECTIONS and which COLUMNS are folded shut on one project's board.
-// Device-local and keyed by slug, for the same reason `BoardLayout` above is: it
-// describes how you like to look at THIS board on THIS screen, not anything
-// about the work — a laptop showing four columns and a phone showing one may
-// legitimately answer differently, and nothing here is a fact another device or
-// the overnight runner needs.
-//
-// THE TWO LISTS ARE KEYED DIFFERENTLY ON PURPOSE, and it is the one thing to
-// get right here:
-//
-//  • `open` holds AREA keys, and an area section is a single thing on the
-//    screen — opening `terminal` opens the one place `terminal` is drawn. It
-//    lists the OPEN ones, not the folded ones, because a section's default is
-//    FOLDED (#524, owner's request): the board lands as a column of area
-//    headers, and an area nobody has opened yet — a new one included — is shut.
-//  • `columns` holds COLUMN keys and is BOARD-WIDE, not per section. The same
-//    four columns are repeated inside every area section, so a fold scoped to
-//    one of them would have an owner with eight areas folding Done eight times
-//    and then unfolding it eight times. "Fold Done" is one decision about the
-//    board, so it is stored as one.
-//
-// Absent or corrupt storage falls back to EVERY AREA FOLDED and every column
-// open. A folded area still draws its header and its count, and a search
-// suspends every fold, so the default cannot be the reason a card is lost. The
-// pre-#524 `sections` (folded) list is ignored rather than migrated: without
-// the area list it cannot be inverted, and it lands on the new default.
-export interface BoardFolds {
-  /** OPEN area sections, by `area` string (the board's own UNTAGGED sentinel included). Absent = folded. */
-  open: string[];
-  /** Folded columns, by `project_lists.key` — board-wide, not per section. */
-  columns: string[];
-}
-const BOARD_FOLDS_KEY = (slug: string) => `stack.boardFolds.${slug}`;
 const strings = (v: unknown): string[] => (
   Array.isArray(v) ? [...new Set(v.filter((x): x is string => typeof x === 'string'))] : []
 );
 
-export function getBoardFolds(slug: string): BoardFolds {
-  return readStoredJSON(BOARD_FOLDS_KEY(slug), (p) => {
-    const o = (p && typeof p === 'object') ? p as Record<string, unknown> : {};
-    return { open: strings(o.open), columns: strings(o.columns) };
-  });
-}
-export function setBoardFolds(slug: string, folds: BoardFolds) {
-  try { localStorage.setItem(BOARD_FOLDS_KEY(slug), JSON.stringify(folds)); }
-  catch { /* storage full or unavailable — a fold is a nicety, never a blocker */ }
-}
-
-// ---- the board's VIEW (Map | Board | List) ----
+// ---- the board's VIEW (Map | Lanes | List) ----
 //
-// Device-local and per project, like the folds: which layout you read a board
+// Device-local and per project: which layout you read a board
 // in, and how the List view is sorted and scoped, is a preference and not a
 // fact about the work. Unknown or corrupt storage lands on the Map (the work
-// map, detail/BoardMap.tsx), newest first, everything shown. The kanban is
-// stored as 'kanban', the lane-per-job view as 'lanes'; the pre-map value 'areas' reads as the Map, because the
-// Map replaced it as the board's front page.
-export type BoardViewLayout = 'map' | 'lanes' | 'kanban' | 'list';
+// map, detail/BoardMap.tsx), newest first, everything shown. The lane-per-job
+// view is 'lanes'. The retired kanban ('kanban', and the older 'areas') reads as
+// the Map (owner's call, 2026-11-20: the kanban was removed).
+export type BoardViewLayout = 'map' | 'lanes' | 'list';
 export type BoardSort = 'newest' | 'oldest' | 'updated' | 'priority' | 'run' | 'area' | 'title';
 export type BoardShow = 'all' | 'board' | 'ideas';
-/** #608 — what each kanban column groups its cards by. Slice is the default:
- *  the board is the spine's view of the work. A stored pre-#608 `flat: true`
- *  reads as 'none', and anything else as 'slice'. */
-export type BoardGroup = 'slice' | 'area' | 'none';
 export interface BoardView {
   layout: BoardViewLayout; sort: BoardSort; show: BoardShow;
-  group: BoardGroup;
 }
 const BOARD_SORTS: BoardSort[] = ['newest', 'oldest', 'updated', 'priority', 'run', 'area', 'title'];
 const BOARD_VIEW_KEY = (slug: string) => `stack.boardView.${slug}`;
@@ -1587,11 +1536,9 @@ export function getBoardView(slug: string): BoardView {
   return readStoredJSON(BOARD_VIEW_KEY(slug), (p) => {
     const o = (p && typeof p === 'object') ? p as Record<string, unknown> : {};
     return {
-      layout: o.layout === 'list' || o.layout === 'kanban' || o.layout === 'lanes' ? o.layout : 'map',
+      layout: o.layout === 'list' || o.layout === 'lanes' ? o.layout : 'map',
       sort: BOARD_SORTS.includes(o.sort as BoardSort) ? o.sort as BoardSort : 'newest',
       show: o.show === 'board' || o.show === 'ideas' ? o.show : 'all',
-      group: o.group === 'area' || o.group === 'none' || o.group === 'slice'
-        ? o.group : o.flat === true ? 'none' : 'slice',
     };
   });
 }
