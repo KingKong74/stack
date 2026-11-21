@@ -5,7 +5,7 @@ file holds what applies only here. These file headers carry their own rules; rea
 its file: `lib/branch.ts`, `lib/plan.ts`, `lib/quality.ts`, `lib/termClipboard.ts`, `lib/termLaunch.ts`, `lib/termTouch.ts`, `styles.css`,
 `components/Brandmark.tsx`, `components/RoadmapModal.tsx`, `components/Asking.tsx`,
 `detail/Board.tsx`, `detail/BoardMap.tsx`, `lib/workMap.ts`, `detail/BoardFocus.tsx`, `detail/ForYou.tsx`, `detail/Plans.tsx`,
-`detail/Development.tsx`, `detail/SkillsAgents.tsx`, `detail/Loops.tsx`, `detail/Artifacts.tsx`, `detail/Spine.tsx`,
+`detail/Development.tsx`, `detail/Backlog.tsx`, `detail/SkillsAgents.tsx`, `detail/Loops.tsx`, `detail/Artifacts.tsx`, `detail/Spine.tsx`,
 `detail/Architecture.tsx`, `detail/Course.tsx`,
 `components/Markdown.tsx`.
 

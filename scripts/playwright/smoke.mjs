@@ -151,17 +151,16 @@ const ROADMAP_PANELS = [
     id: 'board-backlog-tab',
     label: 'Board — Backlog tab',
     click: '.km-tabs .k-tab:has-text("Backlog")',
-    expect: '.km-backlog input[aria-label="Search backlog"]',
+    expect: '.bl-view .bl-sec.sec-queue',
   },
   {
     id: 'board-dev-tab',
     label: 'Board — Development tab',
     click: '.km-tabs .k-tab:has-text("Development")',
-    // The ledger, not a row: the tab reads live data, and a project with no
-    // sessions yet is a real state. `.km-devledger.ready` is drawn once the
-    // read has answered, never while it is still loading. There is no fold
-    // press, since whether a row exists to fold depends on the data.
-    expect: '.km-dev .km-devledger.ready',
+    // The graph, not a row: the tab reads live data, and a project with no
+    // sessions yet is a real state. `.dv-graph.ready` is drawn once the
+    // ledger read has answered, never while it is still loading.
+    expect: '.dv-view .dv-graph.ready',
   },
   {
     // Ideas, the Icebox and agent plans (route key `auto`). Last, because

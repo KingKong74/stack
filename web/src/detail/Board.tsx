@@ -45,12 +45,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { KitIcon } from './kit/KitIcon';
 import type { BoardArea, BoardList, ItemKind, Milestone, Priority, RoadmapItem, Slice } from '../types';
-import { listKeyOf, clusterKeyOf, queueOrder, isBoardWork, isIced, isAutoIdea, isBuilt, homeOf, bucketRank } from '../lib/plan';
+import { listKeyOf, clusterKeyOf, queueOrder, isBoardWork, isIced, isAutoIdea, isBuilt, homeOf } from '../lib/plan';
 import { SliceDialog, liveSlices, currentMilestone } from './Spine';
-import { isHeld } from '../lib/approval';
-import { PRIORITY_META, PRIORITY_DEFAULT, priorityMeta } from '../lib/ui';
+import { PRIORITY_META, PRIORITY_DEFAULT } from '../lib/ui';
 import {
-  getBoardShape, getPropositions,
+  getBoardShape, getPropositions, getBranchReport,
   getBoardView, setBoardView,
   createRoadmapItem, patchRoadmapItem, deleteRoadmapItem,
   putReadyQueue,
@@ -58,6 +57,7 @@ import {
   queueTermLaunch, setStarred,
 } from '../store';
 import { DevelopmentView } from './Development';
+import { BacklogView } from './Backlog';
 import { go } from '../lib/route';
 import { newTermName, termClaim, launchBrief } from '../lib/termLaunch';
 import type { BoardView } from '../store';
@@ -333,6 +333,17 @@ export function Board({ slug, projectName, items, milestones, slices, onRefresh,
   const onBoard = rows.filter((it) => !it.archived && isBoardWork(it));
 
 
+  // The Backlog tab's count: what its three sections draw (Backlog.tsx, decision 5).
+  const backlogCount = rows.filter((it) => !it.archived && !it.done && it.claimedBy.trim() === ''
+    && !isBuilt(it) && homeOf(it) !== 'auto').length;
+  // The Development tab's count: branches with work ahead of main, off the
+  // host's report. Unknown (no report) shows no number, never a zero.
+  const [devCount, setDevCount] = useState<number | null>(null);
+  useEffect(() => {
+    getBranchReport(slug).then((r) => setDevCount(r.reportedAt ? r.branches.filter((b) => b.ahead > 0).length : null))
+      .catch(() => setDevCount(null));
+  }, [slug]);
+
   // The tab's count: the viewed milestone's board work, the cards the map draws in it.
   const shown = onBoard.filter((it) => !isPart(it) && inView(it)).length;
 
@@ -395,6 +406,18 @@ export function Board({ slug, projectName, items, milestones, slices, onRefresh,
       setNote(on
         ? `#${it.id} is queued to build, ${queued.length === 1 ? 'alone in the queue' : `number ${queued.length} in the queue`}.`
         : `#${it.id} left the build queue.`);
+      onRefresh();
+    });
+  // The Backlog tab's queue write: the whole order at once, so a drag inside
+  // the queue and a drop into it are the same PUT.
+  const setQueue = (ids: number[], msg: string) =>
+    guard(async () => {
+      const { items: queued } = await putReadyQueue(slug, ids);
+      setRows((r) => r.map((x) => {
+        const k = queued.indexOf(x.id);
+        return k >= 0 ? { ...x, ready: true, readyRank: k } : x.ready ? { ...x, ready: false, readyRank: 0 } : x;
+      }));
+      if (msg) setNote(msg);
       onRefresh();
     });
   const archive = (it: RoadmapItem) =>
@@ -612,8 +635,8 @@ export function Board({ slug, projectName, items, milestones, slices, onRefresh,
           {[
             { value: 'board', label: 'Board', count: shown },
             { value: 'propositions', label: 'Propositions', count: propLive + ideaCount + icedCount },
-            { value: 'backlog', label: 'Backlog' },
-            { value: 'dev', label: 'Development' },
+            { value: 'backlog', label: 'Backlog', count: backlogCount },
+            { value: 'dev', label: 'Development', count: devCount ?? undefined },
           ].map((t) => (
             <button key={t.value} className={`k-tab${view === t.value ? ' on' : ''}`}
               onClick={() => setView(t.value)}>
@@ -643,10 +666,17 @@ export function Board({ slug, projectName, items, milestones, slices, onRefresh,
         )}
 
         {view === 'backlog' && (
-          <BacklogView rows={rows} slices={sl} milestones={ms} lists={lists || []}
-            onCreate={() => setDialog(true)} onEdit={onEdit} />
+          <BacklogView rows={rows} slices={sl} milestones={ms}
+            actions={{
+              setQueue,
+              patch: (it, patch) => guard(async () => { wrote(await patchRoadmapItem(slug, it.id, patch)); }),
+              run: runInTerminal, edit: onEdit, say: setNote,
+              showOnMap: (it) => { setViewState('board'); go.detail(slug, 'roadmap', String(it.id)); },
+            }} />
         )}
-        {view === 'dev' && <DevelopmentView slug={slug} items={rows} onOpen={onEdit} />}
+        {view === 'dev' && <DevelopmentView slug={slug} items={rows} onOpen={onEdit} onCount={setDevCount}
+          onShowOnMap={(it) => { setViewState('board'); go.detail(slug, 'roadmap', String(it.id)); }}
+          onRun={runInTerminal} />}
         {view === 'propositions' && (
           <div className="pp-view">
             <PropositionsSection slug={slug} milestones={ms} onAccepted={onRefresh} onCount={setPropLive} />
@@ -783,67 +813,4 @@ function CreateDialog({ onClose, onCreate }: {
       </div>
     </div>
   );
-}
-
-// Backlog keeps unfinished work under its milestone and slice. Icebox and
-// proposals stay visible as distinct groups; opening an item uses its usual editor.
-function BacklogView({ rows, slices, milestones, lists, onCreate, onEdit }: {
-  rows: RoadmapItem[]; slices: Slice[]; milestones: Milestone[]; lists: BoardList[];
-  onCreate: () => void; onEdit: (it: RoadmapItem) => void;
-}) {
-  const [query, setQuery] = useState('');
-  const [scope, setScope] = useState('');
-  const open = rows.filter((it) => !it.archived && listKeyOf(it) !== 'shipped');
-  const matches = (it: RoadmapItem) => !query.trim() ||
-    `${it.id} ${it.title} ${it.area}`.toLowerCase().includes(query.trim().toLowerCase());
-  const ordered = [...milestones].sort((a, b) =>
-    Number(b.status === 'active') - Number(a.status === 'active') || a.position - b.position || a.id - b.id);
-  const groups: { key: string; title: string; items: RoadmapItem[]; slice?: Slice; milestone?: Milestone }[] = [];
-  for (const m of ordered) {
-    if (scope && scope !== String(m.id)) continue;
-    for (const slice of slices.filter((s) => s.milestoneId === m.id)
-      .sort((a, b) => a.position - b.position || a.id - b.id)) {
-      groups.push({ key: `slice-${slice.id}`, title: slice.title, slice, milestone: m,
-        items: open.filter((it) => it.sliceId === slice.id && homeOf(it) === 'board' && matches(it))
-          .sort((a, b) => a.sliceRank - b.sliceRank || bucketRank(a.bucket) - bucketRank(b.bucket)) });
-    }
-  }
-  if (!scope) {
-    groups.push({ key: 'unsliced', title: 'No slice · work in progress', items: open.filter((it) =>
-      homeOf(it) === 'board' && !slices.some((s) => s.id === it.sliceId) && matches(it)) });
-    groups.push({ key: 'icebox', title: 'Icebox · awaiting a slice', items: open.filter((it) => homeOf(it) === 'icebox' && matches(it)) });
-    groups.push({ key: 'ideas', title: 'Auto-ideas · awaiting sign-off', items: open.filter((it) => homeOf(it) === 'auto' && matches(it)) });
-  }
-  const count = groups.reduce((n, g) => n + g.items.length, 0);
-  return <div className="km-backlog">
-    <div className="km-toolbar">
-      <input className="k-input" aria-label="Search backlog" placeholder="Search backlog…" value={query} onChange={(e) => setQuery(e.target.value)} />
-      <select className="k-select" aria-label="Backlog milestone" value={scope} onChange={(e) => setScope(e.target.value)}>
-        <option value="">Every milestone & Icebox</option>
-        {ordered.map((m) => <option key={m.id} value={m.id}>{m.name}{m.status === 'active' ? ' · Current' : ''}</option>)}
-      </select>
-      <span className="k-tag">{count} unfinished</span>
-      <button className="k-btn sm" onClick={onCreate}>＋ New item</button>
-    </div>
-    <p className="km-menunote">Planning follows the current milestone’s slices. Builds take only the Ready queue. Open an item to change its slice.</p>
-    {groups.filter((g) => !query.trim() || g.items.length > 0).map((g) => <section className="km-blbox" key={g.key}>
-      <div className="km-blhead">
-        <span className="lbl">{g.milestone ? `${g.milestone.name} / ` : ''}{g.title}</span>
-        {g.milestone?.status === 'active' && <span className="k-tag info">Current milestone</span>}
-        {g.slice?.archived && <span className="k-tag">Archived slice</span>}
-        <span className="k-tag">{g.items.length}</span>
-      </div>
-      {g.items.map((it) => <button type="button" className="km-blrow" key={it.id} data-hl={it.id} onClick={() => onEdit(it)}>
-        <span className="id">#{it.id}</span><span className="t">{it.title}</span>
-        <span className="k-tag">{homeOf(it) === 'board' ? lists.find((l) => l.key === listKeyOf(it))?.name || 'No column' : homeOf(it) === 'auto' ? 'Auto-idea' : 'Icebox'}</span>
-        {isHeld(it) && <span className="k-tag warning">held</span>}
-        {it.ready && <span className="k-tag info">Ready #{it.readyRank + 1}</span>}
-        {it.skipped && <span className="k-tag warning">parked</span>}
-        <span className="k-tag">{it.area || 'no area'}</span>
-        <span className="pri" title={priorityMeta(it.bucket).label}>{priorityMeta(it.bucket).glyph}</span>
-      </button>)}
-      {g.items.length === 0 && <div className="km-colempty">No unfinished items.</div>}
-    </section>)}
-    {groups.length === 0 && <div className="km-colempty">No slices yet. Create a slice on the board, or keep ideas in the Icebox.</div>}
-  </div>;
 }
