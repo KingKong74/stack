@@ -9607,19 +9607,27 @@ a.pp-link:hover { text-decoration: underline; }
   .term-screen .topbar { gap: var(--space-3); padding: 0 var(--space-4); }
   .term-screen .topbar .right { gap: var(--space-2); }
   .term-screen .topbar .tv-btn { padding: 0 9px; }
-  /* The bar becomes two rows: the tabs across the full width, and the
-     controls under them, scrolling sideways rather than being clipped. */
-  .tv-bar { flex-wrap: wrap; gap: var(--space-2); padding: var(--space-2) var(--space-3); overflow: visible; }
-  .tv-tabs { flex: 1 0 100%; min-height: 44px; order: -1; }
-  .tv-meters { display: none; }
+  /* ONE ROW (owner's call): the tabs scroll in whatever room is left, then
+     Start (+ and its defaults caret), the Focus/Swarm views and full screen.
+     The rest of the bar (the session switcher, the meters, Configuration,
+     End all) is desktop-only; Swarm reaches every session anyway. */
+  .tv-bar { gap: var(--space-2); padding: 0 var(--space-2) 0 var(--space-1); min-height: 48px; }
+  .tv-tabs { flex: 1 1 0; min-width: 0; }
+  .tv-bar .tv-switch, .tv-meters, .tv-bar .tv-endall,
+  .tv-bar > .tv-btn:not(.tv-icon) { display: none; }
   .tv-bar .tv-btn { padding: 0 8px; }
-  .tv-wide-only { display: none; }
+  .tv-go { padding: 0 9px; }
+  .tv-go .plus { font-size: var(--text-lg); }
+  .tv-view { padding: 0 6px; }
+  .tv-wide-only, .tv-bar .tv-lbl, .tv-head .tv-lbl { display: none; }
+  /* The pane head's Pin, Close tab and End are icons here: square, with
+     their names in aria-label. */
+  .tv-head .tv-btn.sm[aria-label] { width: 30px; padding: 0; justify-content: center; }
   /* The pane head keeps the name, the state and the actions; where it runs
      and the branch are in the tab already. */
   .tv-head { gap: var(--space-2); padding: var(--space-2) var(--space-3); }
   .tv-head-meta, .tv-head .tv-destchip { display: none; }
   .tv-head-name { flex: 0 1 auto; }
-  .tv-head .tv-btn.sm { padding: 0 7px; }
   .tv-pane .term-holder .xterm { padding: 4px 6px; }
   .tv-foot { gap: var(--space-3); padding: 4px var(--space-3); }
   /* Main + 3 is four terminals; a phone has room for one. It reads as Focus

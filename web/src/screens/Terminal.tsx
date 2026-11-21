@@ -72,16 +72,14 @@ function useNarrow() {
   return narrow;
 }
 
-// THE TOUCH KEY ROW. A phone keyboard has no Esc, no Tab, no arrows and no
-// Ctrl, and those are exactly the keys claude asks for: Esc interrupts, ⇧Tab
-// cycles the mode, the arrows pick from a menu. The row is drawn only where
-// the pointer is coarse (styles.css), so a desktop never sees it. Each key
+// THE TOUCH KEY ROW. A phone keyboard has no Esc, no arrows and no Ctrl, and
+// those are keys claude asks for: Esc interrupts, the arrows pick from a menu.
+// Tab and ⇧Tab are left off (owner's call). The row is drawn only where the
+// pointer is coarse (styles.css), so a desktop never sees it. Each key
 // goes down `sendText`, the same 'in' frame a keystroke takes. pointerdown is
 // cancelled so the tap does not steal focus from xterm and drop the keyboard.
 const TOUCH_KEYS: { label: string; seq: string; title: string }[] = [
   { label: 'Esc', seq: '\x1b', title: 'Escape — interrupts claude' },
-  { label: 'Tab', seq: '\t', title: 'Tab' },
-  { label: '⇧Tab', seq: '\x1b[Z', title: 'Shift+Tab — cycles claude’s mode' },
   { label: '↑', seq: '\x1b[A', title: 'Up' },
   { label: '↓', seq: '\x1b[B', title: 'Down' },
   { label: '←', seq: '\x1b[D', title: 'Left' },
@@ -1838,8 +1836,8 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, project
               <option value="claude">Claude</option><option value="codex">Codex</option><option value="shell">Shell</option>
             </select>
             <span className="tv-split-btn">
-              <button className="tv-go" onClick={() => startSession()} title={`Open ${startLabel}`}>
-                <span className="plus">+</span>Start
+              <button className="tv-go" onClick={() => startSession()} title={`Open ${startLabel}`} aria-label="Start">
+                <span className="plus">+</span><span className="tv-lbl">Start</span>
               </button>
               <button className="tv-go caret" aria-label="Session defaults" title="Model and where work goes"
                 onClick={() => setNewMenu((v) => !v)}>▼</button>
@@ -2026,14 +2024,20 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, project
                         title={s.tmux ? `Reload — re-attach ${s.tmux} on a fresh screen. The session itself is untouched.` : 'Repaint this pane'}
                         onClick={() => handles.current.get(s.id)?.reload()}>↻</button>
                       {s.tmux && (
-                        <button className={`tv-btn sm${pinned ? ' pinned' : ''}`} aria-pressed={pinned} onClick={() => togglePinSess(s)}
+                        <button className={`tv-btn sm${pinned ? ' pinned' : ''}`} aria-pressed={pinned} aria-label={pinned ? 'Pinned' : 'Pin'} onClick={() => togglePinSess(s)}
                           title={pinned ? `Pinned — first in its group, and the idle reaper will not take ${s.tmux}` : 'Pin — first in its group, and safe from the idle reaper'}>
-                          {pinIcon(11, pinned)}{pinned ? 'Pinned' : 'Pin'}
+                          {pinIcon(11, pinned)}<span className="tv-lbl">{pinned ? 'Pinned' : 'Pin'}</span>
                         </button>
                       )}
-                      <button className="tv-btn sm" onClick={() => closeSession(s.id)}
-                        title={view === 'focus' ? 'Close the pane — the session stays in the top bar' : s.tmux ? 'Close — the session keeps running and stays in the bar' : 'Close the tab — a shell ends with it'}>Close tab</button>
-                      <button className="tv-btn sm danger" disabled={ending === s.id} onClick={() => askEnd(s)}>{ending === s.id ? 'Ending…' : 'End'}</button>
+                      {/* On a phone these three are icons (styles.css hides .tv-lbl), so
+                          each carries its name as aria-label rather than in its text. */}
+                      <button className="tv-btn sm" onClick={() => closeSession(s.id)} aria-label="Close tab"
+                        title={view === 'focus' ? 'Close the pane — the session stays in the top bar' : s.tmux ? 'Close — the session keeps running and stays in the bar' : 'Close the tab — a shell ends with it'}>
+                        <span className="tv-narrow-only" aria-hidden="true"><TermActionIcon action="close" /></span><span className="tv-lbl">Close tab</span>
+                      </button>
+                      <button className="tv-btn sm danger" disabled={ending === s.id} onClick={() => askEnd(s)} aria-label={ending === s.id ? 'Ending' : 'End session'} title="End this session on the host">
+                        <span className="tv-narrow-only" aria-hidden="true"><TermActionIcon action="end" /></span><span className="tv-lbl">{ending === s.id ? 'Ending…' : 'End'}</span>
+                      </button>
                     </span>
                   </div>
                 ) : null}
