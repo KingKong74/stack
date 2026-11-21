@@ -55,6 +55,52 @@ import { TopBar } from '../components/TopBar';
 import { NavIcons } from '../detail/ConsoleNav';
 import { crumbName } from '../lib/ui';
 
+// A PHONE-WIDTH SCREEN gets the main pane at 12px, not 14px: claude's own
+// frames need columns, and at 14px a phone gives it about forty. The width
+// matches the stylesheet's phone breakpoint for this screen (760px).
+const NARROW_QUERY = '(max-width: 760px)';
+function useNarrow() {
+  const [narrow, setNarrow] = useState(() => typeof window !== 'undefined' && !!window.matchMedia?.(NARROW_QUERY).matches);
+  useEffect(() => {
+    const mq = window.matchMedia?.(NARROW_QUERY);
+    if (!mq) return;
+    const on = () => setNarrow(mq.matches);
+    mq.addEventListener('change', on);
+    return () => mq.removeEventListener('change', on);
+  }, []);
+  return narrow;
+}
+
+// THE TOUCH KEY ROW. A phone keyboard has no Esc, no Tab, no arrows and no
+// Ctrl, and those are exactly the keys claude asks for: Esc interrupts, ⇧Tab
+// cycles the mode, the arrows pick from a menu. The row is drawn only where
+// the pointer is coarse (styles.css), so a desktop never sees it. Each key
+// goes down `sendText`, the same 'in' frame a keystroke takes. pointerdown is
+// cancelled so the tap does not steal focus from xterm and drop the keyboard.
+const TOUCH_KEYS: { label: string; seq: string; title: string }[] = [
+  { label: 'Esc', seq: '\x1b', title: 'Escape — interrupts claude' },
+  { label: 'Tab', seq: '\t', title: 'Tab' },
+  { label: '⇧Tab', seq: '\x1b[Z', title: 'Shift+Tab — cycles claude’s mode' },
+  { label: '↑', seq: '\x1b[A', title: 'Up' },
+  { label: '↓', seq: '\x1b[B', title: 'Down' },
+  { label: '←', seq: '\x1b[D', title: 'Left' },
+  { label: '→', seq: '\x1b[C', title: 'Right' },
+  { label: '^C', seq: '\x03', title: 'Ctrl+C' },
+  { label: '⏎', seq: '\r', title: 'Enter' },
+];
+function TouchKeys({ send, focus }: { send: (s: string) => void; focus: () => void }) {
+  return (
+    <div className="tv-touchkeys" role="toolbar" aria-label="Terminal keys">
+      <button className="tv-tkey kbd" aria-label="Show the keyboard" title="Show the keyboard"
+        onPointerDown={(e) => e.preventDefault()} onClick={focus}>⌨</button>
+      {TOUCH_KEYS.map((k) => (
+        <button key={k.label} className="tv-tkey" title={k.title} aria-label={k.title}
+          onPointerDown={(e) => e.preventDefault()} onClick={() => send(k.seq)}>{k.label}</button>
+      ))}
+    </div>
+  );
+}
+
 // Small decorative action cues; visible labels remain the accessible names.
 function TermActionIcon({ action }: { action: 'fill' | 'hide' | 'show' | 'sort' | 'tile' | 'close' | 'end' | 'select' }) {
   const paths = {
@@ -354,6 +400,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, project
   // amount of remembering can re-enter the browser's fullscreen without a
   // fresh gesture — a stored `true` would just come back as a lie.
   const [full, setFull] = useState(false);
+  const narrow = useNarrow();
   const toggleFull = () => {
     const next = !full;
     setFull(next);
@@ -1858,7 +1905,9 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, project
             )}
           </div>
           {launchError && <span role="alert" className="tv-dim">{launchError}</span>}
-          <button className="tv-btn" onClick={() => setConfigurationOpen(true)} title="Inspect the active session's launch configuration">Configuration</button>
+          <button className="tv-btn" onClick={() => setConfigurationOpen(true)} aria-label="Configuration" title="Inspect the active session's launch configuration">
+            <span className="tv-wide-only">Configuration</span><span className="tv-narrow-only" aria-hidden="true">Config</span>
+          </button>
           {brief && (
             <button className="tv-btn" onClick={pasteBrief}
               title="Types the roadmap brief into the active session — review it, then press Enter yourself">▶ Paste brief</button>
@@ -2041,7 +2090,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, project
                   focused={place === 'main' ? s.id === active : place === 'win' ? winOf?.z === topZ : false}
                   /* The small panes get a smaller face so a useful number of rows and
                      columns fit; the big one keeps the full size. */
-                  fontSize={place === 'mini' ? 10 : place === 'win' ? 12 : undefined}
+                  fontSize={place === 'mini' ? 10 : place === 'win' || narrow ? 12 : undefined}
                   onStatus={(stt, note) => setStatus(s.id, stt, note)}
                   onUsage={setUsage}
                   onTmux={(name) => noteTmux(s.id, s.cwd, name)}
@@ -2054,6 +2103,9 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, project
                   onTyped={noteTyped}
                   onNotice={(label, ms) => noteNotice(s.id, label, ms)}
                   register={(h) => { if (h) handles.current.set(s.id, h); else handles.current.delete(s.id); }} />
+                {place === 'main' && s.status === 'live' ? (
+                  <TouchKeys send={(k) => handles.current.get(s.id)?.sendText(k)} focus={() => handles.current.get(s.id)?.focus()} />
+                ) : null}
                 {place === 'main' ? (
                   <div className="tv-foot">
                     {s.cmd === 'claude' && skipPerms && <span className="danger">›› bypass permissions on</span>}

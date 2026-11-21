@@ -371,6 +371,11 @@
 
 * { box-sizing: border-box; }
 html, body, #root { margin: 0; min-height: 100%; }
+/* PHONE BROWSERS INFLATE TEXT THEY JUDGE TOO SMALL ("font boosting"), and
+   xterm measures its cell from a hidden span that gets inflated too: a 14px
+   terminal measured ~24px wide cells, so a phone got ~14 columns of widely
+   spaced letters. Every size in this file is already chosen for its width. */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 body {
   font-family: var(--sans);
   background: var(--bg);
@@ -2874,8 +2879,6 @@ a.tab { display: inline-block; }
    and put the rail UNDER the terminal, which is where it sat before #489 and
    is the one place on this screen the rail stopped leading. */
 @media (max-width: 760px) {
-  .term-screen .topbar { height: auto; min-height: var(--topbar-h); }
-  .term-screen .topbar .right { flex: 1; min-width: 0; flex-wrap: wrap; justify-content: flex-end; }
   .term-layout { flex-direction: column; height: auto; min-height: 0; }
   .term-col { padding: 12px 14px 14px; }
   .term-cockpit {
@@ -6688,7 +6691,9 @@ body[data-mc-full] .totop { display: none; }
 @media (max-width: 900px) {
   .con-shell { flex-direction: column; }
   .con-nav {
-    width: auto; position: static; max-height: none; align-self: stretch;
+    /* height too: the column rule's 100vh made the strip a screen tall,
+       with the page pushed under it. */
+    width: auto; height: auto; position: static; max-height: none; align-self: stretch;
     flex-direction: row; overflow-x: auto; gap: var(--space-2);
     border-right: 0; border-bottom: 1px solid var(--border-subtle);
     padding: var(--space-3) var(--space-4);
@@ -8491,6 +8496,7 @@ button.ar-open:hover { background: var(--surface-hover); }
 }
 .tv-page { height: calc(100vh - var(--topbar-h)); min-height: 0; display: flex; flex-direction: column; }
 .term-fullscreen .tv-page { height: auto; flex: 1; }
+
 .tv .mono { font-family: var(--font-mono); }
 .tv .tv-dim { font: var(--type-caption); font-size: var(--text-2xs); color: var(--text-tertiary); }
 .tv-pop .tv-dim { display: block; }
@@ -9588,3 +9594,89 @@ a.pp-link:hover { text-decoration: underline; }
   .bm-rail .v { writing-mode: horizontal-tb; transform: none; }
   .bm-search { width: 140px; }
 }
+
+/* ---- THE TERMINAL ON A PHONE (≤760px). Desktop is untouched: every rule
+   here is inside this query or the coarse-pointer one below it. It sits at
+   the END of the file so it wins over the base rules it narrows. ---- */
+@media (max-width: 760px) {
+  /* The full layout height follows the keyboard: dvh shrinks when it opens
+     (with interactive-widget=resizes-content in index.html), svh did not. */
+  .project-terminal-layout { height: 100dvh; }
+  /* One row of header: the crumb is already hidden at this width, so the
+     actions fit beside the mark once the bar stops reserving desktop gaps. */
+  .term-screen .topbar { gap: var(--space-3); padding: 0 var(--space-4); }
+  .term-screen .topbar .right { gap: var(--space-2); }
+  .term-screen .topbar .tv-btn { padding: 0 9px; }
+  /* The bar becomes two rows: the tabs across the full width, and the
+     controls under them, scrolling sideways rather than being clipped. */
+  .tv-bar { flex-wrap: wrap; gap: var(--space-2); padding: var(--space-2) var(--space-3); overflow: visible; }
+  .tv-tabs { flex: 1 0 100%; min-height: 44px; order: -1; }
+  .tv-meters { display: none; }
+  .tv-bar .tv-btn { padding: 0 8px; }
+  .tv-wide-only { display: none; }
+  /* The pane head keeps the name, the state and the actions; where it runs
+     and the branch are in the tab already. */
+  .tv-head { gap: var(--space-2); padding: var(--space-2) var(--space-3); }
+  .tv-head-meta, .tv-head .tv-destchip { display: none; }
+  .tv-head-name { flex: 0 1 auto; }
+  .tv-head .tv-btn.sm { padding: 0 7px; }
+  .tv-pane .term-holder .xterm { padding: 4px 6px; }
+  .tv-foot { gap: var(--space-3); padding: 4px var(--space-3); }
+  /* Main + 3 is four terminals; a phone has room for one. It reads as Focus
+     here, and its button goes, so a saved choice still lands somewhere sane. */
+  .tv-stage.v-split { grid-template: minmax(0, 1fr) / minmax(0, 1fr); gap: 0; padding: 0; }
+  .v-split .tv-pane.mini { display: none; }
+  .v-split .tv-pane.main { border: 0; border-radius: 0; }
+  .tv-views .tv-view:nth-child(2) { display: none; }
+  /* Swarm's grid is sized for a desktop (up to six across, inline from
+     GRID_OPTS). A phone gets two readable columns that scroll, one spare
+     "New session" cell rather than a page of them, and no mouse hint. */
+  .tv-swarm-head { padding: var(--space-2) var(--space-3); gap: var(--space-2); }
+  .tv-swarm-head .tv-hint { display: none; }
+  .tv-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    grid-template-rows: none !important; grid-auto-rows: 168px;
+    overflow-y: auto; padding: var(--space-3);
+  }
+  .tv-grid .tv-newcell ~ .tv-newcell { display: none; }
+}
+.tv-touchkeys { display: none; }
+@media (min-width: 761px) { .tv-narrow-only { display: none; } }
+@media (pointer: coarse) {
+  .tv-touchkeys {
+    flex: none; display: flex; gap: var(--space-1); padding: var(--space-1) var(--space-2);
+    overflow-x: auto; scrollbar-width: none; border-top: 1px solid var(--border-subtle);
+    background: var(--surface-canvas);
+  }
+  .tv-touchkeys::-webkit-scrollbar { display: none; }
+  .tv-tkey {
+    flex: 1 0 auto; min-width: 34px; height: 36px; padding: 0 var(--space-2);
+    border-radius: var(--radius-sm); border: 1px solid var(--border-default);
+    background: var(--surface-card); color: var(--text-primary);
+    font: var(--weight-medium) var(--text-sm)/1 var(--font-mono);
+    touch-action: manipulation; -webkit-user-select: none; user-select: none;
+  }
+  .tv-tkey:active { background: var(--surface-selected); border-color: var(--border-focus); }
+}
+
+/* ---- THE HEADER ON A PHONE (≤720px). The crumb, wordmark and search label
+   are already gone at this width (see the top bar rules); what was left
+   still pushed the page sideways on the dashboard, whose four actions are
+   wider than a phone. The search shrinks to its glass, and the actions
+   scroll sideways inside the bar instead of widening the page. ---- */
+@media (max-width: 720px) {
+  .topbar, .topbar.dash { gap: var(--space-3); padding: 0 var(--space-4); }
+  .topbar .searchbox { flex: none; min-width: 0; width: 36px; justify-content: center; padding: 0; }
+  .topbar .searchbox .kbd-hint { display: none; }
+  .topbar .topbar-gap { flex: 0 0 0; }
+  .topbar .right {
+    flex: 1 1 auto; min-width: 0; justify-content: flex-start;
+    overflow-x: auto; scrollbar-width: none;
+  }
+  /* Pinned right by an auto margin, not by flex-end: content that overflows
+     a flex-end row spills off the START, where no scroll can reach it. */
+  .topbar .right > :first-child { margin-left: auto; }
+  .topbar .right::-webkit-scrollbar { display: none; }
+  .topbar .right > * { flex: none; }
+}
+
