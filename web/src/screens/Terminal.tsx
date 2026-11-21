@@ -28,6 +28,7 @@ import { askOf, type AskInfo } from '../lib/asking';
 
 import { useAutoRefresh } from '../lib/autoRefresh';
 import { wireTermClipboard } from '../lib/termClipboard';
+import { wireTouchScroll } from '../lib/termTouch';
 import { newCapture, feedTyped, labelAskKeys } from '../lib/termName';
 import { DROP_MAX_BYTES, dropSizeLabel, fileToBase64, filesFrom, isFileDrag, pathAsInput } from '../lib/termDrop';
 // The wire codec and the palette are shared with the tab agents' consoles
@@ -1434,7 +1435,11 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, project
   // which makes it a tab like any other.
   const openTile = (t: Tile, geo?: Rect & { snapped?: boolean }) => {
     const id = t.sess ? t.sess.id : t.det ? attachDetached(t.det) : null;
-    if (id != null) openWin(id, geo);
+    if (id == null) return;
+    // A phone has no room for a floating window, nor a mouse to drag one:
+    // the tile opens the session full-screen in Focus instead.
+    if (narrow) { closeWin(id); setActive(id); setView('focus'); return; }
+    openWin(id, geo);
   };
   // A REPLY from a tile types the text and presses Enter, the same as typing it
   // at the pane. A session not attached here is attached first, and the reply
@@ -2213,7 +2218,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, project
                 {tiles.map((t) => {
                   const hov = tilePeek === t.key;
                   const lines = hov ? peekOf(t) : [];
-                  const recent = hov ? [] : compactLines(linesOf(t), compact ? 2 : 6);
+                  const recent = hov ? [] : compactLines(linesOf(t), compact ? 2 : narrow ? 10 : 6);
                   const openId = t.sess?.id;
                   return (
                     <div key={t.key}
@@ -2225,7 +2230,7 @@ export function Terminal({ initialCwd = '', initialAttach, initialBrief, project
                       onDragOver={(e) => { if (!dragTile) return; e.preventDefault(); if (dropOn !== t.key) setDropOn(t.key); }}
                       onDrop={(e) => { if (!dragTile) return; e.preventDefault(); e.stopPropagation(); setTileOrder(moveKey(shownTiles.map((x) => x.key), dragTile, t.key)); setDragTile(null); setDropOn(null); }}
                       onClick={() => openTile(t)}
-                      onMouseEnter={() => setTilePeek(t.key)}
+                      onMouseEnter={() => { if (!narrow) setTilePeek(t.key); }}
                       onMouseLeave={() => setTilePeek((k) => (k === t.key ? null : k))}
                       title={`${t.name} — click to open it as a window`}>
                       <div className="tv-tile-top" />
@@ -2576,6 +2581,8 @@ function TermSession({ sess, visible, focused, fontSize, onStatus, onUsage, onTm
     // OSC 52 carries a tmux copy-mode selection — the plain mouse drag inside
     // a claude session — out to the clipboard.
     const unwireClipboard = wireTermClipboard(term, (label) => onNotice(`⧉ ${label}`));
+    // A finger swipe scrolls, as the wheel does on a desktop (lib/termTouch).
+    const unwireTouch = holderRef.current ? wireTouchScroll(term, holderRef.current) : () => {};
 
     // #513 — DRAG A FILE ONTO THIS PANE AND ITS PATH IS TYPED INTO THE SESSION,
     // which is what dropping a screenshot on a native terminal does and the
@@ -3003,6 +3010,7 @@ function TermSession({ sess, visible, focused, fontSize, onStatus, onUsage, onTm
       ro.disconnect();
       data.dispose();
       unwireClipboard();
+      unwireTouch();
       wsRef.current?.close();
       // The renderer holds a GL context and must go FIRST — see termRenderer.
       detachRenderer();

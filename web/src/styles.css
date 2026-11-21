@@ -9629,15 +9629,23 @@ a.pp-link:hover { text-decoration: underline; }
   .v-split .tv-pane.main { border: 0; border-radius: 0; }
   .tv-views .tv-view:nth-child(2) { display: none; }
   /* Swarm's grid is sized for a desktop (up to six across, inline from
-     GRID_OPTS). A phone gets two readable columns that scroll, one spare
-     "New session" cell rather than a page of them, and no mouse hint. */
+     GRID_OPTS). A phone gets one full-width column of tall tiles that
+     scrolls, showing their last ten lines without a hover (a tap opens the
+     session in Focus: Terminal.tsx openTile), one spare "New session" cell
+     rather than a page of them, and no mouse hint. */
   .tv-swarm-head { padding: var(--space-2) var(--space-3); gap: var(--space-2); }
   .tv-swarm-head .tv-hint { display: none; }
+  /* The grid size means nothing in one column, and Fill starts a real host
+     session for every empty cell: a single mis-tap on a phone would start
+     twenty. Both stay on a desktop. */
+  .tv-swarm-head .tv-rel:has(> [aria-label="Grid size"]), .tv-swarm-head .tv-action-fill { display: none; }
   .tv-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-    grid-template-rows: none !important; grid-auto-rows: 168px;
+    grid-template-columns: minmax(0, 1fr) !important;
+    grid-template-rows: none !important; grid-auto-rows: 236px;
     overflow-y: auto; padding: var(--space-3);
   }
+  .tv-grid .tv-newcell { min-height: 0; }
+  .tv-grid:has(.tv-tile) .tv-newcell { height: 56px; align-self: start; flex-direction: row; }
   .tv-grid .tv-newcell ~ .tv-newcell { display: none; }
 }
 .tv-touchkeys { display: none; }
